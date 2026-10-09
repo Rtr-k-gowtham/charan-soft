@@ -1,0 +1,14 @@
+{
+  "name": "cheran-erp-textile-suite",
+  "version": "1.0.0",
+  "description": "Cheran Soft Goods - Enterprise Textile Manufacturing ERP Suite",
+  "type": "module",
+  "scripts": {
+    "server": "node backend/server.js",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend"
+  },
+  "author": "Cheran Soft Goods",
+  "license": "UNLICENSED"
+}

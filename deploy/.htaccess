@@ -1,0 +1,27 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. API and Backend routes redirected to backend/index.php
+  RewriteRule ^api/(.*)$ backend/index.php [QSA,L]
+  RewriteRule ^backend/(.*)$ backend/index.php [QSA,L]
+
+  # 2. Existing files and directories are served directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. All other requests fallback to React SPA index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Security: Deny direct access to SQL and database migration files
+<FilesMatch "\.(sql|log|md)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# Enable GZIP compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>

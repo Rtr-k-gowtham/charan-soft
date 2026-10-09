@@ -1,0 +1,1088 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "K. Senthil Nathan",
+      "email": "admin@cheransoftgoods.com",
+      "role": "ADMIN",
+      "role_id": 1,
+      "role_name": "System Administrator",
+      "phone": "+91 98422 10001",
+      "status": "active",
+      "created_at": "2026-01-01"
+    },
+    {
+      "id": 2,
+      "name": "M. Ramesh Kumar",
+      "email": "purchase@cheransoftgoods.com",
+      "role": "PURCHASE_MGR",
+      "role_id": 2,
+      "role_name": "Purchase Manager",
+      "phone": "+91 98422 10002",
+      "status": "active",
+      "created_at": "2026-01-05"
+    },
+    {
+      "id": 3,
+      "name": "P. Anand",
+      "email": "production@cheransoftgoods.com",
+      "role": "PROD_MGR",
+      "role_id": 3,
+      "role_name": "Production Head",
+      "phone": "+91 98422 10003",
+      "status": "active",
+      "created_at": "2026-01-10"
+    },
+    {
+      "id": 4,
+      "name": "S. Divya",
+      "email": "qc@cheransoftgoods.com",
+      "role": "QC_INSPECTOR",
+      "role_id": 4,
+      "role_name": "Quality Lead",
+      "phone": "+91 98422 10004",
+      "status": "active",
+      "created_at": "2026-01-15"
+    }
+  ],
+  "roles": [
+    {
+      "id": 1,
+      "name": "ADMIN",
+      "display_name": "System Administrator",
+      "description": "Full access to all ERP modules"
+    },
+    {
+      "id": 2,
+      "name": "PURCHASE_MGR",
+      "display_name": "Purchase Manager",
+      "description": "Create POs, approve payments, manage suppliers"
+    },
+    {
+      "id": 3,
+      "name": "PROD_MGR",
+      "display_name": "Production Head",
+      "description": "Manage production runs, stage dispatch, cycle times"
+    },
+    {
+      "id": 4,
+      "name": "QC_INSPECTOR",
+      "display_name": "Quality Lead",
+      "description": "Conduct QC checks, approve lots, log reworks"
+    },
+    {
+      "id": 5,
+      "name": "INVENTORY_EXEC",
+      "display_name": "Stores Executive",
+      "description": "Goods receipt (GRN), adjustments, stock issue"
+    }
+  ],
+  "permissions": [
+    {
+      "id": 1,
+      "module": "Purchase",
+      "code": "po.create",
+      "name": "Create Purchase Order"
+    },
+    {
+      "id": 2,
+      "module": "Purchase",
+      "code": "po.approve",
+      "name": "Approve Purchase Order"
+    },
+    {
+      "id": 3,
+      "module": "Purchase",
+      "code": "payment.record",
+      "name": "Record Supplier Payment"
+    },
+    {
+      "id": 4,
+      "module": "Inventory",
+      "code": "stock.adjust",
+      "name": "Stock Adjustment"
+    },
+    {
+      "id": 5,
+      "module": "Inventory",
+      "code": "stock.issue",
+      "name": "Issue Material for Production"
+    },
+    {
+      "id": 6,
+      "module": "Production",
+      "code": "prod.stage_move",
+      "name": "Move Production Stage"
+    },
+    {
+      "id": 7,
+      "module": "QC",
+      "code": "qc.inspect",
+      "name": "Record Quality Inspection"
+    },
+    {
+      "id": 8,
+      "module": "Settings",
+      "code": "settings.users",
+      "name": "Manage ERP Users"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "code": "FABRIC",
+      "name": "Fabric & Greige",
+      "type": "material",
+      "description": "Raw and knitted textile fabrics"
+    },
+    {
+      "id": 2,
+      "code": "YARN",
+      "name": "Yarn & Spinning",
+      "type": "material",
+      "description": "Cotton, polyester, and blended yarns"
+    },
+    {
+      "id": 3,
+      "code": "TRIMS",
+      "name": "Trims & Fasteners",
+      "type": "material",
+      "description": "Zippers, buttons, elastics, labels"
+    },
+    {
+      "id": 4,
+      "code": "DYES",
+      "name": "Dyes & Chemicals",
+      "type": "material",
+      "description": "Reactive dyes, softening agents"
+    },
+    {
+      "id": 5,
+      "code": "PACK",
+      "name": "Packaging Materials",
+      "type": "material",
+      "description": "Poly bags, cartons, tags"
+    },
+    {
+      "id": 6,
+      "code": "FABRIC_PO",
+      "name": "FABRIC PO",
+      "type": "order",
+      "description": "PO template for woven/knitted fabric"
+    },
+    {
+      "id": 7,
+      "code": "ACCESSORY_PO",
+      "name": "ACCESSORY PO",
+      "type": "order",
+      "description": "PO template for garment trims & packaging"
+    },
+    {
+      "id": 8,
+      "name": "Test Category",
+      "type": "order",
+      "code": "CAT_TEST_CATEGORY",
+      "created_at": "2026-10-07T11:40:24.501Z"
+    },
+    {
+      "id": 9,
+      "name": "Knitting Yarn Category",
+      "type": "material",
+      "code": "CAT_KNITTING_YARN_CATEGORY",
+      "fields": [
+        {
+          "id": 1,
+          "category_id": 9,
+          "field_name": "yarn_ply",
+          "field_label": "Yarn Ply",
+          "field_type": "number",
+          "is_required": false,
+          "is_visible": true,
+          "sort_order": 1
+        }
+      ],
+      "created_at": "2026-10-07T11:53:10.158Z"
+    }
+  ],
+  "suppliers": [
+    {
+      "id": 1,
+      "code": "SUP-001",
+      "name": "ABC Textiles Mills Ltd",
+      "contact_person": "V. Ramanathan",
+      "phone": "+91 94433 11223",
+      "email": "sales@abctextiles.in",
+      "gstin": "33AABCT9988C1Z4",
+      "city": "Tiruppur",
+      "state": "Tamil Nadu"
+    },
+    {
+      "id": 2,
+      "code": "SUP-002",
+      "name": "Sri Balaji Yarn Spinners",
+      "contact_person": "K. Balaji",
+      "phone": "+91 98431 55667",
+      "email": "yarn@balajispin.com",
+      "gstin": "33AABCS4422D1Z8",
+      "city": "Coimbatore",
+      "state": "Tamil Nadu"
+    },
+    {
+      "id": 3,
+      "code": "SUP-003",
+      "name": "Apex Trims & Accessories",
+      "contact_person": "G. Karthik",
+      "phone": "+91 97910 88990",
+      "email": "support@apextrims.com",
+      "gstin": "33AABCA7711E1Z2",
+      "city": "Karur",
+      "state": "Tamil Nadu"
+    },
+    {
+      "id": 4,
+      "code": "SUP-004",
+      "name": "DyeChem Colours Pvt Ltd",
+      "contact_person": "R. Srinivasan",
+      "phone": "+91 94422 33445",
+      "email": "orders@dyechem.in",
+      "gstin": "33AABCD5533F1Z6",
+      "city": "Erode",
+      "state": "Tamil Nadu"
+    },
+    {
+      "id": 5,
+      "code": "SUP-005",
+      "name": "Venkatesh Textiles",
+      "phone": "9876543210"
+    },
+    {
+      "id": 6,
+      "code": "SUP-006",
+      "name": "Tirupur Threads",
+      "phone": "9876543210",
+      "address": "123 Cotton Market"
+    }
+  ],
+  "customers": [
+    {
+      "id": 1,
+      "code": "CUST-001",
+      "name": "Zudio Retail Fashion",
+      "contact_person": "Rohan Sharma",
+      "phone": "+91 98200 44551",
+      "email": "buying@zudio.com",
+      "gstin": "27AABCT1234A1Z9",
+      "city": "Mumbai",
+      "state": "Maharashtra"
+    },
+    {
+      "id": 2,
+      "code": "CUST-002",
+      "name": "Max Lifestyle Garments",
+      "contact_person": "Pooja Nair",
+      "phone": "+91 98450 77882",
+      "email": "sourcing@maxlifestyle.in",
+      "gstin": "29AABCL5678B1Z1",
+      "city": "Bengaluru",
+      "state": "Karnataka"
+    },
+    {
+      "id": 3,
+      "code": "CUST-003",
+      "name": "Allen Solly Apparel Corp",
+      "contact_person": "Deepak Varma",
+      "phone": "+91 99800 22334",
+      "email": "production@allensolly.com",
+      "gstin": "29AABCA9012C1Z3",
+      "city": "Bengaluru",
+      "state": "Karnataka"
+    },
+    {
+      "id": 4,
+      "code": "CUST-004",
+      "name": "Metro Retail Apparel",
+      "phone": "9123456789"
+    },
+    {
+      "id": 5,
+      "code": "CUST-005",
+      "name": "Global Retailers LLC",
+      "phone": "9876543210",
+      "billing_address": "45 Broadway"
+    }
+  ],
+  "materials": [
+    {
+      "id": 1,
+      "code": "MAT-1001",
+      "name": "100% Combed Cotton 30s Single Jersey",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "supplier_id": 1,
+      "supplier_name": "ABC Textiles Mills Ltd",
+      "uom": "KG",
+      "purchase_rate": 340,
+      "tax_percent": 5,
+      "min_stock_level": 250,
+      "current_stock": 420
+    },
+    {
+      "id": 2,
+      "code": "MAT-1002",
+      "name": "Poly-Cotton Fleece 280 GSM",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "supplier_id": 1,
+      "supplier_name": "ABC Textiles Mills Ltd",
+      "uom": "KG",
+      "purchase_rate": 410,
+      "tax_percent": 5,
+      "min_stock_level": 180,
+      "current_stock": 95
+    },
+    {
+      "id": 3,
+      "code": "MAT-1003",
+      "name": "Sewing Thread 40/2 White",
+      "category_id": 3,
+      "category_name": "Trims & Fasteners",
+      "supplier_id": 3,
+      "supplier_name": "Apex Trims & Accessories",
+      "uom": "CONE",
+      "purchase_rate": 85,
+      "tax_percent": 12,
+      "min_stock_level": 60,
+      "current_stock": 140
+    },
+    {
+      "id": 4,
+      "code": "MAT-1004",
+      "name": "Nylon Zipper #5 Antique Brass (24 inch)",
+      "category_id": 3,
+      "category_name": "Trims & Fasteners",
+      "supplier_id": 3,
+      "supplier_name": "Apex Trims & Accessories",
+      "uom": "PCS",
+      "purchase_rate": 22,
+      "tax_percent": 18,
+      "min_stock_level": 500,
+      "current_stock": 320
+    },
+    {
+      "id": 5,
+      "code": "MAT-1005",
+      "name": "Reactive Black DN Dye",
+      "category_id": 4,
+      "category_name": "Dyes & Chemicals",
+      "supplier_id": 4,
+      "supplier_name": "DyeChem Colours Pvt Ltd",
+      "uom": "KG",
+      "purchase_rate": 680,
+      "tax_percent": 18,
+      "min_stock_level": 50,
+      "current_stock": 18
+    },
+    {
+      "id": 6,
+      "code": "MAT-1006",
+      "name": "Printed Brand Heat Seal Labels",
+      "category_id": 3,
+      "category_name": "Trims & Fasteners",
+      "supplier_id": 3,
+      "supplier_name": "Apex Trims & Accessories",
+      "uom": "PCS",
+      "purchase_rate": 4.5,
+      "tax_percent": 18,
+      "min_stock_level": 2000,
+      "current_stock": 4500
+    },
+    {
+      "id": 7,
+      "code": "MAT-1007",
+      "current_stock": 0,
+      "min_stock_level": 50,
+      "purchase_rate": 320,
+      "tax_percent": 5,
+      "uom": "KG",
+      "name": "Combed Slub Yarn",
+      "category_id": 1
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "code": "PRD-001",
+      "name": "Classic Crew Neck T-Shirt",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "design": "Solid Minimalist",
+      "uom": "PCS",
+      "selling_price": 285,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=300&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": 2,
+      "code": "PRD-002",
+      "name": "French Terry Hooded Sweatshirt",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "design": "Raglan Sleeve with Kangaroo Pocket",
+      "uom": "PCS",
+      "selling_price": 650,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=300&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": 3,
+      "code": "PRD-003",
+      "name": "Cotton Pique Polo Shirt",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "design": "2-Button Ribbed Collar",
+      "uom": "PCS",
+      "selling_price": 420,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1581655353564-df123a1eb820?w=300&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": 4,
+      "code": "PRD-004",
+      "name": "Heavyweight Fleece Jogger Pant",
+      "category_id": 1,
+      "category_name": "Fabric & Greige",
+      "design": "Elasticated Ankle Cuff",
+      "uom": "PCS",
+      "selling_price": 520,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1552902865-b72c031ac5ea?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1552902865-b72c031ac5ea?w=300&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": 5,
+      "code": "PRD-005",
+      "name": "Knitted Crewneck Sweater",
+      "category_id": 1,
+      "uom": "PCS",
+      "selling_price": 490,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=300&auto=format&fit=crop&q=60"
+    },
+    {
+      "id": 6,
+      "code": "PRD-006",
+      "name": "Heavyweight Crewneck Sweatshirt",
+      "uom": "PCS",
+      "selling_price": 850,
+      "tax_percent": 5,
+      "image": "https://images.unsplash.com/photo-1578587018452-892bacefd3f2?w=300&auto=format&fit=crop&q=60",
+      "image_url": "https://images.unsplash.com/photo-1578587018452-892bacefd3f2?w=300&auto=format&fit=crop&q=60"
+    }
+  ],
+  "units": [
+    {
+      "id": 1,
+      "code": "KG",
+      "name": "Kilograms"
+    },
+    {
+      "id": 2,
+      "code": "MTR",
+      "name": "Meters"
+    },
+    {
+      "id": 3,
+      "code": "PCS",
+      "name": "Pieces"
+    },
+    {
+      "id": 4,
+      "code": "CONE",
+      "name": "Cones"
+    },
+    {
+      "id": 5,
+      "code": "ROLL",
+      "name": "Rolls"
+    },
+    {
+      "id": 6,
+      "code": "BOX",
+      "name": "Boxes"
+    }
+  ],
+  "colors": [
+    {
+      "id": 1,
+      "name": "Jet Black",
+      "hex_code": "#111827"
+    },
+    {
+      "id": 2,
+      "name": "Navy Blue",
+      "hex_code": "#1e3a8a"
+    },
+    {
+      "id": 3,
+      "name": "Heather Grey",
+      "hex_code": "#9ca3af"
+    },
+    {
+      "id": 4,
+      "name": "Pure White",
+      "hex_code": "#ffffff"
+    },
+    {
+      "id": 5,
+      "name": "Forest Green",
+      "hex_code": "#14532d"
+    },
+    {
+      "id": 6,
+      "name": "Burgundy Crimson",
+      "hex_code": "#881337"
+    }
+  ],
+  "sizes": [
+    {
+      "id": 1,
+      "code": "XS",
+      "name": "Extra Small",
+      "sort_order": 1
+    },
+    {
+      "id": 2,
+      "code": "S",
+      "name": "Small",
+      "sort_order": 2
+    },
+    {
+      "id": 3,
+      "code": "M",
+      "name": "Medium",
+      "sort_order": 3
+    },
+    {
+      "id": 4,
+      "code": "L",
+      "name": "Large",
+      "sort_order": 4
+    },
+    {
+      "id": 5,
+      "code": "XL",
+      "name": "Extra Large",
+      "sort_order": 5
+    },
+    {
+      "id": 6,
+      "code": "XXL",
+      "name": "Double Extra Large",
+      "sort_order": 6
+    }
+  ],
+  "designs": [
+    {
+      "id": 1,
+      "code": "DSN-001",
+      "name": "Classic Solid Plain",
+      "pattern": "Solid Dyed"
+    },
+    {
+      "id": 2,
+      "code": "DSN-002",
+      "name": "Breton Feeder Stripe",
+      "pattern": "Yarn Dyed Stripe"
+    },
+    {
+      "id": 3,
+      "code": "DSN-003",
+      "name": "Vintage Melange Texture",
+      "pattern": "Cross Dye"
+    },
+    {
+      "id": 4,
+      "code": "DSN-004",
+      "name": "Typography Chest Graphic",
+      "pattern": "Pigment Discharge Screen Print"
+    }
+  ],
+  "productionStages": [
+    {
+      "id": 1,
+      "code": "INST",
+      "name": "Installation",
+      "sequence_order": 1,
+      "color_badge": "#6366f1",
+      "standard_cycle_time_mins": 45,
+      "status": "active"
+    },
+    {
+      "id": 2,
+      "code": "DYE",
+      "name": "Dyeing",
+      "sequence_order": 2,
+      "color_badge": "#0ea5e9",
+      "standard_cycle_time_mins": 180,
+      "status": "active"
+    },
+    {
+      "id": 3,
+      "code": "DET",
+      "name": "Detailing",
+      "sequence_order": 3,
+      "color_badge": "#8b5cf6",
+      "standard_cycle_time_mins": 60,
+      "status": "active"
+    },
+    {
+      "id": 4,
+      "code": "CUT",
+      "name": "Cutting",
+      "sequence_order": 4,
+      "color_badge": "#f59e0b",
+      "standard_cycle_time_mins": 90,
+      "status": "active"
+    },
+    {
+      "id": 5,
+      "code": "STI",
+      "name": "Stitching",
+      "sequence_order": 5,
+      "color_badge": "#10b981",
+      "standard_cycle_time_mins": 240,
+      "status": "active"
+    },
+    {
+      "id": 6,
+      "code": "QC",
+      "name": "QC",
+      "sequence_order": 6,
+      "color_badge": "#ef4444",
+      "standard_cycle_time_mins": 30,
+      "status": "active"
+    },
+    {
+      "id": 7,
+      "code": "RWK",
+      "name": "Rework",
+      "sequence_order": 7,
+      "color_badge": "#ec4899",
+      "standard_cycle_time_mins": 60,
+      "status": "active"
+    },
+    {
+      "id": 8,
+      "code": "COMP",
+      "name": "Completed",
+      "sequence_order": 8,
+      "color_badge": "#059669",
+      "standard_cycle_time_mins": 15,
+      "status": "active"
+    }
+  ],
+  "purchaseOrders": [
+    {
+      "id": 1,
+      "po_number": "PO-00045",
+      "category_id": 6,
+      "category_name": "FABRIC PO",
+      "supplier_id": 1,
+      "supplier_name": "ABC Textiles Mills Ltd",
+      "po_date": "2026-10-01",
+      "delivery_due_date": "2026-10-15",
+      "subtotal": 102000,
+      "tax_amount": 5100,
+      "net_amount": 107100,
+      "paid_amount": 50000,
+      "balance_amount": 57100,
+      "payment_status": "Partially Paid",
+      "status": "PARTIALLY RECEIVED",
+      "remarks": "Urgent autumn shipment batch",
+      "items": [
+        {
+          "id": 1,
+          "material_id": 1,
+          "item_description": "100% Combed Cotton 30s Single Jersey",
+          "quantity": 300,
+          "rate": 340,
+          "taxable_amount": 102000,
+          "tax_percent": 5,
+          "tax_amount": 5100,
+          "net_amount": 107100,
+          "received_quantity": 150
+        }
+      ],
+      "payments": [
+        {
+          "id": 1,
+          "receipt_number": "PAY-RTG-1001",
+          "payment_date": "2026-10-02",
+          "amount": 50000,
+          "payment_mode": "RTGS",
+          "reference_number": "HDFC9842193",
+          "notes": "Advance 50%"
+        }
+      ],
+      "receipts": [
+        {
+          "id": 1,
+          "receipt_no": "GRN-00021",
+          "receipt_date": "2026-10-05",
+          "delivery_challan_no": "DC-8812",
+          "vehicle_no": "TN-39-BC-4412",
+          "quantity_received": 150,
+          "remarks": "First partial batch inspected and accepted"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "po_number": "PO-00046",
+      "category_id": 7,
+      "category_name": "ACCESSORY PO",
+      "supplier_id": 3,
+      "supplier_name": "Apex Trims & Accessories",
+      "po_date": "2026-10-03",
+      "delivery_due_date": "2026-10-12",
+      "subtotal": 28500,
+      "tax_amount": 5130,
+      "net_amount": 33630,
+      "paid_amount": 33630,
+      "balance_amount": 0,
+      "payment_status": "Paid",
+      "status": "RECEIVED",
+      "remarks": "Full delivery accepted",
+      "items": [
+        {
+          "id": 2,
+          "material_id": 4,
+          "item_description": "Nylon Zipper #5 Antique Brass (24 inch)",
+          "quantity": 1000,
+          "rate": 22,
+          "taxable_amount": 22000,
+          "tax_percent": 18,
+          "tax_amount": 3960,
+          "net_amount": 25960,
+          "received_quantity": 1000
+        },
+        {
+          "id": 3,
+          "material_id": 6,
+          "item_description": "Printed Brand Heat Seal Labels",
+          "quantity": 1444,
+          "rate": 4.5,
+          "taxable_amount": 6500,
+          "tax_percent": 18,
+          "tax_amount": 1170,
+          "net_amount": 7670,
+          "received_quantity": 1444
+        }
+      ],
+      "payments": [
+        {
+          "id": 2,
+          "receipt_number": "PAY-NEF-1002",
+          "payment_date": "2026-10-04",
+          "amount": 33630,
+          "payment_mode": "NEFT",
+          "reference_number": "ICIC2349182",
+          "notes": "Settled on invoice"
+        }
+      ],
+      "receipts": [
+        {
+          "id": 2,
+          "receipt_no": "GRN-00022",
+          "receipt_date": "2026-10-06",
+          "delivery_challan_no": "DC-9041",
+          "vehicle_no": "TN-38-AL-1234",
+          "quantity_received": 2444,
+          "remarks": "Full lot passed QC"
+        }
+      ]
+    }
+  ],
+  "purchaseReturns": [
+    {
+      "id": 1,
+      "return_number": "RET-0001",
+      "purchase_order_id": 1,
+      "po_number": "PO-00045",
+      "supplier_name": "ABC Textiles Mills Ltd",
+      "material_id": 1,
+      "material_name": "100% Combed Cotton 30s Single Jersey",
+      "return_date": "2026-10-06",
+      "quantity": 12,
+      "amount": 4284,
+      "debit_note_no": "DN-8812",
+      "reason": "GSM variation beyond tolerance",
+      "status": "Completed"
+    }
+  ],
+  "inventoryTransactions": [
+    {
+      "id": 1,
+      "material_id": 1,
+      "material_name": "100% Combed Cotton 30s Single Jersey",
+      "material_code": "MAT-1001",
+      "uom": "KG",
+      "transaction_type": "RECEIPT",
+      "reference_type": "Purchase Receipt",
+      "reference_id": 1,
+      "quantity": 150,
+      "previous_stock": 270,
+      "new_stock": 420,
+      "notes": "GRN-00021 from ABC Textiles",
+      "created_at": "2026-10-05 14:30:00"
+    },
+    {
+      "id": 2,
+      "material_id": 4,
+      "material_name": "Nylon Zipper #5 Antique Brass (24 inch)",
+      "material_code": "MAT-1004",
+      "uom": "PCS",
+      "transaction_type": "RECEIPT",
+      "reference_type": "Purchase Receipt",
+      "reference_id": 2,
+      "quantity": 1000,
+      "previous_stock": 0,
+      "new_stock": 1000,
+      "notes": "GRN-00022 from Apex Trims",
+      "created_at": "2026-10-06 10:15:00"
+    },
+    {
+      "id": 3,
+      "material_id": 4,
+      "material_name": "Nylon Zipper #5 Antique Brass (24 inch)",
+      "material_code": "MAT-1004",
+      "uom": "PCS",
+      "transaction_type": "ISSUE",
+      "reference_type": "Production Order",
+      "reference_id": 1,
+      "quantity": -680,
+      "previous_stock": 1000,
+      "new_stock": 320,
+      "notes": "Issued for ORD-1001 Hoodie production",
+      "created_at": "2026-10-06 16:45:00"
+    },
+    {
+      "id": 4,
+      "material_id": 2,
+      "material_name": "Poly-Cotton Fleece 280 GSM",
+      "material_code": "MAT-1002",
+      "uom": "KG",
+      "transaction_type": "ADJUSTMENT",
+      "reference_type": "Stock Adjustment",
+      "reference_id": null,
+      "quantity": -15,
+      "previous_stock": 110,
+      "new_stock": 95,
+      "notes": "Dampness damage loss write-off",
+      "created_at": "2026-10-07 09:20:00"
+    }
+  ],
+  "productionOrders": [
+    {
+      "id": 1,
+      "order_number": "ORD-1001",
+      "title": "Zudio Autumn Winter 2026 Crewneck Batch",
+      "customer_id": 1,
+      "customer_name": "Zudio Retail Fashion",
+      "category_id": 1,
+      "priority": "High",
+      "start_date": "2026-10-01",
+      "target_delivery_date": "2026-10-25",
+      "total_quantity": 1200,
+      "completed_quantity": 0,
+      "status": "IN PRODUCTION",
+      "notes": "Ensure double-needle reinforcement on collar band",
+      "items": [
+        {
+          "id": 1,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Navy Blue",
+          "size": "M",
+          "total_quantity": 400,
+          "current_stage_id": 5,
+          "current_stage_name": "Stitching",
+          "stage_code": "STI",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 2,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Jet Black",
+          "size": "L",
+          "total_quantity": 400,
+          "current_stage_id": 4,
+          "current_stage_name": "Cutting",
+          "stage_code": "CUT",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 3,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Heather Grey",
+          "size": "XL",
+          "total_quantity": 400,
+          "current_stage_id": 2,
+          "current_stage_name": "Dyeing",
+          "stage_code": "DYE",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "order_number": "ORD-1002",
+      "title": "Allen Solly Pique Polo Export Order",
+      "customer_id": 3,
+      "customer_name": "Allen Solly Apparel Corp",
+      "category_id": 1,
+      "priority": "Medium",
+      "start_date": "2026-10-02",
+      "target_delivery_date": "2026-10-28",
+      "total_quantity": 800,
+      "completed_quantity": 200,
+      "status": "IN PRODUCTION",
+      "notes": "Customer QC inspector will review on Oct 20",
+      "items": [
+        {
+          "id": 4,
+          "product_id": 3,
+          "product_name": "Cotton Pique Polo Shirt",
+          "product_code": "PRD-003",
+          "color": "Pure White",
+          "size": "M",
+          "total_quantity": 400,
+          "current_stage_id": 6,
+          "current_stage_name": "QC",
+          "stage_code": "QC",
+          "current_stage_quantity": 200,
+          "completed_quantity": 200,
+          "rejected_quantity": 4,
+          "rework_quantity": 8,
+          "status": "In Progress"
+        },
+        {
+          "id": 5,
+          "product_id": 3,
+          "product_name": "Cotton Pique Polo Shirt",
+          "product_code": "PRD-003",
+          "color": "Forest Green",
+          "size": "L",
+          "total_quantity": 400,
+          "current_stage_id": 3,
+          "current_stage_name": "Detailing",
+          "stage_code": "DET",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        }
+      ]
+    }
+  ],
+  "qcRecords": [
+    {
+      "id": 1,
+      "order_number": "ORD-1002",
+      "product_name": "Cotton Pique Polo Shirt",
+      "color": "Pure White",
+      "size": "M",
+      "stage_name": "QC",
+      "inspector_name": "S. Divya",
+      "inspected_quantity": 212,
+      "passed_quantity": 200,
+      "rejected_quantity": 4,
+      "rework_quantity": 8,
+      "defect_type": "Skip stitch at placket",
+      "remarks": "Placket tension loose, rerouted to Stitching rework"
+    }
+  ],
+  "reworkRecords": [
+    {
+      "id": 1,
+      "order_number": "ORD-1002",
+      "product_name": "Cotton Pique Polo Shirt",
+      "color": "Pure White",
+      "size": "M",
+      "quantity": 8,
+      "rework_stage_id": 5,
+      "target_stage_name": "Stitching",
+      "status": "IN REWORK",
+      "resolution_notes": "Re-stitching placket buttonhole and lock"
+    }
+  ],
+  "templates": [
+    {
+      "id": 1,
+      "name": "Standard Knit Fabric PO Template",
+      "template_type": "po",
+      "category_id": 6,
+      "is_default": true,
+      "status": "active",
+      "fields": []
+    },
+    {
+      "id": 2,
+      "name": "Garment Trim & Packaging Template",
+      "template_type": "po",
+      "category_id": 7,
+      "is_default": true,
+      "status": "active",
+      "fields": []
+    },
+    {
+      "id": 3,
+      "name": "Basic T-Shirt BOM Recipe",
+      "template_type": "material",
+      "category_id": 1,
+      "is_default": true,
+      "status": "active",
+      "fields": []
+    },
+    {
+      "id": 4,
+      "name": "Fleece Hoodie Tech Pack Template",
+      "template_type": "product",
+      "category_id": 1,
+      "is_default": true,
+      "status": "active",
+      "fields": []
+    }
+  ],
+  "companySettings": {
+    "company_name": "Cheran Soft Goods Private Limited",
+    "address": "124, Textile Park, Palladam Road, Tiruppur - 641604, Tamil Nadu, India",
+    "phone": "+91 421 2478900",
+    "email": "operations@cheransoftgoods.com",
+    "gstin": "33AABCC1234F1Z5",
+    "currency": "INR",
+    "financial_year_start": "04-01"
+  }
+}
