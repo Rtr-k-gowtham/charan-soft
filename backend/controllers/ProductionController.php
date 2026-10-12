@@ -119,10 +119,10 @@ class ProductionController {
 
     public function moveStage(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $orderItemId = (int)($data['order_item_id'] ?? 0);
-        $toStageId = (int)($data['to_stage_id'] ?? 0);
-        $moveQty = (int)($data['quantity_moved'] ?? 0);
-        $remarks = trim($data['remarks'] ?? '');
+        $orderItemId = (int)($data['order_item_id'] ?? $data['item_id'] ?? 0);
+        $toStageId = (int)($data['to_stage_id'] ?? $data['next_stage_id'] ?? 0);
+        $moveQty = (int)($data['quantity_moved'] ?? $data['quantity'] ?? 0);
+        $remarks = trim($data['remarks'] ?? $data['notes'] ?? '');
 
         if (!$orderItemId || !$toStageId || $moveQty <= 0) {
             Response::error("Order item, destination stage, and positive move quantity are required", 422);
@@ -205,14 +205,14 @@ class ProductionController {
 
     public function recordQC(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $orderItemId = (int)($data['order_item_id'] ?? 0);
+        $orderItemId = (int)($data['order_item_id'] ?? $data['item_id'] ?? 0);
         $stageId = (int)($data['stage_id'] ?? 6);
-        $inputQty = (int)($data['input_quantity'] ?? 0);
-        $passedQty = (int)($data['passed_quantity'] ?? 0);
-        $rejectedQty = (int)($data['rejected_quantity'] ?? 0);
-        $reworkQty = (int)($data['rework_quantity'] ?? 0);
+        $passedQty = (int)($data['passed_quantity'] ?? $data['passed'] ?? 0);
+        $rejectedQty = (int)($data['rejected_quantity'] ?? $data['rejected'] ?? 0);
+        $reworkQty = (int)($data['rework_quantity'] ?? $data['rework'] ?? 0);
         $remarks = trim($data['remarks'] ?? '');
-        $reworkStageId = (int)($data['rework_stage_id'] ?? 5); // Default rework goes back to stitching
+        $reworkStageId = (int)($data['rework_stage_id'] ?? 7); // Default rework goes to stage 7 (Rework)
+        $inputQty = (int)($data['input_quantity'] ?? ($passedQty + $rejectedQty + $reworkQty));
 
         if ($inputQty <= 0) {
             Response::error("QC input quantity must be greater than zero", 422);
@@ -247,22 +247,48 @@ class ProductionController {
             ]);
             $qcId = (int)$pdo->lastInsertId();
 
-            // If rework quantity > 0, route back into production workflow!
+            // If rework quantity > 0, route item to rework stage
             if ($reworkQty > 0) {
                 $rwkStmt = $pdo->prepare("
                     INSERT INTO rework_records (qc_record_id, production_order_item_id, rework_stage_id, quantity, status, resolution_notes)
                     VALUES (?, ?, ?, ?, 'IN REWORK', ?)
                 ");
                 $rwkStmt->execute([$qcId, $orderItemId, $reworkStageId, $reworkQty, $remarks]);
-            }
 
-            // Update item counters
-            $updItem = $pdo->prepare("
-                UPDATE production_order_items 
-                SET rejected_quantity = rejected_quantity + ?, rework_quantity = rework_quantity + ?
-                WHERE id = ?
-            ");
-            $updItem->execute([$rejectedQty, $reworkQty, $orderItemId]);
+                $updItem = $pdo->prepare("
+                    UPDATE production_order_items 
+                    SET current_stage_id = ?, current_stage_quantity = ?, rejected_quantity = rejected_quantity + ?, rework_quantity = rework_quantity + ?, status = 'In Rework'
+                    WHERE id = ?
+                ");
+                $updItem->execute([$reworkStageId, $reworkQty, $rejectedQty, $reworkQty, $orderItemId]);
+            } else if ($passedQty > 0) {
+                // Passed: advance to final stage (Stage 8 Completed)
+                $finalStageStmt = $pdo->query("SELECT id FROM production_stages WHERE is_final_stage = 1 LIMIT 1");
+                $finalStageId = (int)($finalStageStmt->fetchColumn() ?: 8);
+
+                $updItem = $pdo->prepare("
+                    UPDATE production_order_items 
+                    SET current_stage_id = ?, current_stage_quantity = ?, completed_quantity = completed_quantity + ?, rejected_quantity = rejected_quantity + ?, status = 'Completed'
+                    WHERE id = ?
+                ");
+                $updItem->execute([$finalStageId, $passedQty, $passedQty, $rejectedQty, $orderItemId]);
+
+                // Update parent production order completed_quantity
+                $orderItemStmt = $pdo->prepare("SELECT production_order_id FROM production_order_items WHERE id = ?");
+                $orderItemStmt->execute([$orderItemId]);
+                $pOrderId = (int)$orderItemStmt->fetchColumn();
+                if ($pOrderId) {
+                    $pdo->prepare("UPDATE production_orders SET completed_quantity = completed_quantity + ? WHERE id = ?")->execute([$passedQty, $pOrderId]);
+                }
+            } else {
+                // Rejected only
+                $updItem = $pdo->prepare("
+                    UPDATE production_order_items 
+                    SET rejected_quantity = rejected_quantity + ?, current_stage_quantity = GREATEST(0, current_stage_quantity - ?)
+                    WHERE id = ?
+                ");
+                $updItem->execute([$rejectedQty, $rejectedQty, $orderItemId]);
+            }
 
             $pdo->commit();
             AuditLogger::log('QC', 'INSPECT', $orderItemId, null, ['passed' => $passedQty, 'rejected' => $rejectedQty, 'rework' => $reworkQty]);

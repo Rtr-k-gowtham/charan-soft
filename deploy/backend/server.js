@@ -471,6 +471,12 @@ const server = http.createServer(async (req, res) => {
       const mats = catId ? db.materials.filter(m => String(m.category_id) === catId) : db.materials;
       return sendSuccess(res, mats);
     }
+    if (pathname.match(/^\/materials\/\d+$/) && method === 'GET') {
+      const id = Number(pathname.split('/')[2]);
+      const mat = (db.materials || []).find(m => m.id === id);
+      if (!mat) return sendError(res, 'Material not found', 404);
+      return sendSuccess(res, mat);
+    }
     if (pathname === '/materials' && method === 'POST') {
       const newMat = {
         id: db.materials.length + 1,
@@ -485,6 +491,35 @@ const server = http.createServer(async (req, res) => {
       db.materials.push(newMat);
       saveDB();
       return sendSuccess(res, newMat, 'Material created', 201);
+    }
+    if (pathname.match(/^\/materials\/\d+$/) && (method === 'PUT' || method === 'PATCH')) {
+      const id = Number(pathname.split('/')[2]);
+      if (!db.materials) db.materials = [];
+      const idx = db.materials.findIndex(m => m.id === id);
+      if (idx === -1) return sendError(res, 'Material not found', 404);
+      const existingCode = db.materials[idx].code;
+      db.materials[idx] = {
+        ...db.materials[idx],
+        ...body,
+        id,
+        code: existingCode
+      };
+      saveDB();
+      return sendSuccess(res, db.materials[idx], 'Material updated successfully');
+    }
+    if (pathname.match(/^\/materials\/\d+$/) && method === 'DELETE') {
+      const id = Number(pathname.split('/')[2]);
+      const mat = (db.materials || []).find(m => m.id === id);
+      if (!mat) return sendError(res, 'Material not found', 404);
+      const hasPoi = (db.purchaseOrders || []).some(po => (po.items || []).some(it => it.material_id === id));
+      const hasStock = Number(mat.current_stock || 0) > 0;
+      const hasTx = (db.inventoryTransactions || []).some(t => t.material_id === id);
+      if (hasPoi || hasStock || hasTx) {
+        return sendError(res, `Cannot delete material '${mat.name}' (${mat.code}) because it has existing transactions or stock history.`, 422);
+      }
+      db.materials = db.materials.filter(m => m.id !== id);
+      saveDB();
+      return sendSuccess(res, null, 'Material deleted successfully');
     }
 
     // 5. Products
@@ -592,41 +627,80 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === '/inventory/consumption') {
       if (method === 'GET') {
-        const issues = db.inventoryTransactions.filter(t => t.transaction_type === 'ISSUE');
+        const issues = (db.inventoryTransactions || []).filter(t => t.transaction_type === 'ISSUE');
         return sendSuccess(res, issues);
       }
       if (method === 'POST') {
-        const { material_id, quantity, production_order_id, notes } = body;
-        const mat = db.materials.find(m => m.id === Number(material_id));
-        if (!mat) return sendError(res, 'Material not found', 404);
-        const q = Number(quantity || 0);
-        if (mat.current_stock < q) return sendError(res, 'Insufficient stock', 422);
+        const items = Array.isArray(body.items) ? body.items : (body.material_id ? [body] : []);
+        if (!items.length) return sendError(res, 'No consumption items specified', 422);
 
-        const oldStock = mat.current_stock;
-        mat.current_stock -= q;
-        db.inventoryTransactions.push({
-          id: db.inventoryTransactions.length + 1,
-          material_id: mat.id,
-          material_name: mat.name,
-          material_code: mat.code,
-          uom: mat.uom,
-          transaction_type: 'ISSUE',
-          reference_type: 'Production Order',
-          reference_id: production_order_id || null,
-          quantity: -q,
-          previous_stock: oldStock,
-          new_stock: mat.current_stock,
-          notes: notes || 'Raw material issued to production lines',
-          created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
-        });
+        // Group by material_id to validate total requested
+        const reqMap = {};
+        for (const it of items) {
+          const mid = Number(it.material_id);
+          const q = Number(it.quantity || 0);
+          if (!mid || q <= 0) return sendError(res, 'Valid material and quantity > 0 are required for all lines', 422);
+          reqMap[mid] = (reqMap[mid] || 0) + q;
+        }
+
+        // Validate available stock for each material
+        for (const [midStr, reqTotal] of Object.entries(reqMap)) {
+          const mid = Number(midStr);
+          const mat = (db.materials || []).find(m => m.id === mid);
+          if (!mat) return sendError(res, `Material #${mid} not found`, 404);
+          const avail = Number(mat.current_stock || 0);
+          if (reqTotal > avail) {
+            return sendError(res, `Insufficient stock for '${mat.name}' (${mat.code}). Requested: ${reqTotal} ${mat.uom}, Available: ${avail} ${mat.uom}`, 422);
+          }
+        }
+
+        // Deduct and create transactions
+        const orderRef = body.production_order_ref || body.production_order || '';
+        for (const it of items) {
+          const mid = Number(it.material_id);
+          const q = Number(it.quantity);
+          const mat = db.materials.find(m => m.id === mid);
+          const oldStock = mat.current_stock || 0;
+          mat.current_stock = Math.max(0, oldStock - q);
+
+          if (!db.inventoryTransactions) db.inventoryTransactions = [];
+          db.inventoryTransactions.push({
+            id: db.inventoryTransactions.length + 1,
+            material_id: mat.id,
+            material_name: mat.name,
+            material_code: mat.code,
+            uom: mat.uom,
+            transaction_type: 'ISSUE',
+            reference_type: 'Production Order',
+            reference_id: body.production_order_id || null,
+            quantity: -q,
+            previous_stock: oldStock,
+            new_stock: mat.current_stock,
+            notes: it.notes || body.general_notes || body.notes || (orderRef ? `Consumed for order ${orderRef}` : 'Material consumed for production'),
+            created_at: new Date().toISOString().replace('T', ' ').slice(0, 19),
+          });
+        }
         saveDB();
-        return sendSuccess(res, { new_stock: mat.current_stock }, 'Material consumption logged', 201);
+        return sendSuccess(res, { items_count: items.length }, 'Material consumption logged', 201);
       }
     }
 
     // 8. Purchase Orders & Actions
+    if (pathname.match(/^\/purchase-orders\/\d+$/) && method === 'GET') {
+      const id = Number(pathname.split('/')[2]);
+      const po = (db.purchaseOrders || []).find(p => p.id === id);
+      if (!po) return sendError(res, 'Purchase Order not found', 404);
+      return sendSuccess(res, {
+        ...po,
+        status: (po.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Ordered'
+      });
+    }
     if (pathname === '/purchase-orders' && method === 'GET') {
-      return sendSuccess(res, db.purchaseOrders);
+      const normalized = (db.purchaseOrders || []).map(p => ({
+        ...p,
+        status: (p.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Ordered'
+      }));
+      return sendSuccess(res, normalized);
     }
     if (pathname === '/purchase-orders' && method === 'POST') {
       const items = body.items || [];
@@ -643,6 +717,7 @@ const server = http.createServer(async (req, res) => {
         totalTax += taxAmt;
         return {
           id: idx + 1,
+          order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
           material_id: it.material_id,
           item_description: it.item_description || it.description || 'Fabric Material',
           quantity: qty,
@@ -657,14 +732,49 @@ const server = http.createServer(async (req, res) => {
 
       const netAmount = subtotal + totalTax;
       const supplier = db.suppliers.find(s => s.id === Number(body.supplier_id)) || db.suppliers[0];
+      const poDate = body.po_date || new Date().toISOString().split('T')[0];
+
+      // Format date as DDMMYY
+      let dateFormatted = '';
+      const dateParts = poDate.split('-');
+      if (dateParts.length === 3) {
+        const yy = dateParts[0].slice(-2);
+        const mm = dateParts[1].padStart(2, '0');
+        const dd = dateParts[2].slice(0, 2).padStart(2, '0');
+        dateFormatted = `${dd}${mm}${yy}`;
+      } else {
+        const d = new Date(poDate);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        dateFormatted = `${dd}${mm}${yy}`;
+      }
+      const prefix = `PO-${dateFormatted}-`;
+
+      let maxSeq = 0;
+      (db.purchaseOrders || []).forEach(p => {
+        if (p.po_number && p.po_number.startsWith(prefix)) {
+          const match = p.po_number.match(new RegExp(`^PO-${dateFormatted}-(\\d+)$`));
+          if (match) {
+            const val = parseInt(match[1], 10);
+            if (val > maxSeq) maxSeq = val;
+          }
+        }
+      });
+      const nextSeq = String(maxSeq + 1).padStart(2, '0');
+      const poNumber = `${prefix}${nextSeq}`;
+
+      // Per Task 3.B: Initial status of newly created purchase orders must strictly be Draft
+      const poStatus = 'Draft';
+
       const newPO = {
         id: db.purchaseOrders.length + 1,
-        po_number: `PO-000${45 + db.purchaseOrders.length + 1}`,
+        po_number: poNumber,
         category_id: Number(body.category_id || 6),
         category_name: body.category_id == 7 ? 'ACCESSORY PO' : 'FABRIC PO',
         supplier_id: supplier.id,
         supplier_name: supplier.name,
-        po_date: body.po_date || new Date().toISOString().split('T')[0],
+        po_date: poDate,
         delivery_due_date: body.delivery_due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
         subtotal,
         tax_amount: totalTax,
@@ -672,7 +782,7 @@ const server = http.createServer(async (req, res) => {
         paid_amount: 0,
         balance_amount: netAmount,
         payment_status: 'Not Paid',
-        status: 'PENDING',
+        status: poStatus,
         remarks: body.remarks || '',
         items: formattedItems,
         payments: [],
@@ -683,13 +793,90 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, newPO, 'Purchase Order created', 201);
     }
 
+    // Update Purchase Order (Draft only)
+    if (pathname.match(/^\/purchase-orders\/\d+$/) && (method === 'PUT' || method === 'PATCH')) {
+      const poId = Number(pathname.split('/')[2]);
+      const po = db.purchaseOrders.find(p => p.id === poId);
+      if (!po) return sendError(res, 'Purchase order not found', 404);
+
+      if ((po.status || '').toLowerCase() !== 'draft') {
+        return sendError(res, 'Only Draft purchase orders can be edited. Ordered purchase orders are locked.', 422);
+      }
+
+      const items = body.items || [];
+      if (items.length === 0) return sendError(res, 'At least one item line is required', 422);
+
+      let subtotal = 0;
+      let totalTax = 0;
+      const formattedItems = items.map((it, idx) => {
+        const qty = Number(it.quantity || it.qty || 0);
+        const rate = Number(it.rate || 0);
+        const taxPct = Number(it.tax_percent || 5);
+        const taxable = Math.round(qty * rate * 100) / 100;
+        const taxAmt = Math.round(taxable * (taxPct / 100) * 100) / 100;
+        const net = Math.round((taxable + taxAmt) * 100) / 100;
+        subtotal += taxable;
+        totalTax += taxAmt;
+        return {
+          id: idx + 1,
+          order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
+          material_id: it.material_id,
+          item_description: it.item_description || it.description || 'Fabric Material',
+          quantity: qty,
+          rate,
+          taxable_amount: taxable,
+          tax_percent: taxPct,
+          tax_amount: taxAmt,
+          net_amount: net,
+          received_quantity: Number(it.received_quantity || 0),
+          ...it
+        };
+      });
+
+      const netAmount = subtotal + totalTax;
+      if (body.supplier_id) {
+        const supplier = db.suppliers.find(s => s.id === Number(body.supplier_id));
+        if (supplier) {
+          po.supplier_id = supplier.id;
+          po.supplier_name = supplier.name;
+        }
+      }
+      if (body.category_id) {
+        po.category_id = Number(body.category_id);
+        po.category_name = body.category_id == 7 ? 'ACCESSORY PO' : 'FABRIC PO';
+      }
+      if (body.po_date) po.po_date = body.po_date;
+      if (body.delivery_due_date) po.delivery_due_date = body.delivery_due_date;
+      if (body.remarks !== undefined) po.remarks = body.remarks;
+
+      po.subtotal = subtotal;
+      po.tax_amount = totalTax;
+      po.net_amount = netAmount;
+      po.balance_amount = Math.max(0, netAmount - (po.paid_amount || 0));
+      po.items = formattedItems;
+
+      saveDB();
+      return sendSuccess(res, po, 'Purchase Order updated successfully');
+    }
+
     // Add Payment to PO
     if (pathname.match(/^\/purchase-orders\/\d+\/payments$/) && method === 'POST') {
       const poId = Number(pathname.split('/')[2]);
       const po = db.purchaseOrders.find(p => p.id === poId);
       if (!po) return sendError(res, 'Purchase order not found', 404);
 
+      if ((po.status || '').toLowerCase() === 'draft') {
+        return sendError(res, 'Cannot record payments against a Draft Purchase Order. Please confirm and order the PO first.', 422);
+      }
+
       const amt = Number(body.amount || 0);
+      if (amt <= 0) {
+        return sendError(res, 'Payment amount must be greater than zero', 422);
+      }
+      if (amt > Number(po.balance_amount || po.net_amount || 0)) {
+        return sendError(res, `Payment amount cannot exceed outstanding balance`, 422);
+      }
+
       const newPayment = {
         id: (po.payments || []).length + 1,
         receipt_number: `PAY-${(body.payment_mode || 'NEFT').slice(0, 3).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -703,9 +890,47 @@ const server = http.createServer(async (req, res) => {
       po.payments.unshift(newPayment);
       po.paid_amount = (po.paid_amount || 0) + amt;
       po.balance_amount = Math.max(0, (po.net_amount || 0) - po.paid_amount);
-      po.payment_status = po.balance_amount <= 0.01 ? 'Paid' : 'Partially Paid';
+
+      const bal = po.balance_amount;
+      const dueDate = po.payment_due_date;
+      const today = new Date().toISOString().split('T')[0];
+      if (bal <= 0.01) {
+        po.payment_status = 'Settled';
+      } else if (dueDate && dueDate < today && bal > 0.01) {
+        po.payment_status = 'Overdue';
+      } else if (po.paid_amount > 0.01) {
+        po.payment_status = 'Partially Paid';
+      } else {
+        po.payment_status = 'Unpaid';
+      }
+
       saveDB();
       return sendSuccess(res, po, 'Payment recorded successfully');
+    }
+
+    // Update Purchase Order Status (Draft <-> Ordered)
+    if (pathname.match(/^\/purchase-orders\/\d+\/status$/) && (method === 'PATCH' || method === 'PUT' || method === 'POST')) {
+      const poId = Number(pathname.split('/')[2]);
+      const po = db.purchaseOrders.find(p => p.id === poId);
+      if (!po) return sendError(res, 'Purchase order not found', 404);
+
+      const reqStatus = (body.status || '').toLowerCase();
+      if (reqStatus !== 'draft' && reqStatus !== 'ordered') {
+        return sendError(res, "Invalid status. Allowed statuses are 'Draft' and 'Ordered'", 422);
+      }
+
+      po.status = reqStatus === 'draft' ? 'Draft' : 'Ordered';
+      if (po.status === 'Ordered') {
+        const now = new Date();
+        po.ordered_at = po.ordered_at || now.toISOString().replace('T', ' ').slice(0, 19);
+        if (!po.payment_due_date) {
+          const d = new Date(po.ordered_at.split(' ')[0]);
+          d.setDate(d.getDate() + 15);
+          po.payment_due_date = d.toISOString().split('T')[0];
+        }
+      }
+      saveDB();
+      return sendSuccess(res, { id: po.id, status: po.status, payment_due_date: po.payment_due_date }, `Purchase Order status updated to ${po.status}`);
     }
 
     // Receive Goods against PO
@@ -714,12 +939,38 @@ const server = http.createServer(async (req, res) => {
       const po = db.purchaseOrders.find(p => p.id === poId);
       if (!po) return sendError(res, 'Purchase order not found', 404);
 
+      if ((po.status || '').toLowerCase() === 'draft') {
+        return sendError(res, 'Cannot receive materials against a Draft Purchase Order. Please confirm and order the PO first.', 422);
+      }
+
       const rItems = body.items || [];
+
+      // Validate all items against remaining limits before making updates
+      for (const ri of rItems) {
+        const itemId = Number(ri.purchase_order_item_id || ri.item_id || 0);
+        const item = (po.items || []).find(i => i.id === itemId);
+        const q = Number(ri.quantity_received || ri.received_quantity || 0);
+        if (q < 0) {
+          return sendError(res, 'Receive quantity cannot be negative.', 422);
+        }
+        if (item && q > 0) {
+          const ordered = Number(item.quantity || 0);
+          const already = Number(item.received_quantity || 0);
+          const remaining = Math.max(0, ordered - already);
+          if (q > remaining + 0.0001) {
+            const desc = item.item_description || `Item #${itemId}`;
+            const uom = item.uom || 'units';
+            return sendError(res, `Receive quantity for ${desc} cannot exceed the remaining ordered quantity of ${remaining} ${uom}.`, 422);
+          }
+        }
+      }
+
       let totalQty = 0;
       rItems.forEach(ri => {
-        const item = (po.items || []).find(i => i.id === Number(ri.purchase_order_item_id));
-        const q = Number(ri.quantity_received || 0);
-        if (item) {
+        const itemId = Number(ri.purchase_order_item_id || ri.item_id || 0);
+        const item = (po.items || []).find(i => i.id === itemId);
+        const q = Number(ri.quantity_received || ri.received_quantity || 0);
+        if (item && q > 0) {
           item.received_quantity = (item.received_quantity || 0) + q;
           totalQty += q;
           // Update material live stock balance
@@ -759,7 +1010,7 @@ const server = http.createServer(async (req, res) => {
       };
       po.receipts = po.receipts || [];
       po.receipts.unshift(grn);
-      po.status = 'RECEIVED';
+      po.status = 'Ordered';
       saveDB();
       return sendSuccess(res, grn, 'Goods received and stock updated');
     }
@@ -905,7 +1156,15 @@ const server = http.createServer(async (req, res) => {
     // 10. Masters (Colors, Sizes, Units, Designs)
     if (pathname === '/colors' && method === 'GET') return sendSuccess(res, db.colors);
     if (pathname === '/colors' && method === 'POST') {
-      const col = { id: db.colors.length + 1, ...body };
+      const name = (body.name || '').trim();
+      if (!name) return sendError(res, 'Color name is required', 422);
+      let code = (body.code || '').trim();
+      if (!code) {
+        code = `CLR-${String(db.colors.length + 1).padStart(4, '0')}`;
+      } else if (db.colors.some(c => c.code === code)) {
+        return sendError(res, `Color code '${code}' already exists`, 422);
+      }
+      const col = { id: db.colors.length + 1, code, name, hex_code: body.hex_code || '#000000' };
       db.colors.push(col);
       saveDB();
       return sendSuccess(res, col, 'Color added', 201);

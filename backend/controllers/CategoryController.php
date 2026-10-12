@@ -27,7 +27,13 @@ class CategoryController {
                 $fStmt = $pdo->prepare("SELECT * FROM category_fields WHERE category_id = :cat_id ORDER BY sort_order ASC");
                 foreach ($categories as &$cat) {
                     $fStmt->execute([':cat_id' => $cat['id']]);
-                    $cat['fields'] = $fStmt->fetchAll();
+                    $catFields = $fStmt->fetchAll();
+                    foreach ($catFields as &$cf) {
+                        if ($cf['field_name'] === 'order_no' || $cf['field_name'] === 'order_number') {
+                            $cf['is_visible'] = 0;
+                        }
+                    }
+                    $cat['fields'] = $catFields;
                 }
             } catch (Exception $cfErr) {
                 foreach ($categories as &$cat) {
@@ -55,7 +61,13 @@ class CategoryController {
 
             $fStmt = $pdo->prepare("SELECT * FROM category_fields WHERE category_id = :id ORDER BY sort_order ASC");
             $fStmt->execute([':id' => $id]);
-            $category['fields'] = $fStmt->fetchAll();
+            $catFields = $fStmt->fetchAll();
+            foreach ($catFields as &$cf) {
+                if ($cf['field_name'] === 'order_no' || $cf['field_name'] === 'order_number') {
+                    $cf['is_visible'] = 0;
+                }
+            }
+            $category['fields'] = $catFields;
 
             Response::success($category);
         } catch (Exception $e) {

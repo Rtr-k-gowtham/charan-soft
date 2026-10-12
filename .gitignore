@@ -16,6 +16,14 @@ build/
 .env
 .env.local
 .env.*.local
+deploy.config.json
+
+# SSH & Deployment Credentials
+.ssh/
+deploy_keys/
+*.pem
+*.key
+*.pub
 
 # Logs
 logs/
@@ -28,3 +36,7 @@ yarn-debug.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Scratch and temporary scripts
+scratch/
+deploy.js

@@ -138,13 +138,15 @@ export interface PurchaseOrder {
   supplier_phone?: string;
   po_date: string;
   delivery_due_date?: string;
+  payment_due_date?: string;
+  ordered_at?: string;
   subtotal: number;
   tax_amount: number;
   net_amount: number;
   paid_amount: number;
   balance_amount: number;
-  payment_status: 'Not Paid' | 'Partially Paid' | 'Paid';
-  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'PARTIALLY RECEIVED' | 'RECEIVED' | 'CANCELLED';
+  payment_status: 'Unpaid' | 'Partially Paid' | 'Settled' | 'Overdue' | 'Not Paid' | 'Paid';
+  status: 'Draft' | 'Ordered' | string;
   remarks?: string;
   items?: PurchaseOrderItem[];
   payments?: PurchasePayment[];

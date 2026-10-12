@@ -60,7 +60,10 @@ export const api = {
   // Materials
   getMaterials: (categoryId?: number) =>
     request<unknown[]>(`/materials${categoryId ? `?category_id=${categoryId}` : ''}`),
+  getMaterial: (id: number) => request<unknown>(`/materials/${id}`),
   createMaterial: (data: unknown) => request<unknown>('/materials', 'POST', data),
+  updateMaterial: (id: number, data: unknown) => request<unknown>(`/materials/${id}`, 'PUT', data),
+  deleteMaterial: (id: number) => request<unknown>(`/materials/${id}`, 'DELETE'),
 
   // Products
   getProducts: () => request<unknown[]>('/products'),
@@ -85,7 +88,12 @@ export const api = {
 
   // Purchase Orders & Related
   getPurchaseOrders: () => request<unknown[]>('/purchase-orders'),
+  getPurchaseOrder: (id: number) => request<unknown>(`/purchase-orders/${id}`),
   createPurchaseOrder: (data: unknown) => request<unknown>('/purchase-orders', 'POST', data),
+  updatePurchaseOrder: (id: number, data: unknown) =>
+    request<unknown>(`/purchase-orders/${id}`, 'PUT', data),
+  updatePurchaseOrderStatus: (poId: number, status: string) =>
+    request<unknown>(`/purchase-orders/${poId}/status`, 'PATCH', { status }),
   addPayment: (poId: number, data: unknown) =>
     request<unknown>(`/purchase-orders/${poId}/payments`, 'POST', data),
   receiveGoods: (poId: number, data: unknown) =>

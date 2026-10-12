@@ -1,13 +1,14 @@
 // src/components/ui/SearchableSelect.tsx
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, ChevronDown, X, Check } from 'lucide-react';
+import { Search, ChevronDown, X, Check, Plus } from 'lucide-react';
 
 export interface SelectOption {
   value: string | number;
   label: string;
   sublabel?: string;
   group?: string;
+  colorSwatch?: string;
 }
 
 interface SearchableSelectProps {
@@ -22,6 +23,11 @@ interface SearchableSelectProps {
   required?: boolean;
   error?: string;
   clearable?: boolean;
+  actionButton?: {
+    label: string;
+    icon?: React.ReactNode;
+    onClick: () => void;
+  };
 }
 
 export default function SearchableSelect({
@@ -36,6 +42,7 @@ export default function SearchableSelect({
   required,
   error,
   clearable = true,
+  actionButton,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -138,7 +145,8 @@ export default function SearchableSelect({
       (opt) =>
         opt.label.toLowerCase().includes(query) ||
         (opt.sublabel && opt.sublabel.toLowerCase().includes(query)) ||
-        (opt.group && opt.group.toLowerCase().includes(query))
+        (opt.group && opt.group.toLowerCase().includes(query)) ||
+        (opt.colorSwatch && opt.colorSwatch.toLowerCase().includes(query))
     );
   }, [options, search]);
 
@@ -190,7 +198,13 @@ export default function SearchableSelect({
       >
         <div className="flex-1 min-w-0">
           {selectedOption ? (
-            <div className="flex items-center gap-1.5 truncate">
+            <div className="flex items-center gap-2 truncate">
+              {selectedOption.colorSwatch && (
+                <span
+                  className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
+                  style={{ backgroundColor: selectedOption.colorSwatch }}
+                />
+              )}
               <span className="font-semibold text-slate-800 truncate">{selectedOption.label}</span>
             </div>
           ) : (
@@ -269,11 +283,19 @@ export default function SearchableSelect({
                           : 'text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      <div className="flex flex-col min-w-0">
-                        <span className="truncate">{opt.label}</span>
-                        {opt.sublabel && (
-                          <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        {opt.colorSwatch && (
+                          <span
+                            className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
+                            style={{ backgroundColor: opt.colorSwatch }}
+                          />
                         )}
+                        <div className="flex flex-col min-w-0">
+                          <span className="truncate">{opt.label}</span>
+                          {opt.sublabel && (
+                            <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                          )}
+                        </div>
                       </div>
                       {isSelected && <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />}
                     </div>
@@ -297,11 +319,19 @@ export default function SearchableSelect({
                               : 'text-slate-700 hover:bg-slate-100'
                           }`}
                         >
-                          <div className="flex flex-col min-w-0">
-                            <span className="truncate">{opt.label}</span>
-                            {opt.sublabel && (
-                              <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {opt.colorSwatch && (
+                              <span
+                                className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
+                                style={{ backgroundColor: opt.colorSwatch }}
+                              />
                             )}
+                            <div className="flex flex-col min-w-0">
+                              <span className="truncate">{opt.label}</span>
+                              {opt.sublabel && (
+                                <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                              )}
+                            </div>
                           </div>
                           {isSelected && <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />}
                         </div>
@@ -311,6 +341,24 @@ export default function SearchableSelect({
                 ))
               )}
             </div>
+
+            {/* Action Button (e.g. + Add Color) */}
+            {actionButton && (
+              <div className="p-1.5 border-t border-slate-100 bg-slate-50/70">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOpen(false);
+                    actionButton.onClick();
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 bg-white hover:bg-brand-50 border border-brand-200 rounded-md transition-colors"
+                >
+                  {actionButton.icon || <Plus className="w-3.5 h-3.5" />}
+                  <span>{actionButton.label}</span>
+                </button>
+              </div>
+            )}
           </div>,
           document.body
         )}

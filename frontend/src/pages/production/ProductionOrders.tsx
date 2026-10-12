@@ -1,72 +1,47 @@
 // src/pages/production/ProductionOrders.tsx
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionStage, Customer, Category, Product, ProductionOrderItem } from '../../types';
+import { ProductionOrder, ProductionStage, Customer, Product, ProductionOrderItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
-import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
-import Drawer from '../../components/ui/Drawer';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
-import { Plus, Eye, ArrowRight, RefreshCw, Trash2 } from 'lucide-react';
-
-
-
-interface OrderItem { product_id: string; color: string; size: string; total_quantity: number; }
+import { Plus, Eye, ArrowRight, RefreshCw } from 'lucide-react';
 
 export default function ProductionOrders() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [stages, setStages] = useState<ProductionStage[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewOrder, setViewOrder] = useState<ProductionOrder | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [qcOpen, setQcOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [selectedItem, setSelectedItem] = useState<ProductionOrderItem | null>(null);
 
-  const [form, setForm] = useState({ title: '', customer_id: '', category_id: '7', priority: 'Medium', start_date: new Date().toISOString().split('T')[0], target_delivery_date: '', notes: '' });
-  const [orderItems, setOrderItems] = useState<OrderItem[]>([{ product_id: '', color: '', size: 'M', total_quantity: 0 }]);
   const [moveForm, setMoveForm] = useState({ to_stage_id: '', quantity_moved: 0, remarks: '' });
   const [qcForm, setQcForm] = useState({ input_quantity: 0, passed_quantity: 0, rejected_quantity: 0, rework_quantity: 0, defect_reason: '', remarks: '', rework_stage_id: '5' });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [ordData, stgData, prdData, custData] = await Promise.all([
-        api.getProductionOrders(), api.getProductionStages(), api.getProducts(), api.getCustomers()
+      const [ordData, stgData] = await Promise.all([
+        api.getProductionOrders(), api.getProductionStages()
       ]);
       setOrders(ordData as ProductionOrder[]);
       setStages(stgData as ProductionStage[]);
-      setProducts(prdData as Product[]);
-      setCustomers(custData as Customer[]);
     } catch {
       setOrders([]);
       setStages([]);
-      setProducts([]);
-      setCustomers([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, []);
-
-  const handleCreate = async () => {
-    if (!form.title || orderItems.some(i => !i.product_id || !i.total_quantity)) {
-      setError('Title and all item fields are required'); return;
-    }
-    setSaving(true); setError('');
-    try {
-      await api.createProductionOrder({ ...form, items: orderItems });
-      setCreateOpen(false);
-      load();
-    } catch (e: unknown) { setError((e as Error).message); } finally { setSaving(false); }
-  };
 
   const handleMove = async () => {
     if (!selectedItem || !moveForm.to_stage_id || !moveForm.quantity_moved) {
@@ -101,7 +76,7 @@ export default function ProductionOrders() {
             <button onClick={load} disabled={loading} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50">
               <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <Button icon={<Plus className="w-3.5 h-3.5" />} onClick={() => setCreateOpen(true)}>New Order</Button>
+            <Button icon={<Plus className="w-3.5 h-3.5" />} onClick={() => navigate('/production/orders/create')}>New Order</Button>
           </div>
         }
       />
@@ -191,78 +166,68 @@ export default function ProductionOrders() {
         )}
       </div>
 
-      {/* Create Order Drawer */}
-      <Drawer open={createOpen} onClose={() => setCreateOpen(false)} title="Create Production Order" width="max-w-2xl"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button loading={saving} onClick={handleCreate}>Create Order</Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          {error && <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">{error}</div>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2">
-              <FormField label="Order Title" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Export Queen Bed Linen Contract" />
-            </div>
-            <FormField as="select" label="Customer" value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
-              <option value="">— Select Customer —</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </FormField>
-            <FormField as="select" label="Priority" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
-              {['Low', 'Medium', 'High', 'Urgent'].map(p => <option key={p}>{p}</option>)}
-            </FormField>
-            <FormField label="Start Date" type="date" required value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
-            <FormField label="Target Delivery" type="date" required value={form.target_delivery_date} onChange={e => setForm(f => ({ ...f, target_delivery_date: e.target.value }))} />
-          </div>
-
-          {/* Items */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide">Product Lines</p>
-              <button onClick={() => setOrderItems(p => [...p, { product_id: '', color: '', size: 'M', total_quantity: 0 }])}
-                className="text-[11px] text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
-                <Plus className="w-3 h-3" /> Add Product
-              </button>
-            </div>
-            {orderItems.map((it, idx) => (
-              <div key={idx} className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2 p-2 bg-slate-50 rounded-md border border-slate-200">
-                <div className="sm:col-span-2">
-                  <label className="text-[10px] font-medium text-slate-500 block mb-1">Product *</label>
-                  <select value={it.product_id} onChange={e => setOrderItems(p => { const n = [...p]; n[idx].product_id = e.target.value; return n; })}
-                    className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-brand-400">
-                    <option value="">— Select —</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-1">Color *</label>
-                  <input value={it.color} onChange={e => setOrderItems(p => { const n = [...p]; n[idx].color = e.target.value; return n; })}
-                    className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-brand-400" placeholder="Color" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-medium text-slate-500 block mb-1">Size *</label>
-                  <select value={it.size} onChange={e => setOrderItems(p => { const n = [...p]; n[idx].size = e.target.value; return n; })}
-                    className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-brand-400">
-                    {['XS','S','M','L','XL','XXL','SINGLE','QUEEN','KING'].map(s => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div className="flex items-end gap-1">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-medium text-slate-500 block mb-1">Qty *</label>
-                    <input type="number" min="1" value={it.total_quantity} onChange={e => setOrderItems(p => { const n = [...p]; n[idx].total_quantity = parseInt(e.target.value)||0; return n; })}
-                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:border-brand-400 text-right" />
-                  </div>
-                  {orderItems.length > 1 && (
-                    <button onClick={() => setOrderItems(p => p.filter((_,i) => i !== idx))} className="mb-0.5 p-1 text-red-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
-                  )}
+      {/* View Order Modal */}
+      {viewOrder && (
+        <Modal open={!!viewOrder} onClose={() => setViewOrder(null)} title={`Order: ${viewOrder.order_number}`} size="lg"
+          footer={<Button variant="secondary" onClick={() => setViewOrder(null)}>Close</Button>}
+        >
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px]">Title</span>
+                <span className="font-semibold text-slate-800">{viewOrder.title}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Customer</span>
+                <span className="font-medium text-slate-700">{viewOrder.customer_name || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px]">Priority / Status</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <StatusBadge status={viewOrder.priority} />
+                  <StatusBadge status={viewOrder.status} />
                 </div>
               </div>
-            ))}
+              <div>
+                <span className="text-slate-400 block text-[10px]">Due Date</span>
+                <span className="font-medium text-slate-700">{viewOrder.target_delivery_date || '—'}</span>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">Product Lines</h4>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Product</th>
+                      <th className="px-3 py-2 text-left">Variant</th>
+                      <th className="px-3 py-2 text-right">Total Qty</th>
+                      <th className="px-3 py-2 text-right">Done</th>
+                      <th className="px-3 py-2 text-left">Current Stage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(viewOrder.items || []).map((it) => (
+                      <tr key={it.id} className="hover:bg-slate-50/50">
+                        <td className="px-3 py-2 font-medium text-slate-800">{it.product_name}</td>
+                        <td className="px-3 py-2 text-slate-600">{it.color} / {it.size}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">{it.total_quantity}</td>
+                        <td className="px-3 py-2 text-right font-mono text-green-600 font-semibold">{it.completed_quantity}</td>
+                        <td className="px-3 py-2">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold text-white" style={{ backgroundColor: it.color_badge || '#64748b' }}>
+                            {it.current_stage_name} ({it.current_stage_quantity})
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </Drawer>
+        </Modal>
+      )}
 
       {/* Move Stage Modal */}
       <Modal open={moveOpen} onClose={() => setMoveOpen(false)} title="Move to Next Stage" size="sm"

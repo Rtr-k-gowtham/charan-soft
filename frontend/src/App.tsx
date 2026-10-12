@@ -24,6 +24,7 @@ import LowStock from './pages/inventory/LowStock';
 
 // Production
 import ProductionOrders from './pages/production/ProductionOrders';
+import CreateProductionOrder from './pages/production/CreateProductionOrder';
 import ProductionBoard from './pages/production/ProductionBoard';
 import ProductionStageView from './pages/production/ProductionStageView';
 
@@ -88,6 +89,7 @@ function AppRoutes() {
 
               {/* Production */}
               <Route path="/production/orders" element={<ProductionOrders />} />
+              <Route path="/production/orders/create" element={<CreateProductionOrder />} />
               <Route path="/production/board" element={<ProductionBoard />} />
               <Route path="/production/installation" element={<ProductionStageView stageName="Installation" stageCode="INST" breadcrumb={['Installation']} />} />
               <Route path="/production/dyeing" element={<ProductionStageView stageName="Dyeing" stageCode="DYE" breadcrumb={['Dyeing']} />} />

@@ -258,7 +258,7 @@ export default function DynamicPOTemplate({
   let activeColumns: POTemplateColumn[] = [];
   if (currentCat && currentCat.fields && currentCat.fields.length > 0) {
     activeColumns = currentCat.fields
-      .filter(f => Boolean(f.is_visible))
+      .filter(f => Boolean(f.is_visible) && f.field_name !== 'order_no' && f.field_name !== 'order_number')
       .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
       .map((f, idx) => {
         const key = f.field_name;
@@ -298,7 +298,7 @@ export default function DynamicPOTemplate({
   } else {
     // Fallback to configured columns if category has no custom fields
     activeColumns = (columns || [])
-      .filter(c => c.is_visible == 1 || c.is_visible === true)
+      .filter(c => (c.is_visible == 1 || c.is_visible === true) && c.column_key !== 'order_no' && c.column_key !== 'order_number')
       .sort((a, b) => a.display_order - b.display_order);
   }
 
@@ -407,14 +407,11 @@ export default function DynamicPOTemplate({
           </div>
 
           {/* Statutory Identifiers */}
-          <div className="flex flex-wrap justify-center items-center gap-x-3.5 gap-y-0.5 text-[9.5px] text-slate-700 mt-0.5 font-medium">
-            {isTrue('show_gstin') && get('gstin', '33AAFCC2831H1Z1') && (
+          {isTrue('show_gstin') && get('gstin', '33AAFCC2831H1Z1') && (
+            <div className="flex flex-wrap justify-center items-center gap-x-3.5 gap-y-0.5 text-[9.5px] text-slate-700 mt-0.5 font-medium">
               <span className="text-brand-900"><strong>GSTIN:</strong> {get('gstin', '33AAFCC2831H1Z1')}</span>
-            )}
-            {get('pan', 'AAFCC2831H') && <span><strong>PAN:</strong> {get('pan', 'AAFCC2831H')}</span>}
-            {get('cin', 'U17111TZ2020PTC034567') && <span><strong>CIN:</strong> {get('cin', 'U17111TZ2020PTC034567')}</span>}
-            {get('udyam', 'UDYAM-TN-12-0012345') && <span><strong>Udyam:</strong> {get('udyam', 'UDYAM-TN-12-0012345')}</span>}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Document Title Banner */}

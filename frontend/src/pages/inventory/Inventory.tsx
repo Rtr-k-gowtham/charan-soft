@@ -11,10 +11,13 @@ import { AlertTriangle, RefreshCw, BookOpen, TrendingUp, TrendingDown } from 'lu
 const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 
 const txTypeColor: Record<string, string> = {
+  'RECEIPT': 'text-green-600',
   'STOCK IN': 'text-green-600',
   'PURCHASE RECEIPT': 'text-blue-600',
+  'ISSUE': 'text-orange-600',
   'MATERIAL CONSUMPTION': 'text-orange-600',
   'STOCK OUT': 'text-red-600',
+  'ADJUSTMENT': 'text-purple-600',
   'STOCK ADJUSTMENT': 'text-purple-600',
   'DAMAGE': 'text-red-700',
   'RETURN': 'text-indigo-600',

@@ -79,7 +79,14 @@ export default function ColorsPage() {
       </div>
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editColor ? 'Edit Color' : 'Add Color'}>
         <div className="space-y-4">
+          {error && (
+            <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
           <FormField label="Color Name" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Navy Blue" />
+          <FormField label="Color Code" hint="Leave blank to automatically generate unique code (e.g. CLR-0002)" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="e.g. CLR-0002" />
           <FormField label="Hex Code">
             <div className="flex gap-2 items-center">
               <input type="color" className="w-8 h-8 rounded border border-slate-200 cursor-pointer" value={form.hex_code} onChange={e => setForm(f => ({ ...f, hex_code: e.target.value }))} />

@@ -241,16 +241,80 @@ class MastersController {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
         $hex = trim($data['hex_code'] ?? '#000000');
+        if ($hex !== '' && !str_starts_with($hex, '#')) {
+            $hex = '#' . $hex;
+        }
+        $inputCode = trim($data['code'] ?? '');
+
         if (empty($name)) {
             Response::error("Color name is required", 422);
             return;
         }
+
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->prepare("INSERT INTO colors (name, hex_code) VALUES (?, ?)");
-            $stmt->execute([$name, $hex]);
-            Response::success(['id' => (int)$pdo->lastInsertId()], "Color created", 201);
+            $pdo->beginTransaction();
+
+            $code = $inputCode;
+            if ($code !== '') {
+                // Check if manually provided code already exists
+                $dupCheck = $pdo->prepare("SELECT id FROM colors WHERE code = ?");
+                $dupCheck->execute([$code]);
+                if ($dupCheck->fetch()) {
+                    $pdo->rollBack();
+                    Response::error("Color code '{$code}' already exists. Please choose a different code.", 422);
+                    return;
+                }
+            } else {
+                // Auto-generate unique code in CLR-0001, CLR-0002... format
+                $stmtMax = $pdo->query("
+                    SELECT code FROM colors 
+                    WHERE code LIKE 'CLR-%' 
+                    ORDER BY CAST(SUBSTRING(code, 5) AS UNSIGNED) DESC 
+                    LIMIT 1 
+                    FOR UPDATE
+                ");
+                $maxCode = $stmtMax ? $stmtMax->fetchColumn() : null;
+                $nextNum = 1;
+                if ($maxCode && preg_match('/^CLR-(\d+)$/', (string)$maxCode, $m)) {
+                    $nextNum = ((int)$m[1]) + 1;
+                } else {
+                    $cnt = (int)$pdo->query("SELECT COUNT(*) FROM colors")->fetchColumn();
+                    $nextNum = max(1, $cnt + 1);
+                }
+
+                // Check and increment until an unused code is found
+                do {
+                    $code = sprintf('CLR-%04d', $nextNum);
+                    $checkStmt = $pdo->prepare("SELECT id FROM colors WHERE code = ?");
+                    $checkStmt->execute([$code]);
+                    $exists = (bool)$checkStmt->fetchColumn();
+                    if ($exists) {
+                        $nextNum++;
+                    }
+                } while ($exists);
+            }
+
+            $stmt = $pdo->prepare("INSERT INTO colors (code, name, hex_code) VALUES (?, ?, ?)");
+            $stmt->execute([$code, $name, $hex]);
+            $id = (int)$pdo->lastInsertId();
+
+            $pdo->commit();
+            AuditLogger::log('Colors', 'CREATE', $id, null, ['code' => $code, 'name' => $name, 'hex_code' => $hex]);
+            Response::success([
+                'id' => $id,
+                'code' => $code,
+                'name' => $name,
+                'hex_code' => $hex
+            ], "Color created successfully", 201);
         } catch (Exception $e) {
+            if (isset($pdo) && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            if (str_contains($e->getMessage(), '1062 Duplicate entry')) {
+                Response::error("Duplicate color entry detected. Code must be unique.", 422);
+                return;
+            }
             Response::error($e->getMessage(), 500);
         }
     }

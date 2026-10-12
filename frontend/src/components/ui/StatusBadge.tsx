@@ -27,7 +27,10 @@ const statusMap: Record<string, string> = {
 
   // Payment
   'Not Paid': 'bg-red-50 text-red-700 border-red-200',
+  'Unpaid': 'bg-slate-100 text-slate-700 border-slate-300',
   'Partially Paid': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Settled': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Overdue': 'bg-red-50 text-red-700 border-red-200',
   'Paid': 'bg-green-50 text-green-700 border-green-200',
 
   // Priority

@@ -7,6 +7,20 @@
  * Enforces production-grade page break controls and section integrity.
  */
 export function printHtmlElement(element: HTMLElement, title = 'Cheran ERP - Purchase Order') {
+  const originalTitle = document.title;
+  try {
+    // Set main document title to requested title (PO Number) so browser's Save As PDF uses it as suggested filename
+    if (title) {
+      document.title = title;
+    }
+  } catch {}
+
+  const restoreTitle = () => {
+    try {
+      document.title = originalTitle;
+    } catch {}
+  };
+
   try {
     // Remove any existing print iframe
     const oldFrame = document.getElementById('csg-print-frame');
@@ -31,6 +45,7 @@ export function printHtmlElement(element: HTMLElement, title = 'Cheran ERP - Pur
     if (!pri) {
       // Fallback to window.print if iframe window not accessible
       window.print();
+      restoreTitle();
       return;
     }
 
@@ -141,15 +156,24 @@ export function printHtmlElement(element: HTMLElement, title = 'Cheran ERP - Pur
 
     // Give browser time to load styles, webfonts and images inside the iframe
     setTimeout(() => {
-      pri.focus();
-      pri.print();
-      // Remove iframe after print dialog opens
-      setTimeout(() => {
-        iframe.remove();
-      }, 2000);
+      try {
+        pri.focus();
+        pri.print();
+      } catch (printErr) {
+        console.error('Error invoking print:', printErr);
+      } finally {
+        // Listen to afterprint or restore after timeout
+        pri.addEventListener('afterprint', restoreTitle, { once: true });
+        window.addEventListener('afterprint', restoreTitle, { once: true });
+        setTimeout(() => {
+          restoreTitle();
+          iframe.remove();
+        }, 2000);
+      }
     }, 450);
   } catch (err) {
     console.error('Print utility error:', err);
     window.print();
+    restoreTitle();
   }
 }

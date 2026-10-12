@@ -8,6 +8,7 @@ interface Props {
   title: string;
   subtitle?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
+  className?: string;
   children: ReactNode;
   footer?: ReactNode;
 }
@@ -20,10 +21,10 @@ const sizes: Record<string, string> = {
   '2xl': 'max-w-4xl',
   '3xl': 'max-w-5xl',
   '4xl': 'max-w-6xl',
-  full: 'max-w-[96vw]'
+  full: 'max-w-[94vw]'
 };
 
-export default function Modal({ open, onClose, title, subtitle, size = 'md', children, footer }: Props) {
+export default function Modal({ open, onClose, title, subtitle, size = 'md', className = '', children, footer }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     if (open) document.addEventListener('keydown', handler);
@@ -33,9 +34,9 @@ export default function Modal({ open, onClose, title, subtitle, size = 'md', chi
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className={`relative w-full ${sizes[size]} bg-white rounded-lg shadow-2xl flex flex-col max-h-[90vh]`}>
+      <div className={`relative w-full ${sizes[size] || 'max-w-md'} ${className} bg-white rounded-lg shadow-2xl flex flex-col max-h-[92vh]`}>
         <div className="flex items-start justify-between px-5 py-4 border-b border-slate-200">
           <div>
             <h2 className="text-sm font-semibold text-slate-800">{title}</h2>
