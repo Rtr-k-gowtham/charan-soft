@@ -568,12 +568,57 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, newSup, 'Supplier added', 201);
     }
 
-    if (pathname === '/customers' && method === 'GET') return sendSuccess(res, db.customers);
-    if (pathname === '/customers' && method === 'POST') {
-      const newCust = { id: db.customers.length + 1, code: body.code || `CUST-00${db.customers.length + 1}`, ...body };
+    if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
+    if ((pathname === '/customers' || pathname === '/buyers') && method === 'POST') {
+      const newCust = { id: db.customers.length + 1, code: body.code || `BUY-00${db.customers.length + 1}`, ...body };
       db.customers.push(newCust);
       saveDB();
-      return sendSuccess(res, newCust, 'Customer added', 201);
+      return sendSuccess(res, newCust, 'Buyer added', 201);
+    }
+
+    // Buyer Products
+    const bpGetMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products$/);
+    if (bpGetMatch && method === 'GET') {
+      const buyerId = Number(bpGetMatch[1]);
+      if (!db.buyer_products) db.buyer_products = [];
+      const prods = db.buyer_products.filter(p => p.buyer_id === buyerId);
+      return sendSuccess(res, prods);
+    }
+    const bpPostMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products$/);
+    if (bpPostMatch && method === 'POST') {
+      const buyerId = Number(bpPostMatch[1]);
+      if (!db.buyer_products) db.buyer_products = [];
+      const newBp = {
+        id: db.buyer_products.length + 1,
+        buyer_id: buyerId,
+        product_code: body.product_code || `BPRD-00${db.buyer_products.length + 1}`,
+        created_at: new Date().toISOString().split('T')[0],
+        ...body,
+      };
+      db.buyer_products.push(newBp);
+      saveDB();
+      return sendSuccess(res, newBp, 'Buyer product created', 201);
+    }
+    const bpPutMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products\/(\d+)$/);
+    if (bpPutMatch && method === 'PUT') {
+      const buyerId = Number(bpPutMatch[1]);
+      const prodId = Number(bpPutMatch[2]);
+      if (!db.buyer_products) db.buyer_products = [];
+      const idx = db.buyer_products.findIndex(p => p.buyer_id === buyerId && p.id === prodId);
+      if (idx === -1) return sendError(res, 'Buyer product not found', 404);
+      db.buyer_products[idx] = { ...db.buyer_products[idx], ...body, buyer_id: buyerId, id: prodId, updated_at: new Date().toISOString().split('T')[0] };
+      saveDB();
+      return sendSuccess(res, db.buyer_products[idx], 'Buyer product updated');
+    }
+    const bpDelMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products\/(\d+)$/);
+    if (bpDelMatch && method === 'DELETE') {
+      const buyerId = Number(bpDelMatch[1]);
+      const prodId = Number(bpDelMatch[2]);
+      if (db.buyer_products) {
+        db.buyer_products = db.buyer_products.filter(p => !(p.buyer_id === buyerId && p.id === prodId));
+        saveDB();
+      }
+      return sendSuccess(res, null, 'Buyer product deleted');
     }
 
     // 7. Inventory & Ledger

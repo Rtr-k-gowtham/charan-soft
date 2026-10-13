@@ -31,7 +31,7 @@ import ProductionStageView from './pages/production/ProductionStageView';
 // Masters
 import Products from './pages/masters/Products';
 import Suppliers from './pages/masters/Suppliers';
-import Customers from './pages/masters/Customers';
+import Buyers from './pages/masters/Buyers';
 import Categories from './pages/masters/Categories';
 import ColorsPage from './pages/masters/ColorsPage';
 import SizesPage from './pages/masters/SizesPage';
@@ -105,7 +105,8 @@ function AppRoutes() {
               <Route path="/masters/materials" element={<Materials />} />
               <Route path="/masters/categories" element={<Categories />} />
               <Route path="/masters/suppliers" element={<Suppliers />} />
-              <Route path="/masters/customers" element={<Customers />} />
+              <Route path="/masters/buyers" element={<Buyers />} />
+              <Route path="/masters/customers" element={<Buyers />} />
               <Route path="/masters/colors" element={<ColorsPage />} />
               <Route path="/masters/sizes" element={<SizesPage />} />
               <Route path="/masters/units" element={<UnitsPage />} />

@@ -346,11 +346,11 @@ export default function CreateProductionOrder() {
 
               <FormField
                 as="select"
-                label="Customer"
+                label="Buyer"
                 value={form.customer_id}
                 onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}
               >
-                <option value="">— Select Customer (Optional) —</option>
+                <option value="">— Select Buyer (Optional) —</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.code ? `(${c.code})` : ''}

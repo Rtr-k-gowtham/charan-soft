@@ -186,7 +186,7 @@ export default function ProductionBoard() {
         } else {
           // If stage id not directly in map, attempt to match by stage name or sequence
           const matchedStage = stages.find(s =>
-            (it.current_stage_name && s.name.toLowerCase() === it.current_stage_name.toLowerCase()) ||
+            (it.current_stage_name && (s.name || '').toLowerCase() === (it.current_stage_name || '').toLowerCase()) ||
             s.id === stageId
           );
           if (matchedStage && map.has(matchedStage.id)) {

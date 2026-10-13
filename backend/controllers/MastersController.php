@@ -225,6 +225,80 @@ class MastersController {
     }
 
     // -------------------------------------------------------------
+    // BUYER PRODUCTS & PACKING
+    // -------------------------------------------------------------
+    private function getStoreData(): array {
+        $storeFile = __DIR__ . '/../data/store.json';
+        if (file_exists($storeFile)) {
+            $json = json_decode(file_get_contents($storeFile), true);
+            if (is_array($json)) return $json;
+        }
+        return [];
+    }
+
+    private function saveStoreData(array $data): void {
+        $storeFile = __DIR__ . '/../data/store.json';
+        file_put_contents($storeFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    public function getBuyerProducts(int $buyerId): void {
+        $db = $this->getStoreData();
+        $buyerProducts = $db['buyer_products'] ?? [];
+        $filtered = array_values(array_filter($buyerProducts, fn($p) => (int)($p['buyer_id'] ?? 0) === $buyerId));
+        Response::success($filtered);
+    }
+
+    public function createBuyerProduct(int $buyerId): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $db = $this->getStoreData();
+        if (!isset($db['buyer_products'])) $db['buyer_products'] = [];
+
+        $newId = count($db['buyer_products']) + 1;
+        $newProduct = array_merge([
+            'id' => $newId,
+            'buyer_id' => $buyerId,
+            'product_code' => $data['product_code'] ?? ('BPRD-' . str_pad((string)$newId, 3, '0', STR_PAD_LEFT)),
+            'created_at' => date('Y-m-d')
+        ], $data);
+
+        $db['buyer_products'][] = $newProduct;
+        $this->saveStoreData($db);
+        Response::success($newProduct, "Buyer product created successfully", 201);
+    }
+
+    public function updateBuyerProduct(int $buyerId, int $productId): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $db = $this->getStoreData();
+        if (!isset($db['buyer_products'])) $db['buyer_products'] = [];
+
+        foreach ($db['buyer_products'] as &$p) {
+            if ((int)($p['buyer_id'] ?? 0) === $buyerId && (int)($p['id'] ?? 0) === $productId) {
+                $p = array_merge($p, $data, [
+                    'id' => $productId,
+                    'buyer_id' => $buyerId,
+                    'updated_at' => date('Y-m-d')
+                ]);
+                $this->saveStoreData($db);
+                Response::success($p, "Buyer product updated successfully");
+                return;
+            }
+        }
+        Response::error("Buyer product not found", 404);
+    }
+
+    public function deleteBuyerProduct(int $buyerId, int $productId): void {
+        $db = $this->getStoreData();
+        if (isset($db['buyer_products'])) {
+            $db['buyer_products'] = array_values(array_filter(
+                $db['buyer_products'],
+                fn($p) => !((int)($p['buyer_id'] ?? 0) === $buyerId && (int)($p['id'] ?? 0) === $productId)
+            ));
+            $this->saveStoreData($db);
+        }
+        Response::success(null, "Buyer product deleted successfully");
+    }
+
+    // -------------------------------------------------------------
     // COLORS, SIZES, UNITS, DESIGNS
     // -------------------------------------------------------------
     public function getColors(): void {

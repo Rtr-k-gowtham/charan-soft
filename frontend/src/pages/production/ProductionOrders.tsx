@@ -133,6 +133,7 @@ export default function ProductionOrders() {
           const pendingQty = Math.max(0, totalQty - completedQty);
           const pct = totalQty > 0 ? Math.min(100, Math.round((completedQty / totalQty) * 100)) : 0;
 
+<<<<<<< HEAD
           return (
             <div
               key={ord.id}
@@ -163,6 +164,18 @@ export default function ProductionOrders() {
                     <Eye className="w-3.5 h-3.5" />
                     <span>View</span>
                   </button>
+=======
+            {/* Buyer & progress */}
+            <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-50/50 border-b border-slate-100">
+              <span className="text-[10px] text-slate-500">Buyer: <span className="font-medium text-slate-700">{ord.customer_name || '—'}</span></span>
+              <span className="text-[10px] text-slate-500">Total: <span className="font-semibold">{ord.total_quantity} pcs</span></span>
+              <span className="text-[10px] text-green-600 font-semibold">Completed: {ord.completed_quantity}</span>
+              <span className="text-[10px] text-orange-600 font-semibold">Pending: {ord.total_quantity - ord.completed_quantity}</span>
+              {/* Progress bar */}
+              <div className="flex-1 max-w-xs ml-auto hidden sm:flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${Math.round((ord.completed_quantity / ord.total_quantity) * 100)}%` }} />
+>>>>>>> origin/main
                 </div>
               </div>
 
@@ -336,7 +349,7 @@ export default function ProductionOrders() {
                   <span className="font-semibold text-slate-800 break-words">{viewOrder.title}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Customer</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider mb-0.5">Buyer / Customer</span>
                   <span className="font-medium text-slate-700">{viewOrder.customer_name || 'Direct / None'}</span>
                 </div>
                 <div>
@@ -471,6 +484,7 @@ export default function ProductionOrders() {
           </div>
         </Modal>
       )}
+
 
       {/* Move Stage Modal */}
       <Modal
