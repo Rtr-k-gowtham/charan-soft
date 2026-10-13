@@ -1084,5 +1084,103 @@
     "gstin": "33AABCC1234F1Z5",
     "currency": "INR",
     "financial_year_start": "04-01"
-  }
+  },
+  "buyer_products": [
+    {
+      "id": 1,
+      "buyer_id": 1,
+      "product_name": "Bio-Washed Crew Neck T-Shirt",
+      "product_code": "BPRD-001",
+      "uom": "Pieces",
+      "notes": "180 GSM single jersey with ribbed collar and double needle stitching.",
+      "image_url": "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=400&auto=format&fit=crop&q=80",
+      "dimensions": {
+        "length": 30,
+        "width": 20,
+        "height": 2,
+        "unit": "cm",
+        "calculated_volume_cm3": 1200,
+        "calculated_volume_m3": 0.0012,
+        "weight_grams": 180
+      },
+      "components": [
+        {
+          "id": "c1",
+          "name": "100% Combed Cotton 30s Single Jersey",
+          "category": "Fabric",
+          "uom": "Meter",
+          "quantity_per_product": 1.5,
+          "wastage_percent": 5,
+          "notes": "Body fabric"
+        },
+        {
+          "id": "c2",
+          "name": "1x1 Cotton Rib Neck Binding",
+          "category": "Fabric",
+          "uom": "Meter",
+          "quantity_per_product": 0.15,
+          "wastage_percent": 4,
+          "notes": "Neckband"
+        },
+        {
+          "id": "c3",
+          "name": "Sewing Thread 40/2 White",
+          "category": "Thread",
+          "uom": "Meter",
+          "quantity_per_product": 25,
+          "wastage_percent": 8,
+          "notes": "Overlock and flatlock"
+        },
+        {
+          "id": "c4",
+          "name": "Zudio Brand Main Neck Label",
+          "category": "Label",
+          "uom": "Piece",
+          "quantity_per_product": 1,
+          "wastage_percent": 2,
+          "notes": "Centered at back neck"
+        },
+        {
+          "id": "c5",
+          "name": "Recyclable Garment Polybag (12x16 inch)",
+          "category": "Packaging",
+          "uom": "Piece",
+          "quantity_per_product": 1,
+          "wastage_percent": 2,
+          "notes": "Single garment polybag"
+        }
+      ],
+      "boxes": [
+        {
+          "id": "b1",
+          "box_name": "Medium Export Carton",
+          "box_code": "BOX-EXP-M",
+          "length": 60,
+          "width": 40,
+          "height": 40,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 96000,
+          "calculated_volume_m3": 0.096,
+          "items_per_box": 20,
+          "max_packing_qty": 24,
+          "notes": "Standard 5-ply export corrugated carton"
+        },
+        {
+          "id": "b2",
+          "box_name": "Large Master Shipper",
+          "box_code": "BOX-EXP-L",
+          "length": 65,
+          "width": 45,
+          "height": 50,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 146250,
+          "calculated_volume_m3": 0.14625,
+          "items_per_box": 40,
+          "max_packing_qty": 45,
+          "notes": "7-ply container freight master box"
+        }
+      ],
+      "created_at": "2026-02-10"
+    }
+  ]
 }

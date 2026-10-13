@@ -68,11 +68,17 @@ export const api = {
   updateProduct: (id: number, data: unknown) => request<unknown>(`/products/${id}`, 'PUT', data),
   deleteProduct: (id: number) => request<unknown>(`/products/${id}`, 'DELETE'),
 
-  // Suppliers & Customers
+  // Suppliers, Customers & Buyers
   getSuppliers: () => request<unknown[]>('/suppliers'),
   createSupplier: (data: unknown) => request<unknown>('/suppliers', 'POST', data),
   getCustomers: () => request<unknown[]>('/customers'),
   createCustomer: (data: unknown) => request<unknown>('/customers', 'POST', data),
+  getBuyers: () => request<unknown[]>('/customers'),
+  createBuyer: (data: unknown) => request<unknown>('/customers', 'POST', data),
+  getBuyerProducts: (buyerId: number | string) => request<unknown[]>(`/buyers/${buyerId}/products`),
+  createBuyerProduct: (buyerId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products`, 'POST', data),
+  updateBuyerProduct: (buyerId: number | string, productId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'PUT', data),
+  deleteBuyerProduct: (buyerId: number | string, productId: number | string) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'DELETE'),
 
   // Inventory
   getInventory: () => request<unknown[]>('/inventory'),

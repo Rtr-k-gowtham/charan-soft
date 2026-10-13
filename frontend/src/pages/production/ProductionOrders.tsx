@@ -125,9 +125,9 @@ export default function ProductionOrders() {
               </div>
             </div>
 
-            {/* Customer & progress */}
+            {/* Buyer & progress */}
             <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-50/50 border-b border-slate-100">
-              <span className="text-[10px] text-slate-500">Customer: <span className="font-medium text-slate-700">{ord.customer_name || '—'}</span></span>
+              <span className="text-[10px] text-slate-500">Buyer: <span className="font-medium text-slate-700">{ord.customer_name || '—'}</span></span>
               <span className="text-[10px] text-slate-500">Total: <span className="font-semibold">{ord.total_quantity} pcs</span></span>
               <span className="text-[10px] text-green-600 font-semibold">Completed: {ord.completed_quantity}</span>
               <span className="text-[10px] text-orange-600 font-semibold">Pending: {ord.total_quantity - ord.completed_quantity}</span>
@@ -206,8 +206,8 @@ export default function ProductionOrders() {
             <div className="sm:col-span-2">
               <FormField label="Order Title" required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. Export Queen Bed Linen Contract" />
             </div>
-            <FormField as="select" label="Customer" value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
-              <option value="">— Select Customer —</option>
+            <FormField as="select" label="Buyer" value={form.customer_id} onChange={e => setForm(f => ({ ...f, customer_id: e.target.value }))}>
+              <option value="">— Select Buyer —</option>
               {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </FormField>
             <FormField as="select" label="Priority" value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))}>
