@@ -111,12 +111,12 @@ try {
         $r0 === 'suppliers' && $method === 'GET' => (new MastersController)->getSuppliers(),
         $r0 === 'suppliers' && $method === 'POST' => (new MastersController)->createSupplier(),
 
-        ($r0 === 'customers' || $r0 === 'buyers') && $method === 'GET' => (new MastersController)->getCustomers(),
-        ($r0 === 'customers' || $r0 === 'buyers') && $method === 'POST' => (new MastersController)->createCustomer(),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'GET' => (new MastersController)->getBuyerProducts($id),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'POST' => (new MastersController)->createBuyerProduct($id),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'PUT' => (new MastersController)->updateBuyerProduct($id, (int)$segments[3]),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'DELETE' => (new MastersController)->deleteBuyerProduct($id, (int)$segments[3]),
+        ($r0 === 'customers' || $r0 === 'buyers') && $method === 'GET' && !$id => (new MastersController)->getCustomers(),
+        ($r0 === 'customers' || $r0 === 'buyers') && $method === 'POST' && !$id => (new MastersController)->createCustomer(),
 
         $r0 === 'colors' && $method === 'GET' => (new MastersController)->getColors(),
         $r0 === 'colors' && $method === 'POST' => (new MastersController)->createColor(),

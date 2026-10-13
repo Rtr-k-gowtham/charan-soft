@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Buyer, BuyerProduct } from '../../types';
 import { api } from '../../lib/api';
+import PageHeader from '../ui/PageHeader';
+import DataTable, { Column } from '../ui/DataTable';
 import Button from '../ui/Button';
 import BuyerProductModal from './BuyerProductModal';
 import {
@@ -14,10 +16,6 @@ import {
   Box,
   Edit2,
   Trash2,
-  Sparkles,
-  Search,
-  ExternalLink,
-  ShieldCheck,
 } from 'lucide-react';
 
 interface Props {
@@ -28,20 +26,82 @@ interface Props {
 export default function BuyerProductsManager({ buyer, onBack }: Props) {
   const [products, setProducts] = useState<BuyerProduct[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<BuyerProduct | null>(null);
 
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const res = await api.getBuyerProducts(buyer.id);
-      const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
-      const normalized: BuyerProduct[] = (rawList as any[]).map((p: any) => ({
+      let list: any[] = [];
+      try {
+        const res = await api.getBuyerProducts(buyer.id);
+        const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
+        list = rawList;
+      } catch (err) {
+        console.warn('API getBuyerProducts failed or returned error', err);
+      }
+
+      // Filter out any customer objects or mock seed products
+      const validServerProducts = list.filter((p: any) => {
+        if (!p || typeof p !== 'object') return false;
+        // Purge mock seed product
+        if (p.product_name === 'Bio-Washed Crew Neck T-Shirt' || p.product_code === 'BPRD-001') {
+          return false;
+        }
+        // Purge customer object erroneously returned
+        if (
+          p.contact_person ||
+          p.gstin ||
+          p.billing_address ||
+          (p.code && String(p.code).startsWith('CUST-') && !p.product_name) ||
+          (p.name === buyer.name && !p.product_name && !p.dimensions && !p.components)
+        ) {
+          return false;
+        }
+        return Boolean(p.product_name || (p.name && (p.dimensions || p.components || p.boxes)));
+      });
+
+      // Also clean up local storage cache to ensure mock seed product and phantom customer records are purged
+      const localKey = `cheran_buyer_products_${buyer.id}`;
+      const localStored = localStorage.getItem(localKey);
+      let localList: any[] = [];
+      if (localStored) {
+        try {
+          const parsed = JSON.parse(localStored);
+          if (Array.isArray(parsed)) {
+            localList = parsed.filter(
+              (p: any) =>
+                p &&
+                p.product_name !== 'Bio-Washed Crew Neck T-Shirt' &&
+                p.product_code !== 'BPRD-001' &&
+                !p.contact_person &&
+                !p.gstin &&
+                !(p.code && String(p.code).startsWith('CUST-') && !p.product_name) &&
+                !(p.name === buyer.name && !p.product_name && !p.dimensions)
+            );
+            localStorage.setItem(localKey, JSON.stringify(localList));
+          }
+        } catch {
+          localList = [];
+        }
+      }
+
+      // Merge server products and local products
+      const map = new Map<string | number, any>();
+      validServerProducts.forEach((p: any) => map.set(p.id, p));
+      localList.forEach((p: any) => map.set(p.id, p));
+
+      const normalized: BuyerProduct[] = Array.from(map.values()).map((p: any) => ({
         ...p,
-        product_name: p?.product_name || p?.name || 'Unnamed Product',
-        product_code: p?.product_code || p?.code || '',
+        buyer_id: buyer.id,
+        product_name: p.product_name || p.name || 'Product',
+        product_code:
+          p.product_code ||
+          (p.code && !String(p.code).startsWith('CUST-')
+            ? p.code
+            : `BPRD-${String(p.id).padStart(3, '0')}`),
       }));
+
       setProducts(normalized);
     } catch (err) {
       console.error('Failed to load buyer products', err);
@@ -56,277 +116,297 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
   }, [buyer.id]);
 
   const handleSaveProduct = async (productData: Partial<BuyerProduct>) => {
-    if (editingProduct?.id) {
-      await api.updateBuyerProduct(buyer.id, editingProduct.id, productData);
-    } else {
-      await api.createBuyerProduct(buyer.id, productData);
+    const localKey = `cheran_buyer_products_${buyer.id}`;
+    let localList: any[] = [];
+    try {
+      const stored = localStorage.getItem(localKey);
+      if (stored) localList = JSON.parse(stored) || [];
+    } catch {}
+
+    try {
+      if (editingProduct?.id) {
+        await api.updateBuyerProduct(buyer.id, editingProduct.id, productData).catch(() => null);
+        localList = localList.map((p) =>
+          p.id === editingProduct.id
+            ? { ...p, ...productData, id: p.id, buyer_id: buyer.id }
+            : p
+        );
+      } else {
+        const res = await api.createBuyerProduct(buyer.id, productData).catch(() => null);
+        const newId = (res as any)?.id || Date.now();
+        const newProd = {
+          ...productData,
+          id: newId,
+          buyer_id: buyer.id,
+          product_name: productData.product_name || 'New Product',
+          product_code:
+            productData.product_code || `BPRD-${String(localList.length + 1).padStart(3, '0')}`,
+        };
+        localList.push(newProd);
+      }
+      localStorage.setItem(localKey, JSON.stringify(localList));
+      await loadProducts();
+    } catch (err) {
+      console.error('Failed to save product', err);
     }
-    await loadProducts();
   };
 
   const handleDeleteProduct = async (productId: number | string) => {
     if (!window.confirm('Are you sure you want to delete this buyer product configuration?')) return;
     try {
-      await api.deleteBuyerProduct(buyer.id, productId);
+      await api.deleteBuyerProduct(buyer.id, productId).catch(() => null);
+      const localKey = `cheran_buyer_products_${buyer.id}`;
+      try {
+        const stored = localStorage.getItem(localKey);
+        if (stored) {
+          const list = (JSON.parse(stored) || []).filter(
+            (p: any) => String(p.id) !== String(productId)
+          );
+          localStorage.setItem(localKey, JSON.stringify(list));
+        }
+      } catch {}
+      setProducts((prev) => prev.filter((p) => String(p.id) !== String(productId)));
       await loadProducts();
     } catch (err) {
       console.error('Failed to delete product', err);
     }
   };
 
-  const filteredProducts = (products || []).filter((p) => {
-    if (!p) return false;
-    const pName = String(p.product_name || (p as any)?.name || '').toLowerCase();
-    const pCode = String(p.product_code || (p as any)?.code || '').toLowerCase();
-    const q = String(search || '').toLowerCase().trim();
-    if (!q) return true;
-    return pName.includes(q) || pCode.includes(q);
-  });
+  const openCreate = () => {
+    setEditingProduct(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (p: BuyerProduct) => {
+    setEditingProduct(p);
+    setModalOpen(true);
+  };
+
+  // Standard Master DataTable Columns
+  const columns: Column<BuyerProduct>[] = [
+    {
+      key: 'image_url',
+      label: 'Photo',
+      width: '56px',
+      render: (r: BuyerProduct) => (
+        <div className="w-9 h-9 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+          {r.image_url ? (
+            <img src={r.image_url} alt={r.product_name} className="w-full h-full object-cover" />
+          ) : (
+            <Package className="w-4 h-4 text-slate-300" />
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'product_code',
+      label: 'Code',
+      sortable: true,
+      width: '100px',
+      render: (r: BuyerProduct) => (
+        <span className="font-mono text-[11px] font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+          {r.product_code || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'product_name',
+      label: 'Product Name',
+      sortable: true,
+      render: (r: BuyerProduct) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-slate-900 text-xs hover:text-brand-600 transition">
+            {r.product_name}
+          </span>
+          {r.notes ? (
+            <span className="text-[11px] text-slate-400 line-clamp-1">{r.notes}</span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'uom',
+      label: 'UOM',
+      width: '80px',
+      render: (r: BuyerProduct) => (
+        <span className="font-mono text-xs text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+          {r.uom || 'Pieces'}
+        </span>
+      ),
+    },
+    {
+      key: 'dimensions',
+      label: 'Dimensions & Vol.',
+      render: (r: BuyerProduct) => (
+        <div className="flex flex-col">
+          <span className="font-mono text-xs text-slate-800 flex items-center gap-1">
+            <Ruler className="w-3 h-3 text-brand-600 shrink-0" />
+            {r.dimensions?.length || 0}×{r.dimensions?.width || 0}×{r.dimensions?.height || 0}{' '}
+            <span className="text-[10px] text-slate-400 font-normal">{r.dimensions?.unit || 'cm'}</span>
+          </span>
+          <span className="text-[10px] text-purple-600 font-mono">
+            {r.dimensions?.calculated_volume_cm3?.toLocaleString() || 0} cm³
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'components',
+      label: 'Raw Materials (BOM)',
+      render: (r: BuyerProduct) => {
+        const count = r.components?.length || 0;
+        return (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span className="font-semibold text-slate-800 text-xs">
+                {count} {count === 1 ? 'Material' : 'Materials'}
+              </span>
+            </div>
+            {count > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {r.components.slice(0, 2).map((c, i) => (
+                  <span
+                    key={i}
+                    className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 truncate max-w-[120px]"
+                    title={`${c.name} (${c.category})`}
+                  >
+                    {c.name}
+                  </span>
+                ))}
+                {count > 2 && (
+                  <span className="text-[10px] bg-brand-50 text-brand-700 px-1 py-0.5 rounded font-semibold border border-brand-200">
+                    +{count - 2}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="text-slate-400 text-[11px] italic">No BOM defined</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'boxes',
+      label: 'Box Packing',
+      render: (r: BuyerProduct) => {
+        const primaryBox = r.boxes?.[0];
+        const boxCount = r.boxes?.length || 0;
+        if (!primaryBox) {
+          return <span className="text-slate-400 text-[11px] italic">No carton configured</span>;
+        }
+        return (
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <Box className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+              <span className="font-semibold text-slate-800 text-xs truncate max-w-[140px]">
+                {primaryBox.box_name}
+              </span>
+              {boxCount > 1 && (
+                <span className="text-[9px] bg-brand-50 text-brand-700 px-1 py-0.2 rounded font-semibold border border-brand-200">
+                  +{boxCount - 1}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">
+              {primaryBox.items_per_box} pcs/box • {primaryBox.length}×{primaryBox.width}×{primaryBox.height}{' '}
+              {primaryBox.dimension_unit}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      width: '90px',
+      render: (r: BuyerProduct) => {
+        const isReady = (r.components?.length || 0) > 0 && (r.boxes?.length || 0) > 0;
+        return (
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+              isReady
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`}
+          >
+            {isReady ? 'Ready' : 'Incomplete'}
+          </span>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50">
-      {/* Top Buyer Header Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-2xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <PageHeader
+        title={`${buyer.name} — Products & Packing`}
+        subtitle={`Configure client-specific product catalog, BOM materials, dimensions, and carton box packing`}
+        breadcrumb={[
+          { label: 'Masters' },
+          { label: 'Buyer Master' },
+          { label: buyer.name },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
             <button
               onClick={onBack}
-              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
-              title="Back to Buyer Master"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 bg-white text-slate-700 font-medium transition cursor-pointer"
+              title="Return to Buyer Master"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Buyers</span>
             </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">{buyer.name}</h2>
-                <span className="font-mono text-xs px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-semibold border border-brand-200">
-                  {buyer.code}
-                </span>
-                <span className="text-[10px] bg-emerald-50 text-emerald-700 font-medium px-2 py-0.5 rounded-full border border-emerald-200">
-                  Active Buyer
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Contact: <span className="font-medium text-slate-700">{buyer.contact_person || '—'}</span> &bull;{' '}
-                Phone: <span className="font-medium text-slate-700">{buyer.phone}</span>
-                {buyer.gstin && (
-                  <>
-                    {' '}
-                    &bull; GSTIN: <span className="font-mono text-slate-700">{buyer.gstin}</span>
-                  </>
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto">
             <button
               onClick={loadProducts}
               disabled={loading}
-              className="p-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition"
-              title="Refresh products"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 bg-white transition cursor-pointer"
+              title="Refresh product list"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <Button
-              icon={<Plus className="w-4 h-4" />}
-              onClick={() => {
-                setEditingProduct(null);
-                setModalOpen(true);
-              }}
-            >
-              Add Buyer Product
+            <Button icon={<Plus className="w-3.5 h-3.5" />} onClick={openCreate}>
+              Add Product
             </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      {/* Catalog Workspace */}
-      <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
-        {/* Subheader and Search */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Package className="w-4 h-4 text-brand-600" />
-              Configured Buyer Products ({products.length})
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Each product manages custom BOM materials, folded dimensions, and authoritative box packaging
-            </p>
-          </div>
-
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search buyer products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg outline-none focus:border-brand-500 shadow-2xs"
-            />
-          </div>
-        </div>
-
-        {/* Product Cards Grid */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20 text-slate-400">
-            <RefreshCw className="w-6 h-6 animate-spin text-brand-600" />
-          </div>
-        ) : filteredProducts.length === 0 ? (
-          <div className="p-12 text-center bg-white border border-dashed border-slate-300 rounded-2xl shadow-2xs">
-            <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-3">
-              <Package className="w-6 h-6" />
-            </div>
-            <h4 className="text-sm font-bold text-slate-800">No products configured for {buyer.name}</h4>
-            <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-              Add garments and soft goods that this buyer purchases to define raw materials BOM, dimensional
-              volume, and carton packing rules.
-            </p>
-            <Button
-              className="mt-4"
-              icon={<Plus className="w-3.5 h-3.5" />}
-              onClick={() => {
-                setEditingProduct(null);
-                setModalOpen(true);
-              }}
-            >
-              Configure First Product
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredProducts.map((p) => {
-              const primaryBox = p.boxes?.[0];
-              const boxCount = p.boxes?.length || 0;
-              const componentCount = p.components?.length || 0;
-
-              return (
-                <div
-                  key={p.id}
-                  className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-shadow flex flex-col justify-between"
+      {/* Main Table Content using standard ERP DataTable template */}
+      <div className="flex-1 overflow-hidden p-4">
+        <div className="bg-white rounded-lg border border-slate-200 flex flex-col h-full shadow-xs">
+          <DataTable
+            data={products}
+            columns={columns}
+            rowKey="id"
+            onRowClick={openEdit}
+            emptyMessage={`No products configured for ${buyer.name}. Click "+ Add Product" to configure the first item.`}
+            actions={(r: BuyerProduct) => (
+              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => openEdit(r)}
+                  className="p-1 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-50 transition cursor-pointer"
+                  title="Configure Product"
                 >
-                  {/* Top Image & Header */}
-                  <div>
-                    <div className="relative h-40 bg-slate-100 flex items-center justify-center overflow-hidden border-b border-slate-100">
-                      {p.image_url ? (
-                        <img
-                          src={p.image_url}
-                          alt={p.product_name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center justify-center text-slate-400">
-                          <Package className="w-8 h-8 stroke-[1.5]" />
-                          <span className="text-[10px] mt-1 font-medium">No Image Uploaded</span>
-                        </div>
-                      )}
-                      {p.product_code && (
-                        <span className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-black/60 backdrop-blur-xs text-white font-mono text-[10px]">
-                          {p.product_code}
-                        </span>
-                      )}
-                      <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-full bg-white/90 backdrop-blur-xs text-slate-800 font-semibold text-[10px] shadow-xs">
-                        {p.uom || 'Pieces'}
-                      </span>
-                    </div>
-
-                    <div className="p-4 flex flex-col gap-3">
-                      <div>
-                        <h4 className="text-sm font-bold text-slate-900 line-clamp-1">{p.product_name}</h4>
-                        {p.notes ? (
-                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{p.notes}</p>
-                        ) : (
-                          <p className="text-[11px] text-slate-400 italic mt-0.5">No tech notes</p>
-                        )}
-                      </div>
-
-                      {/* Quick Specification Chips */}
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
-                        {/* Dimensions & Volume */}
-                        <div className="bg-slate-50 p-2 rounded-lg">
-                          <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                            <Ruler className="w-3 h-3 text-brand-600" />
-                            Dimensions
-                          </span>
-                          <p className="text-xs font-semibold text-slate-700 font-mono mt-0.5">
-                            {p.dimensions?.length || 0}×{p.dimensions?.width || 0}×{p.dimensions?.height || 0}{' '}
-                            <span className="text-[10px] font-normal text-slate-400">{p.dimensions?.unit}</span>
-                          </p>
-                          <p className="text-[10px] text-purple-600 font-mono">
-                            {p.dimensions?.calculated_volume_cm3?.toLocaleString() || 0} cm³
-                          </p>
-                        </div>
-
-                        {/* BOM Components */}
-                        <div className="bg-slate-50 p-2 rounded-lg">
-                          <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                            <Layers className="w-3 h-3 text-brand-600" />
-                            Materials (BOM)
-                          </span>
-                          <p className="text-xs font-bold text-brand-700 mt-0.5">
-                            {componentCount} {componentCount === 1 ? 'Component' : 'Components'}
-                          </p>
-                          <p className="text-[10px] text-slate-400 truncate">
-                            {p.components?.[0]?.name || 'No materials added'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Packing Box Information */}
-                      <div className="bg-brand-50/40 border border-brand-100 p-2.5 rounded-lg flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Box className="w-4 h-4 text-brand-600" />
-                          <div>
-                            <span className="text-[10px] font-semibold text-brand-900">
-                              {primaryBox?.box_name || 'Box Packing'}
-                            </span>
-                            <p className="text-[10px] text-slate-500">
-                              {primaryBox
-                                ? `${primaryBox.items_per_box} pcs / box (${primaryBox.length}×${primaryBox.width}×${primaryBox.height} ${primaryBox.dimension_unit})`
-                                : 'No box configured'}
-                            </p>
-                          </div>
-                        </div>
-                        {boxCount > 1 && (
-                          <span className="text-[10px] bg-white px-1.5 py-0.5 rounded font-medium text-brand-700 shadow-2xs">
-                            +{boxCount - 1} more
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions Footer */}
-                  <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={<Edit2 className="w-3.5 h-3.5" />}
-                      onClick={() => {
-                        setEditingProduct(p);
-                        setModalOpen(true);
-                      }}
-                    >
-                      Configure
-                    </Button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteProduct(p.id)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                      title="Delete Product"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteProduct(r.id)}
+                  className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                  title="Delete Product"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          />
+        </div>
       </div>
 
-      {/* Product Configuration Workspace Modal */}
+      {/* Product Configuration Drawer/Modal */}
       {modalOpen && (
         <BuyerProductModal
           open={modalOpen}

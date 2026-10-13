@@ -100,17 +100,18 @@ export type Customer = Buyer;
 // ==========================================
 // Buyer Master – Product & Packing Configuration Types
 // ==========================================
-export type MaterialCategory = 'Fabric' | 'Zip' | 'Button' | 'Thread' | 'Label' | 'Packaging' | 'Other';
+export type MaterialCategory = 'Fabric' | 'Zip' | 'Button' | 'Thread' | 'Label' | 'Packaging' | 'Other' | string;
 export type DimensionUnit = 'mm' | 'cm' | 'm';
 
 export interface BuyerProductComponent {
   id: string;
   material_id?: number;
+  category_id?: number;
   name: string;
   category: MaterialCategory;
   uom: string;
   quantity_per_product: number;
-  wastage_percent: number;
+  wastage_percent?: number;
   notes?: string;
 }
 
