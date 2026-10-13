@@ -250,11 +250,14 @@ export interface ProductionOrderItem {
   product_name?: string;
   product_code?: string;
   color: string;
+  color_pantone_code?: string;
+  color_hex_code?: string;
   size: string;
   total_quantity: number;
   current_stage_id: number;
   current_stage_name?: string;
   color_badge?: string;
+  stage_sequence?: number;
   current_stage_quantity: number;
   completed_quantity: number;
   rejected_quantity: number;

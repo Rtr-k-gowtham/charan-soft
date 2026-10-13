@@ -32,17 +32,57 @@ class ProductionController {
 
             foreach ($orders as &$ord) {
                 $iStmt = $pdo->prepare("
-                    SELECT poi.*, p.name as product_name, p.code as product_code, ps.name as current_stage_name, ps.color_badge
+                    SELECT poi.*, p.name as product_name, p.code as product_code, ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
+                           col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
                     FROM production_order_items poi
                     JOIN products p ON poi.product_id = p.id
                     JOIN production_stages ps ON poi.current_stage_id = ps.id
+                    LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
                     WHERE poi.production_order_id = ?
+                    ORDER BY poi.id ASC
                 ");
                 $iStmt->execute([$ord['id']]);
                 $ord['items'] = $iStmt->fetchAll();
             }
 
             Response::success($orders);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function show(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("
+                SELECT po.*, c.name as category_name, cu.name as customer_name
+                FROM production_orders po
+                JOIN categories c ON po.category_id = c.id
+                LEFT JOIN customers cu ON po.customer_id = cu.id
+                WHERE po.id = ? AND po.deleted_at IS NULL
+            ");
+            $stmt->execute([$id]);
+            $order = $stmt->fetch();
+
+            if (!$order) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            $iStmt = $pdo->prepare("
+                SELECT poi.*, p.name as product_name, p.code as product_code, ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
+                       col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
+                    FROM production_order_items poi
+                    JOIN products p ON poi.product_id = p.id
+                    JOIN production_stages ps ON poi.current_stage_id = ps.id
+                    LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
+                    WHERE poi.production_order_id = ?
+                    ORDER BY poi.id ASC
+            ");
+            $iStmt->execute([$id]);
+            $order['items'] = $iStmt->fetchAll();
+
+            Response::success($order);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

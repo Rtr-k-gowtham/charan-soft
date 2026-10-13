@@ -94,7 +94,8 @@ try {
 
         // ---------------- PRODUCTION ----------------
         $r0 === 'production-stages' && $method === 'GET' => (new ProductionController)->stages(),
-        $r0 === 'production-orders' && $method === 'GET' && empty($r1) => (new ProductionController)->index(),
+        $r0 === 'production-orders' && $method === 'GET' && !$id => (new ProductionController)->index(),
+        $r0 === 'production-orders' && $method === 'GET' && $id => (new ProductionController)->show($id),
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && $action === 'stage' && $method === 'POST' => (new ProductionController)->moveStage(),
         $r0 === 'production' && $r1 === 'stage' && !empty($r2) => (new ProductionController)->stageOrders($r2),
@@ -121,6 +122,7 @@ try {
         $r0 === 'colors' && $method === 'GET' => (new MastersController)->getColors(),
         $r0 === 'colors' && $method === 'POST' => (new MastersController)->createColor(),
         $r0 === 'colors' && $id && $method === 'PUT' => (new MastersController)->updateColor($id),
+        $r0 === 'colors' && $id && $method === 'DELETE' => (new MastersController)->deleteColor($id),
 
         $r0 === 'sizes' && $method === 'GET' => (new MastersController)->getSizes(),
         $r0 === 'sizes' && $method === 'POST' => (new MastersController)->createSize(),

@@ -428,17 +428,127 @@ class MastersController {
                 $pdo->exec("ALTER TABLE colors ADD COLUMN pantone_code VARCHAR(50) NULL DEFAULT NULL");
             } catch (Exception $alterEx) {}
 
+            $stmtCurr = $pdo->prepare("SELECT code FROM colors WHERE id = ?");
+            $stmtCurr->execute([$id]);
+            $currCode = $stmtCurr->fetchColumn();
+            $finalCode = $currCode ?: ($code ?: sprintf('CLR-%04d', $id));
+
             $stmt = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ?, pantone_code = ? WHERE id = ?");
             $stmt->execute([$name, $hex ?: null, $pantoneCode ?: null, $id]);
 
-            AuditLogger::log('Colors', 'UPDATE', $id, null, ['code' => $code, 'name' => $name, 'pantone_code' => $pantoneCode]);
+            AuditLogger::log('Colors', 'UPDATE', $id, null, ['code' => $finalCode, 'name' => $name, 'pantone_code' => $pantoneCode]);
             Response::success([
                 'id' => $id,
                 'name' => $name,
-                'code' => $code,
+                'code' => $finalCode,
                 'hex_code' => $hex ?: null,
                 'pantone_code' => $pantoneCode ?: null
             ], "Color updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteColor(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("SELECT * FROM colors WHERE id = ?");
+            $stmt->execute([$id]);
+            $color = $stmt->fetch();
+            if (!$color) {
+                Response::error("Color not found", 404);
+                return;
+            }
+
+            // Referential integrity checks across transactional and master tables
+            $refChecks = [];
+            $searchColors = array_values(array_filter([
+                $color['name'] ?? null,
+                $color['code'] ?? null,
+                $color['pantone_code'] ?? null
+            ]));
+
+            // 1. Production order items
+            try {
+                $poiCols = $pdo->query("DESCRIBE production_order_items")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color', $poiCols) && !empty($searchColors)) {
+                    $placeholders = implode(',', array_fill(0, count($searchColors), '?'));
+                    $poiStmt = $pdo->prepare("SELECT COUNT(*) FROM production_order_items WHERE color IN ($placeholders)");
+                    $poiStmt->execute($searchColors);
+                    $poiCount = (int)$poiStmt->fetchColumn();
+                    if ($poiCount > 0) {
+                        $refChecks[] = "{$poiCount} production order item(s)";
+                    }
+                }
+                if (in_array('color_id', $poiCols)) {
+                    $poiIdStmt = $pdo->prepare("SELECT COUNT(*) FROM production_order_items WHERE color_id = ?");
+                    $poiIdStmt->execute([$id]);
+                    $poiIdCount = (int)$poiIdStmt->fetchColumn();
+                    if ($poiIdCount > 0) {
+                        $refChecks[] = "{$poiIdCount} production order item(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            // 2. Purchase order items
+            try {
+                $poCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color', $poCols) && !empty($searchColors)) {
+                    $placeholders = implode(',', array_fill(0, count($searchColors), '?'));
+                    $poStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE color IN ($placeholders)");
+                    $poStmt->execute($searchColors);
+                    $poCount = (int)$poStmt->fetchColumn();
+                    if ($poCount > 0) {
+                        $refChecks[] = "{$poCount} purchase order item(s)";
+                    }
+                }
+                if (in_array('color_id', $poCols)) {
+                    $poIdStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE color_id = ?");
+                    $poIdStmt->execute([$id]);
+                    $poIdCount = (int)$poIdStmt->fetchColumn();
+                    if ($poIdCount > 0) {
+                        $refChecks[] = "{$poIdCount} purchase order item(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            // 3. Product variants
+            try {
+                $pvCols = $pdo->query("DESCRIBE product_variants")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color_id', $pvCols)) {
+                    $pvStmt = $pdo->prepare("SELECT COUNT(*) FROM product_variants WHERE color_id = ?");
+                    $pvStmt->execute([$id]);
+                    $pvCount = (int)$pvStmt->fetchColumn();
+                    if ($pvCount > 0) {
+                        $refChecks[] = "{$pvCount} product variant(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            if (!empty($refChecks)) {
+                $reason = implode(' and ', $refChecks);
+                Response::error(
+                    "Cannot delete color '{$color['name']}' ({$color['code']}) because it is actively referenced in {$reason}. Historical production records must be preserved.",
+                    422
+                );
+                return;
+            }
+
+            $del = $pdo->prepare("DELETE FROM colors WHERE id = ?");
+            $del->execute([$id]);
+
+            AuditLogger::log('Colors', 'DELETE', $id, $color, null);
+            Response::success([
+                'id' => $id,
+                'name' => $color['name'],
+                'code' => $color['code']
+            ], "Color '{$color['name']}' ({$color['code']}) deleted successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
 import Modal from '../../components/ui/Modal';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
+import PantoneColorPicker from '../../components/ui/PantoneColorPicker';
 import {
   ArrowLeft,
   Plus,
@@ -623,40 +624,60 @@ export default function CreateProductionOrder() {
             </div>
           )}
 
-          <FormField
-            label="Color Name"
-            required
-            placeholder="e.g. Olive Green, Heather Grey, Royal Blue"
-            value={colorForm.name}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, name: e.target.value }))}
-          />
-
-          <FormField
-            label="Color Code (Optional)"
-            placeholder="Auto-generated if blank (e.g. CLR-0002)"
-            hint="System will automatically allocate the next unique CLR-XXXX code if omitted"
-            value={colorForm.code}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, code: e.target.value }))}
-          />
-
-          <FormField
-            label="Pantone Code"
-            placeholder="e.g. 19-3536 TCX, 286 C, 072 C"
-            hint="International Pantone color reference code"
-            value={colorForm.pantone_code}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, pantone_code: e.target.value }))}
-          />
-
+          {/* Pantone Reference Selection */}
           <div>
-            <label className="text-[11px] font-medium text-slate-600 block mb-1">Color Swatch <span className="text-slate-400">(visual reference)</span></label>
-            <div className="flex gap-2 items-center">
+            <label className="text-xs font-bold text-slate-700 block mb-1 flex items-center gap-1.5">
+              <Palette className="w-3.5 h-3.5 text-brand-600" />
+              <span>Select Textile Pantone Reference</span>
+            </label>
+            <PantoneColorPicker
+              selectedPantone={colorForm.pantone_code}
+              selectedName={colorForm.name}
+              selectedHex={colorForm.hex_code}
+              onSelect={(item) => {
+                setColorForm((prev) => ({
+                  ...prev,
+                  pantone_code: item.pantone_code,
+                  name: item.name,
+                  hex_code: item.hex_code,
+                }));
+              }}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            <FormField
+              label="Pantone Color Code"
+              required
+              placeholder="e.g. 19-4052 TCX"
+              hint="International textile Pantone reference"
+              value={colorForm.pantone_code}
+              onChange={(e) => setColorForm((prev) => ({ ...prev, pantone_code: e.target.value.toUpperCase() }))}
+            />
+
+            <FormField
+              label="Color Name"
+              required
+              placeholder="e.g. Classic Navy"
+              hint="Official textile name or brand label"
+              value={colorForm.name}
+              onChange={(e) => setColorForm((prev) => ({ ...prev, name: e.target.value }))}
+            />
+          </div>
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-3">
+            <div>
+              <span className="text-[11px] font-semibold text-slate-700 block">Digital Swatch Reference</span>
+              <span className="text-[10px] text-slate-500">Representative digital color for UI identification</span>
+            </div>
+            <div className="flex items-center gap-2">
               <input
                 type="color"
-                className="w-10 h-9 p-0.5 rounded border border-slate-200 cursor-pointer bg-white"
-                value={colorForm.hex_code}
+                className="w-8 h-8 rounded border border-slate-300 cursor-pointer p-0.5 bg-white shadow-2xs"
+                value={colorForm.hex_code || '#0f2042'}
                 onChange={(e) => setColorForm((prev) => ({ ...prev, hex_code: e.target.value }))}
               />
-              <span className="text-xs text-slate-500">Pick a representative swatch for visual identification</span>
+              <span className="text-[11px] font-mono text-slate-600 font-semibold">{colorForm.hex_code}</span>
             </div>
           </div>
 

@@ -112,6 +112,7 @@ export const api = {
   // Production
   getProductionStages: () => request<unknown[]>('/production-stages'),
   getProductionOrders: () => request<unknown[]>('/production-orders'),
+  getProductionOrder: (id: number | string) => request<unknown>(`/production-orders/${id}`),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
   moveStage: (data: unknown) =>
@@ -128,6 +129,7 @@ export const api = {
   getColors: () => request<unknown[]>('/colors'),
   createColor: (data: unknown) => request<unknown>('/colors', 'POST', data),
   updateColor: (id: number, data: unknown) => request<unknown>(`/colors/${id}`, 'PUT', data),
+  deleteColor: (id: number) => request<unknown>(`/colors/${id}`, 'DELETE'),
   getSizes: () => request<unknown[]>('/sizes'),
   createSize: (data: unknown) => request<unknown>('/sizes', 'POST', data),
   getDesigns: () => request<unknown[]>('/designs'),
