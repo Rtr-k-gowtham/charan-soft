@@ -116,6 +116,7 @@ try {
 
         $r0 === 'colors' && $method === 'GET' => (new MastersController)->getColors(),
         $r0 === 'colors' && $method === 'POST' => (new MastersController)->createColor(),
+        $r0 === 'colors' && $id && $method === 'PUT' => (new MastersController)->updateColor($id),
 
         $r0 === 'sizes' && $method === 'GET' => (new MastersController)->getSizes(),
         $r0 === 'sizes' && $method === 'POST' => (new MastersController)->createSize(),

@@ -121,6 +121,7 @@ export const api = {
   createUnit: (data: unknown) => request<unknown>('/units', 'POST', data),
   getColors: () => request<unknown[]>('/colors'),
   createColor: (data: unknown) => request<unknown>('/colors', 'POST', data),
+  updateColor: (id: number, data: unknown) => request<unknown>(`/colors/${id}`, 'PUT', data),
   getSizes: () => request<unknown[]>('/sizes'),
   createSize: (data: unknown) => request<unknown>('/sizes', 'POST', data),
   getDesigns: () => request<unknown[]>('/designs'),

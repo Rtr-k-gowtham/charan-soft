@@ -25,6 +25,7 @@ interface ColorRecord {
   code?: string;
   name: string;
   hex_code: string;
+  pantone_code?: string;
 }
 
 interface OrderItem {
@@ -76,6 +77,7 @@ export default function CreateProductionOrder() {
   const [colorForm, setColorForm] = useState({
     name: '',
     code: '',
+    pantone_code: '',
     hex_code: '#1e3a8a',
   });
 
@@ -126,7 +128,7 @@ export default function CreateProductionOrder() {
     return colors.map((c) => ({
       value: c.name,
       label: c.name,
-      sublabel: `${c.code || ''} ${c.hex_code ? `(${c.hex_code})` : ''}`.trim(),
+      sublabel: `${c.code || ''} ${c.pantone_code ? `Pantone: ${c.pantone_code}` : ''}`.trim(),
       colorSwatch: c.hex_code,
     }));
   }, [colors]);
@@ -162,7 +164,8 @@ export default function CreateProductionOrder() {
     setColorForm({
       name: '',
       code: '',
-      hex_code: '#2563eb',
+      pantone_code: '',
+      hex_code: '#1e3a8a',
     });
     setColorError('');
     setAddColorModalOpen(true);
@@ -182,8 +185,9 @@ export default function CreateProductionOrder() {
       const res = await api.createColor({
         name: trimmedName,
         code: colorForm.code.trim(),
+        pantone_code: colorForm.pantone_code.trim().toUpperCase(),
         hex_code: colorForm.hex_code || '#000000',
-      }) as { data?: ColorRecord; id?: number; code?: string; name?: string; hex_code?: string };
+      }) as { data?: ColorRecord; id?: number; code?: string; name?: string; hex_code?: string; pantone_code?: string };
 
       // Reload colors from authoritative backend
       const updatedColors = (await api.getColors()) as ColorRecord[];
@@ -329,8 +333,8 @@ export default function CreateProductionOrder() {
           </div>
 
           <div className="p-5 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="lg:col-span-4">
                 <FormField
                   label="Order Title"
                   required
@@ -367,27 +371,6 @@ export default function CreateProductionOrder() {
                 ))}
               </FormField>
 
-              {categories.length > 0 ? (
-                <FormField
-                  as="select"
-                  label="Category"
-                  value={form.category_id}
-                  onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-                >
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </FormField>
-              ) : (
-                <FormField
-                  label="Category ID"
-                  value={form.category_id}
-                  onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-                />
-              )}
-
               <FormField
                 label="Start Date"
                 type="date"
@@ -404,7 +387,7 @@ export default function CreateProductionOrder() {
                 onChange={(e) => setForm((f) => ({ ...f, target_delivery_date: e.target.value }))}
               />
 
-              <div className="lg:col-span-3">
+              <div className="lg:col-span-4">
                 <FormField
                   as="textarea"
                   label="Production Notes / Instructions"
@@ -656,7 +639,16 @@ export default function CreateProductionOrder() {
             onChange={(e) => setColorForm((prev) => ({ ...prev, code: e.target.value }))}
           />
 
-          <FormField label="Color Swatch & HEX Code">
+          <FormField
+            label="Pantone Code"
+            placeholder="e.g. 19-3536 TCX, 286 C, 072 C"
+            hint="International Pantone color reference code"
+            value={colorForm.pantone_code}
+            onChange={(e) => setColorForm((prev) => ({ ...prev, pantone_code: e.target.value }))}
+          />
+
+          <div>
+            <label className="text-[11px] font-medium text-slate-600 block mb-1">Color Swatch <span className="text-slate-400">(visual reference)</span></label>
             <div className="flex gap-2 items-center">
               <input
                 type="color"
@@ -664,15 +656,9 @@ export default function CreateProductionOrder() {
                 value={colorForm.hex_code}
                 onChange={(e) => setColorForm((prev) => ({ ...prev, hex_code: e.target.value }))}
               />
-              <input
-                type="text"
-                placeholder="#1e3a8a"
-                className="flex-1 text-xs font-mono border border-slate-200 rounded px-2.5 py-2 uppercase"
-                value={colorForm.hex_code}
-                onChange={(e) => setColorForm((prev) => ({ ...prev, hex_code: e.target.value }))}
-              />
+              <span className="text-xs text-slate-500">Pick a representative swatch for visual identification</span>
             </div>
-          </FormField>
+          </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
             <Button

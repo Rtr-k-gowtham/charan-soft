@@ -230,7 +230,13 @@ class MastersController {
     public function getColors(): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->query("SELECT * FROM colors ORDER BY name ASC");
+            // Ensure pantone_code column exists (idempotent)
+            try {
+                $pdo->exec("ALTER TABLE colors ADD COLUMN pantone_code VARCHAR(50) NULL DEFAULT NULL");
+            } catch (Exception $alterEx) {
+                // Column already exists — ignore
+            }
+            $stmt = $pdo->query("SELECT id, code, name, hex_code, COALESCE(pantone_code, '') AS pantone_code, created_at FROM colors ORDER BY name ASC");
             Response::success($stmt->fetchAll());
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
@@ -245,6 +251,7 @@ class MastersController {
             $hex = '#' . $hex;
         }
         $inputCode = trim($data['code'] ?? '');
+        $pantoneCode = trim($data['pantone_code'] ?? '');
 
         if (empty($name)) {
             Response::error("Color name is required", 422);
@@ -253,6 +260,12 @@ class MastersController {
 
         try {
             $pdo = Database::getConnection();
+            // Ensure pantone_code column exists
+            try {
+                $pdo->exec("ALTER TABLE colors ADD COLUMN pantone_code VARCHAR(50) NULL DEFAULT NULL");
+            } catch (Exception $alterEx) {
+                // Column already exists — ignore
+            }
             $pdo->beginTransaction();
 
             $code = $inputCode;
@@ -295,17 +308,18 @@ class MastersController {
                 } while ($exists);
             }
 
-            $stmt = $pdo->prepare("INSERT INTO colors (code, name, hex_code) VALUES (?, ?, ?)");
-            $stmt->execute([$code, $name, $hex]);
+            $stmt = $pdo->prepare("INSERT INTO colors (code, name, hex_code, pantone_code) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$code, $name, $hex ?: null, $pantoneCode ?: null]);
             $id = (int)$pdo->lastInsertId();
 
             $pdo->commit();
-            AuditLogger::log('Colors', 'CREATE', $id, null, ['code' => $code, 'name' => $name, 'hex_code' => $hex]);
+            AuditLogger::log('Colors', 'CREATE', $id, null, ['code' => $code, 'name' => $name, 'pantone_code' => $pantoneCode]);
             Response::success([
                 'id' => $id,
                 'code' => $code,
                 'name' => $name,
-                'hex_code' => $hex
+                'hex_code' => $hex ?: null,
+                'pantone_code' => $pantoneCode ?: null
             ], "Color created successfully", 201);
         } catch (Exception $e) {
             if (isset($pdo) && $pdo->inTransaction()) {
@@ -315,6 +329,43 @@ class MastersController {
                 Response::error("Duplicate color entry detected. Code must be unique.", 422);
                 return;
             }
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateColor(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $hex = trim($data['hex_code'] ?? '#000000');
+        if ($hex !== '' && !str_starts_with($hex, '#')) {
+            $hex = '#' . $hex;
+        }
+        $code = trim($data['code'] ?? '');
+        $pantoneCode = trim($data['pantone_code'] ?? '');
+
+        if (empty($name)) {
+            Response::error("Color name is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            try {
+                $pdo->exec("ALTER TABLE colors ADD COLUMN pantone_code VARCHAR(50) NULL DEFAULT NULL");
+            } catch (Exception $alterEx) {}
+
+            $stmt = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ?, pantone_code = ? WHERE id = ?");
+            $stmt->execute([$name, $hex ?: null, $pantoneCode ?: null, $id]);
+
+            AuditLogger::log('Colors', 'UPDATE', $id, null, ['code' => $code, 'name' => $name, 'pantone_code' => $pantoneCode]);
+            Response::success([
+                'id' => $id,
+                'name' => $name,
+                'code' => $code,
+                'hex_code' => $hex ?: null,
+                'pantone_code' => $pantoneCode ?: null
+            ], "Color updated successfully");
+        } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
     }

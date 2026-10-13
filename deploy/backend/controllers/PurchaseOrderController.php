@@ -29,6 +29,10 @@ class PurchaseOrderController {
     public function index(): void {
         try {
             $pdo = Database::getConnection();
+            try {
+                $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN production_order_id INT NULL");
+            } catch (Exception $alterEx) {}
+
             $stmt = $pdo->query("
                 SELECT po.*, 
                        c.name as category_name, 
@@ -38,10 +42,13 @@ class PurchaseOrderController {
                        s.email as supplier_email,
                        s.address as supplier_address,
                        s.contact_person as supplier_contact,
-                       s.gstin as supplier_gstin
+                       s.gstin as supplier_gstin,
+                       pro.order_number as production_order_number,
+                       pro.title as production_order_title
                 FROM purchase_orders po
                 LEFT JOIN categories c ON po.category_id = c.id
                 LEFT JOIN suppliers s ON po.supplier_id = s.id
+                LEFT JOIN production_orders pro ON po.production_order_id = pro.id
                 WHERE po.deleted_at IS NULL
                 ORDER BY po.id DESC
             ");
@@ -203,6 +210,7 @@ class PurchaseOrderController {
 
                 $poCandidates = [
                     'po_number' => $poNumber,
+                    'production_order_id' => !empty($data['production_order_id']) ? (int)$data['production_order_id'] : null,
                     'category_id' => $categoryId,
                     'supplier_id' => $supplierId,
                     'po_date' => $poDate,
@@ -361,6 +369,7 @@ class PurchaseOrderController {
             $updateCandidates = [
                 'category_id' => $categoryId,
                 'supplier_id' => $supplierId,
+                'production_order_id' => array_key_exists('production_order_id', $data) ? (!empty($data['production_order_id']) ? (int)$data['production_order_id'] : null) : ($po['production_order_id'] ?? null),
                 'po_date' => $poDate,
                 'delivery_due_date' => $dueDate,
                 'subtotal' => $subtotal,
@@ -827,10 +836,13 @@ class PurchaseOrderController {
                        s.email as supplier_email,
                        s.address as supplier_address,
                        s.contact_person as supplier_contact,
-                       s.gstin as supplier_gstin
+                       s.gstin as supplier_gstin,
+                       pro.order_number as production_order_number,
+                       pro.title as production_order_title
                 FROM purchase_orders po
                 LEFT JOIN categories c ON po.category_id = c.id
                 LEFT JOIN suppliers s ON po.supplier_id = s.id
+                LEFT JOIN production_orders pro ON po.production_order_id = pro.id
                 WHERE po.id = ? AND po.deleted_at IS NULL
             ");
             $stmt->execute([$id]);

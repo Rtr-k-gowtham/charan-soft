@@ -100,6 +100,7 @@ export default function PurchaseOrders() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
+  const [productionOrders, setProductionOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewPO, setViewPO] = useState<PurchaseOrder | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -128,6 +129,7 @@ export default function PurchaseOrders() {
   const [form, setForm] = useState({ 
     supplier_id: '', 
     category_id: '', 
+    production_order_id: '',
     po_date: new Date().toISOString().split('T')[0], 
     delivery_due_date: '', 
     remarks: '' 
@@ -142,6 +144,7 @@ export default function PurchaseOrders() {
   const [editForm, setEditForm] = useState({ 
     supplier_id: '', 
     category_id: '', 
+    production_order_id: '',
     po_date: new Date().toISOString().split('T')[0], 
     delivery_due_date: '', 
     remarks: '' 
@@ -154,14 +157,16 @@ export default function PurchaseOrders() {
   const load = async () => {
     setLoading(true);
     try {
-      const [poData, supData, catDataRaw, matData, tData] = await Promise.all([
+      const [poData, supData, catDataRaw, matData, tData, prodOrderData] = await Promise.all([
         api.getPurchaseOrders().catch(() => []),
         api.getSuppliers().catch(() => []),
         api.getCategories().catch(() => []),
         api.getMaterials().catch(() => []),
         api.getPOTemplateSettings().catch(() => null),
+        api.getProductionOrders().catch(() => []),
       ]);
       setPOs((poData || []) as PurchaseOrder[]);
+      setProductionOrders((prodOrderData || []) as any[]);
       const loadedSups = (supData || []) as Supplier[];
       setSuppliers(loadedSups);
 
@@ -212,6 +217,14 @@ export default function PurchaseOrders() {
   useEffect(() => { load(); }, []);
 
   // Options for searchable selects
+  const productionOrderOptions: SelectOption[] = useMemo(() => {
+    return productionOrders.map((o: any) => ({
+      value: String(o.id),
+      label: `${o.order_number || `PO-${o.id}`}${o.title ? ` - ${o.title}` : ''}`,
+      sublabel: `${o.customer_name ? `Customer: ${o.customer_name} | ` : ''}Status: ${o.status || 'Active'}${o.target_delivery_date ? ` | Due: ${o.target_delivery_date}` : ''}`.trim(),
+    }));
+  }, [productionOrders]);
+
   const supplierOptions: SelectOption[] = useMemo(() => {
     return suppliers.map(s => ({
       value: s.id,
@@ -592,11 +605,11 @@ export default function PurchaseOrders() {
         ...it,
         order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
       }));
-      // Per Task 3.B: All new POs are created with Draft status
       await api.createPurchaseOrder({
         ...form,
         supplier_id: finalSupplierId,
         category_id: finalCategoryId,
+        production_order_id: form.production_order_id || null,
         status: 'Draft',
         items: preparedItems
       });
@@ -604,6 +617,7 @@ export default function PurchaseOrders() {
       setForm({ 
         supplier_id: suppliers.length > 0 ? String(suppliers[0].id) : '', 
         category_id: categories.length > 0 ? String(categories[0].id) : '', 
+        production_order_id: '',
         po_date: new Date().toISOString().split('T')[0], 
         delivery_due_date: '', 
         remarks: '' 
@@ -781,6 +795,7 @@ export default function PurchaseOrders() {
     setEditForm({
       supplier_id: String(po.supplier_id || ''),
       category_id: String(po.category_id || ''),
+      production_order_id: String((po as any).production_order_id || ''),
       po_date: po.po_date || new Date().toISOString().split('T')[0],
       delivery_due_date: po.delivery_due_date || '',
       remarks: po.remarks || ''
@@ -866,6 +881,7 @@ export default function PurchaseOrders() {
       await api.updatePurchaseOrder(editPO.id, {
         supplier_id: finalSupplierId,
         category_id: finalCategoryId,
+        production_order_id: editForm.production_order_id ? Number(editForm.production_order_id) : null,
         po_date: editForm.po_date,
         delivery_due_date: editForm.delivery_due_date,
         remarks: editForm.remarks,
@@ -881,44 +897,61 @@ export default function PurchaseOrders() {
     }
   };
 
-  // PO List Columns with clear Status badges (Draft / Ordered)
+  // PO List Columns with clear Status badges (Draft / Ordered) - balanced for zero horizontal scroll
   const columns = [
     { 
       key: 'po_number', 
       label: 'PO Number', 
       sortable: true, 
+      width: '125px',
       render: (r: PurchaseOrder) => (
-        <span className="font-semibold text-brand-700 hover:underline cursor-pointer" onClick={() => setViewPO(r)}>
+        <span className="font-semibold text-brand-700 hover:underline cursor-pointer font-mono text-xs whitespace-nowrap" onClick={() => setViewPO(r)}>
           {r.po_number}
         </span>
       ) 
     },
-    { key: 'supplier_name', label: 'Supplier', sortable: true },
+    { 
+      key: 'supplier_name', 
+      label: 'Supplier', 
+      sortable: true,
+      render: (r: PurchaseOrder) => (
+        <span className="font-medium text-slate-800 truncate block max-w-[170px] xl:max-w-[210px]" title={r.supplier_name}>
+          {r.supplier_name}
+        </span>
+      )
+    },
     { 
       key: 'category_name', 
       label: 'Category', 
       sortable: true, 
-      render: (r: PurchaseOrder) => <span className="text-slate-600 text-xs font-medium">{r.category_name}</span> 
+      width: '120px',
+      render: (r: PurchaseOrder) => (
+        <span className="text-slate-600 text-xs font-medium truncate block max-w-[120px]" title={r.category_name}>
+          {r.category_name}
+        </span>
+      )
     },
-    { key: 'po_date', label: 'PO Date', sortable: true },
+    { key: 'po_date', label: 'PO Date', sortable: true, width: '90px' },
     { 
       key: 'delivery_due_date', 
       label: 'Delivery Due', 
       sortable: true, 
-      render: (r: PurchaseOrder) => <span className="text-slate-500">{r.delivery_due_date || '—'}</span> 
+      width: '95px',
+      render: (r: PurchaseOrder) => <span className="text-slate-500 whitespace-nowrap">{r.delivery_due_date || '—'}</span> 
     },
     {
       key: 'status',
       label: 'Status',
       sortable: true,
+      width: '80px',
       render: (r: PurchaseOrder) => {
         const isDraft = (r.status || '').toLowerCase() === 'draft';
         return isDraft ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
             Draft
           </span>
         ) : (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Ordered
           </span>
         );
@@ -927,9 +960,10 @@ export default function PurchaseOrders() {
     {
       key: 'items_count',
       label: 'Items',
+      width: '65px',
       render: (r: PurchaseOrder) => (
-        <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono">
-          {r.items?.length || 0} items
+        <span className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
+          {r.items?.length || 0}
         </span>
       )
     },
@@ -937,19 +971,22 @@ export default function PurchaseOrders() {
       key: 'subtotal', 
       label: 'Taxable Amt', 
       sortable: true, 
-      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600">{fmtCur(r.subtotal)}</span> 
+      width: '100px',
+      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap">{fmtCur(r.subtotal)}</span> 
     },
     { 
       key: 'tax_amount', 
       label: 'Tax Amt', 
       sortable: true, 
-      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600">{fmtCur(r.tax_amount)}</span> 
+      width: '90px',
+      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap">{fmtCur(r.tax_amount)}</span> 
     },
     { 
       key: 'net_amount', 
       label: 'Net Total', 
       sortable: true, 
-      render: (r: PurchaseOrder) => <span className="font-mono font-bold text-slate-900">{fmtCur(r.net_amount)}</span> 
+      width: '105px',
+      render: (r: PurchaseOrder) => <span className="font-mono font-bold text-slate-900 text-right block whitespace-nowrap">{fmtCur(r.net_amount)}</span> 
     },
   ];
 
@@ -1029,6 +1066,15 @@ export default function PurchaseOrders() {
                 options={categoryOptions}
                 placeholder="— Select Category with Search —"
                 searchPlaceholder="Search category..."
+              />
+
+              <SearchableSelect
+                label="Production Order"
+                value={form.production_order_id}
+                onChange={val => setForm(f => ({ ...f, production_order_id: val }))}
+                options={productionOrderOptions}
+                placeholder="— Link to Production Order (Optional) —"
+                searchPlaceholder="Search by order number or title..."
               />
 
               <FormField
@@ -1573,7 +1619,7 @@ export default function PurchaseOrders() {
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">Order Header & Supplier</h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-medium text-slate-600">PO Number (Locked)</label>
                 <div className="w-full min-h-[34px] px-2.5 py-1.5 text-xs bg-slate-100 border border-slate-200 rounded-md text-slate-800 font-mono font-bold flex items-center gap-1.5 cursor-not-allowed">
@@ -1600,6 +1646,15 @@ export default function PurchaseOrders() {
                 options={categoryOptions}
                 placeholder="— Select Category —"
                 searchPlaceholder="Search category..."
+              />
+
+              <SearchableSelect
+                label="Production Order"
+                value={editForm.production_order_id}
+                onChange={val => setEditForm(f => ({ ...f, production_order_id: val }))}
+                options={productionOrderOptions}
+                placeholder="— Link to Production Order —"
+                searchPlaceholder="Search by order number or title..."
               />
 
               <FormField
@@ -2207,7 +2262,7 @@ export default function PurchaseOrders() {
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">Order Header & Supplier</h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               <div className="flex flex-col gap-1">
                 <label className="text-[11px] font-medium text-slate-600">Supplier</label>
                 <div className="w-full min-h-[34px] px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-800 font-semibold cursor-default">
@@ -2222,6 +2277,27 @@ export default function PurchaseOrders() {
                 <label className="text-[11px] font-medium text-slate-600">PO Category</label>
                 <div className="w-full min-h-[34px] px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-800 font-semibold cursor-default">
                   {viewPO.category_name || '—'}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-medium text-slate-600">Production Order</label>
+                <div className="w-full min-h-[34px] px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md text-slate-800 font-semibold cursor-default flex items-center">
+                  {(() => {
+                    const poLinkedId = (viewPO as any).production_order_id;
+                    const linkedPo = productionOrders.find(p => String(p.id) === String(poLinkedId));
+                    const num = (viewPO as any).production_order_number || linkedPo?.order_number;
+                    const title = (viewPO as any).production_order_title || linkedPo?.title;
+                    if (num) {
+                      return (
+                        <span className="truncate" title={title ? `${num} - ${title}` : num}>
+                          <span className="text-brand-700 font-bold font-mono mr-1.5">{num}</span>
+                          {title && <span className="text-slate-500 font-normal">({title})</span>}
+                        </span>
+                      );
+                    }
+                    return <span className="text-slate-400 italic">None linked</span>;
+                  })()}
                 </div>
               </div>
 
@@ -2694,8 +2770,8 @@ export default function PurchaseOrders() {
         }
       />
 
-      {/* PO List Table */}
-      <div className="flex-1 overflow-hidden p-4">
+      {/* PO List Table - fitted for desktop without horizontal scrollbar */}
+      <div className="flex-1 overflow-x-auto lg:overflow-x-hidden p-4 min-w-0">
         <DataTable
           data={pos}
           columns={columns}

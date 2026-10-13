@@ -148,8 +148,20 @@ export interface PurchaseOrder {
   payment_status: 'Unpaid' | 'Partially Paid' | 'Settled' | 'Overdue' | 'Not Paid' | 'Paid';
   status: 'Draft' | 'Ordered' | string;
   remarks?: string;
+  production_order_id?: number | null;
+  production_order_number?: string;
+  production_order_title?: string;
   items?: PurchaseOrderItem[];
   payments?: PurchasePayment[];
+}
+
+export interface Color {
+  id: number;
+  code?: string;
+  name: string;
+  hex_code: string;
+  pantone_code?: string;
+  status?: string;
 }
 
 export interface ProductionStage {

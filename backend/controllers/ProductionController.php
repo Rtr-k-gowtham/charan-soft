@@ -50,7 +50,7 @@ class ProductionController {
 
     public function store(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $categoryId = (int)($data['category_id'] ?? 1);
+        $categoryId = (int)($data['category_id'] ?? 0);
         $title = trim($data['title'] ?? '');
         $items = $data['items'] ?? [];
 
@@ -62,6 +62,17 @@ class ProductionController {
         try {
             $pdo = Database::getConnection();
             $pdo->beginTransaction();
+
+            // Derive category if not provided (Requirement 7)
+            if (!$categoryId && !empty($items[0]['product_id'])) {
+                $pStmt = $pdo->prepare("SELECT category_id FROM products WHERE id = ?");
+                $pStmt->execute([(int)$items[0]['product_id']]);
+                $categoryId = (int)($pStmt->fetchColumn() ?: 0);
+            }
+            if (!$categoryId) {
+                $cRow = $pdo->query("SELECT id FROM categories WHERE type = 'product' OR type = 'order' ORDER BY id ASC LIMIT 1")->fetch();
+                $categoryId = $cRow ? (int)$cRow['id'] : 1;
+            }
 
             // First stage in pipeline
             $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE status = 'active' ORDER BY sequence_order ASC LIMIT 1");
