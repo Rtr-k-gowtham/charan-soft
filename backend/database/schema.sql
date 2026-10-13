@@ -734,3 +734,48 @@ INSERT INTO products (id, category_id, code, name, design, uom, selling_price, t
 (3, 8, 'PRD-003', 'Cotton Pique Polo Shirt', '2-Button Ribbed Collar', 'PCS', 420.00, 5.00, 'active'),
 (4, 8, 'PRD-004', 'Heavyweight Fleece Jogger Pant', 'Elasticated Ankle Cuff', 'PCS', 520.00, 5.00, 'active')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
+
+-- ----------------------------------------------------------
+-- 13. BUYER PRODUCTS & PACKING CONFIGURATION
+-- ----------------------------------------------------------
+CREATE TABLE IF NOT EXISTS buyer_products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    buyer_id INT NOT NULL,
+    product_name VARCHAR(150) NOT NULL,
+    product_code VARCHAR(50) NULL,
+    uom VARCHAR(30) NOT NULL DEFAULT 'Pieces',
+    notes TEXT NULL,
+    image_url LONGTEXT NULL,
+    dimensions_json JSON NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (buyer_id) REFERENCES customers(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS buyer_product_components (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    buyer_product_id INT NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    category ENUM('Fabric', 'Zip', 'Button', 'Thread', 'Label', 'Packaging', 'Other') DEFAULT 'Fabric',
+    uom VARCHAR(30) NOT NULL DEFAULT 'Meter',
+    quantity_per_product DECIMAL(12, 4) NOT NULL DEFAULT 1.0000,
+    wastage_percent DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+    notes VARCHAR(255) NULL,
+    FOREIGN KEY (buyer_product_id) REFERENCES buyer_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS buyer_product_boxes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    buyer_product_id INT NOT NULL,
+    box_name VARCHAR(100) NOT NULL,
+    box_code VARCHAR(50) NULL,
+    length DECIMAL(10, 2) NOT NULL,
+    width DECIMAL(10, 2) NOT NULL,
+    height DECIMAL(10, 2) NOT NULL,
+    dimension_unit ENUM('mm', 'cm', 'm') DEFAULT 'cm',
+    items_per_box INT NOT NULL DEFAULT 1,
+    max_packing_qty INT NULL,
+    notes VARCHAR(255) NULL,
+    FOREIGN KEY (buyer_product_id) REFERENCES buyer_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

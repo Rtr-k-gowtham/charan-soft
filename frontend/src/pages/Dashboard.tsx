@@ -152,7 +152,7 @@ export default function Dashboard() {
                 <thead>
                   <tr>
                     <th>Order No</th>
-                    <th>Customer</th>
+                    <th>Buyer</th>
                     <th className="text-right">Total</th>
                     <th className="text-right">Done</th>
                     <th>Status</th>

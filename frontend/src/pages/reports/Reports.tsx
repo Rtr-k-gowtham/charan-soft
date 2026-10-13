@@ -144,7 +144,7 @@ export default function Reports() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full table-dense">
-                <thead><tr><th>Order No</th><th>Title</th><th>Customer</th><th className="text-right">Total</th><th className="text-right">Completed</th><th className="text-right">Rejected</th><th className="text-right">Rework</th><th className="text-right">Pending</th><th>Delivery</th><th>Status</th></tr></thead>
+                <thead><tr><th>Order No</th><th>Title</th><th>Buyer</th><th className="text-right">Total</th><th className="text-right">Completed</th><th className="text-right">Rejected</th><th className="text-right">Rework</th><th className="text-right">Pending</th><th>Delivery</th><th>Status</th></tr></thead>
                 <tbody>
                   {PRODUCTION_DATA.map((r, i) => (
                     <tr key={i} className="hover:bg-slate-50">

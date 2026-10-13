@@ -83,7 +83,7 @@ export interface Supplier {
   status: string;
 }
 
-export interface Customer {
+export interface Buyer {
   id: number;
   code: string;
   name: string;
@@ -93,6 +93,73 @@ export interface Customer {
   billing_address?: string;
   gstin?: string;
   status: string;
+}
+
+export type Customer = Buyer;
+
+// ==========================================
+// Buyer Master – Product & Packing Configuration Types
+// ==========================================
+export type MaterialCategory = 'Fabric' | 'Zip' | 'Button' | 'Thread' | 'Label' | 'Packaging' | 'Other';
+export type DimensionUnit = 'mm' | 'cm' | 'm';
+
+export interface BuyerProductComponent {
+  id: string;
+  material_id?: number;
+  name: string;
+  category: MaterialCategory;
+  uom: string;
+  quantity_per_product: number;
+  wastage_percent: number;
+  notes?: string;
+}
+
+export interface ProductDimensions {
+  length: number;
+  width: number;
+  height: number;
+  unit: DimensionUnit;
+  calculated_volume_cm3: number;
+  calculated_volume_m3: number;
+  weight_grams?: number;
+}
+
+export interface ProductVariantSpec {
+  size_id?: number;
+  size_name: string;
+  dimensions: ProductDimensions;
+  items_per_box?: number;
+}
+
+export interface BoxPackingConfig {
+  id: string;
+  box_name: string;
+  box_code?: string;
+  length: number;
+  width: number;
+  height: number;
+  dimension_unit: DimensionUnit;
+  calculated_volume_cm3: number;
+  calculated_volume_m3: number;
+  items_per_box: number;
+  max_packing_qty?: number;
+  notes?: string;
+}
+
+export interface BuyerProduct {
+  id: number | string;
+  buyer_id: number;
+  product_name: string;
+  product_code?: string;
+  uom: string;
+  notes?: string;
+  image_url?: string;
+  dimensions: ProductDimensions;
+  variants?: ProductVariantSpec[];
+  components: BuyerProductComponent[];
+  boxes: BoxPackingConfig[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PurchaseOrderItem {

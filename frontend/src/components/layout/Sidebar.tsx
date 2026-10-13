@@ -102,7 +102,7 @@ const navItems: NavItem[] = [
       { label: 'Materials', path: '/masters/materials' },
       { label: 'Categories', path: '/masters/categories' },
       { label: 'Suppliers', path: '/masters/suppliers' },
-      { label: 'Customers', path: '/masters/customers' },
+      { label: 'Buyer Master', path: '/masters/buyers' },
       { label: 'Colors', path: '/masters/colors' },
       { label: 'Sizes', path: '/masters/sizes' },
       { label: 'Units', path: '/masters/units' },
