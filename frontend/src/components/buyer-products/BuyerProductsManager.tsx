@@ -36,7 +36,13 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
     setLoading(true);
     try {
       const res = await api.getBuyerProducts(buyer.id);
-      setProducts((res || []) as BuyerProduct[]);
+      const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
+      const normalized: BuyerProduct[] = (rawList as any[]).map((p: any) => ({
+        ...p,
+        product_name: p?.product_name || p?.name || 'Unnamed Product',
+        product_code: p?.product_code || p?.code || '',
+      }));
+      setProducts(normalized);
     } catch (err) {
       console.error('Failed to load buyer products', err);
       setProducts([]);
@@ -68,11 +74,14 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
     }
   };
 
-  const filteredProducts = products.filter(
-    (p) =>
-      p.product_name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.product_code && p.product_code.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredProducts = (products || []).filter((p) => {
+    if (!p) return false;
+    const pName = String(p.product_name || (p as any)?.name || '').toLowerCase();
+    const pCode = String(p.product_code || (p as any)?.code || '').toLowerCase();
+    const q = String(search || '').toLowerCase().trim();
+    if (!q) return true;
+    return pName.includes(q) || pCode.includes(q);
+  });
 
   return (
     <div className="flex flex-col h-full bg-slate-50/50">

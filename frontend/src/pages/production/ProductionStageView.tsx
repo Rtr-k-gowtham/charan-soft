@@ -59,7 +59,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
   const isRework = stageName === 'Rework';
 
   const items = stageCode
-    ? allItems.filter(i => (i.current_stage_name || '').toLowerCase() === stageName.toLowerCase() || (i.stage_code || '').toUpperCase() === stageCode.toUpperCase())
+    ? allItems.filter(i => (i.current_stage_name || '').toLowerCase() === (stageName || '').toLowerCase() || (i.stage_code || '').toUpperCase() === (stageCode || '').toUpperCase())
     : allItems;
 
   const currentStage = stages.find(s => s.name === stageName);

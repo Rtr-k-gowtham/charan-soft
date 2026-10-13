@@ -143,10 +143,10 @@ export default function SearchableSelect({
     const query = search.toLowerCase();
     return options.filter(
       (opt) =>
-        opt.label.toLowerCase().includes(query) ||
-        (opt.sublabel && opt.sublabel.toLowerCase().includes(query)) ||
-        (opt.group && opt.group.toLowerCase().includes(query)) ||
-        (opt.colorSwatch && opt.colorSwatch.toLowerCase().includes(query))
+        String(opt?.label || '').toLowerCase().includes(query) ||
+        (opt?.sublabel && String(opt.sublabel).toLowerCase().includes(query)) ||
+        (opt?.group && String(opt.group).toLowerCase().includes(query)) ||
+        (opt?.colorSwatch && String(opt.colorSwatch).toLowerCase().includes(query))
     );
   }, [options, search]);
 

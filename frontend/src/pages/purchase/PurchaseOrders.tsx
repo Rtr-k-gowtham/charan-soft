@@ -803,7 +803,7 @@ export default function PurchaseOrders() {
         let matId = it.material_id;
         if (!matId && (it.item_description || it.description)) {
           const dName = (it.item_description || it.description || '').trim().toLowerCase();
-          const found = materials.find(m => m.name.toLowerCase() === dName || (m.code && m.code.toLowerCase() === dName));
+          const found = materials.find(m => (m.name || '').toLowerCase() === dName || (m.code && (m.code || '').toLowerCase() === dName));
           if (found) matId = found.id;
         }
         return calcItem({
