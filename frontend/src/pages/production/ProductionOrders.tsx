@@ -1,5 +1,5 @@
 // src/pages/production/ProductionOrders.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, ProductionOrderItem } from '../../types';
@@ -17,6 +17,13 @@ import {
   User,
   ShieldCheck,
   Package,
+  Layers,
+  Search,
+  CheckCircle2,
+  Clock,
+  Filter,
+  X,
+  TrendingUp,
 } from 'lucide-react';
 
 export default function ProductionOrders() {
@@ -24,13 +31,17 @@ export default function ProductionOrders() {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [qcOpen, setQcOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [selectedItem, setSelectedItem] = useState<ProductionOrderItem | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [priorityFilter, setPriorityFilter] = useState('ALL');
 
+  // Move stage modal state
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ProductionOrderItem | null>(null);
   const [moveForm, setMoveForm] = useState({ to_stage_id: '', quantity_moved: 0, remarks: '' });
+
+  // QC modal state
+  const [qcOpen, setQcOpen] = useState(false);
   const [qcForm, setQcForm] = useState({
     input_quantity: 0,
     passed_quantity: 0,
@@ -40,6 +51,9 @@ export default function ProductionOrders() {
     remarks: '',
     rework_stage_id: '5',
   });
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -109,35 +123,153 @@ export default function ProductionOrders() {
     Low: 'border-l-slate-300',
     Medium: 'border-l-blue-500',
     High: 'border-l-amber-500',
-    Urgent: 'border-l-red-500',
+    Urgent: 'border-l-rose-500',
   };
 
+  // Filtered orders list
+  const filteredOrders = useMemo(() => {
+    return orders.filter((ord) => {
+      // Status filter
+      if (statusFilter !== 'ALL' && ord.status?.toUpperCase() !== statusFilter.toUpperCase()) {
+        return false;
+      }
+      // Priority filter
+      if (priorityFilter !== 'ALL' && ord.priority?.toUpperCase() !== priorityFilter.toUpperCase()) {
+        return false;
+      }
+      // Search filter
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const numMatch = ord.order_number?.toLowerCase().includes(q);
+        const titleMatch = ord.title?.toLowerCase().includes(q);
+        const custMatch = ord.customer_name?.toLowerCase().includes(q);
+        const itemMatch = (ord.items || []).some(
+          (it) =>
+            it.product_name?.toLowerCase().includes(q) ||
+            it.product_code?.toLowerCase().includes(q) ||
+            it.color?.toLowerCase().includes(q) ||
+            it.color_pantone_code?.toLowerCase().includes(q)
+        );
+        return numMatch || titleMatch || custMatch || itemMatch;
+      }
+      return true;
+    });
+  }, [orders, statusFilter, priorityFilter, search]);
+
+  // Counts for filter pills
+  const statusCounts = useMemo(() => {
+    return {
+      all: orders.length,
+      inProduction: orders.filter((o) => o.status === 'In Production' || o.status === 'IN PRODUCTION').length,
+      completed: orders.filter((o) => o.status === 'Completed' || o.status === 'COMPLETED').length,
+    };
+  }, [orders]);
+
   return (
-    <div className="flex flex-col h-full bg-slate-50">
+    <div className="min-h-full pb-12 bg-[#f8fafc]">
       <PageHeader
         title="Production Orders"
         subtitle="Manage and track manufacturing batches across production workflow stages"
         breadcrumb={[{ label: 'Production' }, { label: 'Orders' }]}
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={load}
               disabled={loading}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
               title="Refresh Orders"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline text-slate-600">Refresh</span>
             </button>
-            <Button icon={<Plus className="w-3.5 h-3.5" />} onClick={() => navigate('/production/orders/create')}>
+            <Button
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={() => navigate('/production/orders/create')}
+            >
               New Order
             </Button>
           </div>
         }
       />
 
+      {/* Filter and Search Bar */}
+      <div className="px-4 md:px-6 pt-4 pb-2">
+        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+          {/* Search box */}
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by order #, title, buyer, product, pantone..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Status and Priority Filter Pills */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            {/* Status Pills */}
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+              <button
+                onClick={() => setStatusFilter('ALL')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  statusFilter === 'ALL'
+                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                All ({statusCounts.all})
+              </button>
+              <button
+                onClick={() => setStatusFilter('In Production')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  statusFilter === 'In Production'
+                    ? 'bg-white text-brand-700 shadow-2xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                In Production ({statusCounts.inProduction})
+              </button>
+              <button
+                onClick={() => setStatusFilter('Completed')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  statusFilter === 'Completed'
+                    ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Completed ({statusCounts.completed})
+              </button>
+            </div>
+
+            {/* Priority Selector */}
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="py-1 px-2.5 text-xs border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            >
+              <option value="ALL">All Priorities</option>
+              <option value="Urgent">Urgent</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* Production Orders List */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4 min-w-0">
-        {orders.map((ord) => {
+      <div className="px-4 md:px-6 py-3 space-y-4">
+        {filteredOrders.map((ord) => {
           const totalQty = ord.total_quantity || 0;
           const completedQty = ord.completed_quantity || 0;
           const pendingQty = Math.max(0, totalQty - completedQty);
@@ -147,35 +279,48 @@ export default function ProductionOrders() {
           return (
             <div
               key={ord.id}
-              className={`bg-white border border-slate-200 rounded-xl overflow-hidden border-l-4 ${
-                priorityBorder[ord.priority] || 'border-l-slate-200'
-              } shadow-xs hover:shadow-sm transition-shadow`}
+              className={`shrink-0 bg-white border border-slate-200/90 rounded-xl overflow-hidden border-l-4 ${
+                priorityBorder[ord.priority] || 'border-l-slate-300'
+              } shadow-2xs hover:shadow-md transition-all duration-200`}
             >
-              {/* Top Row: Order Identification & Actions */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 bg-white">
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <span className="text-sm font-bold font-mono text-brand-700 shrink-0">
+              {/* ============================================================== */}
+              {/* TOP ROW: Order Identification & Actions */}
+              {/* ============================================================== */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-b border-slate-100">
+                <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                  {/* Order Number Badge */}
+                  <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 border border-brand-200/80 px-2.5 py-1 rounded-md shrink-0 shadow-2xs">
                     {ord.order_number}
                   </span>
-                  <span className="text-slate-300 font-normal">|</span>
-                  <span
-                    className="text-xs text-slate-800 font-semibold truncate min-w-0 max-w-[340px]"
+
+                  <span className="text-slate-300 font-normal hidden sm:inline">|</span>
+
+                  {/* Order Title */}
+                  <h3
+                    className="text-sm font-bold text-slate-800 truncate min-w-0 max-w-md hover:text-brand-600 transition-colors"
                     title={ord.title}
                   >
                     {ord.title}
-                  </span>
+                  </h3>
+
+                  {/* Priority Badge */}
                   <StatusBadge status={ord.priority} />
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                  <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                  {/* Target Delivery Date */}
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-medium text-slate-600">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    Target Delivery:{' '}
-                    <strong className="text-slate-700 font-mono">{ord.target_delivery_date || '—'}</strong>
-                  </span>
+                    <span>Target Delivery:</span>
+                    <strong className="text-slate-800 font-mono">
+                      {ord.target_delivery_date || '—'}
+                    </strong>
+                  </div>
+
+                  {/* Status Badge */}
                   <StatusBadge status={ord.status} />
 
-                  {/* Task 4: View Details navigates to dedicated full-page view */}
+                  {/* View Details Button navigating to dedicated full-page view */}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -187,219 +332,291 @@ export default function ProductionOrders() {
                 </div>
               </div>
 
-              {/* Middle Row: Order Summary */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-50/70 border-b border-slate-100 text-xs">
-                <div className="flex items-center gap-5 flex-wrap">
-                  <span className="text-slate-500 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-slate-400" />
-                    Buyer / Customer:{' '}
-                    <strong className="text-slate-800">{ord.customer_name || 'Direct Order'}</strong>
-                  </span>
-                  <span className="text-slate-500">
-                    Total Qty:{' '}
-                    <strong className="font-mono text-slate-800">{totalQty.toLocaleString()} pcs</strong>
-                  </span>
-                  <span className="text-slate-500">
-                    Completed:{' '}
-                    <strong className="font-mono text-emerald-600">{completedQty.toLocaleString()} pcs</strong>
-                  </span>
-                  <span className="text-slate-500">
-                    Pending:{' '}
-                    <strong className="font-mono text-amber-600">{pendingQty.toLocaleString()} pcs</strong>
-                  </span>
+              {/* ============================================================== */}
+              {/* MIDDLE ROW: Order Executive Summary & Overall Progress */}
+              {/* ============================================================== */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-50/70 border-b border-slate-100 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 min-w-[320px]">
+                  {/* 1. Buyer / Customer */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                      <User className="w-3.5 h-3.5 text-brand-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                        Buyer / Customer
+                      </span>
+                      <strong className="text-slate-800 truncate block" title={ord.customer_name || 'Direct Order'}>
+                        {ord.customer_name || 'Direct Order'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* 2. Total Quantity */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                      <Package className="w-3.5 h-3.5 text-slate-600" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                        Total Quantity
+                      </span>
+                      <strong className="font-mono text-slate-900 font-bold">
+                        {totalQty.toLocaleString()} <span className="text-[10px] font-normal text-slate-500">pcs</span>
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* 3. Completed Quantity */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                        Completed
+                      </span>
+                      <strong className="font-mono text-emerald-600 font-bold">
+                        {completedQty.toLocaleString()} <span className="text-[10px] font-normal text-slate-500">pcs</span>
+                      </strong>
+                    </div>
+                  </div>
+
+                  {/* 4. Pending Quantity */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                        Pending
+                      </span>
+                      <strong className="font-mono text-amber-600 font-bold">
+                        {pendingQty.toLocaleString()} <span className="text-[10px] font-normal text-slate-500">pcs</span>
+                      </strong>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Overall Batch Progress */}
-                <div className="flex items-center gap-2.5 min-w-[150px] max-w-xs ml-auto">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Progress</span>
-                  <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
+                <div className="flex items-center gap-3 min-w-[160px] max-w-xs shrink-0 pl-2 sm:border-l sm:border-slate-200">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-[11px] mb-1 font-semibold text-slate-600">
+                      <span className="uppercase text-[10px] font-bold text-slate-400 tracking-wider flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3 text-brand-600" /> Batch Progress
+                      </span>
+                      <span className="font-mono font-bold text-brand-700">{pct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </div>
-                  <span className="text-[11px] font-mono font-bold text-slate-700 w-9 text-right">
-                    {pct}%
-                  </span>
                 </div>
               </div>
 
-              {/* Bottom Row: Product Lines Information and Progress */}
-              <div className="divide-y divide-slate-100">
-                {items.length === 0 ? (
-                  <div className="px-4 py-3 text-xs text-slate-400 italic bg-white">
-                    No product lines assigned to this production order.
-                  </div>
-                ) : (
-                  items.map((item) => {
-                    const itTotal = item.total_quantity || 0;
-                    const itDone = item.completed_quantity || 0;
-                    const itPending = Math.max(0, itTotal - itDone);
-                    const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
-                    const pantone = item.color_pantone_code;
+              {/* ============================================================== */}
+              {/* BOTTOM ROW: Product Information & Production Progress */}
+              {/* ============================================================== */}
+              <div className="bg-white">
+                <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between text-[11px]">
+                  <span className="font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-brand-600" />
+                    Assigned Product Lines ({items.length})
+                  </span>
+                  <span className="text-slate-400 font-mono text-[10px]">
+                    Detailed item variant & stage execution
+                  </span>
+                </div>
 
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/80 transition-colors"
-                      >
-                        {/* Product & Specifications Grid */}
-                        <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 items-center">
-                          {/* 1. Product Name & Code */}
-                          <div className="min-w-0">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                              Product
-                            </span>
-                            <p
-                              className="text-xs font-semibold text-slate-800 truncate"
-                              title={item.product_name}
-                            >
-                              {item.product_name || 'Standard Product'}
-                            </p>
-                            {item.product_code && (
-                              <span className="text-[10px] font-mono text-slate-400">
-                                {item.product_code}
-                              </span>
-                            )}
-                          </div>
+                <div className="divide-y divide-slate-100">
+                  {items.length === 0 ? (
+                    <div className="px-4 py-4 text-xs text-slate-400 italic bg-white text-center">
+                      No product lines assigned to this production order.
+                    </div>
+                  ) : (
+                    items.map((item, idx) => {
+                      const itTotal = item.total_quantity || 0;
+                      const itDone = item.completed_quantity || 0;
+                      const itPending = Math.max(0, itTotal - itDone);
+                      const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
+                      const pantone = item.color_pantone_code;
 
-                          {/* 2. Color & Pantone */}
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                              Variant / Color
-                            </span>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {item.color_hex_code && (
-                                <span
-                                  className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-2xs"
-                                  style={{ backgroundColor: item.color_hex_code }}
-                                />
-                              )}
-                              <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] font-medium text-slate-700">
-                                {item.color}
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/70 transition-colors"
+                        >
+                          {/* Product Line Information Grid */}
+                          <div className="flex-1 min-w-0 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 items-center">
+                            {/* 1. Product Name & Code */}
+                            <div className="min-w-0">
+                              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
+                                #{idx + 1} Product
                               </span>
-                              {pantone && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded text-[10px] font-mono font-bold">
-                                  {pantone}
+                              <p
+                                className="text-xs font-bold text-slate-800 truncate"
+                                title={item.product_name}
+                              >
+                                {item.product_name || 'Standard Product'}
+                              </p>
+                              {item.product_code && (
+                                <span className="inline-block text-[10px] font-mono text-slate-500 bg-slate-100 px-1 py-0.2 rounded mt-0.5">
+                                  {item.product_code}
                                 </span>
                               )}
                             </div>
-                          </div>
 
-                          {/* 3. Size & Quantity Breakdown */}
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                              Size & Quantities
-                            </span>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] font-mono font-bold text-slate-700">
-                                {item.size}
+                            {/* 2. Color Variant & Pantone Code */}
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
+                                Variant / Color
                               </span>
-                              <span className="text-xs font-mono text-slate-700">
-                                <strong>{itTotal}</strong> total •{' '}
-                                <span className="text-emerald-600 font-semibold">{itDone} done</span> •{' '}
-                                <span className="text-amber-600 font-medium">{itPending} pend</span>
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* 4. Current Stage */}
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                              Current Stage
-                            </span>
-                            <span
-                              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold text-white whitespace-nowrap shadow-2xs"
-                              style={{ backgroundColor: item.color_badge || '#3b82f6' }}
-                            >
-                              {item.current_stage_name || 'Installation'}
-                              <span className="ml-1 opacity-80 text-[10px]">
-                                ({item.current_stage_quantity})
-                              </span>
-                            </span>
-                          </div>
-
-                          {/* 5. Progress Bar & % */}
-                          <div className="col-span-2 lg:col-span-1">
-                            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                              Line Progress
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-300 ${
-                                    itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                                  }`}
-                                  style={{ width: `${itPct}%` }}
-                                />
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {item.color_hex_code && (
+                                  <span
+                                    className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                                    style={{ backgroundColor: item.color_hex_code }}
+                                  />
+                                )}
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] font-medium text-slate-700">
+                                  {item.color}
+                                </span>
+                                {pantone && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 bg-amber-50 text-amber-900 border border-amber-300/70 rounded text-[10px] font-mono font-bold tracking-tight shadow-2xs">
+                                    {pantone}
+                                  </span>
+                                )}
                               </div>
-                              <span className="text-[11px] font-mono font-bold text-slate-700 w-8 text-right">
-                                {itPct}%
+                            </div>
+
+                            {/* 3. Size & Product Quantities */}
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
+                                Size & Quantities
+                              </span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-1.5 py-0.5 bg-blue-50 text-brand-700 border border-brand-200 rounded text-[11px] font-mono font-bold">
+                                  {item.size}
+                                </span>
+                                <span className="text-xs font-mono font-bold text-slate-800">
+                                  {itTotal.toLocaleString()} pcs
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-500 block">
+                                  (<strong className="text-emerald-600">{itDone}</strong> done •{' '}
+                                  <strong className="text-amber-600">{itPending}</strong> pend)
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 4. Current Stage */}
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
+                                Current Stage
+                              </span>
+                              <span
+                                className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold text-white whitespace-nowrap shadow-2xs"
+                                style={{ backgroundColor: item.color_badge || '#0284c7' }}
+                              >
+                                {item.current_stage_name || 'Installation'}
+                                <span className="ml-1 opacity-90 text-[10px]">
+                                  ({item.current_stage_quantity})
+                                </span>
                               </span>
                             </div>
+
+                            {/* 5. Progress Bar & % */}
+                            <div className="col-span-2 lg:col-span-1">
+                              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
+                                Line Progress
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                                    }`}
+                                    style={{ width: `${itPct}%` }}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-mono font-bold text-slate-700 w-8 text-right">
+                                  {itPct}%
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        </div>
 
-                        {/* Line Item Actions */}
-                        <div className="flex items-center gap-1.5 shrink-0 pt-2 sm:pt-0">
-                          <button
-                            onClick={() => {
-                              setSelectedItem(item);
-                              setMoveForm({
-                                to_stage_id: '',
-                                quantity_moved: item.current_stage_quantity || 1,
-                                remarks: '',
-                              });
-                              setError('');
-                              setMoveOpen(true);
-                            }}
-                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 transition-colors"
-                            title="Move to next stage"
-                          >
-                            <ArrowRight className="w-3 h-3" />
-                            <span>Move Stage</span>
-                          </button>
-
-                          {item.current_stage_name === 'QC' && (
+                          {/* Line Item Stage Actions */}
+                          <div className="flex items-center gap-1.5 shrink-0 pt-2 sm:pt-0">
                             <button
                               onClick={() => {
                                 setSelectedItem(item);
-                                const q = item.current_stage_quantity || 0;
-                                setQcForm({
-                                  input_quantity: q,
-                                  passed_quantity: q,
-                                  rejected_quantity: 0,
-                                  rework_quantity: 0,
-                                  defect_reason: '',
+                                setMoveForm({
+                                  to_stage_id: '',
+                                  quantity_moved: item.current_stage_quantity || 1,
                                   remarks: '',
-                                  rework_stage_id: '5',
                                 });
                                 setError('');
-                                setQcOpen(true);
+                                setMoveOpen(true);
                               }}
-                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 rounded border border-amber-200 transition-colors"
-                              title="Perform QC inspection"
+                              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-200 transition-colors shadow-2xs"
+                              title="Move to next stage"
                             >
-                              <ShieldCheck className="w-3 h-3" />
-                              <span>QC Inspect</span>
+                              <ArrowRight className="w-3 h-3" />
+                              <span>Move Stage</span>
                             </button>
-                          )}
+
+                            {item.current_stage_name === 'QC' && (
+                              <button
+                                onClick={() => {
+                                  setSelectedItem(item);
+                                  const q = item.current_stage_quantity || 0;
+                                  setQcForm({
+                                    input_quantity: q,
+                                    passed_quantity: q,
+                                    rejected_quantity: 0,
+                                    rework_quantity: 0,
+                                    defect_reason: '',
+                                    remarks: '',
+                                    rework_stage_id: '5',
+                                  });
+                                  setError('');
+                                  setQcOpen(true);
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-amber-50 text-amber-700 hover:bg-amber-100 rounded border border-amber-200 transition-colors shadow-2xs"
+                                title="Perform QC inspection"
+                              >
+                                <ShieldCheck className="w-3 h-3" />
+                                <span>QC Inspect</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
 
-        {orders.length === 0 && !loading && (
-          <div className="text-center py-20 bg-white border border-slate-200 rounded-xl text-slate-400 text-sm">
+        {filteredOrders.length === 0 && !loading && (
+          <div className="text-center py-20 bg-white border border-slate-200 rounded-xl text-slate-400 text-sm shadow-2xs">
             <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            No production orders found. Click &quot;New Order&quot; to create one.
+            <p className="font-semibold text-slate-600">No production orders match the filter.</p>
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="mt-2 text-xs text-brand-600 hover:underline"
+              >
+                Clear search query
+              </button>
+            )}
           </div>
         )}
       </div>
