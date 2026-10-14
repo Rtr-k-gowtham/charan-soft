@@ -25,6 +25,7 @@ import {
   X,
   TrendingUp,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 export default function ProductionOrders() {
@@ -35,6 +36,11 @@ export default function ProductionOrders() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
+  const [expandedOrders, setExpandedOrders] = useState<Record<number, boolean>>({});
+
+  const toggleExpand = (id: number) => {
+    setExpandedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Move stage modal state
   const [moveOpen, setMoveOpen] = useState(false);
@@ -271,268 +277,352 @@ export default function ProductionOrders() {
       </div>
 
       {/* Production Orders List */}
-      <div className="px-3 sm:px-4 md:px-6 py-2.5 space-y-3.5">
+      <div className="px-3 sm:px-4 md:px-6 py-2.5 space-y-3">
+        {/* Mobile order counter & expand/collapse toggle */}
+        <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+          <span>
+            Showing <strong className="text-slate-800">{filteredOrders.length}</strong> orders
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              const allExpanded = filteredOrders.length > 0 && filteredOrders.every((o) => expandedOrders[o.id]);
+              const next: Record<number, boolean> = {};
+              filteredOrders.forEach((o) => {
+                next[o.id] = !allExpanded;
+              });
+              setExpandedOrders(next);
+            }}
+            className="text-brand-600 hover:text-brand-700 font-semibold text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+          >
+            {filteredOrders.length > 0 && filteredOrders.every((o) => expandedOrders[o.id])
+              ? 'Collapse All'
+              : 'Expand All'}
+          </button>
+        </div>
+
         {filteredOrders.map((ord) => {
           const totalQty = ord.total_quantity || 0;
           const completedQty = ord.completed_quantity || 0;
           const pendingQty = Math.max(0, totalQty - completedQty);
           const pct = totalQty > 0 ? Math.min(100, Math.round((completedQty / totalQty) * 100)) : 0;
           const items = ord.items || [];
+          const isExpanded = !!expandedOrders[ord.id];
 
           return (
             <div
               key={ord.id}
-              className={`w-full bg-white border border-slate-200/90 rounded-xl overflow-hidden border-l-4 ${
+              className={`w-full bg-white rounded-2xl overflow-hidden border-l-4 ${
                 priorityBorder[ord.priority] || 'border-l-slate-300'
-              } shadow-2xs hover:shadow-md transition-all duration-200`}
+              } shadow-xs hover:shadow-md transition-all duration-200 border border-slate-100/90`}
             >
-              {/* ============================================================== */}
-              {/* TOP ROW: Order Identification & Header */}
-              {/* ============================================================== */}
-              <div className="p-3.5 sm:p-4 bg-white border-b border-slate-100 flex flex-col gap-2">
+              {/* TOP / COMPACT HEADER: Clickable card header to open/expand */}
+              <div
+                onClick={() => toggleExpand(ord.id)}
+                className="p-3.5 sm:p-4 bg-white cursor-pointer select-none transition-colors hover:bg-slate-50/50 flex flex-col gap-2"
+              >
                 {/* Badges & Action Line */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 border border-brand-200/80 px-2 py-0.5 rounded-md shrink-0 shadow-2xs">
+                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md shrink-0">
                       {ord.order_number}
                     </span>
                     <StatusBadge status={ord.priority} />
                     <StatusBadge status={ord.status} />
                   </div>
 
-                  <Button
-                    variant="secondary"
-                    size="xs"
-                    icon={<Eye className="w-3.5 h-3.5" />}
-                    onClick={() => navigate(`/production/orders/${ord.id}`)}
-                    className="shrink-0 font-medium"
-                  >
-                    <span className="hidden sm:inline">View Details</span>
-                    <span className="sm:hidden">View</span>
-                  </Button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      icon={<Eye className="w-3.5 h-3.5" />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/production/orders/${ord.id}`);
+                      }}
+                      className="font-medium"
+                    >
+                      <span className="hidden sm:inline">View Details</span>
+                      <span className="sm:hidden">View</span>
+                    </Button>
+
+                    {/* Chevron toggle button */}
+                    <div
+                      className={`w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 transition-transform duration-200 sm:hidden ${
+                        isExpanded ? 'rotate-180 bg-brand-50 text-brand-600' : ''
+                      }`}
+                      title={isExpanded ? 'Collapse card' : 'Expand card'}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Title Line */}
                 <h3
-                  className="text-sm font-bold text-slate-800 leading-snug hover:text-brand-600 transition-colors cursor-pointer"
+                  className="text-sm font-bold text-slate-800 leading-snug hover:text-brand-600 transition-colors"
                   title={ord.title}
-                  onClick={() => navigate(`/production/orders/${ord.id}`)}
                 >
                   {ord.title}
                 </h3>
+
+                {/* Compact Info Row: Visible when collapsed so multiple cards are readable at a glance */}
+                <div className="flex items-center justify-between gap-2 text-xs text-slate-500 flex-wrap pt-0.5">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="flex items-center gap-1 text-slate-700 font-medium">
+                      <User className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                      <span className="truncate max-w-[140px]">{ord.customer_name || 'Direct Order'}</span>
+                    </span>
+                    <span className="flex items-center gap-1 text-slate-400 font-mono text-[11px]">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      {ord.target_delivery_date || '—'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    <span className="text-[11px] font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full">
+                      {totalQty.toLocaleString()} pcs
+                    </span>
+                    <span
+                      className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-full ${
+                        pct === 100
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-brand-50 text-brand-700'
+                      }`}
+                    >
+                      {pct}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Mobile tap indicator hint when collapsed */}
+                {!isExpanded && (
+                  <div className="sm:hidden pt-1 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>
+                      {items.length} product {items.length === 1 ? 'line' : 'lines'} assigned
+                    </span>
+                    <span className="text-brand-600 font-semibold flex items-center gap-0.5">
+                      Tap to open <ChevronDown className="w-3 h-3" />
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* ============================================================== */}
-              {/* MOBILE VIEW (< sm): Clean, Friendly, Uncongested Mobile Layout */}
+              {/* MOBILE EXPANDED VIEW (< sm): Clean, Borderless & Spacious */}
               {/* ============================================================== */}
-              <div className="sm:hidden p-3.5 space-y-3.5 bg-white">
-                {/* Buyer & Target Delivery */}
-                <div className="flex flex-col gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 min-w-0">
-                      <User className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                      <span className="text-slate-400 shrink-0">Buyer:</span>
-                      <strong className="text-slate-800 truncate">{ord.customer_name || 'Direct Order'}</strong>
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/50 text-[11px]">
-                    <span className="flex items-center gap-1.5 text-slate-500">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="text-slate-400">Target Delivery:</span>
-                      <strong className="text-slate-700 font-mono">{ord.target_delivery_date || '—'}</strong>
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3-Column Quantities Grid */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/70">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total</span>
-                    <span className="text-sm font-bold font-mono text-slate-900 block mt-0.5">{totalQty.toLocaleString()}</span>
-                    <span className="text-[9px] text-slate-400">pcs</span>
-                  </div>
-                  <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200/70">
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 block tracking-wider">Done</span>
-                    <span className="text-sm font-bold font-mono text-emerald-700 block mt-0.5">{completedQty.toLocaleString()}</span>
-                    <span className="text-[9px] text-emerald-600">pcs</span>
-                  </div>
-                  <div className="bg-amber-50/70 p-2.5 rounded-xl border border-amber-200/70">
-                    <span className="text-[10px] uppercase font-bold text-amber-600 block tracking-wider">Pending</span>
-                    <span className="text-sm font-bold font-mono text-amber-700 block mt-0.5">{pendingQty.toLocaleString()}</span>
-                    <span className="text-[9px] text-amber-600">pcs</span>
-                  </div>
-                </div>
-
-                {/* Batch Progress Bar */}
-                <div className="space-y-1.5 px-0.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                      <TrendingUp className="w-3.5 h-3.5 text-brand-600" />
-                      <span>Batch Progress</span>
-                    </span>
-                    <span className="font-mono font-bold text-brand-700">{pct}%</span>
-                  </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Assigned Product Lines Header */}
-                <div className="pt-2 border-t border-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-brand-600" />
-                      Product Variants ({items.length})
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-mono">Stage tracking</span>
+              {isExpanded && (
+                <div className="sm:hidden px-3.5 pb-3.5 pt-1 space-y-3 bg-white">
+                  {/* 3-Column Quantities Grid - Soft borderless pastel backgrounds */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-slate-50 p-2.5 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total</span>
+                      <span className="text-sm font-bold font-mono text-slate-900 block mt-0.5">
+                        {totalQty.toLocaleString()}
+                      </span>
+                      <span className="text-[9px] text-slate-400">pcs</span>
+                    </div>
+                    <div className="bg-emerald-50/70 p-2.5 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-emerald-700 block tracking-wider">Done</span>
+                      <span className="text-sm font-bold font-mono text-emerald-800 block mt-0.5">
+                        {completedQty.toLocaleString()}
+                      </span>
+                      <span className="text-[9px] text-emerald-600">pcs</span>
+                    </div>
+                    <div className="bg-amber-50/70 p-2.5 rounded-xl">
+                      <span className="text-[10px] uppercase font-bold text-amber-700 block tracking-wider">Pending</span>
+                      <span className="text-sm font-bold font-mono text-amber-800 block mt-0.5">
+                        {pendingQty.toLocaleString()}
+                      </span>
+                      <span className="text-[9px] text-amber-600">pcs</span>
+                    </div>
                   </div>
 
-                  <div className="space-y-2.5">
-                    {items.length === 0 ? (
-                      <div className="p-3 text-center text-xs text-slate-400 italic bg-slate-50 rounded-lg">
-                        No product lines assigned
-                      </div>
-                    ) : (
-                      items.map((item, idx) => {
-                        const itTotal = item.total_quantity || 0;
-                        const itDone = item.completed_quantity || 0;
-                        const itPending = Math.max(0, itTotal - itDone);
-                        const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
-                        const pantone = item.color_pantone_code;
+                  {/* Batch Progress Bar - Soft borderless bar */}
+                  <div className="space-y-1.5 bg-slate-50/50 p-2.5 rounded-xl">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-600 flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-brand-600" />
+                        <span>Batch Progress</span>
+                      </span>
+                      <span className="font-mono font-bold text-brand-700">{pct}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-200/60 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
 
-                        return (
-                          <div
-                            key={item.id}
-                            className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/80 flex flex-col gap-2.5"
-                          >
-                            {/* Product Title & Code & Size */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-bold text-slate-800 leading-snug">
-                                  #{idx + 1} {item.product_name || 'Garment Item'}
-                                </p>
-                                {item.product_code && (
-                                  <span className="inline-block text-[10px] font-mono text-slate-500 bg-white border border-slate-200 px-1.5 py-0.2 rounded mt-0.5">
-                                    {item.product_code}
+                  {/* Assigned Product Lines Header */}
+                  <div className="pt-1">
+                    <div className="flex items-center justify-between mb-2 px-0.5">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-brand-600" />
+                        Product Variants ({items.length})
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">Stage tracking</span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {items.length === 0 ? (
+                        <div className="p-3 text-center text-xs text-slate-400 italic bg-slate-50 rounded-xl">
+                          No product lines assigned
+                        </div>
+                      ) : (
+                        items.map((item, idx) => {
+                          const itTotal = item.total_quantity || 0;
+                          const itDone = item.completed_quantity || 0;
+                          const itPending = Math.max(0, itTotal - itDone);
+                          const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
+                          const pantone = item.color_pantone_code;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="p-3 bg-slate-50/80 rounded-xl flex flex-col gap-2.5"
+                            >
+                              {/* Product Title & Code & Size */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-800 leading-snug">
+                                    #{idx + 1} {item.product_name || 'Garment Item'}
+                                  </p>
+                                  {item.product_code && (
+                                    <span className="inline-block text-[10px] font-mono text-slate-500 bg-white px-1.5 py-0.2 rounded mt-0.5 shadow-2xs">
+                                      {item.product_code}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="px-2 py-0.5 bg-blue-50 text-brand-700 rounded text-[11px] font-mono font-bold shrink-0">
+                                  Size {item.size}
+                                </span>
+                              </div>
+
+                              {/* Color & Variant Info - Borderless soft chips */}
+                              <div className="flex items-center gap-2 flex-wrap text-xs">
+                                <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-lg shadow-2xs">
+                                  {item.color_hex_code && (
+                                    <span
+                                      className="w-3 h-3 rounded-full shrink-0 border border-slate-200"
+                                      style={{ backgroundColor: item.color_hex_code }}
+                                    />
+                                  )}
+                                  <span className="font-medium text-slate-700">{item.color}</span>
+                                </div>
+                                {pantone && (
+                                  <span className="px-2 py-1 bg-amber-100/70 text-amber-900 rounded-lg text-[10px] font-mono font-bold">
+                                    Pantone {pantone}
                                   </span>
                                 )}
                               </div>
-                              <span className="px-2 py-0.5 bg-blue-50 text-brand-700 border border-brand-200 rounded text-[11px] font-mono font-bold shrink-0">
-                                Size {item.size}
-                              </span>
-                            </div>
 
-                            {/* Color & Variant Info */}
-                            <div className="flex items-center gap-2 flex-wrap text-xs">
-                              <div className="flex items-center gap-1.5 px-2 py-1 bg-white rounded-md border border-slate-200 shadow-2xs">
-                                {item.color_hex_code && (
+                              {/* Stage & Quantity Status */}
+                              <div className="flex items-center justify-between text-xs pt-1">
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Current Stage</span>
                                   <span
-                                    className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
-                                    style={{ backgroundColor: item.color_hex_code }}
+                                    className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap mt-0.5"
+                                    style={{ backgroundColor: item.color_badge || '#0284c7' }}
+                                  >
+                                    {item.current_stage_name || 'Stage'} ({item.current_stage_quantity})
+                                  </span>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Qty</span>
+                                  <span className="font-mono font-bold text-slate-800">
+                                    {itTotal.toLocaleString()} pcs
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Line Progress bar */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                  <span>Progress: {itPct}%</span>
+                                  <span>{itDone} done • {itPending} pend</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-200/70 rounded-full overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                                    }`}
+                                    style={{ width: `${itPct}%` }}
                                   />
-                                )}
-                                <span className="font-medium text-slate-700">{item.color}</span>
-                              </div>
-                              {pantone && (
-                                <span className="px-2 py-1 bg-amber-50 text-amber-900 border border-amber-300/80 rounded-md text-[10px] font-mono font-bold">
-                                  Pantone {pantone}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Stage & Quantity Status */}
-                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200/60">
-                              <div>
-                                <span className="text-[10px] uppercase font-bold text-slate-400 block">Current Stage</span>
-                                <span
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold text-white whitespace-nowrap mt-0.5"
-                                  style={{ backgroundColor: item.color_badge || '#0284c7' }}
-                                >
-                                  {item.current_stage_name || 'Stage'} ({item.current_stage_quantity})
-                                </span>
+                                </div>
                               </div>
 
-                              <div className="text-right">
-                                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Qty</span>
-                                <span className="font-mono font-bold text-slate-800">
-                                  {itTotal.toLocaleString()} pcs
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Line Progress bar */}
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                                <span>Progress: {itPct}%</span>
-                                <span>{itDone} done • {itPending} pend</span>
-                              </div>
-                              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-300 ${
-                                    itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                                  }`}
-                                  style={{ width: `${itPct}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Action Buttons: Move Stage / QC */}
-                            <div className="flex items-center gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedItem(item);
-                                  setMoveForm({
-                                    to_stage_id: '',
-                                    quantity_moved: item.current_stage_quantity || 1,
-                                    remarks: '',
-                                  });
-                                  setError('');
-                                  setMoveOpen(true);
-                                }}
-                                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-white hover:bg-slate-50 text-brand-700 border border-brand-300 rounded-lg shadow-2xs transition-colors"
-                              >
-                                <ArrowRight className="w-3.5 h-3.5" />
-                                <span>Move Stage</span>
-                              </button>
-
-                              {item.current_stage_name === 'QC' && (
+                              {/* Action Buttons: Move Stage / QC */}
+                              <div className="flex items-center gap-2 pt-1">
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedItem(item);
-                                    const q = item.current_stage_quantity || 0;
-                                    setQcForm({
-                                      input_quantity: q,
-                                      passed_quantity: q,
-                                      rejected_quantity: 0,
-                                      rework_quantity: 0,
-                                      defect_reason: '',
+                                    setMoveForm({
+                                      to_stage_id: '',
+                                      quantity_moved: item.current_stage_quantity || 1,
                                       remarks: '',
-                                      rework_stage_id: '5',
                                     });
                                     setError('');
-                                    setQcOpen(true);
+                                    setMoveOpen(true);
                                   }}
-                                  className="flex items-center justify-center gap-1 py-1.5 px-3 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-300 rounded-lg shadow-2xs transition-colors"
+                                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-white hover:bg-slate-50 text-brand-700 rounded-lg shadow-2xs transition-colors"
                                 >
-                                  <ShieldCheck className="w-3.5 h-3.5" />
-                                  <span>QC</span>
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                  <span>Move Stage</span>
                                 </button>
-                              )}
+
+                                {item.current_stage_name === 'QC' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedItem(item);
+                                      const q = item.current_stage_quantity || 0;
+                                      setQcForm({
+                                        input_quantity: q,
+                                        passed_quantity: q,
+                                        rejected_quantity: 0,
+                                        rework_quantity: 0,
+                                        defect_reason: '',
+                                        remarks: '',
+                                        rework_stage_id: '5',
+                                      });
+                                      setError('');
+                                      setQcOpen(true);
+                                    }}
+                                    className="flex items-center justify-center gap-1 py-1.5 px-3 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-2xs transition-colors"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5" />
+                                    <span>QC</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Collapse pill button at the bottom */}
+                  <div className="pt-1 text-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(ord.id)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-slate-600 bg-slate-50 px-3 py-1 rounded-full cursor-pointer transition-colors"
+                    >
+                      <span>Collapse card</span>
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* ============================================================== */}
               {/* DESKTOP VIEW (sm+): Dense Multi-Column Enterprise Grid Layout  */}
