@@ -2132,61 +2132,100 @@ export default function PurchaseOrders() {
     return (
       <div className="flex flex-col h-full bg-slate-50 overflow-y-auto">
         {/* Top Sticky Header */}
-        <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => { setViewPO(null); setApprovalSuccess(''); setApprovalError(''); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Orders
-            </button>
-            <div className="h-5 w-px bg-slate-200" />
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-800 leading-tight">Purchase Order: {viewPO.po_number}</h1>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                  (viewPO.status || '').toLowerCase() === 'draft'
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                }`}>
-                  {(viewPO.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Ordered'}
-                </span>
+        <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sticky top-0 z-30 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Left: Back button & Title */}
+            <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
+              <button
+                onClick={() => { setViewPO(null); setApprovalSuccess(''); setApprovalError(''); }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Back to Orders</span>
+                <span className="sm:hidden">Back</span>
+              </button>
+              <div className="h-5 w-px bg-slate-200 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">
+                    PO: {viewPO.po_number}
+                  </h1>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold ${
+                    (viewPO.status || '').toLowerCase() === 'draft'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  }`}>
+                    {(viewPO.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Ordered'}
+                  </span>
+                </div>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
+                  Supplier: {viewPO.supplier_name || '—'} • Category: {viewPO.category_name || '—'}
+                </p>
               </div>
-              <p className="text-[11px] text-slate-500">
-                Read-only detail view • Supplier: {viewPO.supplier_name || '—'} • Category: {viewPO.category_name || '—'}
-              </p>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => { setViewPO(null); setApprovalSuccess(''); setApprovalError(''); }}>
-              Back to Orders
-            </Button>
-            <Button
-              variant="secondary"
-              icon={<Printer className="w-3.5 h-3.5" />}
-              onClick={() => setPrintPO(viewPO)}
-            >
-              Print / Save A4 PDF
-            </Button>
-            {(viewPO.status || '').toLowerCase() === 'draft' && (
+            {/* Right: Actions */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+              {/* Create / View PRO button */}
+              {(viewPO as any).production_order_id ? (
+                <Button
+                  variant="primary"
+                  size="xs"
+                  icon={<Layers className="w-3.5 h-3.5" />}
+                  onClick={() => navigate(`/production/orders/${(viewPO as any).production_order_id}`)}
+                  className="font-medium"
+                >
+                  View PRO
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="xs"
+                  icon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => navigate('/production/orders/new', {
+                    state: {
+                      from_po: viewPO.po_number,
+                      po_id: viewPO.id,
+                      supplier: viewPO.supplier_name,
+                      category: viewPO.category_name,
+                    }
+                  })}
+                  className="font-medium"
+                >
+                  Create PRO
+                </Button>
+              )}
+
               <Button
                 variant="secondary"
-                icon={<Pencil className="w-3.5 h-3.5" />}
-                onClick={() => handleOpenEdit(viewPO)}
+                size="xs"
+                icon={<Printer className="w-3.5 h-3.5" />}
+                onClick={() => setPrintPO(viewPO)}
               >
-                Edit PO
+                Print PDF
               </Button>
-            )}
-            {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
-              <Button
-                icon={<CheckCircle2 className="w-4 h-4" />}
-                onClick={() => setApproveModalOpen(true)}
-              >
-                Approve PO
-              </Button>
-            )}
+
+              {(viewPO.status || '').toLowerCase() === 'draft' && (
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  icon={<Pencil className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenEdit(viewPO)}
+                >
+                  Edit PO
+                </Button>
+              )}
+
+              {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
+                <Button
+                  size="xs"
+                  icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                  onClick={() => setApproveModalOpen(true)}
+                >
+                  Approve
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2343,7 +2382,89 @@ export default function PurchaseOrders() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Line Items Cards (< sm) */}
+            <div className="sm:hidden p-3 space-y-2.5">
+              {(!viewPO.items || viewPO.items.length === 0) ? (
+                <div className="py-6 text-center text-xs text-slate-400 italic">
+                  No line items recorded for this purchase order.
+                </div>
+              ) : (
+                viewPO.items.map((it: any, idx: number) => {
+                  const desc = it.item_description || it.description || it.accessory_name || it.item_name || 'Line Item';
+                  const code = it.item_code || it.material_code || it.code;
+                  const qty = it.quantity || it.qty || it.kgs || it.weight || 0;
+                  const rate = Number(it.rate || 0);
+                  const net = Number(it.net_amount || (qty * rate));
+                  const tax = Number(it.tax_amount || 0);
+
+                  return (
+                    <div key={idx} className="bg-slate-50/90 rounded-2xl p-3.5 space-y-2 border-0 shadow-2xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-800 leading-snug">
+                            #{idx + 1} {desc}
+                          </p>
+                          {code && (
+                            <span className="inline-block text-[10px] font-mono text-slate-500 bg-white px-1.5 py-0.2 rounded mt-0.5 shadow-2xs">
+                              {code}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-mono font-bold text-brand-700 bg-white px-2 py-0.5 rounded-lg shadow-2xs shrink-0">
+                          {fmtCur(net)}
+                        </span>
+                      </div>
+
+                      {/* Design / Color / Size chips if available */}
+                      {(it.design || it.color || it.size) && (
+                        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                          {it.design && (
+                            <span className="bg-white px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                              Design: {it.design}
+                            </span>
+                          )}
+                          {it.color && (
+                            <span className="bg-white px-2 py-0.5 rounded text-slate-600 shadow-2xs">
+                              Color: {it.color}
+                            </span>
+                          )}
+                          {it.size && (
+                            <span className="bg-white px-2 py-0.5 rounded text-slate-600 shadow-2xs font-mono">
+                              Size: {it.size}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 3-Column metrics */}
+                      <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
+                        <div className="bg-white p-2 rounded-xl">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Quantity</span>
+                          <span className="font-mono font-bold text-slate-800 text-[11px] block mt-0.5">
+                            {qty} {it.uom || ''}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Rate</span>
+                          <span className="font-mono font-bold text-slate-800 text-[11px] block mt-0.5">
+                            {fmtCur(rate)}
+                          </span>
+                        </div>
+                        <div className="bg-white p-2 rounded-xl">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block">Tax</span>
+                          <span className="font-mono text-slate-600 text-[11px] block mt-0.5">
+                            {fmtCur(tax)} ({it.tax_percent ?? 5}%)
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Table (sm+) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse table-auto">
                 <thead>
                   <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold">
@@ -2573,15 +2694,36 @@ export default function PurchaseOrders() {
           </div>
 
           {/* Section 3: Bottom Summary & Approval Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
-            <div className="text-xs text-slate-500">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 bg-white border-0 rounded-2xl shadow-xs">
+            <div className="text-xs text-slate-500 text-center sm:text-left">
               Total {(viewPO.items || []).length} item line{(viewPO.items || []).length !== 1 ? 's' : ''} • Tax Amount: <span className="font-mono font-semibold text-slate-700">{fmtCur(viewTotals.tax)}</span> • Net Amount: <span className="font-mono font-bold text-brand-700">{fmtCur(viewTotals.net)}</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <Button variant="secondary" onClick={() => { setViewPO(null); setApprovalSuccess(''); setApprovalError(''); }}>
-                Back to Orders
-              </Button>
+            <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end">
+              {(viewPO as any).production_order_id ? (
+                <Button
+                  variant="primary"
+                  icon={<Layers className="w-3.5 h-3.5" />}
+                  onClick={() => navigate(`/production/orders/${(viewPO as any).production_order_id}`)}
+                >
+                  View PRO
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  icon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => navigate('/production/orders/new', {
+                    state: {
+                      from_po: viewPO.po_number,
+                      po_id: viewPO.id,
+                      supplier: viewPO.supplier_name,
+                      category: viewPO.category_name,
+                    }
+                  })}
+                >
+                  Create PRO
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 icon={<Printer className="w-3.5 h-3.5" />}
