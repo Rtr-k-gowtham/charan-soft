@@ -170,12 +170,12 @@ export default function PwaInstallPrompt() {
           {/* Header row */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              {/* App Icon */}
-              <div className="w-13 h-13 rounded-2xl bg-white p-1 shrink-0 shadow-md border border-slate-200/20 overflow-hidden flex items-center justify-center">
+              {/* App Icon - Compact & Crisp */}
+              <div className="w-10 h-10 min-w-[40px] max-w-[40px] min-h-[40px] max-h-[40px] rounded-xl bg-white p-1 shrink-0 shadow-sm border border-slate-200/30 overflow-hidden flex items-center justify-center">
                 <img
-                  src="/app-icon.png"
+                  src="/icon-192.png"
                   alt="Cheran Soft Icon"
-                  className="w-full h-full object-contain rounded-xl"
+                  className="w-full h-full object-contain"
                 />
               </div>
 
