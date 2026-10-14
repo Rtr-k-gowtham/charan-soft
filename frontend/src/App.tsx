@@ -3,6 +3,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import AppLayout from './components/layout/AppLayout';
+import PwaInstallPrompt from './components/pwa/PwaInstallPrompt';
 
 // Pages
 import Login from './pages/Login';
@@ -158,6 +159,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <AppRoutes />
+        <PwaInstallPrompt />
       </AuthProvider>
     </BrowserRouter>
   );
