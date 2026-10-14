@@ -87,18 +87,26 @@ function AppRoutes() {
               <Route path="/inventory/adjustment" element={<StockAdjustment />} />
               <Route path="/inventory/low-stock" element={<LowStock />} />
 
-              {/* Production */}
+              {/* Production - 10 Core Stages */}
               <Route path="/production/orders" element={<ProductionOrders />} />
               <Route path="/production/orders/create" element={<CreateProductionOrder />} />
               <Route path="/production/board" element={<ProductionBoard />} />
-              <Route path="/production/installation" element={<ProductionStageView stageName="Installation" stageCode="INST" breadcrumb={['Installation']} />} />
-              <Route path="/production/dyeing" element={<ProductionStageView stageName="Dyeing" stageCode="DYE" breadcrumb={['Dyeing']} />} />
-              <Route path="/production/detailing" element={<ProductionStageView stageName="Detailing" stageCode="DET" breadcrumb={['Detailing']} />} />
-              <Route path="/production/cutting" element={<ProductionStageView stageName="Cutting" stageCode="CUT" breadcrumb={['Cutting']} />} />
-              <Route path="/production/stitching" element={<ProductionStageView stageName="Stitching" stageCode="STI" breadcrumb={['Stitching']} />} />
-              <Route path="/production/qc" element={<ProductionStageView stageName="QC" stageCode="QC" breadcrumb={['Quality Control']} />} />
-              <Route path="/production/rework" element={<ProductionStageView stageName="Rework" stageCode="RWK" breadcrumb={['Rework']} />} />
-              <Route path="/production/completed" element={<ProductionStageView stageName="Completed" stageCode="COMP" breadcrumb={['Completed']} />} />
+              <Route path="/production/requirement" element={<ProductionStageView stageName="Requirement Gathering" stageCode="REQ" breadcrumb={['01. Requirement gathering']} />} />
+              <Route path="/production/po" element={<ProductionStageView stageName="Purchase Order (PO)" stageCode="PO" breadcrumb={['02. PO (Purchase Order)']} />} />
+              <Route path="/production/inward" element={<ProductionStageView stageName="Inward" stageCode="INW" breadcrumb={['03. Inward']} />} />
+              <Route path="/production/dyeing" element={<ProductionStageView stageName="Dyeing" stageCode="DYE" breadcrumb={['04. Dyeing']} />} />
+              <Route path="/production/cutting" element={<ProductionStageView stageName="Cutting — Product-wise" stageCode="CUT" breadcrumb={['05. Cutting — Product-wise']} />} />
+              <Route path="/production/embroidery" element={<ProductionStageView stageName="Embroidery — Outward / Inward" stageCode="EMB" breadcrumb={['06. Embroidery — Outward / Inward']} />} />
+              <Route path="/production/stitching" element={<ProductionStageView stageName="Stitching — Color-wise Tracking" stageCode="STI" breadcrumb={['07. Stitching — Color-wise Tracking']} />} />
+              <Route path="/production/checking" element={<ProductionStageView stageName="Checking" stageCode="CHK" breadcrumb={['08. Checking']} />} />
+              <Route path="/production/packing" element={<ProductionStageView stageName="Packing" stageCode="PCK" breadcrumb={['09. Packing']} />} />
+              <Route path="/production/completed" element={<ProductionStageView stageName="Completed" stageCode="COMP" breadcrumb={['10. Completed']} />} />
+
+              {/* Backward compatibility redirects for legacy stage links */}
+              <Route path="/production/installation" element={<Navigate to="/production/requirement" replace />} />
+              <Route path="/production/detailing" element={<Navigate to="/production/dyeing" replace />} />
+              <Route path="/production/qc" element={<Navigate to="/production/checking" replace />} />
+              <Route path="/production/rework" element={<Navigate to="/production/checking" replace />} />
 
               {/* Masters */}
               <Route path="/masters/products" element={<Products />} />

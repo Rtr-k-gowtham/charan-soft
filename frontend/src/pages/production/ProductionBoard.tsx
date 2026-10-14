@@ -16,25 +16,29 @@ import { api } from '../../lib/api';
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
 const DEFAULT_STAGES: ProductionStage[] = [
-  { id: 1, code: 'INST', name: 'Installation', sequence_order: 1, color_badge: '#6366f1', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 2, code: 'DYE', name: 'Dyeing', sequence_order: 2, color_badge: '#0ea5e9', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 3, code: 'DET', name: 'Detailing', sequence_order: 3, color_badge: '#8b5cf6', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 4, code: 'CUT', name: 'Cutting', sequence_order: 4, color_badge: '#f59e0b', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 5, code: 'STI', name: 'Stitching', sequence_order: 5, color_badge: '#10b981', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 6, code: 'QC', name: 'QC', sequence_order: 6, color_badge: '#ef4444', is_qc_stage: true, is_final_stage: false, status: 'active' },
-  { id: 7, code: 'RWK', name: 'Rework', sequence_order: 7, color_badge: '#ec4899', is_qc_stage: false, is_final_stage: false, status: 'active' },
-  { id: 8, code: 'COMP', name: 'Completed', sequence_order: 8, color_badge: '#059669', is_qc_stage: false, is_final_stage: true, status: 'active' },
+  { id: 1, code: 'REQ', name: 'Requirement Gathering', sequence_order: 1, color_badge: '#6366f1', description: 'Production Requirement created for the product.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 2, code: 'PO', name: 'Purchase Order (PO)', sequence_order: 2, color_badge: '#0284c7', description: 'Purchase order creation and tracking.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 3, code: 'INW', name: 'Inward', sequence_order: 3, color_badge: '#0d9488', description: 'Receive materials or products into inventory.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 4, code: 'DYE', name: 'Dyeing', sequence_order: 4, color_badge: '#7c3aed', description: 'Send material for dyeing and track color-wise processing.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 5, code: 'CUT', name: 'Cutting — Product-wise', sequence_order: 5, color_badge: '#d97706', description: 'Track cutting quantities separately for each product and size.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 6, code: 'EMB', name: 'Embroidery — Outward / Inward', sequence_order: 6, color_badge: '#ec4899', description: 'Track material sent to the embroidery unit and the quantity received back.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 7, code: 'STI', name: 'Stitching — Color-wise Tracking', sequence_order: 7, color_badge: '#2563eb', description: 'Track stitching progress by product, color, size and quantity.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 8, code: 'CHK', name: 'Checking', sequence_order: 8, color_badge: '#ef4444', description: 'Quality inspection, defect recording and approval.', is_qc_stage: true, is_final_stage: false, status: 'active' },
+  { id: 9, code: 'PCK', name: 'Packing', sequence_order: 9, color_badge: '#059669', description: 'Pack approved products and track packed quantities.', is_qc_stage: false, is_final_stage: false, status: 'active' },
+  { id: 10, code: 'COMP', name: 'Completed', sequence_order: 10, color_badge: '#16a34a', description: 'Production order completed with final quantities recorded.', is_qc_stage: false, is_final_stage: true, status: 'active' },
 ];
 
 const STAGE_ROUTE_MAP: Record<number, string> = {
-  1: '/production/installation',
-  2: '/production/dyeing',
-  3: '/production/detailing',
-  4: '/production/cutting',
-  5: '/production/stitching',
-  6: '/production/qc',
-  7: '/production/rework',
-  8: '/production/completed',
+  1: '/production/requirement',
+  2: '/production/po',
+  3: '/production/inward',
+  4: '/production/dyeing',
+  5: '/production/cutting',
+  6: '/production/embroidery',
+  7: '/production/stitching',
+  8: '/production/checking',
+  9: '/production/packing',
+  10: '/production/completed',
 };
 
 const priorityConfig: Record<string, { dot: string; badge: string }> = {
@@ -132,22 +136,17 @@ export default function ProductionBoard() {
     const cur = stages.find(s => s.id === currentStageId);
     if (!cur) return [];
 
-    // Stage 8 (Completed) has no next stage (terminal state)
-    if (cur.is_final_stage || cur.sequence_order === 8) {
+    // Stage 10 (Completed) has no next stage (terminal state)
+    if (cur.is_final_stage || cur.sequence_order === 10 || cur.code === 'COMP') {
       return [];
     }
 
-    // Stage 6 (QC): Next valid destinations are Stage 8 (Completed) or Stage 7 (Rework)
-    if (cur.is_qc_stage || cur.sequence_order === 6) {
-      return stages.filter(s => s.sequence_order === 7 || s.sequence_order === 8);
+    // Stage 8 (Checking / QC): Next valid destinations are Stage 9 (Packing) or rework to prior stages (Cutting, Embroidery, Stitching)
+    if (cur.is_qc_stage || cur.sequence_order === 8 || cur.code === 'CHK') {
+      return stages.filter(s => s.sequence_order === 9 || s.code === 'CUT' || s.code === 'EMB' || s.code === 'STI');
     }
 
-    // Stage 7 (Rework): Must return to Stage 6 (QC)
-    if (cur.sequence_order === 7) {
-      return stages.filter(s => s.sequence_order === 6);
-    }
-
-    // Standard sequence stages 1 to 5 (Installation -> Dyeing -> Detailing -> Cutting -> Stitching -> QC)
+    // Standard sequence stages (1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10)
     return stages.filter(s => s.sequence_order === cur.sequence_order + 1);
   };
 

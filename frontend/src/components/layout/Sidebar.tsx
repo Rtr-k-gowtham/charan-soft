@@ -41,58 +41,22 @@ const navItems: NavItem[] = [
     label: 'Production', icon: Factory,
     children: [
       { label: 'Production Orders', path: '/production/orders' },
+      { label: 'Production Board', path: '/production/board' },
       {
-        label: 'Production Board',
-        path: '/production/board',
+        label: 'Production Stages',
         children: [
-          {
-            label: 'Installation',
-            path: '/production/installation',
-            children: [
-              {
-                label: 'Dyeing',
-                path: '/production/dyeing',
-                children: [
-                  {
-                    label: 'Detailing',
-                    path: '/production/detailing',
-                    children: [
-                      {
-                        label: 'Cutting',
-                        path: '/production/cutting',
-                        children: [
-                          {
-                            label: 'Stitching',
-                            path: '/production/stitching',
-                            children: [
-                              {
-                                label: 'QC',
-                                path: '/production/qc',
-                                children: [
-                                  {
-                                    label: 'Rework',
-                                    path: '/production/rework',
-                                    children: [
-                                      {
-                                        label: 'Completed',
-                                        path: '/production/completed'
-                                      }
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
+          { label: '01. Requirement gathering', path: '/production/requirement' },
+          { label: '02. PO (Purchase Order)', path: '/production/po' },
+          { label: '03. Inward', path: '/production/inward' },
+          { label: '04. Dyeing', path: '/production/dyeing' },
+          { label: '05. Cutting — Product-wise', path: '/production/cutting' },
+          { label: '06. Embroidery — Out/In', path: '/production/embroidery' },
+          { label: '07. Stitching — Color-wise', path: '/production/stitching' },
+          { label: '08. Checking', path: '/production/checking' },
+          { label: '09. Packing', path: '/production/packing' },
+          { label: '10. Completed', path: '/production/completed' },
+        ],
+      },
     ],
   },
   {

@@ -56,15 +56,18 @@ INSERT INTO designs (code, name, description) VALUES
 ('DES-SATIN', 'Striped Satin 300TC', 'Luxury 1cm stripe satin finish'),
 ('DES-DOBBY', 'Micro Dobby Check', 'Textured dobby square checks');
 
--- 3. Production Stages (Configurable!)
+-- 3. Production Stages (The 10 Core Production Pipeline Stages)
 INSERT INTO production_stages (id, name, code, sequence_order, description, color_badge, is_qc_stage, is_final_stage) VALUES
-(1, 'Installation', 'INSTALLATION', 1, 'Loom setup, warping, beam mounting, inspection ready', '#0284c7', 0, 0),
-(2, 'Dyeing', 'DYEING', 2, 'Yarn/fabric pre-treatment, jigger/softflow dyeing, bleaching', '#7c3aed', 0, 0),
-(3, 'Detailing', 'DETAILING', 3, 'Surface shearing, stentering, sanforizing, mercerizing', '#0891b2', 0, 0),
-(4, 'Cutting', 'CUTTING', 4, 'Lay spreading, pattern marker alignment, precision cutting', '#d97706', 0, 0),
-(5, 'Stitching', 'STITCHING', 5, 'Overlocking, hem stitching, border sewing, label fixing', '#2563eb', 0, 0),
-(6, 'QC', 'QC', 6, '100% table inspection, measurement audit, stain check, rework routing', '#ea580c', 1, 0),
-(7, 'Completed', 'COMPLETED', 7, 'Ironing, folding, packing, carton sealing, warehouse ready', '#16a34a', 0, 1);
+(1, 'Requirement Gathering', 'REQ', 1, 'Production Requirement created for the product.', '#6366f1', 0, 0),
+(2, 'Purchase Order (PO)', 'PO', 2, 'Purchase order creation and tracking.', '#0284c7', 0, 0),
+(3, 'Inward', 'INW', 3, 'Receive materials or products into inventory.', '#0d9488', 0, 0),
+(4, 'Dyeing', 'DYE', 4, 'Send material for dyeing and track color-wise processing.', '#7c3aed', 0, 0),
+(5, 'Cutting — Product-wise', 'CUT', 5, 'Track cutting quantities separately for each product and size.', '#d97706', 0, 0),
+(6, 'Embroidery — Outward / Inward', 'EMB', 6, 'Track material sent to the embroidery unit and the quantity received back.', '#ec4899', 0, 0),
+(7, 'Stitching — Color-wise Tracking', 'STI', 7, 'Track stitching progress by product, color, size and quantity.', '#2563eb', 0, 0),
+(8, 'Checking', 'CHK', 8, 'Quality inspection, defect recording and approval.', '#ef4444', 1, 0),
+(9, 'Packing', 'PCK', 9, 'Pack approved products and track packed quantities.', '#059669', 0, 0),
+(10, 'Completed', 'COMP', 10, 'Production order completed with final quantities recorded.', '#16a34a', 0, 1);
 
 -- 4. Seeded Categories (The Exact 8 Order Categories + Material Categories)
 INSERT INTO categories (id, name, code, type, description, sort_order) VALUES

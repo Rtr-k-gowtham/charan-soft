@@ -30,7 +30,7 @@ export default function ProductionOrders() {
     rework_quantity: 0,
     defect_reason: '',
     remarks: '',
-    rework_stage_id: '5'
+    rework_stage_id: '7'
   });
 
   const load = async () => {

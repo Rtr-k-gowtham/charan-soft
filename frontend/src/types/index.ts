@@ -237,6 +237,8 @@ export interface ProductionStage {
   name: string;
   code: string;
   sequence_order: number;
+  description?: string;
+  standard_cycle_time_mins?: number;
   color_badge: string;
   is_qc_stage: boolean;
   is_final_stage: boolean;

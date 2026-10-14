@@ -631,17 +631,19 @@ INSERT INTO users (id, role_id, name, email, password_hash, status)
 VALUES (1, 1, 'Cheran Administrator', 'admin@cheransoftgoods.com', '$2y$10$tZ2xS8uY7hVvM5vK2iL4U.m3a4j7g1w2e5r6t7y8u9i0o1p2q3r4s', 'active')
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
--- Production Stages
-INSERT INTO production_stages (id, code, name, sequence_order, standard_cycle_time_mins, color_badge, status) VALUES
-(1, 'INST', 'Installation', 1, 45, '#6366f1', 'active'),
-(2, 'DYE', 'Dyeing', 2, 180, '#0ea5e9', 'active'),
-(3, 'DET', 'Detailing', 3, 60, '#8b5cf6', 'active'),
-(4, 'CUT', 'Cutting', 4, 90, '#f59e0b', 'active'),
-(5, 'STI', 'Stitching', 5, 240, '#10b981', 'active'),
-(6, 'QC', 'QC', 6, 30, '#ef4444', 'active'),
-(7, 'RWK', 'Rework', 7, 60, '#ec4899', 'active'),
-(8, 'COMP', 'Completed', 8, 15, '#059669', 'active')
-ON DUPLICATE KEY UPDATE name = VALUES(name);
+-- Production Stages (10 Core Stages)
+INSERT INTO production_stages (id, code, name, sequence_order, standard_cycle_time_mins, color_badge, is_qc_stage, is_final_stage, status) VALUES
+(1, 'REQ', 'Requirement Gathering', 1, 60, '#6366f1', 0, 0, 'active'),
+(2, 'PO', 'Purchase Order (PO)', 2, 120, '#0284c7', 0, 0, 'active'),
+(3, 'INW', 'Inward', 3, 60, '#0d9488', 0, 0, 'active'),
+(4, 'DYE', 'Dyeing', 4, 240, '#7c3aed', 0, 0, 'active'),
+(5, 'CUT', 'Cutting — Product-wise', 5, 180, '#d97706', 0, 0, 'active'),
+(6, 'EMB', 'Embroidery — Outward / Inward', 6, 180, '#ec4899', 0, 0, 'active'),
+(7, 'STI', 'Stitching — Color-wise Tracking', 7, 300, '#2563eb', 0, 0, 'active'),
+(8, 'CHK', 'Checking', 8, 60, '#ef4444', 1, 0, 'active'),
+(9, 'PCK', 'Packing', 9, 90, '#059669', 0, 0, 'active'),
+(10, 'COMP', 'Completed', 10, 30, '#16a34a', 0, 1, 'active')
+ON DUPLICATE KEY UPDATE name = VALUES(name), code = VALUES(code), sequence_order = VALUES(sequence_order), color_badge = VALUES(color_badge), is_qc_stage = VALUES(is_qc_stage), is_final_stage = VALUES(is_final_stage);
 
 -- Units of Measure
 INSERT INTO units (id, code, name) VALUES
