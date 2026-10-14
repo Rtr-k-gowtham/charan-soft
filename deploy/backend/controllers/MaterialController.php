@@ -63,56 +63,23 @@ class MaterialController {
             $stmt->execute($params);
             $materials = $stmt->fetchAll();
 
-            // Auto-seed default materials if table is completely empty
-            if (empty($materials)) {
-                try {
-                    $catRow = $pdo->query("SELECT id FROM categories LIMIT 1")->fetch();
-                    $defCatId = $catRow ? (int)$catRow['id'] : 1;
-                    $defMaterials = [
-                        ['MAT-FAB-001', 'Cotton Fabric 100% Grey', 'MTR', 160.00, 5.00],
-                        ['MAT-FAB-002', 'Cotton Satin 300TC', 'MTR', 295.00, 5.00],
-                        ['MAT-FAB-003', 'Linen Fabric Raw', 'MTR', 320.00, 5.00],
-                        ['MAT-FAB-004', 'Canvas Heavy Fabric', 'MTR', 210.00, 5.00],
-                        ['MAT-YRN-001', 'Cotton Yarn 30s Cone', 'CONE', 240.00, 5.00],
-                        ['MAT-YRN-002', 'Cotton Yarn 40s Cone', 'CONE', 280.00, 5.00],
-                        ['MAT-SEW-001', 'Sewing Thread 3 Ply', 'CONE', 65.00, 12.00],
-                        ['MAT-SEW-002', 'Overlock Thread', 'CONE', 55.00, 12.00],
-                        ['MAT-ACC-001', 'YKK Nylon Coil Zipper #5', 'PCS', 18.50, 18.00],
-                        ['MAT-ACC-002', 'Poly Horn Buttons 18L', 'PCS', 0.85, 12.00],
-                        ['MAT-FIL-001', 'Polyester Fiber Fill', 'KG', 115.00, 12.00],
-                        ['MAT-FIL-002', 'Polyfill Microfiber', 'KG', 145.00, 12.00],
-                        ['MAT-PKG-001', 'Woven Brand Main Label', 'PCS', 2.20, 12.00],
-                        ['MAT-PKG-002', 'Wash Care Satin Label', 'PCS', 1.50, 12.00]
-                    ];
-                    $insStmt = $pdo->prepare("
-                        INSERT INTO materials (code, name, category_id, uom, purchase_rate, tax_percent, min_stock_level, current_stock, status)
-                        VALUES (?, ?, ?, ?, ?, ?, 100, 500, 'active')
-                    ");
-                    foreach ($defMaterials as $dm) {
-                        try {
-                            $insStmt->execute([$dm[0], $dm[1], $defCatId, $dm[2], $dm[3], $dm[4]]);
-                        } catch (Exception $ie) {}
-                    }
-                    $stmt->execute($params);
-                    $materials = $stmt->fetchAll();
-                } catch (Exception $seedErr) {}
-            }
-
             // Load dynamic field values
-            try {
-                $fStmt = $pdo->prepare("
-                    SELECT cf.field_name, cf.field_label, mfv.field_value
-                    FROM material_field_values mfv
-                    JOIN category_fields cf ON mfv.category_field_id = cf.id
-                    WHERE mfv.material_id = :mat_id
-                ");
-                foreach ($materials as &$mat) {
-                    $fStmt->execute([':mat_id' => $mat['id']]);
-                    $mat['dynamic_fields'] = $fStmt->fetchAll();
-                }
-            } catch (Exception $dfErr) {
-                foreach ($materials as &$mat) {
-                    $mat['dynamic_fields'] = [];
+            if (!empty($materials)) {
+                try {
+                    $fStmt = $pdo->prepare("
+                        SELECT cf.field_name, cf.field_label, mfv.field_value
+                        FROM material_field_values mfv
+                        JOIN category_fields cf ON mfv.category_field_id = cf.id
+                        WHERE mfv.material_id = :mat_id
+                    ");
+                    foreach ($materials as &$mat) {
+                        $fStmt->execute([':mat_id' => $mat['id']]);
+                        $mat['dynamic_fields'] = $fStmt->fetchAll();
+                    }
+                } catch (Exception $dfErr) {
+                    foreach ($materials as &$mat) {
+                        $mat['dynamic_fields'] = [];
+                    }
                 }
             }
 
