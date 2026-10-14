@@ -4,7 +4,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package, Factory,
   Settings, FileText, ChevronDown, ChevronRight,
-  Layers, Users, BarChart2, ClipboardList, X, BoxSelect
+  Layers, Users, BarChart2, ClipboardList, X
 } from 'lucide-react';
 
 interface NavItem {
@@ -276,14 +276,22 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
   const content = (
     <div className={`${width} h-full flex flex-col bg-white border-r border-slate-200 transition-all duration-200 overflow-hidden`}>
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-3 py-3 border-b border-slate-200 shrink-0">
-        <div className="w-7 h-7 rounded-md bg-brand-600 flex items-center justify-center shrink-0">
-          <BoxSelect className="w-4 h-4 text-white" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-slate-800 leading-tight truncate">CHERAN SOFT GOODS</p>
-            <p className="text-[9px] text-slate-400 uppercase tracking-wide">Textile ERP</p>
+      <div className="flex items-center px-3 py-3 border-b border-slate-200 shrink-0 min-h-[56px]">
+        {collapsed ? (
+          <div className="w-full flex items-center justify-center" title="CHERAN SOFT GOODS">
+            <img
+              src="/icon.png"
+              alt="Cheran Soft Goods"
+              className="w-7 h-7 object-contain drop-shadow-xs transition-transform duration-200 hover:scale-105"
+            />
+          </div>
+        ) : (
+          <div className="flex items-center w-full min-w-0">
+            <img
+              src="/logo.png"
+              alt="CHERAN SOFT GOODS"
+              className="h-8 max-w-[195px] w-auto object-contain transition-opacity duration-200"
+            />
           </div>
         )}
       </div>

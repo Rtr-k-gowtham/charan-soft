@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { BoxSelect, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
@@ -32,14 +32,8 @@ export default function Login() {
       {/* Left panel */}
       <div className="hidden lg:flex flex-col w-96 bg-brand-700 text-white p-10 justify-between shrink-0">
         <div>
-          <div className="flex items-center gap-3 mb-12">
-            <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
-              <BoxSelect className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold">CHERAN SOFT GOODS</p>
-              <p className="text-[10px] text-brand-200 uppercase tracking-wider">Textile Manufacturing ERP</p>
-            </div>
+          <div className="flex items-center gap-3 mb-10 bg-white/95 p-3 rounded-xl shadow-xs inline-flex">
+            <img src="/logo.png" alt="CHERAN SOFT GOODS" className="h-8 w-auto object-contain" />
           </div>
 
           <h1 className="text-2xl font-bold mb-3 leading-snug">
@@ -76,14 +70,8 @@ export default function Login() {
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           {/* Mobile logo */}
-          <div className="flex items-center gap-2 mb-8 lg:hidden">
-            <div className="w-8 h-8 rounded-md bg-brand-600 flex items-center justify-center">
-              <BoxSelect className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-800">CHERAN SOFT GOODS</p>
-              <p className="text-[9px] text-slate-400 uppercase tracking-wider">Textile Manufacturing ERP</p>
-            </div>
+          <div className="flex items-center mb-6 lg:hidden">
+            <img src="/logo.png" alt="CHERAN SOFT GOODS" className="h-8 max-w-[220px] object-contain" />
           </div>
 
           <h2 className="text-lg font-bold text-slate-800 mb-1">Sign In</h2>
