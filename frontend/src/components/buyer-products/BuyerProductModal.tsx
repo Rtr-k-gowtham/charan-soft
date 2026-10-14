@@ -14,6 +14,7 @@ import {
   FileText,
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
 } from 'lucide-react';
 
@@ -25,6 +26,8 @@ interface Props {
   initialProduct?: BuyerProduct | null;
   onSave: (product: Partial<BuyerProduct>) => Promise<void>;
 }
+
+type TabId = 'general' | 'bom' | 'dimensions' | 'boxes';
 
 const COMMON_UOMS = ['Pieces', 'Sets', 'Pairs', 'Dozens', 'Rolls'];
 
@@ -63,7 +66,7 @@ export default function BuyerProductModal({
   initialProduct,
   onSave,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'general' | 'bom' | 'dimensions' | 'boxes'>('general');
+  const [activeTab, setActiveTab] = useState<TabId>('general');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -103,9 +106,70 @@ export default function BuyerProductModal({
 
   if (!open) return null;
 
+  const tabs: { id: TabId; label: string; icon: any; count: number | null }[] = [
+    { id: 'general', label: '1. General Info & Photo', icon: FileText, count: null },
+    { id: 'bom', label: '2. Raw Materials & Components (BOM)', icon: Layers, count: components.length },
+    { id: 'dimensions', label: '3. Dimensions & Volume', icon: Ruler, count: null },
+    { id: 'boxes', label: '4. Box Packing & Simulator', icon: Package, count: boxes.length },
+  ];
+
+  const currentStepIndex = tabs.findIndex((t) => t.id === activeTab);
+
+  const validateStep = (step: TabId): boolean => {
+    if (step === 'general') {
+      if (!productName.trim()) {
+        setError('Product Name is required.');
+        return false;
+      }
+      if (!uom.trim()) {
+        setError('Unit of Measurement (UOM) is required.');
+        return false;
+      }
+    }
+    setError('');
+    return true;
+  };
+
+  const handleNext = () => {
+    if (!validateStep(activeTab)) return;
+
+    if (activeTab === 'general') {
+      setActiveTab('bom');
+    } else if (activeTab === 'bom') {
+      setActiveTab('dimensions');
+    } else if (activeTab === 'dimensions') {
+      setActiveTab('boxes');
+    }
+  };
+
+  const handleBack = () => {
+    setError('');
+    if (activeTab === 'boxes') {
+      setActiveTab('dimensions');
+    } else if (activeTab === 'dimensions') {
+      setActiveTab('bom');
+    } else if (activeTab === 'bom') {
+      setActiveTab('general');
+    }
+  };
+
+  const handleTabClick = (targetTab: TabId) => {
+    const targetIdx = tabs.findIndex((t) => t.id === targetTab);
+    if (currentStepIndex === 0 && targetIdx > 0) {
+      if (!validateStep('general')) return;
+    }
+    setError('');
+    setActiveTab(targetTab);
+  };
+
   const handleSave = async () => {
     if (!productName.trim()) {
       setError('Product Name is required.');
+      setActiveTab('general');
+      return;
+    }
+    if (!uom.trim()) {
+      setError('Unit of Measurement (UOM) is required.');
       setActiveTab('general');
       return;
     }
@@ -131,13 +195,6 @@ export default function BuyerProductModal({
       setSaving(false);
     }
   };
-
-  const tabs = [
-    { id: 'general', label: '1. General Info & Photo', icon: FileText, count: null },
-    { id: 'bom', label: '2. Raw Materials & Components (BOM)', icon: Layers, count: components.length },
-    { id: 'dimensions', label: '3. Dimensions & Volume', icon: Ruler, count: null },
-    { id: 'boxes', label: '4. Box Packing & Simulator', icon: Package, count: boxes.length },
-  ];
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden animate-fadeIn">
@@ -173,9 +230,6 @@ export default function BuyerProductModal({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button loading={saving} onClick={handleSave}>
-            Save Product Configuration
-          </Button>
         </div>
       </div>
 
@@ -189,7 +243,7 @@ export default function BuyerProductModal({
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => handleTabClick(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 text-xs font-medium border-b-2 transition whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'border-brand-600 text-brand-700 bg-brand-50/40 font-semibold'
@@ -212,7 +266,7 @@ export default function BuyerProductModal({
           })}
         </div>
         <div className="hidden md:flex items-center gap-2 text-xs text-slate-400">
-          <span>Step {tabs.findIndex(t => t.id === activeTab) + 1} of 4</span>
+          <span>Step {currentStepIndex + 1} of 4</span>
         </div>
       </div>
 
@@ -308,15 +362,43 @@ export default function BuyerProductModal({
       {/* 4. Bottom Sticky Action Bar */}
       <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between">
         <span className="text-xs text-slate-500">
-          Buyer: <strong className="text-slate-800">{buyerName}</strong> &bull; Changes will be saved to this buyer's catalog
+          Buyer: <strong className="text-slate-800">{buyerName}</strong> &bull; Step {currentStepIndex + 1} of 4: <span className="font-medium text-slate-700">{tabs[currentStepIndex].label}</span>
         </span>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button loading={saving} onClick={handleSave}>
-            Save Product Configuration
-          </Button>
+
+          {currentStepIndex > 0 && (
+            <Button
+              variant="secondary"
+              onClick={handleBack}
+              disabled={saving}
+              icon={<ArrowLeft className="w-3.5 h-3.5" />}
+            >
+              Back
+            </Button>
+          )}
+
+          {currentStepIndex < 3 ? (
+            <Button
+              variant="primary"
+              onClick={handleNext}
+              disabled={saving}
+            >
+              <span>Next</span>
+              <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              loading={saving}
+              onClick={handleSave}
+              icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+            >
+              Save Product Configuration
+            </Button>
+          )}
         </div>
       </div>
     </div>
