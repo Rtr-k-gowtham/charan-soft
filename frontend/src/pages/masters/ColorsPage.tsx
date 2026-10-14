@@ -6,9 +6,8 @@ import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
-import FormField from '../../components/ui/FormField';
-import PantoneColorPicker from '../../components/ui/PantoneColorPicker';
-import { Plus, Edit2, Trash2, AlertCircle, RefreshCw, Palette } from 'lucide-react';
+import { lookupPantone, normalizePantoneInput } from '../../lib/pantoneService';
+import { Plus, Edit2, Trash2, AlertCircle, RefreshCw, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface ColorRecord {
   id: number;
@@ -26,7 +25,19 @@ export default function ColorsPage() {
   const [editColor, setEditColor] = useState<ColorRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ code: '', name: '', hex_code: '#0f2042', pantone_code: '', status: 'active' });
+
+  // Form states driven by Pantone Code manual entry & auto-lookup
+  const [pantoneInput, setPantoneInput] = useState('');
+  const [colorName, setColorName] = useState('');
+  const [hexCode, setHexCode] = useState('');
+  const [isVerified, setIsVerified] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState('');
+  const [verifiedInfo, setVerifiedInfo] = useState<{
+    code: string;
+    system: string;
+    category: string;
+  } | null>(null);
 
   // Delete modal state
   const [deleteColorItem, setDeleteColorItem] = useState<ColorRecord | null>(null);
@@ -45,59 +56,157 @@ export default function ColorsPage() {
     loadData();
   }, []);
 
+  // Debounced Pantone Code lookup
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const trimmed = pantoneInput.trim();
+
+    if (!trimmed) {
+      setLookupLoading(false);
+      setLookupError('');
+      setColorName('');
+      setHexCode('');
+      setIsVerified(false);
+      setVerifiedInfo(null);
+      return;
+    }
+
+    // If currently recognized code already matches input, avoid re-clearing
+    if (verifiedInfo && verifiedInfo.code.toUpperCase() === trimmed.toUpperCase()) {
+      return;
+    }
+
+    // Clear stale color names and swatches immediately when code changes
+    setIsVerified(false);
+    setColorName('');
+    setHexCode('');
+    setVerifiedInfo(null);
+    setLookupError('');
+    setLookupLoading(true);
+
+    const timer = setTimeout(() => {
+      const res = lookupPantone(trimmed);
+      setLookupLoading(false);
+
+      if (res.found && res.name && res.hex_code) {
+        setIsVerified(true);
+        setColorName(res.name);
+        setHexCode(res.hex_code);
+        setLookupError('');
+        setVerifiedInfo({
+          code: res.pantone_code || trimmed,
+          system: res.system || 'FHI TCX',
+          category: res.category || 'Textile Reference'
+        });
+      } else {
+        setIsVerified(false);
+        setColorName('');
+        setHexCode('');
+        setVerifiedInfo(null);
+        setLookupError(res.error || 'Pantone color not found in verified reference dataset');
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [pantoneInput, modalOpen, verifiedInfo]);
+
   const openCreate = () => {
     setEditColor(null);
-    setForm({ code: '', name: '', hex_code: '#0f2042', pantone_code: '', status: 'active' });
+    setPantoneInput('');
+    setColorName('');
+    setHexCode('');
+    setIsVerified(false);
+    setLookupLoading(false);
+    setLookupError('');
+    setVerifiedInfo(null);
     setError('');
     setModalOpen(true);
   };
 
   const openEdit = (c: ColorRecord) => {
     setEditColor(c);
-    setForm({
-      code: c.code || '',
-      name: c.name,
-      hex_code: c.hex_code || '#0f2042',
-      pantone_code: c.pantone_code || '',
-      status: c.status || 'active'
-    });
     setError('');
+    const rawCode = c.pantone_code || '';
+    setPantoneInput(rawCode);
+
+    if (rawCode) {
+      const res = lookupPantone(rawCode);
+      if (res.found && res.name && res.hex_code) {
+        setIsVerified(true);
+        setColorName(res.name);
+        setHexCode(res.hex_code);
+        setLookupError('');
+        setVerifiedInfo({
+          code: res.pantone_code || rawCode,
+          system: res.system || 'FHI TCX',
+          category: res.category || 'Textile Reference'
+        });
+      } else {
+        setIsVerified(false);
+        setColorName(c.name);
+        setHexCode(c.hex_code || '#64748b');
+        setVerifiedInfo(null);
+        setLookupError(`Pantone code "${rawCode}" not found in verified reference dataset`);
+      }
+    } else {
+      // Legacy color record without Pantone code
+      setIsVerified(false);
+      setColorName(c.name);
+      setHexCode(c.hex_code || '#64748b');
+      setVerifiedInfo(null);
+      setLookupError('');
+    }
+
+    setLookupLoading(false);
     setModalOpen(true);
   };
 
-  const handlePantoneSelect = (item: { pantone_code: string; name: string; hex_code: string }) => {
-    setForm(prev => ({
-      ...prev,
-      pantone_code: item.pantone_code,
-      name: item.name,
-      hex_code: item.hex_code
-    }));
-  };
-
   const handleSave = async () => {
-    if (!form.name.trim()) {
-      setError('Color name is required');
-      return;
-    }
-    setSaving(true);
     setError('');
-    const normalizedPantone = form.pantone_code.trim().toUpperCase();
+
+    if (editColor) {
+      // Editing existing color
+      if (pantoneInput.trim()) {
+        if (!isVerified || !colorName.trim()) {
+          setError(lookupError || 'Please enter a recognized Pantone Color Code before saving');
+          return;
+        }
+      } else {
+        if (!colorName.trim()) {
+          setError('Color name is required');
+          return;
+        }
+      }
+    } else {
+      // Creating new color - Pantone code is required
+      if (!pantoneInput.trim()) {
+        setError('Pantone Color Code is required');
+        return;
+      }
+      if (!isVerified || !colorName.trim()) {
+        setError(lookupError || 'Please enter a recognized Pantone Color Code before saving');
+        return;
+      }
+    }
+
+    setSaving(true);
 
     try {
       if (editColor) {
         await api.updateColor(editColor.id, {
-          name: form.name.trim(),
-          code: form.code.trim(),
-          hex_code: form.hex_code,
-          pantone_code: normalizedPantone,
-          status: form.status
+          name: colorName.trim(),
+          code: editColor.code || '', // Preserves internal code in database
+          hex_code: hexCode || editColor.hex_code,
+          pantone_code: isVerified ? (verifiedInfo?.code || normalizePantoneInput(pantoneInput)) : (pantoneInput.trim() || null),
+          status: editColor.status || 'active'
         });
       } else {
         await api.createColor({
-          name: form.name.trim(),
-          code: '', // Auto-generated by backend (CLR-XXXX)
-          hex_code: form.hex_code,
-          pantone_code: normalizedPantone
+          name: colorName.trim(),
+          code: '', // Backend automatically generates internal code CLR-XXXX
+          hex_code: hexCode,
+          pantone_code: verifiedInfo?.code || normalizePantoneInput(pantoneInput)
         });
       }
       setModalOpen(false);
@@ -239,65 +348,160 @@ export default function ColorsPage() {
             </div>
           )}
 
-          {/* Pantone Selection Component */}
+          {/* 1. Pantone Color Code Input (Manual entry only, no visual picker) */}
           <div>
-            <label className="text-xs font-bold text-slate-700 block mb-1.5 flex items-center gap-1.5">
-              <Palette className="w-3.5 h-3.5 text-brand-600" />
-              <span>Select Textile Pantone Reference</span>
+            <label className="text-xs font-semibold text-slate-700 block mb-1">
+              Pantone Color Code <span className="text-red-500">*</span>
             </label>
-            <PantoneColorPicker
-              selectedPantone={form.pantone_code}
-              selectedName={form.name}
-              selectedHex={form.hex_code}
-              onSelect={handlePantoneSelect}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {/* Pantone Color Code */}
-            <FormField
-              label="Pantone Color Code"
-              required
-              hint="e.g. 19-4052 TCX, 18-1662 TCX"
-              value={form.pantone_code}
-              onChange={e => setForm(f => ({ ...f, pantone_code: e.target.value.toUpperCase() }))}
-              placeholder="e.g. 19-4052 TCX"
-            />
-
-            {/* Official Color Name */}
-            <FormField
-              label="Color Name"
-              required
-              hint="Official textile name or brand color"
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder="e.g. Classic Navy"
-            />
-          </div>
-
-          {/* Swatch Display */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-3">
-            <div>
-              <span className="text-[11px] font-semibold text-slate-700 block">Digital Swatch Reference</span>
-              <span className="text-[10px] text-slate-500">Representative digital color for UI cards and badges</span>
-            </div>
-            <div className="flex items-center gap-2">
+            <div className="relative">
               <input
-                type="color"
-                className="w-8 h-8 rounded border border-slate-300 cursor-pointer p-0.5 bg-white shadow-2xs"
-                value={form.hex_code || '#0f2042'}
-                onChange={e => setForm(f => ({ ...f, hex_code: e.target.value }))}
-                title="Adjust digital preview swatch"
+                type="text"
+                value={pantoneInput}
+                onChange={(e) => setPantoneInput(e.target.value)}
+                placeholder="Enter Pantone code (e.g., 19-4052 TCX)"
+                className={`w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border transition-all duration-150 pr-9 ${
+                  lookupError
+                    ? 'border-red-300 bg-red-50/20 text-red-900 focus:border-red-500 focus:ring-1 focus:ring-red-200'
+                    : isVerified
+                    ? 'border-emerald-400 bg-emerald-50/20 text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200'
+                    : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
+                }`}
+                autoFocus
               />
-              <span className="text-[11px] font-mono text-slate-600 font-semibold">{form.hex_code}</span>
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
+                {lookupLoading ? (
+                  <Loader2 className="w-4 h-4 text-brand-600 animate-spin" />
+                ) : isVerified ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : lookupError ? (
+                  <AlertCircle className="w-4 h-4 text-red-500" />
+                ) : null}
+              </div>
+            </div>
+
+            {/* Validation & Lookup Status Message */}
+            <div className="mt-1.5 min-h-[18px]">
+              {lookupLoading && (
+                <div className="flex items-center gap-1.5 text-[11px] text-brand-600">
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                  <span>Looking up verified Pantone reference...</span>
+                </div>
+              )}
+              {!lookupLoading && lookupError && (
+                <div className="flex items-center gap-1.5 text-[11px] text-red-600 font-medium">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{lookupError}</span>
+                </div>
+              )}
+              {!lookupLoading && isVerified && verifiedInfo && (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" />
+                  <span>Verified {verifiedInfo.system} standard ({verifiedInfo.category})</span>
+                </div>
+              )}
+              {!lookupLoading && !lookupError && !isVerified && !pantoneInput && (
+                <p className="text-[11px] text-slate-400">
+                  Type or paste a textile Pantone code (e.g., 19-4052 TCX, 18-1662 TCX, PMS 286 C).
+                </p>
+              )}
             </div>
           </div>
+
+          {/* 2. Color Name & 3. Digital Swatch in a unified layout */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-start pt-1">
+            {/* Color Name (automatically populated from verified reference) */}
+            <div className="sm:col-span-3">
+              <label className="text-xs font-semibold text-slate-700 block mb-1 flex items-center justify-between">
+                <span>Color Name</span>
+                <span className="text-[10px] text-slate-400 font-normal">
+                  {isVerified ? '(read-only, verified)' : '(automatically populated)'}
+                </span>
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={colorName}
+                  onChange={(e) => {
+                    if (!isVerified) setColorName(e.target.value);
+                  }}
+                  readOnly={isVerified}
+                  placeholder={
+                    lookupLoading
+                      ? 'Looking up color name...'
+                      : isVerified
+                      ? colorName
+                      : 'Automatically populated from Pantone code'
+                  }
+                  className={`w-full px-3 py-2 text-xs rounded-lg border transition-all ${
+                    isVerified
+                      ? 'bg-slate-50 border-slate-200 text-slate-900 font-semibold cursor-default select-text'
+                      : 'bg-slate-100 border-slate-200 text-slate-400 italic cursor-not-allowed'
+                  }`}
+                />
+                {isVerified && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+                      Verified
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Digital Color Swatch (automatically populated, read-only preview) */}
+            <div className="sm:col-span-1">
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Digital Swatch
+              </label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-9 h-9 rounded-lg border border-slate-300 shrink-0 shadow-2xs flex items-center justify-center transition-all"
+                  style={{
+                    backgroundColor: hexCode || '#f1f5f9',
+                  }}
+                  title={hexCode ? `Representative digital preview: ${hexCode}` : 'No swatch available'}
+                >
+                  {!hexCode && <span className="text-[9px] text-slate-400 font-mono">—</span>}
+                </div>
+                <div className="min-w-0">
+                  <span className="font-mono text-[11px] font-bold text-slate-800 block truncate">
+                    {hexCode || '—'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 block truncate">sRGB</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Verified Specification Summary Banner */}
+          {isVerified && verifiedInfo && (
+            <div className="p-3 bg-gradient-to-r from-slate-50 to-emerald-50/40 border border-emerald-200/80 rounded-lg flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-7 h-7 rounded-md border border-slate-300 shadow-2xs shrink-0"
+                  style={{ backgroundColor: hexCode }}
+                />
+                <div>
+                  <div className="font-semibold text-slate-900">{colorName}</div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    {verifiedInfo.code} &bull; {verifiedInfo.category}
+                  </div>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[10px]">
+                {verifiedInfo.system}
+              </span>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving}>
+            <Button
+              onClick={handleSave}
+              disabled={saving || lookupLoading || (!editColor && !isVerified)}
+            >
               {saving ? 'Saving...' : editColor ? 'Update Color' : 'Save Color'}
             </Button>
           </div>

@@ -1209,10 +1209,35 @@ const server = http.createServer(async (req, res) => {
       } else if (db.colors.some(c => c.code === code)) {
         return sendError(res, `Color code '${code}' already exists`, 422);
       }
-      const col = { id: db.colors.length + 1, code, name, hex_code: body.hex_code || '#000000' };
+      const col = {
+        id: db.colors.length + 1,
+        code,
+        name,
+        hex_code: body.hex_code || '#000000',
+        pantone_code: body.pantone_code || null,
+      };
       db.colors.push(col);
       saveDB();
       return sendSuccess(res, col, 'Color added', 201);
+    }
+    if (pathname.startsWith('/colors/') && method === 'PUT') {
+      const id = Number(pathname.split('/')[2]);
+      const idx = db.colors.findIndex(c => c.id === id);
+      if (idx === -1) return sendError(res, 'Color not found', 404);
+      db.colors[idx] = {
+        ...db.colors[idx],
+        name: (body.name || db.colors[idx].name).trim(),
+        hex_code: body.hex_code || db.colors[idx].hex_code,
+        pantone_code: body.pantone_code !== undefined ? body.pantone_code : db.colors[idx].pantone_code,
+      };
+      saveDB();
+      return sendSuccess(res, db.colors[idx], 'Color updated');
+    }
+    if (pathname.startsWith('/colors/') && method === 'DELETE') {
+      const id = Number(pathname.split('/')[2]);
+      db.colors = db.colors.filter(c => c.id !== id);
+      saveDB();
+      return sendSuccess(res, null, 'Color deleted');
     }
 
     if (pathname === '/sizes' && method === 'GET') return sendSuccess(res, db.sizes);
