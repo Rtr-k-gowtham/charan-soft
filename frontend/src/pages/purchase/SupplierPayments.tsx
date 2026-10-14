@@ -8,7 +8,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
-import { CreditCard, RefreshCw, AlertCircle, TrendingUp, CheckCircle2, Calendar, FileText, ArrowRight } from 'lucide-react';
+import { CreditCard, RefreshCw, AlertCircle, TrendingUp, CheckCircle2, Calendar, FileText, ArrowRight, Building2 } from 'lucide-react';
 
 const fmtCur = (n: number) => '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n || 0);
 
@@ -311,35 +311,35 @@ export default function SupplierPayments() {
       />
 
       {/* Summary KPI Strip */}
-      <div className="px-4 pt-3 pb-1 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="px-4 pt-3 pb-1 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         {[
           {
             label: 'Total Paid (All Time)',
             value: fmtCur(totalPaid),
-            color: 'text-emerald-700',
-            bg: 'bg-emerald-50 border-emerald-200'
+            color: 'text-emerald-800',
+            bg: 'bg-emerald-50/80',
           },
           {
             label: 'Total Outstanding',
             value: fmtCur(totalOutstanding),
-            color: 'text-amber-700',
-            bg: 'bg-amber-50 border-amber-200'
+            color: 'text-amber-800',
+            bg: 'bg-amber-50/80',
           },
           {
             label: 'Overdue Outstanding',
             value: fmtCur(overdueOutstanding),
-            color: 'text-red-700',
-            bg: 'bg-red-50 border-red-200'
+            color: 'text-red-800',
+            bg: 'bg-red-50/80',
           },
           {
             label: 'Payment Transactions',
             value: String(payments.length),
-            color: 'text-slate-700',
-            bg: 'bg-slate-50 border-slate-200'
+            color: 'text-slate-800',
+            bg: 'bg-slate-100/80',
           },
-        ].map(k => (
-          <div key={k.label} className={`p-3 rounded-lg border text-xs ${k.bg}`}>
-            <p className="text-slate-500 text-[10px] uppercase tracking-wider font-medium">{k.label}</p>
+        ].map((k) => (
+          <div key={k.label} className={`p-3 rounded-2xl border-0 shadow-2xs text-xs ${k.bg}`}>
+            <p className="text-slate-500 text-[10px] uppercase tracking-wider font-semibold">{k.label}</p>
             <p className={`font-bold text-base mt-0.5 font-mono ${k.color}`}>{k.value}</p>
           </div>
         ))}
@@ -382,38 +382,197 @@ export default function SupplierPayments() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2 sm:p-4">
         {activeTab === 'obligations' ? (
-          <DataTable
-            data={pos}
-            columns={obligationsColumns}
-            rowKey="id"
-            actions={(r: PurchaseOrder) => {
-              const status = getDerivedPaymentStatus(r);
-              const bal = Math.max(0, Number(r.net_amount || 0) - Number(r.paid_amount || 0));
-              if (status === 'Settled' || bal <= 0.01) {
+          <>
+            {/* Mobile Obligations Cards (< sm) */}
+            <div className="sm:hidden px-1 py-1 space-y-3">
+              {pos.length === 0 && !loading && (
+                <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
+                  No payment obligations found.
+                </div>
+              )}
+              {pos.map((r: PurchaseOrder) => {
+                const status = getDerivedPaymentStatus(r);
+                const bal = Math.max(0, Number(r.net_amount || 0) - Number(r.paid_amount || 0));
+                const isSettled = status === 'Settled' || bal <= 0.01;
+
                 return (
-                  <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-semibold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Settled
-                  </span>
+                  <div
+                    key={r.id}
+                    className="bg-white rounded-2xl p-4 shadow-xs hover:shadow-md transition-all border-0 space-y-3"
+                  >
+                    {/* Header: PO Number & Payment Status */}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
+                        {r.po_number}
+                      </span>
+                      <StatusBadge status={status} size="xs" />
+                    </div>
+
+                    {/* Supplier Info */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                        <Building2 className="w-3.5 h-3.5 text-brand-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-slate-800 truncate block">
+                          {r.supplier_name || 'Unknown Supplier'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Due Date info */}
+                    <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-xl">
+                      <span className="flex items-center gap-1.5 text-slate-500">
+                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Due Date:</span>
+                        <strong className="text-slate-800 font-mono">{r.payment_due_date || r.delivery_due_date || '—'}</strong>
+                      </span>
+                      {(r as any).payment_terms && (
+                        <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-500">
+                          {(r as any).payment_terms}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 3-Column Financial Stat Grid */}
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-slate-50 p-2 rounded-xl">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Total</span>
+                        <span className="text-xs font-bold font-mono text-slate-800 block mt-0.5">
+                          {fmtCur(r.net_amount || 0)}
+                        </span>
+                      </div>
+                      <div className="bg-emerald-50/70 p-2 rounded-xl">
+                        <span className="text-[10px] uppercase font-bold text-emerald-700 block">Paid</span>
+                        <span className="text-xs font-bold font-mono text-emerald-800 block mt-0.5">
+                          {fmtCur(r.paid_amount || 0)}
+                        </span>
+                      </div>
+                      <div className={`p-2 rounded-xl ${bal > 0.01 ? 'bg-amber-50/70' : 'bg-slate-50'}`}>
+                        <span className={`text-[10px] uppercase font-bold block ${bal > 0.01 ? 'text-amber-700' : 'text-slate-400'}`}>
+                          Balance
+                        </span>
+                        <span className={`text-xs font-bold font-mono block mt-0.5 ${bal > 0.01 ? 'text-amber-800' : 'text-slate-500'}`}>
+                          {fmtCur(bal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action */}
+                    <div className="pt-1">
+                      {isSettled ? (
+                        <div className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-semibold">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Fully Settled</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => openPayModal(r)}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs"
+                        >
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>Record Payment ({fmtCur(bal)})</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
-              }
-              return (
-                <button
-                  onClick={() => openPayModal(r)}
-                  className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-brand-50 text-brand-700 border border-brand-200 rounded hover:bg-brand-100 transition-colors"
-                >
-                  <CreditCard className="w-3 h-3" /> Pay
-                </button>
-              );
-            }}
-          />
+              })}
+            </div>
+
+            {/* Desktop Obligations Table (sm+) */}
+            <div className="hidden sm:block">
+              <DataTable
+                data={pos}
+                columns={obligationsColumns}
+                rowKey="id"
+                actions={(r: PurchaseOrder) => {
+                  const status = getDerivedPaymentStatus(r);
+                  const bal = Math.max(0, Number(r.net_amount || 0) - Number(r.paid_amount || 0));
+                  if (status === 'Settled' || bal <= 0.01) {
+                    return (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-semibold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Settled
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      onClick={() => openPayModal(r)}
+                      className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-brand-50 text-brand-700 border border-brand-200 rounded hover:bg-brand-100 transition-colors"
+                    >
+                      <CreditCard className="w-3 h-3" /> Pay
+                    </button>
+                  );
+                }}
+              />
+            </div>
+          </>
         ) : (
-          <DataTable
-            data={payments}
-            columns={transactionsColumns}
-            rowKey="id"
-          />
+          <>
+            {/* Mobile Transactions Cards (< sm) */}
+            <div className="sm:hidden px-1 py-1 space-y-3">
+              {payments.length === 0 && !loading && (
+                <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
+                  No payment transactions recorded.
+                </div>
+              )}
+              {payments.map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-white rounded-2xl p-4 shadow-xs hover:shadow-md transition-all border-0 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
+                      {p.po_number || 'PO'}
+                    </span>
+                    <span className="text-sm font-bold font-mono text-emerald-700">
+                      {fmtCur(p.amount)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                      <Building2 className="w-3.5 h-3.5 text-brand-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 truncate block">
+                        {p.supplier_name || 'Unknown Supplier'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-xl">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Date & Mode</span>
+                      <span className="font-mono text-slate-700 text-[11px] block">{p.payment_date}</span>
+                      <span className="text-[10px] font-medium text-brand-700 bg-blue-50 px-1.5 py-0.2 rounded mt-0.5 inline-block">
+                        {p.payment_mode}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Ref / UTR</span>
+                      <span className="font-mono text-slate-700 text-[11px] truncate block">
+                        {p.reference_number || '—'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Transactions Table (sm+) */}
+            <div className="hidden sm:block">
+              <DataTable
+                data={payments}
+                columns={transactionsColumns}
+                rowKey="id"
+              />
+            </div>
+          </>
         )}
       </div>
 

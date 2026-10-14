@@ -2770,8 +2770,129 @@ export default function PurchaseOrders() {
         }
       />
 
-      {/* PO List Table - fitted for desktop without horizontal scrollbar */}
-      <div className="flex-1 overflow-x-auto lg:overflow-x-hidden p-4 min-w-0">
+      {/* Mobile Card List (< sm) */}
+      <div className="sm:hidden px-3 py-2 space-y-3">
+        {pos.length === 0 && !loading && (
+          <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
+            No purchase orders found.
+          </div>
+        )}
+        {pos.map((r: PurchaseOrder) => {
+          const isDraft = (r.status || '').toLowerCase() === 'draft';
+          return (
+            <div
+              key={r.id}
+              onClick={() => setViewPO(r)}
+              className="bg-white rounded-2xl p-4 shadow-xs hover:shadow-md transition-all border-0 cursor-pointer select-none space-y-3"
+            >
+              {/* Header: PO Number, Status, Category & Net Amount */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md shrink-0">
+                    {r.po_number}
+                  </span>
+                  {isDraft ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
+                      Draft
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
+                      Ordered
+                    </span>
+                  )}
+                  {r.category_name && (
+                    <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[120px]">
+                      {r.category_name}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-right shrink-0">
+                  <span className="text-sm font-bold font-mono text-brand-700 block">
+                    {fmtCur(r.net_amount || 0)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Supplier Info */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                  <Building2 className="w-3.5 h-3.5 text-brand-600" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-800 truncate block">
+                    {r.supplier_name || 'Unknown Supplier'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dates & Items Bar */}
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-xl">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">PO Date</span>
+                  <span className="font-mono text-slate-700 text-[11px]">{r.po_date || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Delivery Due</span>
+                  <span className="font-mono text-slate-700 text-[11px]">{r.delivery_due_date || '—'}</span>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="flex items-center gap-2 pt-1 border-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewPO(r);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View Details</span>
+                </button>
+
+                {isDraft ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenEdit(r);
+                    }}
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 text-xs font-semibold text-slate-300 rounded-lg cursor-not-allowed"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPrintPO(r);
+                  }}
+                  className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop PO List Table (sm+) */}
+      <div className="hidden sm:block flex-1 overflow-x-auto lg:overflow-x-hidden p-4 min-w-0">
         <DataTable
           data={pos}
           columns={columns}

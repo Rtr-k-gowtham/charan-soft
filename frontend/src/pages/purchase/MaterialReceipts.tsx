@@ -8,8 +8,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Drawer from '../../components/ui/Drawer';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
-import FormField from '../../components/ui/FormField';
-import { PackageOpen, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { PackageOpen, RefreshCw, CheckCircle2, AlertCircle, Building2, Calendar, Eye, Layers } from 'lucide-react';
 
 const fmtCur = (n: number) => '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
@@ -201,28 +200,158 @@ export default function MaterialReceipts() {
       />
 
       {/* Summary Strip */}
-      <div className="px-4 pt-3 pb-0 flex gap-3">
+      <div className="px-4 pt-3 pb-1 flex gap-2 flex-wrap">
         {[
-          { label: 'Pending Receipt', value: pendingCount, color: 'bg-amber-50 border-amber-200 text-amber-700' },
-          { label: 'Total POs', value: pos.length, color: 'bg-slate-50 border-slate-200 text-slate-700' },
-        ].map(s => (
-          <div key={s.label} className={`px-3 py-1.5 rounded-md border text-xs font-medium ${s.color}`}>
-            <span className="font-bold text-sm mr-1">{s.value}</span>{s.label}
+          { label: 'Pending Receipt', value: pendingCount, color: 'bg-amber-50 text-amber-800' },
+          { label: 'Total POs', value: pos.length, color: 'bg-slate-100 text-slate-800' },
+        ].map((s) => (
+          <div key={s.label} className={`px-3 py-1.5 rounded-xl text-xs font-medium border-0 shadow-2xs ${s.color}`}>
+            <span className="font-bold text-sm mr-1.5 font-mono">{s.value}</span>
+            {s.label}
           </div>
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden p-4">
+      {/* Mobile Card List (< sm) */}
+      <div className="sm:hidden px-3 py-2 space-y-3">
+        {pos.length === 0 && !loading && (
+          <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
+            No purchase orders found.
+          </div>
+        )}
+        {pos.map((r: PurchaseOrder) => {
+          const full = isFullyReceived(r);
+          const partial = (r.items || []).some((it) => Number(it.received_quantity || 0) > 0);
+          const orderedQty = (r.items || []).reduce((s, it) => s + Number(it.quantity || 0), 0);
+          const receivedQty = (r.items || []).reduce((s, it) => s + Number(it.received_quantity || 0), 0);
+          const pct = orderedQty > 0 ? Math.min(100, Math.round((receivedQty / orderedQty) * 100)) : (full ? 100 : 0);
+
+          return (
+            <div
+              key={r.id}
+              onClick={() => setViewPO(r)}
+              className="bg-white rounded-2xl p-4 shadow-xs hover:shadow-md transition-all border-0 cursor-pointer select-none space-y-3"
+            >
+              {/* Header: PO Number, Receipt Status & PO Status */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                  <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md shrink-0">
+                    {r.po_number}
+                  </span>
+                  {full ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Fully Received
+                    </span>
+                  ) : partial ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
+                      Partial Receipt
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700">
+                      Pending Receipt
+                    </span>
+                  )}
+                </div>
+
+                <StatusBadge status={r.status} size="xs" />
+              </div>
+
+              {/* Supplier Info */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                  <Building2 className="w-3.5 h-3.5 text-brand-600" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-800 truncate block">
+                    {r.supplier_name || 'Unknown Supplier'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dates Bar */}
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-xl">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">PO Date</span>
+                  <span className="font-mono text-slate-700 text-[11px]">{r.po_date || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Due Date</span>
+                  <span className="font-mono text-slate-700 text-[11px]">{r.delivery_due_date || '—'}</span>
+                </div>
+              </div>
+
+              {/* Receipt Progress Bar */}
+              <div className="space-y-1.5 bg-slate-50/50 p-2.5 rounded-xl">
+                <div className="flex items-center justify-between text-[11px] font-mono">
+                  <span className="text-slate-500 flex items-center gap-1">
+                    <Layers className="w-3 h-3 text-brand-600" />
+                    <span>Receipt: {pct}%</span>
+                  </span>
+                  <span className="font-bold text-slate-700">
+                    {receivedQty} / {orderedQty} units
+                  </span>
+                </div>
+                <div className="h-1.5 bg-slate-200/70 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setViewPO(r);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>View Details</span>
+                </button>
+
+                {!full && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openReceive(r);
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                  >
+                    <PackageOpen className="w-3.5 h-3.5" />
+                    <span>Record Receipt</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop View (sm+) */}
+      <div className="hidden sm:block flex-1 overflow-hidden p-4">
         <DataTable
           data={pos}
           columns={columns}
           rowKey="id"
-          onRowClick={r => setViewPO(r)}
+          onRowClick={(r) => setViewPO(r)}
           actions={(r: PurchaseOrder) => (
             <div className="flex items-center gap-1">
               {!isFullyReceived(r) && (
-                <button onClick={e => { e.stopPropagation(); openReceive(r); }} title="Record Receipt"
-                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openReceive(r);
+                  }}
+                  title="Record Receipt"
+                  className="flex items-center gap-1 px-2 py-0.5 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100"
+                >
                   <PackageOpen className="w-3 h-3" /> Receive
                 </button>
               )}
