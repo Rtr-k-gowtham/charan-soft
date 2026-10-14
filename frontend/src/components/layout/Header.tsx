@@ -1,6 +1,6 @@
 // src/components/layout/Header.tsx
 import React from 'react';
-import { Menu, Bell, ChevronDown, User, LogOut, PanelLeft } from 'lucide-react';
+import { Menu, Bell, ChevronDown, User, LogOut, PanelLeft, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface Props {
@@ -11,6 +11,17 @@ interface Props {
 export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
   const { user, logout } = useAuth();
   const [userOpen, setUserOpen] = React.useState(false);
+  const [isStandalone, setIsStandalone] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const standalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
+        document.referrer.includes('android-app://');
+      setIsStandalone(standalone);
+    }
+  }, []);
 
   return (
     <header className="h-12 shrink-0 flex items-center justify-between bg-white border-b border-slate-200 px-3 z-30">
@@ -45,7 +56,21 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
         </span>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
+        {/* Install App button if not running in standalone */}
+        {!isStandalone && (
+          <button
+            onClick={() => {
+              localStorage.removeItem('csg_pwa_dismissed_until');
+              window.dispatchEvent(new Event('show-pwa-install-prompt'));
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg border border-brand-200 shadow-2xs transition-all active:scale-95"
+            title="Install CHERAN SOFT App on Mobile / Desktop"
+          >
+            <Download className="w-3.5 h-3.5 text-brand-600" />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
+        )}
         {/* Notification bell */}
         <button
           className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 min-h-[38px] min-w-[38px] flex items-center justify-center"
@@ -79,6 +104,19 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
                   <p className="text-xs font-semibold text-slate-800">{user?.name}</p>
                   <p className="text-[10px] text-slate-400 truncate">{user?.email}</p>
                 </div>
+                {!isStandalone && (
+                  <button
+                    onClick={() => {
+                      setUserOpen(false);
+                      localStorage.removeItem('csg_pwa_dismissed_until');
+                      window.dispatchEvent(new Event('show-pwa-install-prompt'));
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-brand-700 hover:bg-brand-50 transition-colors font-medium border-b border-slate-100"
+                  >
+                    <Download className="w-3.5 h-3.5 text-brand-600" />
+                    Install App
+                  </button>
+                )}
                 <button
                   onClick={logout}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors font-medium"
