@@ -312,9 +312,7 @@ export default function ProductionOrders() {
           return (
             <div
               key={ord.id}
-              className={`w-full bg-white rounded-2xl overflow-hidden border-l-4 ${
-                priorityBorder[ord.priority] || 'border-l-slate-300'
-              } shadow-xs hover:shadow-md transition-all duration-200 border border-slate-100/90`}
+              className="w-full bg-white rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all duration-200 border-0"
             >
               {/* TOP / COMPACT HEADER: Clickable card header to open/expand */}
               <div
@@ -324,7 +322,7 @@ export default function ProductionOrders() {
                 {/* Badges & Action Line */}
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md shrink-0">
+                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md shrink-0 border-0">
                       {ord.order_number}
                     </span>
                     <StatusBadge status={ord.priority} />
@@ -340,7 +338,7 @@ export default function ProductionOrders() {
                         e.stopPropagation();
                         navigate(`/production/orders/${ord.id}`);
                       }}
-                      className="font-medium"
+                      className="font-medium border-0 bg-slate-100 hover:bg-slate-200 text-slate-700 shadow-none"
                     >
                       <span className="hidden sm:inline">View Details</span>
                       <span className="sm:hidden">View</span>
@@ -348,7 +346,7 @@ export default function ProductionOrders() {
 
                     {/* Chevron toggle button */}
                     <div
-                      className={`w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 transition-transform duration-200 sm:hidden ${
+                      className={`w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 transition-transform duration-200 sm:hidden border-0 ${
                         isExpanded ? 'rotate-180 bg-brand-50 text-brand-600' : ''
                       }`}
                       title={isExpanded ? 'Collapse card' : 'Expand card'}
@@ -899,7 +897,7 @@ export default function ProductionOrders() {
         })}
 
         {filteredOrders.length === 0 && !loading && (
-          <div className="text-center py-20 bg-white border border-slate-200 rounded-xl text-slate-400 text-sm shadow-2xs">
+          <div className="text-center py-20 bg-white rounded-2xl text-slate-400 text-sm shadow-xs border-0">
             <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" />
             <p className="font-semibold text-slate-600">No production orders match the filter.</p>
             {search && (
