@@ -1,16 +1,5 @@
 // src/lib/pantoneService.ts
-/**
- * Cheran Soft Goods Textile ERP - Pantone Color Reference & Lookup Service
- * 
- * Provides verified textile Pantone Fashion, Home + Interiors (FHI Cotton TCX / TPX / TPG)
- * and Pantone Matching System (PMS Formula Guide Coated) reference data.
- * 
- * Features:
- * - Normalizes input formatting (case-insensitive, whitespace-insensitive, punctuation tolerance)
- * - Exact code lookup & numerical prefix matching (e.g. "19-4052" -> "19-4052 TCX")
- * - Validates Pantone format against official textile standards
- * - Returns verified color name, representative digital sRGB preview swatch, and color family
- */
+import { api } from './api';
 
 export interface PantoneColorRecord {
   code: string;       // e.g. "19-4052 TCX" or "PMS 286 C"
@@ -25,6 +14,9 @@ export interface PantoneLookupResult {
   pantone_code?: string;
   name?: string;
   hex_code?: string;
+  red?: number;
+  green?: number;
+  blue?: number;
   category?: string;
   system?: string;
   error?: string;
@@ -364,3 +356,84 @@ export function lookupPantone(inputCode: string): PantoneLookupResult {
     error: `Pantone code "${normalized}" was not found in the verified reference dataset.`,
   };
 }
+
+/**
+ * Converts a hex code string (e.g. "#FFE966" or "FFE966") into an RGB object { r, g, b } (0-255).
+ */
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  if (!hex) return null;
+  const clean = hex.replace('#', '').trim();
+  if (!/^[0-9A-Fa-f]{6}$/.test(clean)) return null;
+  const num = parseInt(clean, 16);
+  return {
+    r: (num >> 16) & 255,
+    g: (num >> 8) & 255,
+    b: num & 255,
+  };
+}
+
+/**
+ * Converts RGB components (0-255) into a standardized uppercase 6-digit hex code (e.g. "#FFE966").
+ */
+export function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(Number(v) || 0)));
+  const hex = [clamp(r), clamp(g), clamp(b)]
+    .map((c) => c.toString(16).padStart(2, '0').toUpperCase())
+    .join('');
+  return `#${hex}`;
+}
+
+/**
+ * Validates whether string is a valid 6-digit hex color (with or without '#').
+ */
+export function isValidHex(hex: string): boolean {
+  if (!hex) return false;
+  const clean = hex.replace('#', '').trim();
+  return /^[0-9A-Fa-f]{6}$/.test(clean);
+}
+
+/**
+ * Asynchronous Pantone lookup:
+ * 1. Checks fast local client-side verified library first.
+ * 2. If not found, calls backend API to check the full 3,219+ `pantone_colors` database table.
+ */
+export async function lookupPantoneAsync(inputCode: string): Promise<PantoneLookupResult> {
+  const clean = inputCode.trim();
+  if (!clean) return { found: false };
+
+  // 1. Check local textile library
+  const localRes = lookupPantone(clean);
+  if (localRes.found) {
+    const rgb = hexToRgb(localRes.hex_code || '');
+    return {
+      ...localRes,
+      red: rgb?.r,
+      green: rgb?.g,
+      blue: rgb?.b,
+    };
+  }
+
+  // 2. Query backend database pantone_colors table
+  try {
+    const apiRes = await api.lookupPantoneColor(clean);
+    if (apiRes && apiRes.found && apiRes.pantone_name) {
+      const hex = apiRes.hex_code || (apiRes.red !== undefined ? rgbToHex(apiRes.red, apiRes.green || 0, apiRes.blue || 0) : '#64748B');
+      return {
+        found: true,
+        pantone_code: apiRes.pantone_code || apiRes.pantone_name,
+        name: apiRes.pantone_name,
+        hex_code: hex,
+        red: apiRes.red,
+        green: apiRes.green,
+        blue: apiRes.blue,
+        category: 'Pantone Reference Library',
+        system: (apiRes.color_system as any) || 'PMS Coated',
+      };
+    }
+  } catch (err) {
+    // Backend lookup failed or offline; fall back to local result
+  }
+
+  return localRes;
+}
+

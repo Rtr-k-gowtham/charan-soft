@@ -119,6 +119,10 @@ try {
         ($r0 === 'customers' || $r0 === 'buyers') && $method === 'GET' && !$id => (new MastersController)->getCustomers(),
         ($r0 === 'customers' || $r0 === 'buyers') && $method === 'POST' && !$id => (new MastersController)->createCustomer(),
 
+        $r0 === 'pantone-colors' && $method === 'GET' => (new MastersController)->lookupPantoneColor(),
+        $r0 === 'pantone-colors' && $method === 'POST' => (new MastersController)->createPantoneColor(),
+        $r0 === 'pantone-colors' && $id && $method === 'PUT' => (new MastersController)->updatePantoneColor($id),
+        $r0 === 'pantone-colors' && $id && $method === 'DELETE' => (new MastersController)->deletePantoneColor($id),
         $r0 === 'colors' && $method === 'GET' => (new MastersController)->getColors(),
         $r0 === 'colors' && $method === 'POST' => (new MastersController)->createColor(),
         $r0 === 'colors' && $id && $method === 'PUT' => (new MastersController)->updateColor($id),
