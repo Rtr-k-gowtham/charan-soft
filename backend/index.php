@@ -61,6 +61,7 @@ try {
         $r0 === 'categories' && $method === 'GET' && !$id => (new CategoryController)->index(),
         $r0 === 'categories' && $method === 'GET' && $id => (new CategoryController)->show($id),
         $r0 === 'categories' && $method === 'POST' && !$id => (new CategoryController)->store(),
+        $r0 === 'categories' && $id && !$r2 && in_array($method, ['PUT', 'PATCH']) => (new CategoryController)->update($id),
         $r0 === 'categories' && $id && $r2 === 'fields' && $method === 'POST' => (new CategoryController)->addField($id),
         $r0 === 'categories' && $id && $r2 === 'fields' && isset($segments[3]) && $method === 'DELETE' => (new CategoryController)->deleteField($id, (int)$segments[3]),
         $r0 === 'categories' && $method === 'DELETE' && $id => (new CategoryController)->destroy($id),

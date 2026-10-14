@@ -34,14 +34,13 @@ const FIELD_TYPES = [
 export default function Categories() {
   const [data, setData] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
   // New Category Drawer
   const [createCatOpen, setCreateCatOpen] = useState(false);
   const [catSaving, setCatSaving] = useState(false);
   const [catError, setCatError] = useState('');
-  const [catForm, setCatForm] = useState({ name: '', type: 'order', description: '' });
+  const [catForm, setCatForm] = useState({ name: '', description: '' });
 
   // Add Item/Field to Category Modal
   const [addItemOpen, setAddItemOpen] = useState(false);
@@ -88,12 +87,13 @@ export default function Categories() {
     const autoCode = 'CAT_' + catForm.name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
     try {
       await api.createCategory({
-        ...catForm,
+        name: catForm.name.trim(),
+        description: catForm.description.trim() || undefined,
         code: autoCode,
         fields: [],
       });
       setCreateCatOpen(false);
-      setCatForm({ name: '', type: 'order', description: '' });
+      setCatForm({ name: '', description: '' });
       await loadCategories();
     } catch (e: unknown) {
       setCatError((e as Error).message || 'Failed to create category');
@@ -158,17 +158,6 @@ export default function Categories() {
     }
   };
 
-  const typeBadgeClasses: Record<string, string> = {
-    order: 'bg-blue-50 text-blue-700 border-blue-200',
-    material: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    product: 'bg-purple-50 text-purple-700 border-purple-200',
-    process: 'bg-amber-50 text-amber-700 border-amber-200',
-  };
-
-  const filteredCategories = filterType === 'all'
-    ? data
-    : data.filter(c => (c.type || '').toLowerCase() === filterType.toLowerCase());
-
   // Columns for Master Categories Table
   const masterColumns = [
     {
@@ -190,16 +179,6 @@ export default function Categories() {
           <span className="font-semibold text-slate-800 text-xs block">{r.name}</span>
           {r.description && <span className="text-[11px] text-slate-400 truncate max-w-xs block">{r.description}</span>}
         </div>
-      ),
-    },
-    {
-      key: 'type',
-      label: 'Category Type',
-      sortable: true,
-      render: (r: Category) => (
-        <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase border rounded tracking-wide ${typeBadgeClasses[r.type] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-          {r.type}
-        </span>
       ),
     },
     {
@@ -362,9 +341,6 @@ export default function Categories() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-bold text-slate-900">{selectedCategory.name}</h2>
-                  <span className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase border rounded tracking-wide ${typeBadgeClasses[selectedCategory.type] || ''}`}>
-                    {selectedCategory.type}
-                  </span>
                   <StatusBadge status={selectedCategory.status || 'active'} />
                 </div>
                 <p className="text-xs text-slate-500 font-mono mt-0.5">
@@ -515,7 +491,7 @@ export default function Categories() {
               icon={<Plus className="w-3.5 h-3.5" />}
               onClick={() => {
                 setCatError('');
-                setCatForm({ name: '', type: 'order', description: '' });
+                setCatForm({ name: '', description: '' });
                 setCreateCatOpen(true);
               }}
             >
@@ -525,30 +501,11 @@ export default function Categories() {
         }
       />
 
-      {/* Filter Tabs Bar */}
-      <div className="px-4 pt-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-xs">
-          {['all', 'order', 'material', 'product', 'process'].map(t => (
-            <button
-              key={t}
-              onClick={() => setFilterType(t)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all ${
-                filterType === t
-                  ? 'bg-brand-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              {t === 'all' ? `All (${data.length})` : `${t} (${data.filter(c => (c.type || '').toLowerCase() === t).length})`}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* Categories DataTable */}
       <div className="flex-1 overflow-hidden p-4">
         <div className="bg-white rounded-lg border border-slate-200 flex flex-col h-full shadow-xs">
           <DataTable
-            data={filteredCategories}
+            data={data}
             columns={masterColumns}
             rowKey="id"
             onRowClick={(cat: Category) => setSelectedCategory(cat)}
@@ -590,19 +547,6 @@ export default function Categories() {
             placeholder="e.g. YARN PURCHASE ORDER, FABRIC WEAVING"
             hint="Category Code will be automatically generated (e.g. CAT_YARN_PURCHASE_ORDER)"
           />
-
-          <FormField
-            as="select"
-            label="Category Type"
-            required
-            value={catForm.type}
-            onChange={e => setCatForm(f => ({ ...f, type: e.target.value }))}
-          >
-            <option value="order">Order Category</option>
-            <option value="material">Material Category</option>
-            <option value="product">Product Category</option>
-            <option value="process">Process Category</option>
-          </FormField>
 
           <FormField
             as="textarea"

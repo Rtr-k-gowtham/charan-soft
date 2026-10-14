@@ -50,7 +50,7 @@ export default function Materials() {
     try {
       const [matData, catData, supData] = await Promise.all([
         api.getMaterials(catId),
-        api.getCategories('material'),
+        api.getCategories(),
         api.getSuppliers(),
       ]);
       setMaterials((matData || []) as Material[]);

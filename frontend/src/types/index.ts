@@ -14,7 +14,7 @@ export interface Category {
   id: number;
   name: string;
   code: string;
-  type: 'order' | 'material' | 'product' | 'process';
+  type?: string;
   description?: string;
   status: string;
   sort_order: number;

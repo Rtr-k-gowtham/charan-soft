@@ -414,15 +414,38 @@ const server = http.createServer(async (req, res) => {
     // 3. Categories
     if (pathname === '/categories' && method === 'GET') {
       const type = parsedUrl.searchParams.get('type');
-      const cats = type ? db.categories.filter(c => c.type === type) : db.categories;
+      const cats = (type && type !== 'all') ? db.categories.filter(c => !c.type || c.type === type) : db.categories;
       return sendSuccess(res, cats);
     }
     if (pathname === '/categories' && method === 'POST') {
-      const autoCode = body.code || 'CAT_' + (body.name || 'CATEGORY').trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
-      const newCat = { id: db.categories.length + 1, ...body, code: autoCode, fields: body.fields || [], created_at: new Date().toISOString() };
+      const name = (body.name || '').trim();
+      if (!name) {
+        return sendError(res, 'Category name is required', 422);
+      }
+      const existing = db.categories.find(c => (c.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        return sendError(res, `A category with the name '${name}' already exists`, 409);
+      }
+      let autoCode = body.code || 'CAT_' + name.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+      let baseCode = autoCode;
+      let counter = 1;
+      while (db.categories.some(c => c.code === autoCode)) {
+        counter++;
+        autoCode = `${baseCode}_${counter}`;
+      }
+      const newCat = {
+        id: db.categories.length + 1,
+        ...body,
+        name,
+        code: autoCode,
+        type: body.type || null,
+        description: body.description || null,
+        fields: body.fields || [],
+        created_at: new Date().toISOString()
+      };
       db.categories.push(newCat);
       saveDB();
-      return sendSuccess(res, newCat, 'Category created', 201);
+      return sendSuccess(res, newCat, 'Category created successfully', 201);
     }
     if (pathname.match(/^\/categories\/\d+$/) && method === 'GET') {
       const id = Number(pathname.split('/')[2]);

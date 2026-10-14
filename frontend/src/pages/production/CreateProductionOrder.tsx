@@ -184,7 +184,7 @@ export default function CreateProductionOrder() {
       const [prdData, custData, catData, pantoneData] = await Promise.all([
         api.getProducts(),
         api.getCustomers(),
-        api.getCategories('order').catch(() => api.getCategories()),
+        api.getCategories(),
         api.getPantoneColors({ all: true }).catch(() => api.getColors()),
       ]);
       setProducts((prdData || []) as Product[]);

@@ -51,6 +51,7 @@ export const api = {
     request<unknown[]>(`/categories${type ? `?type=${type}` : ''}`),
   getCategory: (id: number) => request<unknown>(`/categories/${id}`),
   createCategory: (data: unknown) => request<unknown>('/categories', 'POST', data),
+  updateCategory: (id: number, data: unknown) => request<unknown>(`/categories/${id}`, 'PUT', data),
   addCategoryField: (categoryId: number, data: unknown) =>
     request<unknown>(`/categories/${categoryId}/fields`, 'POST', data),
   deleteCategoryField: (categoryId: number, fieldId: number) =>

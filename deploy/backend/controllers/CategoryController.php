@@ -13,8 +13,8 @@ class CategoryController {
             $pdo = Database::getConnection();
             $sql = "SELECT * FROM categories WHERE (status = 'active' OR status IS NULL)";
             $params = [];
-            if ($type) {
-                $sql .= " AND type = :type";
+            if ($type && $type !== 'all') {
+                $sql .= " AND (type = :type OR type IS NULL OR type = '')";
                 $params[':type'] = $type;
             }
             $sql .= " ORDER BY sort_order ASC, name ASC";
@@ -79,15 +79,46 @@ class CategoryController {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
         $code = trim($data['code'] ?? '');
-        $type = trim($data['type'] ?? 'order');
+        $type = !empty($data['type']) ? trim($data['type']) : null;
+        $description = !empty($data['description']) ? trim($data['description']) : null;
 
-        if (empty($name) || empty($code)) {
-            Response::error("Category name and code are required", 422);
+        if (empty($name)) {
+            Response::error("Category name is required", 422);
             return;
+        }
+
+        // Auto-generate code if empty
+        if (empty($code)) {
+            $slug = preg_replace('/[^A-Z0-9]/', '_', strtoupper($name));
+            $slug = preg_replace('/_+/', '_', $slug);
+            $slug = trim($slug, '_');
+            $code = 'CAT_' . ($slug ?: 'CATEGORY');
         }
 
         try {
             $pdo = Database::getConnection();
+
+            // Case-insensitive duplicate check on Category Name
+            $dupStmt = $pdo->prepare("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1");
+            $dupStmt->execute([':name' => $name]);
+            if ($dupStmt->fetch()) {
+                Response::error("A category with the name '{$name}' already exists", 409);
+                return;
+            }
+
+            // Ensure unique code if collision occurs
+            $baseCode = $code;
+            $counter = 1;
+            while (true) {
+                $checkCode = $pdo->prepare("SELECT id FROM categories WHERE code = :code LIMIT 1");
+                $checkCode->execute([':code' => $code]);
+                if (!$checkCode->fetch()) {
+                    break;
+                }
+                $counter++;
+                $code = $baseCode . '_' . $counter;
+            }
+
             $pdo->beginTransaction();
 
             $stmt = $pdo->prepare("INSERT INTO categories (name, code, type, description) VALUES (:name, :code, :type, :desc)");
@@ -95,7 +126,7 @@ class CategoryController {
                 ':name' => $name,
                 ':code' => $code,
                 ':type' => $type,
-                ':desc' => $data['description'] ?? null
+                ':desc' => $description
             ]);
             $categoryId = (int)$pdo->lastInsertId();
 
@@ -118,10 +149,44 @@ class CategoryController {
             }
 
             $pdo->commit();
-            AuditLogger::log('Categories', 'CREATE', $categoryId, null, $data);
-            Response::success(['id' => $categoryId], "Category created successfully", 201);
+            AuditLogger::log('Categories', 'CREATE', $categoryId, null, [
+                'id' => $categoryId,
+                'name' => $name,
+                'code' => $code,
+                'type' => $type,
+                'description' => $description
+            ]);
+            Response::success(['id' => $categoryId, 'name' => $name, 'code' => $code, 'type' => $type], "Category created successfully", 201);
         } catch (Exception $e) {
             if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function update(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $description = isset($data['description']) ? trim($data['description']) : null;
+
+        if (empty($name)) {
+            Response::error("Category name is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $dupStmt = $pdo->prepare("SELECT id FROM categories WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND id != :id LIMIT 1");
+            $dupStmt->execute([':name' => $name, ':id' => $id]);
+            if ($dupStmt->fetch()) {
+                Response::error("A category with the name '{$name}' already exists", 409);
+                return;
+            }
+
+            $stmt = $pdo->prepare("UPDATE categories SET name = :name, description = :desc WHERE id = :id");
+            $stmt->execute([':name' => $name, ':desc' => $description, ':id' => $id]);
+            AuditLogger::log('Categories', 'UPDATE', $id, null, ['name' => $name, 'description' => $description]);
+            Response::success(['id' => $id, 'name' => $name], "Category updated successfully");
+        } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
     }
