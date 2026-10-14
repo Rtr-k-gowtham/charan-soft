@@ -54,20 +54,6 @@ export default function Header({ onSidebarToggle }: Props) {
       </div>
 
       <div className="flex items-center gap-1.5">
-        {/* Install App button if not running in standalone */}
-        {!isStandalone && (
-          <button
-            onClick={() => {
-              localStorage.removeItem('csg_pwa_dismissed_until');
-              window.dispatchEvent(new Event('show-pwa-install-prompt'));
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg border border-brand-200 shadow-2xs transition-all active:scale-95"
-            title="Install CHERAN SOFT App on Mobile / Desktop"
-          >
-            <Download className="w-3.5 h-3.5 text-brand-600" />
-            <span className="hidden sm:inline">Install App</span>
-          </button>
-        )}
         {/* Notification bell */}
         <button
           className="relative p-2 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 min-h-[38px] min-w-[38px] flex items-center justify-center"
