@@ -122,15 +122,19 @@ function hasActiveDescendant(item: NavItem, currentPath: string): boolean {
   return false;
 }
 
+interface NavNodeProps {
+  item: NavItem;
+  depth?: number;
+  collapsed?: boolean;
+  onItemClick?: () => void;
+}
+
 function NavNode({
   item,
   depth = 0,
   collapsed = false,
-}: {
-  item: NavItem;
-  depth?: number;
-  collapsed?: boolean;
-}) {
+  onItemClick,
+}: NavNodeProps) {
   const location = useLocation();
   const Icon = item.icon;
   const isDirectActive = item.path ? location.pathname === item.path : false;
@@ -154,12 +158,13 @@ function NavNode({
         <NavLink
           to={item.path!}
           end
+          onClick={onItemClick}
           className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
+            `flex items-center gap-2.5 px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0
             ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`
           }
         >
-          {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+          {Icon && <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />}
           {!collapsed && <span className="truncate">{item.label}</span>}
         </NavLink>
       );
@@ -169,8 +174,9 @@ function NavNode({
       <NavLink
         to={item.path!}
         end
+        onClick={onItemClick}
         className={({ isActive }) =>
-          `block px-2 py-1 rounded text-[11px] font-medium transition-all duration-150 truncate
+          `block px-2.5 py-1.5 sm:py-1 rounded-md text-[11px] font-medium transition-all duration-150 truncate min-h-[30px] sm:min-h-0 flex items-center
           ${isActive ? 'text-brand-700 bg-brand-50 font-bold' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`
         }
       >
@@ -187,14 +193,14 @@ function NavNode({
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
-          className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150
+          className={`w-full flex items-center gap-2.5 px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0
             ${isTopActive ? 'text-brand-700 bg-brand-50 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`}
         >
-          {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+          {Icon && <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />}
           {!collapsed && (
             <>
               <span className="truncate flex-1 text-left">{item.label}</span>
-              {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+              {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
             </>
           )}
         </button>
@@ -206,6 +212,7 @@ function NavNode({
                 item={child}
                 depth={depth + 1}
                 collapsed={collapsed}
+                onItemClick={onItemClick}
               />
             ))}
           </div>
@@ -218,7 +225,7 @@ function NavNode({
   return (
     <div>
       <div
-        className={`flex items-center justify-between rounded text-[11px] font-medium transition-all duration-150 ${
+        className={`flex items-center justify-between rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0 ${
           isDirectActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
         }`}
       >
@@ -226,8 +233,9 @@ function NavNode({
           <NavLink
             to={item.path}
             end
+            onClick={onItemClick}
             className={({ isActive }) =>
-              `flex-1 truncate px-2 py-1 transition-colors ${
+              `flex-1 truncate px-2.5 py-1.5 sm:py-1 transition-colors ${
                 isActive ? 'text-brand-700 font-bold' : 'text-slate-600 hover:text-slate-900'
               }`
             }
@@ -235,7 +243,7 @@ function NavNode({
             {item.label}
           </NavLink>
         ) : (
-          <span className="flex-1 truncate px-2 py-1 text-slate-600">
+          <span className="flex-1 truncate px-2.5 py-1.5 sm:py-1 text-slate-600">
             {item.label}
           </span>
         )}
@@ -246,22 +254,23 @@ function NavNode({
             e.stopPropagation();
             setOpen(o => !o);
           }}
-          className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded transition-colors mr-0.5"
+          className="p-1.5 sm:p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded transition-colors mr-0.5"
           title={open ? 'Collapse' : 'Expand'}
           aria-label={open ? `Collapse ${item.label}` : `Expand ${item.label}`}
         >
-          {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </button>
       </div>
 
       {open && (
-        <div className="ml-1.5 pl-1 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5">
+        <div className="ml-1.5 pl-1.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5">
           {item.children.map(child => (
             <NavNode
               key={child.label + (child.path || '')}
               item={child}
               depth={depth + 1}
               collapsed={collapsed}
+              onItemClick={onItemClick}
             />
           ))}
         </div>
@@ -286,20 +295,25 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
             />
           </div>
         ) : (
-          <div className="flex items-center w-full min-w-0">
+          <div className="flex items-center justify-between w-full min-w-0 pr-6 md:pr-0">
             <img
               src="/logo.png"
               alt="CHERAN SOFT GOODS"
-              className="h-8 max-w-[195px] w-auto object-contain transition-opacity duration-200"
+              className="h-8 max-w-[185px] w-auto object-contain transition-opacity duration-200"
             />
           </div>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-0.5">
+      <nav className="flex-1 overflow-y-auto py-2 px-2 flex flex-col gap-0.5 touch-scroll">
         {navItems.map(item => (
-          <NavNode key={item.label} item={item} collapsed={collapsed} />
+          <NavNode
+            key={item.label}
+            item={item}
+            collapsed={collapsed}
+            onItemClick={onMobileClose}
+          />
         ))}
       </nav>
 
@@ -319,15 +333,19 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
-          <div className="absolute inset-0 bg-slate-900/40" onClick={onMobileClose} />
-          <div className="relative flex h-full w-64">
+        <div className="fixed inset-0 z-50 flex md:hidden animate-in fade-in duration-200">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
+            onClick={onMobileClose}
+          />
+          <div className="relative flex h-full w-72 max-w-[85vw] shadow-2xl bg-white animate-in slide-in-from-left duration-200">
             {content}
             <button
               onClick={onMobileClose}
-              className="absolute top-3 right-3 p-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200"
+              className="absolute top-3.5 right-3 p-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 min-h-[36px] min-w-[36px] flex items-center justify-center shadow-xs"
+              aria-label="Close menu"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>

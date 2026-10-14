@@ -75,12 +75,15 @@ export default function SearchableSelect({
       const placeAbove = spaceBelow < dropdownMaxHeight && rect.top > dropdownMaxHeight;
 
       const triggerWidth = rect.width;
-      const width = Math.max(triggerWidth, 280);
+      const width = Math.min(Math.max(triggerWidth, 260), window.innerWidth - 24);
       let left = rect.left;
 
       // Ensure dropdown does not overflow right side of window
       if (left + width > window.innerWidth - 12) {
         left = Math.max(12, window.innerWidth - width - 12);
+      }
+      if (left < 12) {
+        left = 12;
       }
 
       setCoords({

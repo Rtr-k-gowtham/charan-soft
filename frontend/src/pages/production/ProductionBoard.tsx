@@ -460,8 +460,8 @@ export default function ProductionBoard() {
       )}
 
       {/* Filter & Metric Bar */}
-      <div className="px-4 py-2.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-2.5 flex-1 min-w-[240px] max-w-lg">
+      <div className="px-3 sm:px-4 py-2.5 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
+        <div className="flex items-center gap-2 flex-1 w-full max-w-lg">
           <div className="relative flex-1">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -472,7 +472,7 @@ export default function ProductionBoard() {
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition-colors"
             />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={priorityFilter}
@@ -489,16 +489,16 @@ export default function ProductionBoard() {
         </div>
 
         {/* Global Board Summary */}
-        <div className="flex items-center gap-3 text-xs text-slate-600">
-          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded border border-slate-200">
+        <div className="flex items-center gap-2 text-xs text-slate-600 overflow-x-auto touch-scroll scrollbar-none pb-0.5">
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded border border-slate-200 whitespace-nowrap shrink-0">
             <Package className="w-3.5 h-3.5 text-brand-600" />
             <span>Orders: <strong className="text-slate-800">{orders.length}</strong></span>
           </div>
-          <div className="flex items-center gap-1.5 bg-brand-50 px-2.5 py-1 rounded border border-brand-200">
+          <div className="flex items-center gap-1.5 bg-brand-50 px-2.5 py-1 rounded border border-brand-200 whitespace-nowrap shrink-0">
             <Layers className="w-3.5 h-3.5 text-brand-700" />
-            <span>In Pipeline: <strong className="text-brand-800">{fmt(totalPiecesInPipeline)} pcs</strong></span>
+            <span>Pipeline: <strong className="text-brand-800">{fmt(totalPiecesInPipeline)} pcs</strong></span>
           </div>
-          <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
+          <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 whitespace-nowrap shrink-0">
             <Check className="w-3.5 h-3.5 text-emerald-700" />
             <span>Completed: <strong className="text-emerald-800">{fmt(totalCompletedPieces)} pcs</strong></span>
           </div>
@@ -506,10 +506,10 @@ export default function ProductionBoard() {
       </div>
 
       {/* Mobile/Tablet Stage Tabs */}
-      <div className="flex md:hidden overflow-x-auto gap-1.5 px-3 py-2 bg-white border-b border-slate-200 shrink-0">
+      <div className="flex md:hidden overflow-x-auto touch-scroll scrollbar-none gap-1.5 px-3 py-2 bg-white border-b border-slate-200 shrink-0">
         <button
           onClick={() => setActiveMobileStageTab(null)}
-          className={`px-3 py-1 text-xs font-semibold rounded-md whitespace-nowrap transition-colors ${
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-colors min-h-[34px] ${
             activeMobileStageTab === null ? 'bg-slate-800 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
@@ -522,7 +522,7 @@ export default function ProductionBoard() {
             <button
               key={stg.id}
               onClick={() => setActiveMobileStageTab(stg.id)}
-              className="px-2.5 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors flex items-center gap-1.5"
+              className="px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 min-h-[34px]"
               style={{
                 backgroundColor: isSelected ? stg.color_badge : '#f1f5f9',
                 color: isSelected ? 'white' : '#475569',
@@ -538,8 +538,8 @@ export default function ProductionBoard() {
       </div>
 
       {/* Main Kanban Columns Container */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden p-3.5">
-        <div className="flex h-full gap-3 min-w-max pb-1">
+      <div className="flex-1 overflow-x-auto touch-scroll overflow-y-hidden p-2.5 sm:p-3.5">
+        <div className={`flex h-full gap-3 pb-1 ${activeMobileStageTab !== null ? 'w-full md:min-w-max' : 'min-w-max snap-x snap-mandatory'}`}>
           {stages
             .filter(stg => activeMobileStageTab === null || stg.id === activeMobileStageTab)
             .map(stage => {
@@ -554,7 +554,9 @@ export default function ProductionBoard() {
                   onDragOver={e => handleDragOver(e, stage)}
                   onDragLeave={e => handleDragLeave(e, stage.id)}
                   onDrop={e => handleDrop(e, stage)}
-                  className={`w-72 shrink-0 flex flex-col h-full bg-slate-50 rounded-lg border transition-all duration-150 shadow-sm ${
+                  className={`${
+                    activeMobileStageTab !== null ? 'w-full md:w-72' : 'w-[85vw] sm:w-72 snap-center'
+                  } shrink-0 flex flex-col h-full bg-slate-50 rounded-lg border transition-all duration-150 shadow-sm ${
                     isDropTarget
                       ? 'border-brand-500 ring-2 ring-brand-300/60 bg-brand-50/20'
                       : 'border-slate-200 hover:border-slate-300'

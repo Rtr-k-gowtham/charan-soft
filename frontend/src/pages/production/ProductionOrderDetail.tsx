@@ -289,7 +289,7 @@ export default function ProductionOrderDetail() {
                 Installation → Dyeing → Detailing → Cutting → Stitching → QC → Rework → Completed
               </span>
             </div>
-            <div className="overflow-x-auto pb-1">
+            <div className="overflow-x-auto touch-scroll scrollbar-none pb-1">
               <div className="flex items-center min-w-[720px] gap-2">
                 {[...stages]
                   .sort((a, b) => (a.sequence_order || 0) - (b.sequence_order || 0))

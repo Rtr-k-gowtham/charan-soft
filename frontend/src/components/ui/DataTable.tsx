@@ -93,8 +93,8 @@ export default function DataTable<T extends Record<string, any>>({
   return (
     <div className="flex flex-col h-full">
       {searchable && (
-        <div className="flex items-center gap-2 mb-2">
-          <div className="relative flex-1 max-w-xs">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2">
+          <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               value={search}
@@ -103,14 +103,14 @@ export default function DataTable<T extends Record<string, any>>({
               className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200"
             />
           </div>
-          <span className="text-[11px] text-slate-400 ml-auto">
+          <span className="text-[11px] text-slate-400 text-right sm:ml-auto">
             {filtered.length} record{filtered.length !== 1 ? 's' : ''}
           </span>
         </div>
       )}
 
-      <div className="overflow-x-auto flex-1 rounded-md border border-slate-200 bg-white">
-        <table className="w-full border-collapse table-dense">
+      <div className="overflow-x-auto touch-scroll flex-1 rounded-md border border-slate-200 bg-white shadow-2xs">
+        <table className="w-full min-w-[580px] sm:min-w-full border-collapse table-dense">
           <thead>
             <tr>
               {columns.map((col: Column<T>) => (
@@ -168,15 +168,15 @@ export default function DataTable<T extends Record<string, any>>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-2 px-1">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 px-1">
           <span className="text-[11px] text-slate-400">
-            Page {currentPage} of {totalPages}
+            Page {currentPage} of {totalPages} ({filtered.length} total)
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 overflow-x-auto max-w-full pb-0.5">
             <button
               disabled={currentPage <= 1}
               onClick={() => setPage(p => p - 1)}
-              className="px-2 py-1 text-xs border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50"
+              className="px-2.5 py-1 text-xs min-h-[32px] border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium"
             >
               Prev
             </button>
@@ -187,7 +187,11 @@ export default function DataTable<T extends Record<string, any>>({
                 <button
                   key={pg}
                   onClick={() => setPage(pg)}
-                  className={`px-2 py-1 text-xs border rounded ${pg === currentPage ? 'bg-brand-600 text-white border-brand-600' : 'border-slate-200 hover:bg-slate-50'}`}
+                  className={`px-2.5 py-1 text-xs min-h-[32px] min-w-[32px] border rounded transition-colors font-medium ${
+                    pg === currentPage
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
                 >
                   {pg}
                 </button>
@@ -196,7 +200,7 @@ export default function DataTable<T extends Record<string, any>>({
             <button
               disabled={currentPage >= totalPages}
               onClick={() => setPage(p => p + 1)}
-              className="px-2 py-1 text-xs border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50"
+              className="px-2.5 py-1 text-xs min-h-[32px] border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium"
             >
               Next
             </button>

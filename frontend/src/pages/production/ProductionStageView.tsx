@@ -341,8 +341,8 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       />
 
       {/* 10-Stage Pipeline Stepper */}
-      <div className="px-4 pt-2 pb-2 bg-white border-b border-slate-200">
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+      <div className="px-3 sm:px-4 pt-2 pb-2 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-1.5 overflow-x-auto touch-scroll scrollbar-none pb-1">
           {stages.map((s, idx) => {
             const isCurrent = s.code === activeCode || s.name === stageName;
             const targetRoute = STAGE_ROUTE_MAP[s.code] || `/production/${s.code.toLowerCase()}`;
@@ -351,7 +351,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 <button
                   type="button"
                   onClick={() => navigate(targetRoute)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer border min-h-[32px] ${
                     isCurrent
                       ? 'text-white shadow-sm border-transparent'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
@@ -373,7 +373,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       </div>
 
       {/* Main Order Items Table */}
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2 sm:p-4">
         <DataTable
           data={items}
           columns={columns}

@@ -193,10 +193,10 @@ export default function ProductionOrders() {
       />
 
       {/* Filter and Search Bar */}
-      <div className="px-4 md:px-6 pt-4 pb-2">
-        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+      <div className="px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
+        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Search box */}
-          <div className="relative flex-1 min-w-[240px] max-w-md">
+          <div className="relative w-full sm:flex-1 sm:max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -218,10 +218,10 @@ export default function ProductionOrders() {
           {/* Status and Priority Filter Pills */}
           <div className="flex items-center gap-2 flex-wrap text-xs">
             {/* Status Pills */}
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 overflow-x-auto touch-scroll scrollbar-none max-w-full">
               <button
                 onClick={() => setStatusFilter('ALL')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all min-h-[30px] whitespace-nowrap ${
                   statusFilter === 'ALL'
                     ? 'bg-white text-slate-900 shadow-2xs font-semibold'
                     : 'text-slate-500 hover:text-slate-800'
@@ -335,8 +335,8 @@ export default function ProductionOrders() {
               {/* ============================================================== */}
               {/* MIDDLE ROW: Order Executive Summary & Overall Progress */}
               {/* ============================================================== */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-50/70 border-b border-slate-100 text-xs">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 min-w-[320px]">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-3 sm:px-4 py-3 bg-slate-50/70 border-b border-slate-100 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 flex-1 min-w-0">
                   {/* 1. Buyer / Customer */}
                   <div className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">

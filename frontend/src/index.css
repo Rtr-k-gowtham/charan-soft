@@ -5,13 +5,43 @@
 @layer base {
   * {
     border-color: #e2e8f0;
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     font-family: 'Poppins', system-ui, -apple-system, sans-serif;
     color: #1e293b;
     background-color: #f8fafc;
+    overscroll-behavior-y: none;
   }
 }
+
+/* Prevent iOS browser auto-zoom on input focus */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile touch momentum scrolling */
+.touch-scroll {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Mobile safe area padding for modern devices */
+.safe-area-pb {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Hide scrollbar utility for touch ribbons */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 
 /* Custom compact scrollbar for enterprise tables */
 ::-webkit-scrollbar {
