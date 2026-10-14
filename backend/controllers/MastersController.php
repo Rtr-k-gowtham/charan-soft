@@ -262,6 +262,7 @@ class MastersController {
             CREATE TABLE IF NOT EXISTS buyer_product_components (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 buyer_product_id INT NOT NULL,
+                material_id INT NULL,
                 category_id INT NULL,
                 name VARCHAR(150) NOT NULL,
                 category VARCHAR(100) NOT NULL,
@@ -272,6 +273,13 @@ class MastersController {
                 INDEX idx_bp_comp_id (buyer_product_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
+
+        try {
+            $cols = $pdo->query("DESCRIBE buyer_product_components")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('material_id', $cols)) {
+                $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN material_id INT NULL AFTER buyer_product_id;");
+            }
+        } catch (Exception $e) {}
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS buyer_product_boxes (
@@ -310,7 +318,8 @@ class MastersController {
                 $compRows = $compStmt->fetchAll();
                 $components = array_map(function($c) {
                     return [
-                        'id' => (int)$c['id'],
+                        'id' => (string)$c['id'],
+                        'material_id' => !empty($c['material_id']) ? (int)$c['material_id'] : null,
                         'category_id' => $c['category_id'] ? (int)$c['category_id'] : null,
                         'name' => $c['name'],
                         'category' => $c['category'],
@@ -369,6 +378,90 @@ class MastersController {
         }
     }
 
+    public function getBuyerProduct(int $buyerId, int $productId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureBuyerProductsTable($pdo);
+
+            $stmt = $pdo->prepare("SELECT * FROM buyer_products WHERE id = ? AND buyer_id = ?");
+            $stmt->execute([$productId, $buyerId]);
+            $r = $stmt->fetch();
+
+            if (!$r) {
+                Response::error("Buyer product not found", 404);
+                return;
+            }
+
+            // Load BOM components
+            $compStmt = $pdo->prepare("SELECT * FROM buyer_product_components WHERE buyer_product_id = ? ORDER BY id ASC");
+            $compStmt->execute([$productId]);
+            $compRows = $compStmt->fetchAll();
+            $components = array_map(function($c) {
+                return [
+                    'id' => (string)$c['id'],
+                    'material_id' => !empty($c['material_id']) ? (int)$c['material_id'] : null,
+                    'category_id' => $c['category_id'] ? (int)$c['category_id'] : null,
+                    'name' => $c['name'],
+                    'category' => $c['category'],
+                    'uom' => $c['uom'] ?? 'Meters',
+                    'quantity_per_product' => (float)$c['quantity_per_product'],
+                    'wastage_percent' => (float)$c['wastage_percent'],
+                    'notes' => $c['notes'] ?? ''
+                ];
+            }, $compRows);
+
+            // Load Boxes
+            $boxStmt = $pdo->prepare("SELECT * FROM buyer_product_boxes WHERE buyer_product_id = ? ORDER BY id ASC");
+            $boxStmt->execute([$productId]);
+            $boxRows = $boxStmt->fetchAll();
+            $boxes = array_map(function($b) {
+                return [
+                    'id' => (string)$b['id'],
+                    'box_name' => $b['box_name'],
+                    'box_code' => $b['box_code'] ?? '',
+                    'length' => (float)$b['length'],
+                    'width' => (float)$b['width'],
+                    'height' => (float)$b['height'],
+                    'dimension_unit' => $b['dimension_unit'] ?? 'cm',
+                    'items_per_box' => (int)$b['items_per_box'],
+                    'max_packing_qty' => $b['max_packing_qty'] ? (int)$b['max_packing_qty'] : null,
+                    'notes' => $b['notes'] ?? ''
+                ];
+            }, $boxRows);
+
+            $dimensions = !empty($r['dimensions_json']) ? json_decode($r['dimensions_json'], true) : null;
+
+            $product = [
+                'id' => (int)$r['id'],
+                'buyer_id' => (int)$r['buyer_id'],
+                'product_name' => $r['product_name'],
+                'product_code' => $r['product_code'],
+                'uom' => $r['uom'] ?? 'Pieces',
+                'notes' => $r['notes'] ?? '',
+                'image_url' => $r['image_url'] ?? '',
+                'dimensions' => $dimensions,
+                'components' => $components,
+                'boxes' => $boxes,
+                'status' => (!empty($components) && !empty($boxes)) ? 'Ready' : 'Incomplete',
+                'created_at' => $r['created_at'],
+                'updated_at' => $r['updated_at'] ?? $r['created_at']
+            ];
+
+            Response::success($product);
+        } catch (Exception $e) {
+            // Fallback to store.json
+            $db = $this->getStoreData();
+            $buyerProducts = $db['buyer_products'] ?? [];
+            foreach ($buyerProducts as $p) {
+                if ((int)($p['buyer_id'] ?? 0) === $buyerId && (int)($p['id'] ?? 0) === $productId) {
+                    Response::success($p);
+                    return;
+                }
+            }
+            Response::error("Buyer product not found", 404);
+        }
+    }
+
     public function createBuyerProduct(int $buyerId): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $productName = trim($data['product_name'] ?? ($data['name'] ?? ''));
@@ -405,20 +498,22 @@ class MastersController {
             $savedComponents = [];
             if (!empty($data['components']) && is_array($data['components'])) {
                 $compIns = $pdo->prepare("
-                    INSERT INTO buyer_product_components (buyer_product_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 foreach ($data['components'] as $c) {
                     $cName = trim($c['name'] ?? '');
-                    if (empty($cName)) continue;
+                    if (empty($cName) && empty($c['material_id'])) continue;
+                    $matId = !empty($c['material_id']) ? (int)$c['material_id'] : null;
                     $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
                     $cat = trim($c['category'] ?? 'Raw Material');
                     $cUom = trim($c['uom'] ?? 'Meters');
                     $qty = (float)($c['quantity_per_product'] ?? 1);
                     $wastage = (float)($c['wastage_percent'] ?? 0);
                     $cNotes = trim($c['notes'] ?? '');
-                    $compIns->execute([$newId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
-                    $c['id'] = (int)$pdo->lastInsertId();
+                    $compIns->execute([$newId, $matId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $c['id'] = (string)$pdo->lastInsertId();
+                    $c['material_id'] = $matId;
                     $savedComponents[] = $c;
                 }
             }
@@ -508,20 +603,22 @@ class MastersController {
             $savedComponents = [];
             if (!empty($data['components']) && is_array($data['components'])) {
                 $compIns = $pdo->prepare("
-                    INSERT INTO buyer_product_components (buyer_product_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 foreach ($data['components'] as $c) {
                     $cName = trim($c['name'] ?? '');
-                    if (empty($cName)) continue;
+                    if (empty($cName) && empty($c['material_id'])) continue;
+                    $matId = !empty($c['material_id']) ? (int)$c['material_id'] : null;
                     $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
                     $cat = trim($c['category'] ?? 'Raw Material');
                     $cUom = trim($c['uom'] ?? 'Meters');
                     $qty = (float)($c['quantity_per_product'] ?? 1);
                     $wastage = (float)($c['wastage_percent'] ?? 0);
                     $cNotes = trim($c['notes'] ?? '');
-                    $compIns->execute([$productId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
-                    $c['id'] = (int)$pdo->lastInsertId();
+                    $compIns->execute([$productId, $matId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $c['id'] = (string)$pdo->lastInsertId();
+                    $c['material_id'] = $matId;
                     $savedComponents[] = $c;
                 }
             }

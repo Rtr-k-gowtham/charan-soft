@@ -1,5 +1,6 @@
 // frontend/src/components/buyer-products/BuyerProductsManager.tsx
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Buyer, BuyerProduct } from '../../types';
 import { api } from '../../lib/api';
 import PageHeader from '../ui/PageHeader';
@@ -14,7 +15,8 @@ import {
   Layers,
   Ruler,
   Box,
-  Edit2,
+  Eye,
+  Pencil,
   Trash2,
 } from 'lucide-react';
 
@@ -24,6 +26,7 @@ interface Props {
 }
 
 export default function BuyerProductsManager({ buyer, onBack }: Props) {
+  const navigate = useNavigate();
   const [products, setProducts] = useState<BuyerProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -192,6 +195,10 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
     setModalOpen(true);
   };
 
+  const openView = (p: BuyerProduct) => {
+    navigate(`/masters/buyers/${buyer.id}/products/${p.id}`);
+  };
+
   const openEdit = (p: BuyerProduct) => {
     setEditingProduct(p);
     setModalOpen(true);
@@ -229,14 +236,22 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
       label: 'Product Name',
       sortable: true,
       render: (r: BuyerProduct) => (
-        <div className="flex flex-col">
-          <span className="font-semibold text-slate-900 text-xs hover:text-brand-600 transition">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            openView(r);
+          }}
+          className="text-left flex flex-col group cursor-pointer"
+          title="Click to view product details"
+        >
+          <span className="font-semibold text-slate-900 text-xs group-hover:text-brand-600 transition underline-offset-2 group-hover:underline">
             {r.product_name}
           </span>
           {r.notes ? (
             <span className="text-[11px] text-slate-400 line-clamp-1">{r.notes}</span>
           ) : null}
-        </div>
+        </button>
       ),
     },
     {
@@ -395,22 +410,30 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
             data={products}
             columns={columns}
             rowKey="id"
-            onRowClick={openEdit}
+            onRowClick={openView}
             emptyMessage={`No products configured for ${buyer.name}. Click "+ Add Product" to configure the first item.`}
             actions={(r: BuyerProduct) => (
               <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
-                  onClick={() => openEdit(r)}
-                  className="p-1 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-50 transition cursor-pointer"
-                  title="Configure Product"
+                  onClick={() => openView(r)}
+                  className="p-1.5 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-100 transition cursor-pointer"
+                  title="View Details"
                 >
-                  <Edit2 className="w-3.5 h-3.5" />
+                  <Eye className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openEdit(r)}
+                  className="p-1.5 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-100 transition cursor-pointer"
+                  title="Edit Product"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
                   onClick={() => handleDeleteProduct(r.id)}
-                  className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                  className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
                   title="Delete Product"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

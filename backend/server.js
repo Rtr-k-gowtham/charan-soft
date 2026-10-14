@@ -609,6 +609,15 @@ const server = http.createServer(async (req, res) => {
       const prods = db.buyer_products.filter(p => p.buyer_id === buyerId);
       return sendSuccess(res, prods);
     }
+    const bpGetSingleMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products\/(\d+)$/);
+    if (bpGetSingleMatch && method === 'GET') {
+      const buyerId = Number(bpGetSingleMatch[1]);
+      const prodId = Number(bpGetSingleMatch[2]);
+      if (!db.buyer_products) db.buyer_products = [];
+      const prod = db.buyer_products.find(p => p.buyer_id === buyerId && p.id === prodId);
+      if (!prod) return sendError(res, 'Buyer product not found', 404);
+      return sendSuccess(res, prod);
+    }
     const bpPostMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products$/);
     if (bpPostMatch && method === 'POST') {
       const buyerId = Number(bpPostMatch[1]);

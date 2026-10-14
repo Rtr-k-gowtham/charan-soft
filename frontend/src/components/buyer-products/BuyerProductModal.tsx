@@ -125,6 +125,18 @@ export default function BuyerProductModal({
         setError('Unit of Measurement (UOM) is required.');
         return false;
       }
+    } else if (step === 'bom') {
+      for (let i = 0; i < components.length; i++) {
+        const c = components[i];
+        if (!c.material_id && !c.name.trim()) {
+          setError(`BOM Row #${i + 1}: Please select a material from the Material Master.`);
+          return false;
+        }
+        if (!c.quantity_per_product || c.quantity_per_product <= 0) {
+          setError(`BOM Row #${i + 1} (${c.name || 'Component'}): Qty / Unit must be greater than 0.`);
+          return false;
+        }
+      }
     }
     setError('');
     return true;
@@ -158,19 +170,20 @@ export default function BuyerProductModal({
     if (currentStepIndex === 0 && targetIdx > 0) {
       if (!validateStep('general')) return;
     }
+    if (currentStepIndex === 1 && targetIdx > 1) {
+      if (!validateStep('bom')) return;
+    }
     setError('');
     setActiveTab(targetTab);
   };
 
   const handleSave = async () => {
-    if (!productName.trim()) {
-      setError('Product Name is required.');
+    if (!validateStep('general')) {
       setActiveTab('general');
       return;
     }
-    if (!uom.trim()) {
-      setError('Unit of Measurement (UOM) is required.');
-      setActiveTab('general');
+    if (!validateStep('bom')) {
+      setActiveTab('bom');
       return;
     }
 

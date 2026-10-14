@@ -1,93 +1,170 @@
 // frontend/src/components/buyer-products/RawMaterialsTable.tsx
-import React, { useState, useEffect } from 'react';
-import { BuyerProductComponent } from '../../types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { BuyerProductComponent, Material } from '../../types';
 import { api } from '../../lib/api';
 import Button from '../ui/Button';
-import { Plus, Trash2, Copy, Calculator, Layers, RefreshCw } from 'lucide-react';
+import SearchableSelect, { SelectOption } from '../ui/SearchableSelect';
+import { Plus, Trash2, Copy, Calculator, Layers, RefreshCw, AlertCircle, Info, Lock } from 'lucide-react';
 
 interface Props {
   components: BuyerProductComponent[];
   onChange: (comps: BuyerProductComponent[]) => void;
 }
 
-interface CategoryOption {
-  id?: number;
-  name: string;
-  code?: string;
-  type?: string;
-}
-
-const COMMON_UOMS = ['Meter', 'Kilogram', 'Piece', 'Set', 'Cone', 'Yard', 'Roll', 'Dozen'];
-
 export default function RawMaterialsTable({ components, onChange }: Props) {
   const [plannedQty, setPlannedQty] = useState<number>(100);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [loadingCats, setLoadingCats] = useState(false);
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
+  const [materialsError, setMaterialsError] = useState<string | null>(null);
 
-  // Fetch categories strictly from /masters/categories
-  const loadCategories = async () => {
-    setLoadingCats(true);
+  // Load materials from existing Material Master API
+  const loadMaterials = useCallback(async () => {
+    setLoadingMaterials(true);
+    setMaterialsError(null);
     try {
-      const res = await api.getCategories();
+      const res = await api.getMaterials();
       const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
-      const fetched: CategoryOption[] = (rawList as any[]).map((c: any) => ({
-        id: c.id,
-        name: c.name || c.category_name || String(c),
-        code: c.code,
-        type: c.type,
-      }));
-      setCategories(fetched);
-    } catch (err) {
-      console.warn('Failed to load categories from /masters/categories', err);
-      setCategories([]);
+      setMaterials(rawList as Material[]);
+    } catch (err: any) {
+      console.error('Failed to load materials from Material Master', err);
+      setMaterialsError(err?.message || 'Failed to load materials from Material Master');
+      setMaterials([]);
     } finally {
-      setLoadingCats(false);
+      setLoadingMaterials(false);
     }
-  };
-
-  useEffect(() => {
-    loadCategories();
   }, []);
 
+  useEffect(() => {
+    loadMaterials();
+  }, [loadMaterials]);
+
+  // Map Material Master items into SelectOption format
+  const materialOptions: SelectOption[] = useMemo(() => {
+    return materials.map((m) => ({
+      value: String(m.id),
+      label: m.name,
+      sublabel: `${m.code}${m.uom ? ` • ${m.uom}` : ''}`,
+      group: m.category_name || 'General Material',
+    }));
+  }, [materials]);
+
+  // Build row options ensuring any previously saved custom/legacy material is preserved in the dropdown trigger
+  const getRowOptions = useCallback(
+    (comp: BuyerProductComponent): SelectOption[] => {
+      const currentVal = comp.material_id ? String(comp.material_id) : '';
+      const exists = materialOptions.some(
+        (opt) =>
+          (currentVal && String(opt.value) === currentVal) ||
+          (comp.name && opt.label.toLowerCase() === comp.name.toLowerCase())
+      );
+
+      if (exists || (!comp.name && !comp.material_id)) {
+        return materialOptions;
+      }
+
+      // If legacy row has a name not currently in the material options, add it as a fallback option
+      return [
+        ...materialOptions,
+        {
+          value: currentVal || `custom_${comp.name}`,
+          label: comp.name,
+          sublabel: 'Previously saved item',
+          group: comp.category || 'Legacy / Custom',
+        },
+      ];
+    },
+    [materialOptions]
+  );
+
+  // Add new empty row
   const addRow = () => {
-    const firstCat = categories[0]?.name || '';
     const newComp: BuyerProductComponent = {
       id: 'c_' + Date.now() + Math.random().toString(36).substring(2, 5),
+      material_id: undefined,
       name: '',
-      category_id: categories[0]?.id,
-      category: firstCat,
-      uom: 'Meter',
+      category_id: undefined,
+      category: '',
+      uom: '',
       quantity_per_product: 1,
       notes: '',
     };
     onChange([...components, newComp]);
   };
 
+  // Remove row
   const removeRow = (id: string) => {
     onChange(components.filter((c) => c.id !== id));
   };
 
+  // Duplicate row preserving values
   const duplicateRow = (comp: BuyerProductComponent) => {
     const dup: BuyerProductComponent = {
       ...comp,
       id: 'c_' + Date.now() + Math.random().toString(36).substring(2, 5),
-      name: comp.name ? `${comp.name} (Copy)` : '',
     };
     onChange([...components, dup]);
   };
 
-  const updateRow = (id: string, field: keyof BuyerProductComponent, value: any) => {
+  // When a material is selected from the dropdown: auto-populate Category and UOM
+  const handleMaterialSelect = (rowId: string, selectedValue: string) => {
+    if (!selectedValue) {
+      // User cleared the material selection: reset Category and UOM
+      onChange(
+        components.map((c) => {
+          if (c.id !== rowId) return c;
+          return {
+            ...c,
+            material_id: undefined,
+            name: '',
+            category_id: undefined,
+            category: '',
+            uom: '',
+          };
+        })
+      );
+      return;
+    }
+
+    const selectedMatId = Number(selectedValue);
+    const matched = materials.find((m) => m.id === selectedMatId);
+
+    if (matched) {
+      onChange(
+        components.map((c) => {
+          if (c.id !== rowId) return c;
+          return {
+            ...c,
+            material_id: matched.id,
+            name: matched.name,
+            category_id: matched.category_id || undefined,
+            category: matched.category_name || (matched.category_id ? `Category #${matched.category_id}` : 'General Material'),
+            uom: matched.uom || 'Meter',
+          };
+        })
+      );
+    } else {
+      // If selected by custom label / fallback
+      const fallbackOpt = materialOptions.find((o) => String(o.value) === selectedValue);
+      if (fallbackOpt) {
+        onChange(
+          components.map((c) => {
+            if (c.id !== rowId) return c;
+            return {
+              ...c,
+              material_id: Number(fallbackOpt.value) || undefined,
+              name: fallbackOpt.label,
+            };
+          })
+        );
+      }
+    }
+  };
+
+  // Update non-material fields (quantity, notes)
+  const updateField = (id: string, field: 'quantity_per_product' | 'notes', value: any) => {
     onChange(
       components.map((c) => {
         if (c.id !== id) return c;
-        if (field === 'category') {
-          const matched = categories.find((cat) => cat.name === value);
-          return {
-            ...c,
-            category: value,
-            category_id: matched?.id || c.category_id,
-          };
-        }
         return { ...c, [field]: value };
       })
     );
@@ -95,6 +172,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Header with Title and Sync Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
         <div>
           <h4 className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
@@ -102,19 +180,19 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
             Raw Materials & Components (Bill of Materials)
           </h4>
           <p className="text-[11px] text-slate-500">
-            Define fabrics, trims, and packaging items needed per 1 finished unit
+            Select materials from the Material Master. Category and UOM will automatically populate.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={loadCategories}
-            disabled={loadingCats}
+            onClick={loadMaterials}
+            disabled={loadingMaterials}
             className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-brand-700 bg-white border border-slate-200 rounded hover:bg-slate-50 transition cursor-pointer"
-            title="Refresh categories from Category Master"
+            title="Refresh material list from Material Master"
           >
-            <RefreshCw className={`w-3 h-3 ${loadingCats ? 'animate-spin' : ''}`} />
-            <span>Sync Categories</span>
+            <RefreshCw className={`w-3 h-3 ${loadingMaterials ? 'animate-spin' : ''}`} />
+            <span>{loadingMaterials ? 'Syncing...' : 'Sync Materials'}</span>
           </button>
           <Button size="sm" icon={<Plus className="w-3.5 h-3.5" />} onClick={addRow}>
             Add Material / Component
@@ -122,15 +200,34 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
         </div>
       </div>
 
+      {/* Materials API Error Notification with Retry */}
+      {materialsError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+            <span>
+              <strong>Material Master Error:</strong> {materialsError}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={loadMaterials}
+            className="px-2.5 py-1 bg-white border border-red-200 text-red-700 hover:bg-red-50 rounded text-xs font-semibold transition cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Components Table */}
       <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-2xs">
         <table className="w-full text-xs text-left">
           <thead className="bg-slate-50/80 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
             <tr>
-              <th className="py-2.5 px-3 min-w-[200px]">Component Name *</th>
-              <th className="py-2.5 px-2.5 min-w-[140px]">Category</th>
-              <th className="py-2.5 px-2.5 min-w-[95px]">UOM</th>
-              <th className="py-2.5 px-2.5 min-w-[110px]">Qty / Unit *</th>
+              <th className="py-2.5 px-3 min-w-[280px]">Material Name *</th>
+              <th className="py-2.5 px-2.5 min-w-[170px]">Category (Auto)</th>
+              <th className="py-2.5 px-2.5 min-w-[100px] text-center">UOM (Auto)</th>
+              <th className="py-2.5 px-2.5 min-w-[110px] text-right">Qty / Unit *</th>
               <th className="py-2.5 px-2.5 min-w-[160px]">Notes</th>
               <th className="py-2.5 px-2 text-center w-16">Actions</th>
             </tr>
@@ -139,7 +236,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
             {components.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-8 text-center text-slate-400">
-                  <p className="text-xs">No components defined yet.</p>
+                  <p className="text-xs">No materials or components added to this BOM yet.</p>
                   <button
                     type="button"
                     onClick={addRow}
@@ -150,97 +247,131 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                 </td>
               </tr>
             ) : (
-              components.map((comp) => {
-                // Combine categories with comp.category if it has an existing custom value
-                const options = [...categories];
-                if (
-                  comp.category &&
-                  !options.some((c) => c.name.toLowerCase() === comp.category.toLowerCase())
-                ) {
-                  options.push({ name: comp.category, id: comp.category_id });
+              components.map((comp, idx) => {
+                const rowOptions = getRowOptions(comp);
+                // Determine selected value: match material_id or by exact material name
+                let selectedVal = comp.material_id ? String(comp.material_id) : '';
+                if (!selectedVal && comp.name) {
+                  const foundByName = materials.find((m) => m.name.toLowerCase() === comp.name.toLowerCase());
+                  if (foundByName) {
+                    selectedVal = String(foundByName.id);
+                  } else {
+                    selectedVal = `custom_${comp.name}`;
+                  }
                 }
 
                 return (
                   <tr key={comp.id} className="hover:bg-slate-50/60 transition-colors">
-                    {/* Name */}
-                    <td className="py-2 px-3">
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. 100% Cotton Fabric / Sewing Thread"
-                        value={comp.name}
-                        onChange={(e) => updateRow(comp.id, 'name', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+                    {/* Material Name: Searchable Dropdown */}
+                    <td className="py-2 px-3 align-middle">
+                      <SearchableSelect
+                        value={selectedVal}
+                        onChange={(val) => handleMaterialSelect(comp.id, val)}
+                        options={rowOptions}
+                        placeholder={
+                          loadingMaterials
+                            ? 'Loading Material Master...'
+                            : '— Select Material from Master —'
+                        }
+                        searchPlaceholder="Type to search materials by name, code or UOM..."
+                        disabled={loadingMaterials}
+                        clearable={true}
                       />
                     </td>
 
-                    {/* Category - Dynamic from /masters/categories only */}
-                    <td className="py-2 px-2.5">
-                      <select
-                        value={comp.category}
-                        onChange={(e) => updateRow(comp.id, 'category', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded bg-white focus:border-brand-500 outline-none"
+                    {/* Category: Read-only auto-populated field */}
+                    <td className="py-2 px-2.5 align-middle">
+                      <div
+                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-between min-h-[34px] cursor-not-allowed select-none"
+                        title={
+                          comp.category
+                            ? `Category: ${comp.category} (Automatically populated from Material Master)`
+                            : 'Select a material to automatically set category'
+                        }
                       >
-                        {options.length === 0 && (
-                          <option value="">No categories in Category Master</option>
-                        )}
-                        {options.map((c, idx) => (
-                          <option key={c.id ?? c.name ?? idx} value={c.name}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate font-medium">
+                          {comp.category ? (
+                            comp.category
+                          ) : comp.material_id ? (
+                            <span className="text-amber-600 font-normal italic text-[11px]">
+                              No category assigned
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-normal italic">
+                              Auto from material
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider bg-slate-200/60 px-1 py-0.5 rounded ml-1 shrink-0 flex items-center gap-0.5">
+                          <Lock className="w-2.5 h-2.5 text-slate-400" />
+                          Read-only
+                        </span>
+                      </div>
                     </td>
 
-                    {/* UOM */}
-                    <td className="py-2 px-2.5">
-                      <select
-                        value={comp.uom}
-                        onChange={(e) => updateRow(comp.id, 'uom', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded bg-white focus:border-brand-500 outline-none"
+                    {/* UOM: Read-only auto-populated field */}
+                    <td className="py-2 px-2.5 align-middle">
+                      <div
+                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-center min-h-[34px] cursor-not-allowed select-none"
+                        title={
+                          comp.uom
+                            ? `Unit of Measurement: ${comp.uom} (Automatically populated from Material Master)`
+                            : 'Select a material to automatically set UOM'
+                        }
                       >
-                        {COMMON_UOMS.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate font-mono font-semibold">
+                          {comp.uom ? (
+                            comp.uom
+                          ) : comp.material_id ? (
+                            <span className="text-amber-600 font-sans text-[11px] font-normal italic">
+                              No UOM
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-sans font-normal italic">—</span>
+                          )}
+                        </span>
+                      </div>
                     </td>
 
-                    {/* Qty per Product */}
-                    <td className="py-2 px-2.5">
+                    {/* Qty per Product: Editable numeric input */}
+                    <td className="py-2 px-2.5 align-middle">
                       <input
                         type="number"
-                        step="0.01"
+                        step="0.001"
                         min="0.0001"
                         required
-                        value={comp.quantity_per_product || ''}
+                        value={comp.quantity_per_product ?? ''}
                         onChange={(e) =>
-                          updateRow(comp.id, 'quantity_per_product', parseFloat(e.target.value) || 0)
+                          updateField(
+                            comp.id,
+                            'quantity_per_product',
+                            parseFloat(e.target.value) || 0
+                          )
                         }
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded font-mono font-medium focus:border-brand-500 outline-none text-right"
+                        placeholder="1.00"
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded font-mono font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-right bg-white"
                       />
                     </td>
 
-                    {/* Notes */}
-                    <td className="py-2 px-2.5">
+                    {/* Notes: Editable text input */}
+                    <td className="py-2 px-2.5 align-middle">
                       <input
                         type="text"
                         placeholder="e.g. Body & sleeves / Trims"
                         value={comp.notes || ''}
-                        onChange={(e) => updateRow(comp.id, 'notes', e.target.value)}
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:border-brand-500 outline-none text-slate-600"
+                        onChange={(e) => updateField(comp.id, 'notes', e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-600 bg-white"
                       />
                     </td>
 
-                    {/* Actions */}
-                    <td className="py-2 px-2 text-center">
+                    {/* Actions: Duplicate & Delete */}
+                    <td className="py-2 px-2 text-center align-middle">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => duplicateRow(comp)}
                           title="Duplicate row"
-                          className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition cursor-pointer"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -248,7 +379,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                           type="button"
                           onClick={() => removeRow(comp.id)}
                           title="Remove row"
-                          className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -262,7 +393,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
         </table>
       </div>
 
-      {/* Planned Order Quantity Simulation Card */}
+      {/* Planned Order Quantity Simulation Card (Live Calculator) */}
       {components.length > 0 && (
         <div className="p-3.5 bg-gradient-to-r from-brand-50/50 via-slate-50 to-emerald-50/40 border border-slate-200 rounded-xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2.5">
@@ -296,7 +427,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-2">
             {components
-              .filter((c) => c.name.trim())
+              .filter((c) => c.name.trim() || c.material_id)
               .map((comp) => {
                 const total = (comp.quantity_per_product || 0) * (plannedQty || 0);
                 return (
@@ -306,21 +437,21 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                   >
                     <div className="flex items-start justify-between gap-1">
                       <span className="text-[11px] font-semibold text-slate-700 truncate max-w-[160px]">
-                        {comp.name}
+                        {comp.name || 'Selected Material'}
                       </span>
-                      <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-medium">
                         {comp.category || 'No category'}
                       </span>
                     </div>
                     <div className="mt-2 flex items-baseline justify-between pt-1 border-t border-slate-100">
-                      <div className="text-[10px] text-slate-400">
-                        Total Req:
-                      </div>
+                      <div className="text-[10px] text-slate-400">Total Req:</div>
                       <div className="text-right">
                         <span className="text-xs font-bold text-brand-700 font-mono">
                           {total.toFixed(2)}
                         </span>{' '}
-                        <span className="text-[10px] font-medium text-slate-500">{comp.uom}</span>
+                        <span className="text-[10px] font-medium text-slate-500">
+                          {comp.uom || 'units'}
+                        </span>
                       </div>
                     </div>
                   </div>

@@ -80,6 +80,7 @@ export const api = {
   getBuyers: () => request<unknown[]>('/customers'),
   createBuyer: (data: unknown) => request<unknown>('/customers', 'POST', data),
   getBuyerProducts: (buyerId: number | string) => request<unknown[]>(`/buyers/${buyerId}/products`),
+  getBuyerProduct: (buyerId: number | string, productId: number | string) => request<unknown>(`/buyers/${buyerId}/products/${productId}`),
   createBuyerProduct: (buyerId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products`, 'POST', data),
   updateBuyerProduct: (buyerId: number | string, productId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'PUT', data),
   deleteBuyerProduct: (buyerId: number | string, productId: number | string) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'DELETE'),

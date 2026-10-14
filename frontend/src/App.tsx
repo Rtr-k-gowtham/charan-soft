@@ -33,6 +33,7 @@ import ProductionStageView from './pages/production/ProductionStageView';
 import Products from './pages/masters/Products';
 import Suppliers from './pages/masters/Suppliers';
 import Buyers from './pages/masters/Buyers';
+import BuyerProductDetail from './pages/masters/BuyerProductDetail';
 import Categories from './pages/masters/Categories';
 import ColorsPage from './pages/masters/ColorsPage';
 import SizesPage from './pages/masters/SizesPage';
@@ -116,7 +117,11 @@ function AppRoutes() {
               <Route path="/masters/categories" element={<Categories />} />
               <Route path="/masters/suppliers" element={<Suppliers />} />
               <Route path="/masters/buyers" element={<Buyers />} />
+              <Route path="/masters/buyers/:buyerId/products" element={<Buyers />} />
+              <Route path="/masters/buyers/:buyerId/products/:productId" element={<BuyerProductDetail />} />
               <Route path="/masters/customers" element={<Buyers />} />
+              <Route path="/masters/customers/:buyerId/products" element={<Buyers />} />
+              <Route path="/masters/customers/:buyerId/products/:productId" element={<BuyerProductDetail />} />
               <Route path="/masters/colors" element={<ColorsPage />} />
               <Route path="/masters/sizes" element={<SizesPage />} />
               <Route path="/masters/units" element={<UnitsPage />} />

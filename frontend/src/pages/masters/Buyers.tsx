@@ -1,5 +1,5 @@
-// src/pages/masters/Buyers.tsx
 import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Buyer } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -12,6 +12,9 @@ import BuyerProductsManager from '../../components/buyer-products/BuyerProductsM
 import { Plus, RefreshCw, Package, ArrowRight } from 'lucide-react';
 
 export default function Buyers() {
+  const { buyerId } = useParams<{ buyerId?: string }>();
+  const navigate = useNavigate();
+
   const [data, setData] = useState<Buyer[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -22,12 +25,29 @@ export default function Buyers() {
 
   const load = async () => {
     setLoading(true);
-    try { setData(((await api.getBuyers()) || []) as Buyer[]); }
+    try {
+      const res = ((await api.getBuyers()) || []) as Buyer[];
+      setData(res);
+      if (buyerId) {
+        const found = res.find((b) => String(b.id) === String(buyerId));
+        if (found) setSelectedBuyer(found);
+      }
+    }
     catch { setData([]); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [buyerId]);
+
+  const handleSelectBuyer = (buyer: Buyer) => {
+    setSelectedBuyer(buyer);
+    navigate(`/masters/buyers/${buyer.id}/products`);
+  };
+
+  const handleBackToBuyers = () => {
+    setSelectedBuyer(null);
+    navigate('/masters/buyers');
+  };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.phone.trim()) { setError('Buyer name and phone are required'); return; }
@@ -45,7 +65,7 @@ export default function Buyers() {
 
   // If admin is managing products for a specific buyer, show the Buyer Products workspace
   if (selectedBuyer) {
-    return <BuyerProductsManager buyer={selectedBuyer} onBack={() => setSelectedBuyer(null)} />;
+    return <BuyerProductsManager buyer={selectedBuyer} onBack={handleBackToBuyers} />;
   }
 
   const columns = [
@@ -57,8 +77,8 @@ export default function Buyers() {
       render: (r: Buyer) => (
         <button
           type="button"
-          onClick={() => setSelectedBuyer(r)}
-          className="text-left font-semibold text-slate-900 hover:text-brand-600 transition"
+          onClick={() => handleSelectBuyer(r)}
+          className="text-left font-semibold text-slate-900 hover:text-brand-600 transition cursor-pointer"
         >
           {r.name}
         </button>
@@ -75,8 +95,8 @@ export default function Buyers() {
       render: (r: Buyer) => (
         <button
           type="button"
-          onClick={() => setSelectedBuyer(r)}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+          onClick={() => handleSelectBuyer(r)}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition cursor-pointer"
           title="Configure products, BOM, dimensions, and packing for this buyer"
         >
           <Package className="w-3.5 h-3.5 text-brand-600" />
