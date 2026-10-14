@@ -33,9 +33,11 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
         </button>
 
         {/* Mobile: Logo branding */}
-        <div className="flex md:hidden items-center gap-2">
-          <img src="/icon.png" alt="Logo" className="w-6 h-6 object-contain" />
-          <span className="text-xs font-bold text-slate-800 tracking-tight">CHERAN SOFT GOODS</span>
+        <div className="flex md:hidden items-center gap-1.5 min-w-0">
+          <img src="/icon.png" alt="Logo" className="w-6 h-6 object-contain shrink-0" />
+          <span className="text-xs font-bold text-slate-800 tracking-tight whitespace-nowrap">
+            CHERAN SOFT
+          </span>
         </div>
 
         <span className="text-xs text-slate-400 hidden sm:block font-medium">

@@ -35,67 +35,67 @@ export default function AppLayout({ children }: Props) {
 
         {/* Mobile Bottom Navigation Bar (< md) */}
         <nav
-          className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-1 py-1 flex items-center justify-around shadow-lg safe-area-pb"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 grid grid-cols-5 shadow-lg safe-area-pb"
           aria-label="Mobile Navigation"
         >
           <NavLink
             to="/"
             end
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 min-w-[54px] rounded-lg transition-colors ${
+              `flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
                 isActive ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
               }`
             }
           >
-            <LayoutDashboard className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px] leading-tight">Home</span>
+            <LayoutDashboard className="w-5 h-5 mb-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Home</span>
           </NavLink>
 
           <NavLink
             to="/production/orders"
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 min-w-[54px] rounded-lg transition-colors ${
+              `flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
                 isActive ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
               }`
             }
           >
-            <ClipboardList className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px] leading-tight">Orders</span>
+            <ClipboardList className="w-5 h-5 mb-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Orders</span>
           </NavLink>
 
           <NavLink
             to="/production/board"
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 min-w-[54px] rounded-lg transition-colors ${
+              `flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
                 isActive ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
               }`
             }
           >
-            <Factory className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px] leading-tight">Board</span>
+            <Factory className="w-5 h-5 mb-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Board</span>
           </NavLink>
 
           <NavLink
             to="/inventory/stock"
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center py-1 px-2.5 min-w-[54px] rounded-lg transition-colors ${
+              `flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
                 isActive ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
               }`
             }
           >
-            <Package className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px] leading-tight">Stock</span>
+            <Package className="w-5 h-5 mb-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Stock</span>
           </NavLink>
 
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 min-w-[54px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
               mobileMenuOpen ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Menu className="w-5 h-5 mb-0.5" />
-            <span className="text-[10px] leading-tight">Menu</span>
+            <Menu className="w-5 h-5 mb-0.5 shrink-0" />
+            <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Menu</span>
           </button>
         </nav>
       </div>

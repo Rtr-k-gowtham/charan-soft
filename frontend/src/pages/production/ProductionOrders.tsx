@@ -24,6 +24,7 @@ import {
   Filter,
   X,
   TrendingUp,
+  ChevronDown,
 } from 'lucide-react';
 
 export default function ProductionOrders() {
@@ -172,90 +173,91 @@ export default function ProductionOrders() {
         subtitle="Manage and track manufacturing batches across production workflow stages"
         breadcrumb={[{ label: 'Production' }, { label: 'Orders' }]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={load}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
+              className="flex items-center justify-center p-2 sm:px-3 sm:py-1.5 text-xs font-medium border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors shadow-2xs"
               title="Refresh Orders"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline text-slate-600">Refresh</span>
+              <span className="hidden sm:inline text-slate-600 ml-1.5">Refresh</span>
             </button>
             <Button
+              size="sm"
               icon={<Plus className="w-3.5 h-3.5" />}
               onClick={() => navigate('/production/orders/create')}
+              className="text-xs px-2.5 py-1.5 font-semibold"
             >
-              New Order
+              <span>New Order</span>
             </Button>
           </div>
         }
       />
 
-      {/* Filter and Search Bar */}
-      <div className="px-3 sm:px-4 md:px-6 pt-3 sm:pt-4 pb-2">
-        <div className="bg-white rounded-xl border border-slate-200/90 p-3 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          {/* Search box */}
-          <div className="relative w-full sm:flex-1 sm:max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search by order #, title, buyer, product, pantone..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-colors"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+      {/* Modern Mobile-Optimized Search & Filter Bar */}
+      <div className="px-3 sm:px-4 md:px-6 pt-3 pb-1 space-y-2.5">
+        {/* Search box */}
+        <div className="relative w-full">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Search by order #, title, buyer, product..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-lg shadow-2xs focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-all placeholder:text-slate-400"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Status Filter Chips & Priority Dropdown */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto touch-scroll scrollbar-none pb-1">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => setStatusFilter('ALL')}
+              className={`px-3 py-1.5 text-xs rounded-full font-medium whitespace-nowrap transition-all border ${
+                statusFilter === 'ALL'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs font-semibold'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              All ({statusCounts.all})
+            </button>
+            <button
+              onClick={() => setStatusFilter('In Production')}
+              className={`px-3 py-1.5 text-xs rounded-full font-medium whitespace-nowrap transition-all border ${
+                statusFilter === 'In Production'
+                  ? 'bg-brand-600 text-white border-brand-600 shadow-2xs font-semibold'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              In Production ({statusCounts.inProduction})
+            </button>
+            <button
+              onClick={() => setStatusFilter('Completed')}
+              className={`px-3 py-1.5 text-xs rounded-full font-medium whitespace-nowrap transition-all border ${
+                statusFilter === 'Completed'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs font-semibold'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              Completed ({statusCounts.completed})
+            </button>
           </div>
 
-          {/* Status and Priority Filter Pills */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            {/* Status Pills */}
-            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 overflow-x-auto touch-scroll scrollbar-none max-w-full">
-              <button
-                onClick={() => setStatusFilter('ALL')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all min-h-[30px] whitespace-nowrap ${
-                  statusFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                All ({statusCounts.all})
-              </button>
-              <button
-                onClick={() => setStatusFilter('In Production')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                  statusFilter === 'In Production'
-                    ? 'bg-white text-brand-700 shadow-2xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                In Production ({statusCounts.inProduction})
-              </button>
-              <button
-                onClick={() => setStatusFilter('Completed')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
-                  statusFilter === 'Completed'
-                    ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Completed ({statusCounts.completed})
-              </button>
-            </div>
-
-            {/* Priority Selector */}
+          {/* Priority selector chip */}
+          <div className="relative shrink-0 ml-auto">
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              className="py-1 px-2.5 text-xs border border-slate-200 rounded-lg bg-slate-50 font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              className="py-1.5 pl-3 pr-7 text-xs border border-slate-200 rounded-full bg-white font-medium text-slate-700 shadow-2xs focus:outline-none focus:ring-1 focus:ring-brand-500 appearance-none cursor-pointer"
             >
               <option value="ALL">All Priorities</option>
               <option value="Urgent">Urgent</option>
@@ -263,12 +265,13 @@ export default function ProductionOrders() {
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
             </select>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
         </div>
       </div>
 
       {/* Production Orders List */}
-      <div className="px-4 md:px-6 py-3 space-y-4">
+      <div className="px-3 sm:px-4 md:px-6 py-2.5 space-y-3.5">
         {filteredOrders.map((ord) => {
           const totalQty = ord.total_quantity || 0;
           const completedQty = ord.completed_quantity || 0;
@@ -279,56 +282,53 @@ export default function ProductionOrders() {
           return (
             <div
               key={ord.id}
-              className={`shrink-0 bg-white border border-slate-200/90 rounded-xl overflow-hidden border-l-4 ${
+              className={`w-full bg-white border border-slate-200/90 rounded-xl overflow-hidden border-l-4 ${
                 priorityBorder[ord.priority] || 'border-l-slate-300'
               } shadow-2xs hover:shadow-md transition-all duration-200`}
             >
               {/* ============================================================== */}
-              {/* TOP ROW: Order Identification & Actions */}
+              {/* TOP ROW: Order Identification & Header */}
               {/* ============================================================== */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-b border-slate-100">
-                <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
-                  {/* Order Number Badge */}
-                  <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 border border-brand-200/80 px-2.5 py-1 rounded-md shrink-0 shadow-2xs">
-                    {ord.order_number}
-                  </span>
+              <div className="p-3 sm:p-4 bg-white border-b border-slate-100 flex flex-col gap-2">
+                {/* Badges & Action Line */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <span className="text-xs font-bold font-mono text-brand-700 bg-brand-50 border border-brand-200/80 px-2 py-0.5 rounded-md shrink-0 shadow-2xs">
+                      {ord.order_number}
+                    </span>
+                    <StatusBadge status={ord.priority} />
+                    <StatusBadge status={ord.status} />
+                  </div>
 
-                  <span className="text-slate-300 font-normal hidden sm:inline">|</span>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    icon={<Eye className="w-3.5 h-3.5" />}
+                    onClick={() => navigate(`/production/orders/${ord.id}`)}
+                    className="shrink-0 font-medium"
+                  >
+                    <span className="hidden sm:inline">View Details</span>
+                    <span className="sm:hidden">View</span>
+                  </Button>
+                </div>
 
-                  {/* Order Title */}
+                {/* Title & Delivery Line */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 min-w-0">
                   <h3
-                    className="text-sm font-bold text-slate-800 truncate min-w-0 max-w-md hover:text-brand-600 transition-colors"
+                    className="text-sm font-bold text-slate-800 truncate hover:text-brand-600 transition-colors cursor-pointer"
                     title={ord.title}
+                    onClick={() => navigate(`/production/orders/${ord.id}`)}
                   >
                     {ord.title}
                   </h3>
 
-                  {/* Priority Badge */}
-                  <StatusBadge status={ord.priority} />
-                </div>
-
-                <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                  {/* Target Delivery Date */}
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-medium text-slate-600">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 shrink-0">
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     <span>Target Delivery:</span>
                     <strong className="text-slate-800 font-mono">
                       {ord.target_delivery_date || '—'}
                     </strong>
                   </div>
-
-                  {/* Status Badge */}
-                  <StatusBadge status={ord.status} />
-
-                  {/* View Details Button navigating to dedicated full-page view */}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<Eye className="w-3.5 h-3.5" />}
-                    onClick={() => navigate(`/production/orders/${ord.id}`)}
-                  >
-                    View Details
-                  </Button>
                 </div>
               </div>
 
