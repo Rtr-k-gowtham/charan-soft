@@ -389,8 +389,8 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
       />
 
       {/* Main Table Content using standard ERP DataTable template */}
-      <div className="flex-1 overflow-hidden p-4">
-        <div className="bg-white rounded-lg border border-slate-200 flex flex-col h-full shadow-xs">
+      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
+        <div className="bg-transparent sm:bg-white sm:rounded-lg sm:border sm:border-slate-200 flex flex-col h-full sm:shadow-xs border-0">
           <DataTable
             data={products}
             columns={columns}

@@ -293,7 +293,7 @@ export default function Materials() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
         <DataTable
           data={materials}
           columns={columns}

@@ -65,7 +65,7 @@ export default function Suppliers() {
           </div>
         }
       />
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
         <DataTable data={data} columns={columns} rowKey="id" />
       </div>
       <Drawer open={open} onClose={() => setOpen(false)} title="Add Supplier" width="max-w-lg"

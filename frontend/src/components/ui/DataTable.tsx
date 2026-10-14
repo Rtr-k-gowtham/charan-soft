@@ -1,6 +1,6 @@
 // src/components/ui/DataTable.tsx
 import React, { useState, useMemo } from 'react';
-import { Search, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Search, ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight } from 'lucide-react';
 
 export interface Column<T = any> {
   key: keyof T | string;
@@ -90,17 +90,68 @@ export default function DataTable<T extends Record<string, any>>({
     return v;
   };
 
+  // Split columns for mobile card presentation
+  const statusCol = useMemo(
+    () => columns.find(c => String(c.key).toLowerCase() === 'status' || c.label.toLowerCase() === 'status'),
+    [columns]
+  );
+
+  const actionsCol = useMemo(
+    () => columns.find(c => String(c.key).toLowerCase() === 'actions' || c.label.toLowerCase() === 'actions' || c.label.toLowerCase() === 'action'),
+    [columns]
+  );
+
+  // Remaining columns to display
+  const contentCols = useMemo(
+    () => columns.filter(c => c !== statusCol && c !== actionsCol),
+    [columns, statusCol, actionsCol]
+  );
+
+  // Identify title column (e.g. 'name', 'title', 'item_name', etc.)
+  const titleCol = useMemo(() => {
+    return (
+      contentCols.find(c => {
+        const k = String(c.key).toLowerCase();
+        const l = c.label.toLowerCase();
+        return k.includes('name') || k.includes('title') || l.includes('name') || l.includes('title');
+      }) || contentCols[0]
+    );
+  }, [contentCols]);
+
+  // Identify primary code/identifier column (e.g. 'code', 'item_code', 'symbol', 'id', 'sort_order')
+  const codeCol = useMemo(() => {
+    return contentCols.find(c => {
+      if (c === titleCol) return false;
+      const k = String(c.key).toLowerCase();
+      const l = c.label.toLowerCase();
+      return (
+        k.includes('code') ||
+        k === 'id' ||
+        k === 'symbol' ||
+        k.includes('order') ||
+        k.includes('sno') ||
+        l.includes('code') ||
+        l === '#'
+      );
+    });
+  }, [contentCols, titleCol]);
+
+  // Detail columns (all content columns except title and primary code)
+  const detailCols = useMemo(() => {
+    return contentCols.filter(c => c !== titleCol && c !== codeCol);
+  }, [contentCols, titleCol, codeCol]);
+
   return (
     <div className="flex flex-col h-full">
       {searchable && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2.5">
           <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search..."
-              className="w-full pl-7 pr-3 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200"
+              className="w-full pl-8 pr-3 py-2 text-xs border border-slate-200 rounded-xl sm:rounded-md bg-white focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200 shadow-2xs font-medium"
             />
           </div>
           <span className="text-[11px] text-slate-400 text-right sm:ml-auto">
@@ -109,8 +160,9 @@ export default function DataTable<T extends Record<string, any>>({
         </div>
       )}
 
-      <div className="overflow-x-auto touch-scroll flex-1 rounded-md border border-slate-200 bg-white shadow-2xs">
-        <table className="w-full min-w-[580px] sm:min-w-full border-collapse table-dense">
+      {/* Desktop Table View */}
+      <div className="hidden sm:block overflow-x-auto touch-scroll flex-1 rounded-md border border-slate-200 bg-white shadow-2xs">
+        <table className="w-full min-w-full border-collapse table-dense">
           <thead>
             <tr>
               {columns.map((col: Column<T>) => (
@@ -165,6 +217,115 @@ export default function DataTable<T extends Record<string, any>>({
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Responsive Cards View */}
+      <div className="sm:hidden flex-1 overflow-y-auto space-y-3 pb-3">
+        {pageData.length === 0 ? (
+          <div className="bg-white rounded-2xl p-8 text-center border-0 shadow-xs">
+            <p className="text-xs text-slate-400 font-medium">{emptyMessage}</p>
+          </div>
+        ) : (
+          pageData.map((row, idx) => {
+            const actualIdx = (currentPage - 1) * pageSize + idx;
+            return (
+              <div
+                key={getKey(row, idx)}
+                onClick={() => onRowClick?.(row)}
+                className={`bg-white rounded-2xl p-4 border-0 shadow-xs hover:shadow-md transition-all active:scale-[0.99] flex flex-col gap-2.5 ${
+                  onRowClick ? 'cursor-pointer hover:bg-slate-50/60' : ''
+                }`}
+              >
+                {/* Card Header: Code, Title, Status & Optional Row Chevron */}
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex-1 min-w-0">
+                    {codeCol && (
+                      <div className="mb-1 flex items-center gap-1.5 flex-wrap">
+                        <span className="inline-block font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border-0">
+                          {codeCol.render
+                            ? codeCol.render(row, actualIdx)
+                            : String(getValue(row, String(codeCol.key)) ?? '—')}
+                        </span>
+                      </div>
+                    )}
+                    {titleCol && (
+                      <div className="text-sm font-bold text-slate-900 leading-snug">
+                        {titleCol.render
+                          ? titleCol.render(row, actualIdx)
+                          : String(getValue(row, String(titleCol.key)) ?? '—')}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 flex items-center gap-1.5 pt-0.5">
+                    {statusCol && (
+                      <div>
+                        {statusCol.render
+                          ? statusCol.render(row, actualIdx)
+                          : <span className="text-xs">{String(getValue(row, String(statusCol.key)) ?? '')}</span>}
+                      </div>
+                    )}
+                    {onRowClick && (
+                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Body: Details Grid */}
+                {detailCols.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {detailCols.map((col) => {
+                      const val = col.render
+                        ? col.render(row, actualIdx)
+                        : (getValue(row, String(col.key)) != null ? String(getValue(row, String(col.key))) : null);
+                      if (val === null || val === undefined || val === '') return null;
+
+                      const k = String(col.key).toLowerCase();
+                      const isWide = k.includes('address') || k.includes('desc') || k.includes('remark') || k.includes('note');
+
+                      return (
+                        <div
+                          key={String(col.key)}
+                          className={`bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center min-w-0 border-0 ${
+                            isWide ? 'col-span-2' : ''
+                          }`}
+                        >
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">
+                            {col.label}
+                          </span>
+                          <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">
+                            {val}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Card Footer: Actions */}
+                {(actionsCol || actions) && (
+                  <div
+                    className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 mt-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {actionsCol ? (
+                      <div className="flex-1 min-w-0">
+                        {actionsCol.render
+                          ? actionsCol.render(row, actualIdx)
+                          : String(getValue(row, String(actionsCol.key)) ?? '')}
+                      </div>
+                    ) : <div />}
+                    {actions && (
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        {actions(row)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
 
       {totalPages > 1 && (

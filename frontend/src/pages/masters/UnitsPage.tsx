@@ -66,7 +66,7 @@ export default function UnitsPage() {
           </div>
         }
       />
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
         <DataTable data={units} columns={columns} />
       </div>
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add Unit">

@@ -71,7 +71,7 @@ export default function SizesPage() {
           </div>
         }
       />
-      <div className="flex-1 overflow-hidden p-4">
+      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
         <DataTable data={sizes} columns={columns} />
       </div>
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add Size">

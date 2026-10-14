@@ -337,7 +337,7 @@ export default function ColorsPage() {
       />
 
       {/* Main Single Master Table View */}
-      <div className="flex-1 flex flex-col overflow-hidden p-4">
+      <div className="flex-1 flex flex-col overflow-hidden p-2.5 sm:p-4">
         {/* Success Toast Banner */}
         {successToast && (
           <div className="mb-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 font-medium flex items-center justify-between shadow-2xs animate-fade-in">
@@ -355,7 +355,7 @@ export default function ColorsPage() {
         )}
 
         {/* Filter and Search Bar */}
-        <div className="bg-white p-3.5 rounded-t-lg border border-b-0 border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="bg-white p-3.5 rounded-2xl sm:rounded-t-lg sm:rounded-b-none border-0 sm:border sm:border-b-0 border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs sm:shadow-2xs mb-2.5 sm:mb-0">
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -363,7 +363,7 @@ export default function ColorsPage() {
               value={search}
               onChange={handleSearchChange}
               placeholder="Search 3,219 Pantone colors by code, name, or HEX (e.g., 100 C, Navy, #FFE966)..."
-              className="w-full pl-9 pr-8 py-2 text-xs rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-200 text-slate-800 font-medium"
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-xl sm:rounded-md border border-slate-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-200 text-slate-800 font-medium shadow-2xs"
             />
             {search && (
               <button
@@ -401,14 +401,14 @@ export default function ColorsPage() {
         </div>
 
         {/* Master Table Container */}
-        <div className="flex-1 overflow-auto border border-slate-200 bg-white">
+        <div className="flex-1 overflow-auto border-0 sm:border sm:border-slate-200 bg-transparent sm:bg-white">
           {loading ? (
-            <div className="h-72 flex flex-col items-center justify-center text-slate-400 gap-2">
+            <div className="h-72 flex flex-col items-center justify-center text-slate-400 gap-2 bg-white rounded-2xl sm:rounded-none">
               <Loader2 className="w-7 h-7 animate-spin text-brand-600" />
               <span className="text-xs font-medium">Fetching Pantone colors from database table...</span>
             </div>
           ) : pantoneColors.length === 0 ? (
-            <div className="h-72 flex flex-col items-center justify-center text-center p-6 gap-3">
+            <div className="h-72 flex flex-col items-center justify-center text-center p-6 gap-3 bg-white rounded-2xl sm:rounded-none">
               <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
                 <Palette className="w-6 h-6" />
               </div>
@@ -434,108 +434,199 @@ export default function ColorsPage() {
               )}
             </div>
           ) : (
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10 shadow-2xs backdrop-blur-xs">
-                  <th className="py-2.5 px-3.5 w-16">Swatch</th>
-                  <th className="py-2.5 px-3.5">Pantone Code</th>
-                  <th className="py-2.5 px-3.5">Color Name</th>
-                  <th className="py-2.5 px-3.5 w-24">Unique ID</th>
-                  <th className="py-2.5 px-3.5 w-28">HEX Code</th>
-                  <th className="py-2.5 px-3.5 w-36">sRGB Coordinates</th>
-                  <th className="py-2.5 px-3.5 w-28">Color System</th>
-                  <th className="py-2.5 px-3.5 w-20">Status</th>
-                  <th className="py-2.5 px-3.5 text-right w-24">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {pantoneColors.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                    {/* Swatch */}
-                    <td className="py-2.5 px-3.5">
-                      <div
-                        className="w-7 h-7 rounded-md border border-slate-300 shadow-2xs shrink-0 cursor-pointer transition-transform hover:scale-110"
-                        style={{ backgroundColor: item.hex_code }}
-                        title={`${item.pantone_name} (${item.hex_code})`}
-                      />
-                    </td>
-
-                    {/* Pantone Code */}
-                    <td className="py-2.5 px-3.5 font-mono font-bold text-amber-900">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-md shadow-2xs">
-                        <span
-                          className="w-2.5 h-2.5 rounded-xs shrink-0 border border-amber-300"
+            <>
+              {/* Desktop Table View */}
+              <table className="hidden sm:table w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10 shadow-2xs backdrop-blur-xs">
+                    <th className="py-2.5 px-3.5 w-16">Swatch</th>
+                    <th className="py-2.5 px-3.5">Pantone Code</th>
+                    <th className="py-2.5 px-3.5">Color Name</th>
+                    <th className="py-2.5 px-3.5 w-24">Unique ID</th>
+                    <th className="py-2.5 px-3.5 w-28">HEX Code</th>
+                    <th className="py-2.5 px-3.5 w-36">sRGB Coordinates</th>
+                    <th className="py-2.5 px-3.5 w-28">Color System</th>
+                    <th className="py-2.5 px-3.5 w-20">Status</th>
+                    <th className="py-2.5 px-3.5 text-right w-24">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pantoneColors.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                      {/* Swatch */}
+                      <td className="py-2.5 px-3.5">
+                        <div
+                          className="w-7 h-7 rounded-md border border-slate-300 shadow-2xs shrink-0 cursor-pointer transition-transform hover:scale-110"
                           style={{ backgroundColor: item.hex_code }}
+                          title={`${item.pantone_name} (${item.hex_code})`}
                         />
-                        {item.pantone_code}
-                      </span>
-                    </td>
+                      </td>
 
-                    {/* Pantone Name */}
-                    <td className="py-2.5 px-3.5 font-semibold text-slate-800">
-                      {item.pantone_name}
-                    </td>
+                      {/* Pantone Code */}
+                      <td className="py-2.5 px-3.5 font-mono font-bold text-amber-900">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-md shadow-2xs">
+                          <span
+                            className="w-2.5 h-2.5 rounded-xs shrink-0 border border-amber-300"
+                            style={{ backgroundColor: item.hex_code }}
+                          />
+                          {item.pantone_code}
+                        </span>
+                      </td>
 
-                    {/* Unique Code */}
-                    <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">
-                      {item.unique_code || `PAN-${item.id}`}
-                    </td>
+                      {/* Pantone Name */}
+                      <td className="py-2.5 px-3.5 font-semibold text-slate-800">
+                        {item.pantone_name}
+                      </td>
 
-                    {/* HEX */}
-                    <td className="py-2.5 px-3.5">
-                      <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                        {item.hex_code}
-                      </span>
-                    </td>
+                      {/* Unique Code */}
+                      <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">
+                        {item.unique_code || `PAN-${item.id}`}
+                      </td>
 
-                    {/* sRGB Coordinates */}
-                    <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">
-                      rgb({item.red}, {item.green}, {item.blue})
-                    </td>
+                      {/* HEX */}
+                      <td className="py-2.5 px-3.5">
+                        <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          {item.hex_code}
+                        </span>
+                      </td>
 
-                    {/* Color System */}
-                    <td className="py-2.5 px-3.5">
-                      <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">
-                        {item.color_system || 'PMS Coated'}
-                      </span>
-                    </td>
+                      {/* sRGB Coordinates */}
+                      <td className="py-2.5 px-3.5 font-mono text-slate-500 text-[11px]">
+                        rgb({item.red}, {item.green}, {item.blue})
+                      </td>
 
-                    {/* Status */}
-                    <td className="py-2.5 px-3.5">
-                      <StatusBadge status={item.status || 'active'} />
-                    </td>
+                      {/* Color System */}
+                      <td className="py-2.5 px-3.5">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-medium border border-slate-200">
+                          {item.color_system || 'PMS Coated'}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-2.5 px-3.5">
+                        <StatusBadge status={item.status || 'active'} />
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-2.5 px-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => openEditModal(item)}
+                            className="p-1.5 text-slate-500 hover:text-brand-600 rounded hover:bg-brand-50 transition-colors"
+                            title="Edit Pantone Color"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDeleteItem(item);
+                              setDeleteError('');
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
+                            title="Delete Pantone Color"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Mobile Responsive Cards View */}
+              <div className="sm:hidden space-y-3 pb-3">
+                {pantoneColors.map((item) => (
+                  <div
+                    key={item.id}
+                    className="bg-white rounded-2xl p-4 border-0 shadow-xs hover:shadow-md transition-all flex flex-col gap-3"
+                  >
+                    {/* Header: Swatch + Code + Name + Status */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="w-11 h-11 rounded-xl border border-slate-200/80 shadow-2xs shrink-0 cursor-pointer transition-transform hover:scale-105"
+                          style={{ backgroundColor: item.hex_code }}
+                          title={`${item.pantone_name} (${item.hex_code})`}
+                          onClick={() => openEditModal(item)}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-amber-950 text-sm truncate">
+                              {item.pantone_code}
+                            </span>
+                          </div>
+                          <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">
+                            {item.pantone_name}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 pt-0.5">
+                        <StatusBadge status={item.status || 'active'} />
+                      </div>
+                    </div>
+
+                    {/* Color Specs Grid */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center border-0 min-w-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">HEX Code</span>
+                        <div className="flex items-center gap-1.5 mt-0.5 font-mono font-semibold text-slate-800 truncate">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-slate-300" style={{ backgroundColor: item.hex_code }} />
+                          <span className="truncate">{item.hex_code}</span>
+                        </div>
+                      </div>
+
+                      <div className="bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center border-0 min-w-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">sRGB</span>
+                        <span className="font-mono text-xs font-medium text-slate-700 mt-0.5 truncate">
+                          rgb({item.red}, {item.green}, {item.blue})
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center border-0 min-w-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">Unique Code</span>
+                        <span className="font-mono text-xs font-medium text-slate-600 mt-0.5 truncate">
+                          {item.unique_code || `PAN-${item.id}`}
+                        </span>
+                      </div>
+
+                      <div className="bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center border-0 min-w-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">System</span>
+                        <span className="text-xs font-medium text-slate-700 mt-0.5 truncate">
+                          {item.color_system || 'PMS Coated'}
+                        </span>
+                      </div>
+                    </div>
 
                     {/* Actions */}
-                    <td className="py-2.5 px-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEditModal(item)}
-                          className="p-1.5 text-slate-500 hover:text-brand-600 rounded hover:bg-brand-50 transition-colors"
-                          title="Edit Pantone Color"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setDeleteItem(item);
-                            setDeleteError('');
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
-                          title="Delete Pantone Color"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-brand-600 bg-slate-50 hover:bg-brand-50 rounded-lg transition-colors min-h-[36px]"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDeleteItem(item);
+                          setDeleteError('');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50/60 hover:bg-red-50 rounded-lg transition-colors min-h-[36px]"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           )}
         </div>
 
         {/* Responsive Pagination Bar */}
-        <div className="bg-white p-3 rounded-b-lg border border-t-0 border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-2xs">
+        <div className="bg-white p-3.5 rounded-2xl sm:rounded-b-lg sm:rounded-t-none border-0 sm:border sm:border-t-0 border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs sm:shadow-2xs mt-2.5 sm:mt-0">
           <div className="text-slate-500">
             Showing <strong className="text-slate-700">{total > 0 ? (page - 1) * limit + 1 : 0}</strong> to{' '}
             <strong className="text-slate-700">{Math.min(page * limit, total)}</strong> of{' '}
