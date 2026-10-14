@@ -1,14 +1,14 @@
 // src/components/layout/Header.tsx
 import React from 'react';
-import { Menu, Bell, ChevronDown, User, LogOut, PanelLeft, Download } from 'lucide-react';
+import { Bell, ChevronDown, User, LogOut, PanelLeft, Download } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   onSidebarToggle: () => void;
-  onMobileMenuToggle: () => void;
+  onMobileMenuToggle?: () => void;
 }
 
-export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
+export default function Header({ onSidebarToggle }: Props) {
   const { user, logout } = useAuth();
   const [userOpen, setUserOpen] = React.useState(false);
   const [isStandalone, setIsStandalone] = React.useState(false);
@@ -34,21 +34,18 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
         >
           <PanelLeft className="w-4 h-4" />
         </button>
-        {/* Mobile: open drawer */}
-        <button
-          onClick={onMobileMenuToggle}
-          className="flex md:hidden p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 min-h-[38px] min-w-[38px] items-center justify-center transition-colors"
-          aria-label="Open navigation menu"
-        >
-          <Menu className="w-5 h-5" />
-        </button>
 
         {/* Mobile: Logo branding */}
-        <div className="flex md:hidden items-center gap-1.5 min-w-0">
-          <img src="/icon.png" alt="Logo" className="w-6 h-6 object-contain shrink-0" />
-          <span className="text-xs font-bold text-slate-800 tracking-tight whitespace-nowrap">
-            CHERAN SOFT
-          </span>
+        <div className="flex md:hidden items-center gap-2 min-w-0 pl-1">
+          <img src="/icon.png" alt="Logo" className="w-7 h-7 object-contain shrink-0" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-bold text-slate-900 tracking-tight whitespace-nowrap leading-tight">
+              CHERAN SOFT
+            </span>
+            <span className="text-[9px] text-slate-400 font-medium leading-none">
+              Textile ERP
+            </span>
+          </div>
         </div>
 
         <span className="text-xs text-slate-400 hidden sm:block font-medium">
