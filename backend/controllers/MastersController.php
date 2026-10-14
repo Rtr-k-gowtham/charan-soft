@@ -241,61 +241,381 @@ class MastersController {
         file_put_contents($storeFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    private function ensureBuyerProductsTable(PDO $pdo): void {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS buyer_products (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                buyer_id INT NOT NULL,
+                product_name VARCHAR(150) NOT NULL,
+                product_code VARCHAR(50) NOT NULL,
+                uom VARCHAR(30) DEFAULT 'Pieces',
+                notes TEXT NULL,
+                image_url LONGTEXT NULL,
+                dimensions_json LONGTEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_buyer_id (buyer_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS buyer_product_components (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                buyer_product_id INT NOT NULL,
+                category_id INT NULL,
+                name VARCHAR(150) NOT NULL,
+                category VARCHAR(100) NOT NULL,
+                uom VARCHAR(30) DEFAULT 'Meters',
+                quantity_per_product DECIMAL(12,4) DEFAULT 1.0000,
+                wastage_percent DECIMAL(5,2) DEFAULT 0.00,
+                notes VARCHAR(255) NULL,
+                INDEX idx_bp_comp_id (buyer_product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS buyer_product_boxes (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                buyer_product_id INT NOT NULL,
+                box_name VARCHAR(100) NOT NULL,
+                box_code VARCHAR(50) NULL,
+                length DECIMAL(10,2) NOT NULL,
+                width DECIMAL(10,2) NOT NULL,
+                height DECIMAL(10,2) NOT NULL,
+                dimension_unit ENUM('mm', 'cm', 'm') DEFAULT 'cm',
+                items_per_box INT NOT NULL DEFAULT 1,
+                max_packing_qty INT NULL,
+                notes VARCHAR(255) NULL,
+                INDEX idx_bp_box_id (buyer_product_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+    }
+
     public function getBuyerProducts(int $buyerId): void {
-        $db = $this->getStoreData();
-        $buyerProducts = $db['buyer_products'] ?? [];
-        $filtered = array_values(array_filter($buyerProducts, fn($p) => (int)($p['buyer_id'] ?? 0) === $buyerId));
-        Response::success($filtered);
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureBuyerProductsTable($pdo);
+
+            $stmt = $pdo->prepare("SELECT * FROM buyer_products WHERE buyer_id = ? ORDER BY id ASC");
+            $stmt->execute([$buyerId]);
+            $productRows = $stmt->fetchAll();
+
+            $products = [];
+            foreach ($productRows as $r) {
+                $prodId = (int)$r['id'];
+
+                // Load BOM components
+                $compStmt = $pdo->prepare("SELECT * FROM buyer_product_components WHERE buyer_product_id = ? ORDER BY id ASC");
+                $compStmt->execute([$prodId]);
+                $compRows = $compStmt->fetchAll();
+                $components = array_map(function($c) {
+                    return [
+                        'id' => (int)$c['id'],
+                        'category_id' => $c['category_id'] ? (int)$c['category_id'] : null,
+                        'name' => $c['name'],
+                        'category' => $c['category'],
+                        'uom' => $c['uom'] ?? 'Meters',
+                        'quantity_per_product' => (float)$c['quantity_per_product'],
+                        'wastage_percent' => (float)$c['wastage_percent'],
+                        'notes' => $c['notes'] ?? ''
+                    ];
+                }, $compRows);
+
+                // Load Boxes
+                $boxStmt = $pdo->prepare("SELECT * FROM buyer_product_boxes WHERE buyer_product_id = ? ORDER BY id ASC");
+                $boxStmt->execute([$prodId]);
+                $boxRows = $boxStmt->fetchAll();
+                $boxes = array_map(function($b) {
+                    return [
+                        'id' => (string)$b['id'],
+                        'box_name' => $b['box_name'],
+                        'box_code' => $b['box_code'] ?? '',
+                        'length' => (float)$b['length'],
+                        'width' => (float)$b['width'],
+                        'height' => (float)$b['height'],
+                        'dimension_unit' => $b['dimension_unit'] ?? 'cm',
+                        'items_per_box' => (int)$b['items_per_box'],
+                        'max_packing_qty' => $b['max_packing_qty'] ? (int)$b['max_packing_qty'] : null,
+                        'notes' => $b['notes'] ?? ''
+                    ];
+                }, $boxRows);
+
+                $dimensions = !empty($r['dimensions_json']) ? json_decode($r['dimensions_json'], true) : null;
+
+                $products[] = [
+                    'id' => $prodId,
+                    'buyer_id' => (int)$r['buyer_id'],
+                    'product_name' => $r['product_name'],
+                    'product_code' => $r['product_code'],
+                    'uom' => $r['uom'] ?? 'Pieces',
+                    'notes' => $r['notes'] ?? '',
+                    'image_url' => $r['image_url'] ?? '',
+                    'dimensions' => $dimensions,
+                    'components' => $components,
+                    'boxes' => $boxes,
+                    'status' => (!empty($components) && !empty($boxes)) ? 'Ready' : 'Incomplete',
+                    'created_at' => $r['created_at'],
+                    'updated_at' => $r['updated_at'] ?? $r['created_at']
+                ];
+            }
+
+            Response::success($products);
+        } catch (Exception $e) {
+            // Fallback to store.json
+            $db = $this->getStoreData();
+            $buyerProducts = $db['buyer_products'] ?? [];
+            $filtered = array_values(array_filter($buyerProducts, fn($p) => (int)($p['buyer_id'] ?? 0) === $buyerId));
+            Response::success($filtered);
+        }
     }
 
     public function createBuyerProduct(int $buyerId): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $db = $this->getStoreData();
-        if (!isset($db['buyer_products'])) $db['buyer_products'] = [];
+        $productName = trim($data['product_name'] ?? ($data['name'] ?? ''));
+        if (empty($productName)) {
+            Response::error("Product name is required", 422);
+            return;
+        }
 
-        $newId = count($db['buyer_products']) + 1;
-        $newProduct = array_merge([
-            'id' => $newId,
-            'buyer_id' => $buyerId,
-            'product_code' => $data['product_code'] ?? ('BPRD-' . str_pad((string)$newId, 3, '0', STR_PAD_LEFT)),
-            'created_at' => date('Y-m-d')
-        ], $data);
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureBuyerProductsTable($pdo);
 
-        $db['buyer_products'][] = $newProduct;
-        $this->saveStoreData($db);
-        Response::success($newProduct, "Buyer product created successfully", 201);
+            $productCode = trim($data['product_code'] ?? '');
+            if (empty($productCode)) {
+                $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM buyer_products WHERE buyer_id = ?");
+                $cntStmt->execute([$buyerId]);
+                $cnt = (int)$cntStmt->fetchColumn();
+                $productCode = 'BPRD-' . str_pad((string)($cnt + 1), 3, '0', STR_PAD_LEFT);
+            }
+
+            $uom = trim($data['uom'] ?? 'Pieces');
+            $notes = trim($data['notes'] ?? '');
+            $imageUrl = trim($data['image_url'] ?? '');
+            $dimensionsJson = isset($data['dimensions']) ? json_encode($data['dimensions']) : null;
+
+            $stmt = $pdo->prepare("
+                INSERT INTO buyer_products (buyer_id, product_name, product_code, uom, notes, image_url, dimensions_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([$buyerId, $productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson]);
+            $newId = (int)$pdo->lastInsertId();
+
+            // Insert BOM components
+            $savedComponents = [];
+            if (!empty($data['components']) && is_array($data['components'])) {
+                $compIns = $pdo->prepare("
+                    INSERT INTO buyer_product_components (buyer_product_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($data['components'] as $c) {
+                    $cName = trim($c['name'] ?? '');
+                    if (empty($cName)) continue;
+                    $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
+                    $cat = trim($c['category'] ?? 'Raw Material');
+                    $cUom = trim($c['uom'] ?? 'Meters');
+                    $qty = (float)($c['quantity_per_product'] ?? 1);
+                    $wastage = (float)($c['wastage_percent'] ?? 0);
+                    $cNotes = trim($c['notes'] ?? '');
+                    $compIns->execute([$newId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $c['id'] = (int)$pdo->lastInsertId();
+                    $savedComponents[] = $c;
+                }
+            }
+
+            // Insert Boxes
+            $savedBoxes = [];
+            if (!empty($data['boxes']) && is_array($data['boxes'])) {
+                $boxIns = $pdo->prepare("
+                    INSERT INTO buyer_product_boxes (buyer_product_id, box_name, box_code, length, width, height, dimension_unit, items_per_box, max_packing_qty, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($data['boxes'] as $b) {
+                    $bName = trim($b['box_name'] ?? '');
+                    if (empty($bName)) continue;
+                    $bCode = trim($b['box_code'] ?? '');
+                    $bLen = (float)($b['length'] ?? 0);
+                    $bWid = (float)($b['width'] ?? 0);
+                    $bHgt = (float)($b['height'] ?? 0);
+                    $bUnit = in_array($b['dimension_unit'] ?? 'cm', ['mm', 'cm', 'm']) ? $b['dimension_unit'] : 'cm';
+                    $bItems = (int)($b['items_per_box'] ?? 1);
+                    $bMax = !empty($b['max_packing_qty']) ? (int)$b['max_packing_qty'] : null;
+                    $bNotes = trim($b['notes'] ?? '');
+                    $boxIns->execute([$newId, $bName, $bCode, $bLen, $bWid, $bHgt, $bUnit, $bItems, $bMax, $bNotes]);
+                    $b['id'] = (string)$pdo->lastInsertId();
+                    $savedBoxes[] = $b;
+                }
+            }
+
+            $created = [
+                'id' => $newId,
+                'buyer_id' => $buyerId,
+                'product_name' => $productName,
+                'product_code' => $productCode,
+                'uom' => $uom,
+                'notes' => $notes,
+                'image_url' => $imageUrl,
+                'dimensions' => $data['dimensions'] ?? null,
+                'components' => $savedComponents,
+                'boxes' => $savedBoxes,
+                'status' => (!empty($savedComponents) && !empty($savedBoxes)) ? 'Ready' : 'Incomplete',
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            // Secondary file sync
+            try {
+                $db = $this->getStoreData();
+                if (!isset($db['buyer_products'])) $db['buyer_products'] = [];
+                $db['buyer_products'][] = $created;
+                $this->saveStoreData($db);
+            } catch (Exception $ex) {}
+
+            AuditLogger::log('BuyerProducts', 'CREATE', $newId, null, $data);
+
+            Response::success($created, "Buyer product created successfully", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
     }
 
     public function updateBuyerProduct(int $buyerId, int $productId): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
-        $db = $this->getStoreData();
-        if (!isset($db['buyer_products'])) $db['buyer_products'] = [];
-
-        foreach ($db['buyer_products'] as &$p) {
-            if ((int)($p['buyer_id'] ?? 0) === $buyerId && (int)($p['id'] ?? 0) === $productId) {
-                $p = array_merge($p, $data, [
-                    'id' => $productId,
-                    'buyer_id' => $buyerId,
-                    'updated_at' => date('Y-m-d')
-                ]);
-                $this->saveStoreData($db);
-                Response::success($p, "Buyer product updated successfully");
-                return;
-            }
+        $productName = trim($data['product_name'] ?? ($data['name'] ?? ''));
+        if (empty($productName)) {
+            Response::error("Product name is required", 422);
+            return;
         }
-        Response::error("Buyer product not found", 404);
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureBuyerProductsTable($pdo);
+
+            $productCode = trim($data['product_code'] ?? '');
+            $uom = trim($data['uom'] ?? 'Pieces');
+            $notes = trim($data['notes'] ?? '');
+            $imageUrl = trim($data['image_url'] ?? '');
+            $dimensionsJson = isset($data['dimensions']) ? json_encode($data['dimensions']) : null;
+
+            $stmt = $pdo->prepare("
+                UPDATE buyer_products
+                SET product_name = ?, product_code = ?, uom = ?, notes = ?, image_url = ?, dimensions_json = ?
+                WHERE id = ? AND buyer_id = ?
+            ");
+            $stmt->execute([$productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson, $productId, $buyerId]);
+
+            // Replace BOM components
+            $pdo->prepare("DELETE FROM buyer_product_components WHERE buyer_product_id = ?")->execute([$productId]);
+            $savedComponents = [];
+            if (!empty($data['components']) && is_array($data['components'])) {
+                $compIns = $pdo->prepare("
+                    INSERT INTO buyer_product_components (buyer_product_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($data['components'] as $c) {
+                    $cName = trim($c['name'] ?? '');
+                    if (empty($cName)) continue;
+                    $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
+                    $cat = trim($c['category'] ?? 'Raw Material');
+                    $cUom = trim($c['uom'] ?? 'Meters');
+                    $qty = (float)($c['quantity_per_product'] ?? 1);
+                    $wastage = (float)($c['wastage_percent'] ?? 0);
+                    $cNotes = trim($c['notes'] ?? '');
+                    $compIns->execute([$productId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $c['id'] = (int)$pdo->lastInsertId();
+                    $savedComponents[] = $c;
+                }
+            }
+
+            // Replace Boxes
+            $pdo->prepare("DELETE FROM buyer_product_boxes WHERE buyer_product_id = ?")->execute([$productId]);
+            $savedBoxes = [];
+            if (!empty($data['boxes']) && is_array($data['boxes'])) {
+                $boxIns = $pdo->prepare("
+                    INSERT INTO buyer_product_boxes (buyer_product_id, box_name, box_code, length, width, height, dimension_unit, items_per_box, max_packing_qty, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($data['boxes'] as $b) {
+                    $bName = trim($b['box_name'] ?? '');
+                    if (empty($bName)) continue;
+                    $bCode = trim($b['box_code'] ?? '');
+                    $bLen = (float)($b['length'] ?? 0);
+                    $bWid = (float)($b['width'] ?? 0);
+                    $bHgt = (float)($b['height'] ?? 0);
+                    $bUnit = in_array($b['dimension_unit'] ?? 'cm', ['mm', 'cm', 'm']) ? $b['dimension_unit'] : 'cm';
+                    $bItems = (int)($b['items_per_box'] ?? 1);
+                    $bMax = !empty($b['max_packing_qty']) ? (int)$b['max_packing_qty'] : null;
+                    $bNotes = trim($b['notes'] ?? '');
+                    $boxIns->execute([$productId, $bName, $bCode, $bLen, $bWid, $bHgt, $bUnit, $bItems, $bMax, $bNotes]);
+                    $b['id'] = (string)$pdo->lastInsertId();
+                    $savedBoxes[] = $b;
+                }
+            }
+
+            $updated = [
+                'id' => $productId,
+                'buyer_id' => $buyerId,
+                'product_name' => $productName,
+                'product_code' => $productCode,
+                'uom' => $uom,
+                'notes' => $notes,
+                'image_url' => $imageUrl,
+                'dimensions' => $data['dimensions'] ?? null,
+                'components' => $savedComponents,
+                'boxes' => $savedBoxes,
+                'status' => (!empty($savedComponents) && !empty($savedBoxes)) ? 'Ready' : 'Incomplete'
+            ];
+
+            // Secondary file sync
+            try {
+                $db = $this->getStoreData();
+                if (isset($db['buyer_products'])) {
+                    foreach ($db['buyer_products'] as &$bp) {
+                        if ((int)($bp['id'] ?? 0) === $productId && (int)($bp['buyer_id'] ?? 0) === $buyerId) {
+                            $bp = array_merge($bp, $updated);
+                            break;
+                        }
+                    }
+                    $this->saveStoreData($db);
+                }
+            } catch (Exception $ex) {}
+
+            AuditLogger::log('BuyerProducts', 'UPDATE', $productId, null, $data);
+
+            Response::success($updated, "Buyer product updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
     }
 
     public function deleteBuyerProduct(int $buyerId, int $productId): void {
-        $db = $this->getStoreData();
-        if (isset($db['buyer_products'])) {
-            $db['buyer_products'] = array_values(array_filter(
-                $db['buyer_products'],
-                fn($p) => !((int)($p['buyer_id'] ?? 0) === $buyerId && (int)($p['id'] ?? 0) === $productId)
-            ));
-            $this->saveStoreData($db);
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureBuyerProductsTable($pdo);
+
+            $pdo->prepare("DELETE FROM buyer_product_components WHERE buyer_product_id = ?")->execute([$productId]);
+            $pdo->prepare("DELETE FROM buyer_product_boxes WHERE buyer_product_id = ?")->execute([$productId]);
+
+            $stmt = $pdo->prepare("DELETE FROM buyer_products WHERE id = ? AND buyer_id = ?");
+            $stmt->execute([$productId, $buyerId]);
+
+            // Secondary file sync
+            try {
+                $db = $this->getStoreData();
+                if (isset($db['buyer_products'])) {
+                    $db['buyer_products'] = array_values(array_filter(
+                        $db['buyer_products'],
+                        fn($p) => !((int)($p['id'] ?? 0) === $productId && (int)($p['buyer_id'] ?? 0) === $buyerId)
+                    ));
+                    $this->saveStoreData($db);
+                }
+            } catch (Exception $ex) {}
+
+            AuditLogger::log('BuyerProducts', 'DELETE', $productId, null, null);
+
+            Response::success(null, "Buyer product deleted successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
         }
-        Response::success(null, "Buyer product deleted successfully");
     }
 
     // -------------------------------------------------------------

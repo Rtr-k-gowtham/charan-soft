@@ -32,36 +32,26 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
   const loadProducts = async () => {
     setLoading(true);
     try {
-      let list: any[] = [];
+      let serverList: any[] = [];
       try {
         const res = await api.getBuyerProducts(buyer.id);
         const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
-        list = rawList;
+        serverList = rawList;
       } catch (err) {
         console.warn('API getBuyerProducts failed or returned error', err);
       }
 
-      // Filter out any customer objects or mock seed products
-      const validServerProducts = list.filter((p: any) => {
+      // Filter out any customer objects erroneously returned
+      const validServerProducts = serverList.filter((p: any) => {
         if (!p || typeof p !== 'object') return false;
-        // Purge mock seed product
-        if (p.product_name === 'Bio-Washed Crew Neck T-Shirt' || p.product_code === 'BPRD-001') {
-          return false;
-        }
-        // Purge customer object erroneously returned
-        if (
-          p.contact_person ||
-          p.gstin ||
-          p.billing_address ||
-          (p.code && String(p.code).startsWith('CUST-') && !p.product_name) ||
-          (p.name === buyer.name && !p.product_name && !p.dimensions && !p.components)
-        ) {
-          return false;
-        }
-        return Boolean(p.product_name || (p.name && (p.dimensions || p.components || p.boxes)));
+        // Ignore customer records
+        if (p.contact_person && !p.product_name) return false;
+        if (p.billing_address && !p.product_name) return false;
+        if (p.gstin && !p.product_name) return false;
+        return Boolean(p.product_name || p.name);
       });
 
-      // Also clean up local storage cache to ensure mock seed product and phantom customer records are purged
+      // Local storage fallback
       const localKey = `cheran_buyer_products_${buyer.id}`;
       const localStored = localStorage.getItem(localKey);
       let localList: any[] = [];
@@ -70,16 +60,8 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
           const parsed = JSON.parse(localStored);
           if (Array.isArray(parsed)) {
             localList = parsed.filter(
-              (p: any) =>
-                p &&
-                p.product_name !== 'Bio-Washed Crew Neck T-Shirt' &&
-                p.product_code !== 'BPRD-001' &&
-                !p.contact_person &&
-                !p.gstin &&
-                !(p.code && String(p.code).startsWith('CUST-') && !p.product_name) &&
-                !(p.name === buyer.name && !p.product_name && !p.dimensions)
+              (p: any) => p && typeof p === 'object' && Boolean(p.product_name || p.name)
             );
-            localStorage.setItem(localKey, JSON.stringify(localList));
           }
         } catch {
           localList = [];
@@ -88,18 +70,29 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
 
       // Merge server products and local products
       const map = new Map<string | number, any>();
-      validServerProducts.forEach((p: any) => map.set(p.id, p));
-      localList.forEach((p: any) => map.set(p.id, p));
+      // First add local products
+      localList.forEach((p: any) => {
+        const key = p.id || p.product_code || p.product_name;
+        map.set(key, p);
+      });
+      // Server products take precedence
+      validServerProducts.forEach((p: any) => {
+        const key = p.id || p.product_code || p.product_name;
+        map.set(key, p);
+      });
 
-      const normalized: BuyerProduct[] = Array.from(map.values()).map((p: any) => ({
+      const normalized: BuyerProduct[] = Array.from(map.values()).map((p: any, idx: number) => ({
         ...p,
         buyer_id: buyer.id,
         product_name: p.product_name || p.name || 'Product',
         product_code:
           p.product_code ||
-          (p.code && !String(p.code).startsWith('CUST-')
-            ? p.code
-            : `BPRD-${String(p.id).padStart(3, '0')}`),
+          p.code ||
+          `BPRD-${String(p.id || idx + 1).padStart(3, '0')}`,
+        uom: p.uom || 'Pieces',
+        dimensions: p.dimensions || null,
+        components: p.components || [],
+        boxes: p.boxes || [],
       }));
 
       setProducts(normalized);
@@ -125,29 +118,51 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
 
     try {
       if (editingProduct?.id) {
-        await api.updateBuyerProduct(buyer.id, editingProduct.id, productData).catch(() => null);
+        await api.updateBuyerProduct(buyer.id, editingProduct.id, productData);
         localList = localList.map((p) =>
           p.id === editingProduct.id
             ? { ...p, ...productData, id: p.id, buyer_id: buyer.id }
             : p
         );
       } else {
-        const res = await api.createBuyerProduct(buyer.id, productData).catch(() => null);
-        const newId = (res as any)?.id || Date.now();
+        const res = await api.createBuyerProduct(buyer.id, productData);
+        const serverData = (res as any)?.data || res;
         const newProd = {
           ...productData,
-          id: newId,
+          id: serverData?.id || Date.now(),
           buyer_id: buyer.id,
           product_name: productData.product_name || 'New Product',
           product_code:
-            productData.product_code || `BPRD-${String(localList.length + 1).padStart(3, '0')}`,
+            serverData?.product_code ||
+            productData.product_code ||
+            `BPRD-${String(localList.length + 1).padStart(3, '0')}`,
         };
         localList.push(newProd);
       }
       localStorage.setItem(localKey, JSON.stringify(localList));
       await loadProducts();
     } catch (err) {
-      console.error('Failed to save product', err);
+      console.error('Failed to save product on server', err);
+      // Fallback: save locally
+      if (editingProduct?.id) {
+        localList = localList.map((p) =>
+          p.id === editingProduct.id
+            ? { ...p, ...productData, id: p.id, buyer_id: buyer.id }
+            : p
+        );
+      } else {
+        const fallbackProd = {
+          ...productData,
+          id: Date.now(),
+          buyer_id: buyer.id,
+          product_name: productData.product_name || 'New Product',
+          product_code:
+            productData.product_code || `BPRD-${String(localList.length + 1).padStart(3, '0')}`,
+        };
+        localList.push(fallbackProd);
+      }
+      localStorage.setItem(localKey, JSON.stringify(localList));
+      await loadProducts();
     }
   };
 
