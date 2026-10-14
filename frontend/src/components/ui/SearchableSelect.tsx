@@ -271,43 +271,50 @@ export default function SearchableSelect({
               {filteredOptions.length === 0 ? (
                 <div className="py-5 text-center text-xs text-slate-400">No matching results found</div>
               ) : 'ungrouped' in grouped ? (
-                grouped.ungrouped.map((opt) => {
-                  const isSelected = String(opt.value) === String(value);
-                  return (
-                    <div
-                      key={opt.value}
-                      onClick={() => handleSelect(opt.value)}
-                      className={`px-3 py-2 text-xs rounded-md cursor-pointer flex items-center justify-between gap-2 transition-colors ${
-                        isSelected
-                          ? 'bg-brand-50 text-brand-700 font-semibold'
-                          : 'text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        {opt.colorSwatch && (
-                          <span
-                            className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
-                            style={{ backgroundColor: opt.colorSwatch }}
-                          />
-                        )}
-                        <div className="flex flex-col min-w-0">
-                          <span className="truncate">{opt.label}</span>
-                          {opt.sublabel && (
-                            <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                <>
+                  {grouped.ungrouped.slice(0, 80).map((opt) => {
+                    const isSelected = String(opt.value) === String(value);
+                    return (
+                      <div
+                        key={opt.value}
+                        onClick={() => handleSelect(opt.value)}
+                        className={`px-3 py-2 text-xs rounded-md cursor-pointer flex items-center justify-between gap-2 transition-colors ${
+                          isSelected
+                            ? 'bg-brand-50 text-brand-700 font-semibold'
+                            : 'text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {opt.colorSwatch && (
+                            <span
+                              className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
+                              style={{ backgroundColor: opt.colorSwatch }}
+                            />
                           )}
+                          <div className="flex flex-col min-w-0">
+                            <span className="truncate">{opt.label}</span>
+                            {opt.sublabel && (
+                              <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
+                            )}
+                          </div>
                         </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />}
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />}
+                    );
+                  })}
+                  {grouped.ungrouped.length > 80 && (
+                    <div className="px-3 py-1.5 text-[10px] text-slate-400 text-center bg-slate-50 border-t border-slate-100">
+                      Showing first 80 of {grouped.ungrouped.length.toLocaleString()} matches. Type to narrow search.
                     </div>
-                  );
-                })
+                  )}
+                </>
               ) : (
                 Object.entries(grouped).map(([grp, items]) => (
                   <div key={grp} className="pt-2 first:pt-0">
                     <div className="px-2.5 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border-y border-slate-100/80">
                       {grp}
                     </div>
-                    {items.map((opt) => {
+                    {items.slice(0, 50).map((opt) => {
                       const isSelected = String(opt.value) === String(value);
                       return (
                         <div

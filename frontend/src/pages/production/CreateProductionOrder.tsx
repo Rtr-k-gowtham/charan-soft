@@ -9,6 +9,13 @@ import FormField from '../../components/ui/FormField';
 import Modal from '../../components/ui/Modal';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
 import {
+  lookupPantoneAsync,
+  normalizePantoneInput,
+  hexToRgb,
+  rgbToHex,
+  isValidHex,
+} from '../../lib/pantoneService';
+import {
   ArrowLeft,
   Plus,
   Trash2,
@@ -18,6 +25,10 @@ import {
   Layers,
   Palette,
   Clock,
+  CheckCircle2,
+  Loader2,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
 
 interface ColorRecord {
@@ -34,8 +45,6 @@ interface OrderItem {
   size: string;
   total_quantity: number;
 }
-
-const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'SINGLE', 'QUEEN', 'KING'];
 
 export default function CreateProductionOrder() {
   const navigate = useNavigate();
@@ -63,38 +72,134 @@ export default function CreateProductionOrder() {
   });
 
   const [orderItems, setOrderItems] = useState<OrderItem[]>([
-    { product_id: '', color: '', size: 'M', total_quantity: 100 },
+    { product_id: '', color: '', size: '', total_quantity: 100 },
   ]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  // Add Color Modal State
+  // Add Color Modal State (Pantone lookup driven + Custom RGB/HEX fallback)
   const [addColorModalOpen, setAddColorModalOpen] = useState(false);
   const [activeColorRowIndex, setActiveColorRowIndex] = useState<number | null>(null);
   const [colorSaving, setColorSaving] = useState(false);
   const [colorError, setColorError] = useState('');
-  const [colorForm, setColorForm] = useState({
-    name: '',
-    code: '',
-    pantone_code: '',
-    hex_code: '#1e3a8a',
-  });
+  const [colorPantoneInput, setColorPantoneInput] = useState('');
+  const [colorName, setColorName] = useState('');
+  const [colorHexCode, setColorHexCode] = useState('#0F2042');
+  const [colorRgb, setColorRgb] = useState<{ r: number; g: number; b: number }>({ r: 15, g: 32, b: 66 });
+  const [colorIsVerified, setColorIsVerified] = useState(false);
+  const [colorIsCustomMode, setColorIsCustomMode] = useState(false);
+  const [colorLookupLoading, setColorLookupLoading] = useState(false);
+  const [colorLookupError, setColorLookupError] = useState('');
+  const [colorVerifiedInfo, setColorVerifiedInfo] = useState<{
+    code: string;
+    system: string;
+    category: string;
+  } | null>(null);
+
+  const handleColorHexChange = (val: string) => {
+    let clean = val.trim();
+    if (clean && !clean.startsWith('#')) clean = '#' + clean;
+    setColorHexCode(clean);
+    const parsed = hexToRgb(clean);
+    if (parsed) {
+      setColorRgb(parsed);
+    }
+  };
+
+  const handleColorRgbChange = (channel: 'r' | 'g' | 'b', valStr: string) => {
+    const num = parseInt(valStr, 10);
+    const val = isNaN(num) ? 0 : Math.max(0, Math.min(255, num));
+    const nextRgb = { ...colorRgb, [channel]: val };
+    setColorRgb(nextRgb);
+    setColorHexCode(rgbToHex(nextRgb.r, nextRgb.g, nextRgb.b));
+  };
+
+  // Debounced Pantone Code lookup for quick-add color modal
+  useEffect(() => {
+    if (!addColorModalOpen) return;
+
+    const trimmed = colorPantoneInput.trim();
+    if (!trimmed) {
+      setColorLookupLoading(false);
+      setColorLookupError('');
+      setColorName('');
+      setColorHexCode('#0F2042');
+      setColorRgb({ r: 15, g: 32, b: 66 });
+      setColorIsVerified(false);
+      setColorIsCustomMode(false);
+      setColorVerifiedInfo(null);
+      return;
+    }
+
+    if (colorVerifiedInfo && colorVerifiedInfo.code.toUpperCase() === trimmed.toUpperCase()) {
+      return;
+    }
+
+    setColorIsVerified(false);
+    setColorIsCustomMode(false);
+    setColorLookupError('');
+    setColorLookupLoading(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await lookupPantoneAsync(trimmed);
+        setColorLookupLoading(false);
+
+        if (res.found && res.name && res.hex_code) {
+          setColorIsVerified(true);
+          setColorIsCustomMode(false);
+          setColorName(res.name);
+          setColorHexCode(res.hex_code);
+          const parsedRgb = hexToRgb(res.hex_code) || { r: res.red || 0, g: res.green || 0, b: res.blue || 0 };
+          setColorRgb(parsedRgb);
+          setColorLookupError('');
+          setColorVerifiedInfo({
+            code: res.pantone_code || trimmed,
+            system: res.system || 'Pantone Reference',
+            category: res.category || 'Standard Library',
+          });
+        } else {
+          setColorIsVerified(false);
+          setColorIsCustomMode(true);
+          setColorVerifiedInfo(null);
+          setColorLookupError('Pantone code not found in library. You can enter the color name and RGB / HEX values below.');
+          setColorName(prev => prev || '');
+        }
+      } catch (err) {
+        setColorLookupLoading(false);
+        setColorIsVerified(false);
+        setColorIsCustomMode(true);
+        setColorLookupError('Pantone lookup service unavailable. You can enter the color name and RGB / HEX values manually.');
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [colorPantoneInput, addColorModalOpen, colorVerifiedInfo]);
 
   // Load authoritative master data
   const loadMasterData = async () => {
     setLoading(true);
     try {
-      const [prdData, custData, catData, colData] = await Promise.all([
+      const [prdData, custData, catData, pantoneData] = await Promise.all([
         api.getProducts(),
         api.getCustomers(),
         api.getCategories('order').catch(() => api.getCategories()),
-        api.getColors(),
+        api.getPantoneColors({ all: true }).catch(() => api.getColors()),
       ]);
       setProducts((prdData || []) as Product[]);
       setCustomers((custData || []) as Customer[]);
       setCategories((catData || []) as Category[]);
-      setColors((colData || []) as ColorRecord[]);
+
+      const raw = Array.isArray(pantoneData) ? pantoneData : (pantoneData as { items?: unknown[] })?.items || [];
+      const mapped: ColorRecord[] = (raw as Array<{ id: number; pantone_name?: string; name?: string; unique_code?: string; code?: string; hex_code?: string; pantone_code?: string }>).map((c) => ({
+        id: c.id,
+        name: c.pantone_name || c.name || '',
+        code: c.unique_code || c.code || '',
+        hex_code: c.hex_code || '#64748b',
+        pantone_code: c.pantone_code || '',
+      }));
+      setColors(mapped);
     } catch (err: unknown) {
       console.error('Failed to load master data:', err);
     } finally {
@@ -123,21 +228,28 @@ export default function CreateProductionOrder() {
     });
   }, [products]);
 
-  // Format colors for SearchableSelect
+  // Format Pantone colors for SearchableSelect
   const colorOptions: SelectOption[] = useMemo(() => {
-    return colors.map((c) => ({
-      value: c.name,
-      label: c.name,
-      sublabel: `${c.code || ''} ${c.pantone_code ? `Pantone: ${c.pantone_code}` : ''}`.trim(),
-      colorSwatch: c.hex_code,
-    }));
+    return colors.map((c) => {
+      const pCode = c.pantone_code ? c.pantone_code.trim() : '';
+      const cName = c.name ? c.name.trim() : '';
+      const displayLabel = pCode ? `${pCode} — ${cName}` : cName;
+      const val = pCode || cName;
+
+      return {
+        value: val,
+        label: displayLabel,
+        sublabel: `${c.hex_code || ''} ${pCode ? `• Pantone: ${pCode}` : ''}`.trim(),
+        colorSwatch: c.hex_code,
+      };
+    });
   }, [colors]);
 
   // Item row operations
   const handleAddItemRow = () => {
     setOrderItems((prev) => [
       ...prev,
-      { product_id: '', color: '', size: 'M', total_quantity: 100 },
+      { product_id: '', color: '', size: '', total_quantity: 100 },
     ]);
   };
 
@@ -161,42 +273,65 @@ export default function CreateProductionOrder() {
   // Open Add Color Modal for a specific row
   const handleOpenAddColor = (rowIndex: number) => {
     setActiveColorRowIndex(rowIndex);
-    setColorForm({
-      name: '',
-      code: '',
-      pantone_code: '',
-      hex_code: '#1e3a8a',
-    });
+    setColorPantoneInput('');
+    setColorName('');
+    setColorHexCode('#0F2042');
+    setColorRgb({ r: 15, g: 32, b: 66 });
+    setColorIsVerified(false);
+    setColorIsCustomMode(false);
+    setColorLookupLoading(false);
+    setColorLookupError('');
+    setColorVerifiedInfo(null);
     setColorError('');
     setAddColorModalOpen(true);
   };
 
   // Save New Color
   const handleSaveColor = async () => {
-    const trimmedName = colorForm.name.trim();
-    if (!trimmedName) {
+    if (!colorPantoneInput.trim()) {
+      setColorError('Pantone Color Code is required');
+      return;
+    }
+    if (!colorName.trim()) {
       setColorError('Color name is required');
+      return;
+    }
+    if (!isValidHex(colorHexCode)) {
+      setColorError('Please provide a valid 6-digit digital color HEX code (e.g. #FFE966)');
       return;
     }
 
     setColorSaving(true);
     setColorError('');
-    try {
-      const res = await api.createColor({
-        name: trimmedName,
-        code: colorForm.code.trim(),
-        pantone_code: colorForm.pantone_code.trim().toUpperCase(),
-        hex_code: colorForm.hex_code || '#000000',
-      }) as { data?: ColorRecord; id?: number; code?: string; name?: string; hex_code?: string; pantone_code?: string };
+    const finalPantone = colorIsVerified && colorVerifiedInfo?.code
+      ? colorVerifiedInfo.code
+      : normalizePantoneInput(colorPantoneInput) || colorPantoneInput.trim();
 
-      // Reload colors from authoritative backend
-      const updatedColors = (await api.getColors()) as ColorRecord[];
-      setColors(updatedColors || []);
+    try {
+      const res = await api.createPantoneColor({
+        pantone_code: finalPantone,
+        pantone_name: colorName.trim(),
+        hex_code: colorHexCode,
+        red: colorRgb.r,
+        green: colorRgb.g,
+        blue: colorRgb.b,
+        color_system: 'PMS Coated',
+      }) as { id?: number; pantone_code?: string; pantone_name?: string; hex_code?: string };
+
+      const newRecord: ColorRecord = {
+        id: res?.id || Date.now(),
+        name: colorName.trim(),
+        hex_code: colorHexCode,
+        pantone_code: finalPantone,
+      };
+
+      // Add to local colors list immediately
+      setColors((prev) => [newRecord, ...prev]);
 
       // Auto-select this newly created color in the initiating row
-      const selectedColorName = res?.name || (res?.data?.name) || trimmedName;
+      const selectedValue = finalPantone ? `${finalPantone} — ${colorName.trim()}` : colorName.trim();
       if (activeColorRowIndex !== null && activeColorRowIndex >= 0) {
-        handleItemChange(activeColorRowIndex, 'color', selectedColorName);
+        handleItemChange(activeColorRowIndex, 'color', selectedValue);
       }
 
       setAddColorModalOpen(false);
@@ -234,6 +369,10 @@ export default function CreateProductionOrder() {
       }
       if (!row.color.trim()) {
         setError(`Please select a Color for line #${i + 1}`);
+        return;
+      }
+      if (!row.size || !String(row.size).trim()) {
+        setError(`Please enter a Size for line #${i + 1}`);
         return;
       }
       if (!row.total_quantity || row.total_quantity <= 0) {
@@ -496,24 +635,22 @@ export default function CreateProductionOrder() {
                       </div>
                     </div>
 
-                    {/* Size Selector */}
+                    {/* Size Decimal Input */}
                     <div className="md:col-span-2">
                       {idx === 0 && (
                         <label className="text-[11px] font-medium text-slate-600 block mb-1">
                           Size *
                         </label>
                       )}
-                      <select
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
                         value={item.size}
                         onChange={(e) => handleItemChange(idx, 'size', e.target.value)}
-                        className="w-full min-h-[34px] px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 font-medium text-slate-700"
-                      >
-                        {DEFAULT_SIZES.map((sz) => (
-                          <option key={sz} value={sz}>
-                            {sz}
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="e.g. 2.5"
+                        className="w-full min-h-[34px] px-2.5 py-1.5 text-xs font-mono font-medium bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800 placeholder:text-slate-400 placeholder:font-normal"
+                      />
                     </div>
 
                     {/* Quantity Input */}
@@ -609,11 +746,12 @@ export default function CreateProductionOrder() {
         </div>
       </div>
 
-      {/* Add Color Compact Modal */}
+      {/* Add Color Compact Modal (Pantone Lookup + Custom RGB/HEX Fallback) */}
       <Modal
         open={addColorModalOpen}
         onClose={() => setAddColorModalOpen(false)}
-        title="Add New Color to Master"
+        title="Add New Pantone Color"
+        size="md"
       >
         <div className="space-y-4">
           {colorError && (
@@ -623,42 +761,236 @@ export default function CreateProductionOrder() {
             </div>
           )}
 
-          <FormField
-            label="Color Name"
-            required
-            placeholder="e.g. Olive Green, Heather Grey, Royal Blue"
-            value={colorForm.name}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, name: e.target.value }))}
-          />
-
-          <FormField
-            label="Color Code (Optional)"
-            placeholder="Auto-generated if blank (e.g. CLR-0002)"
-            hint="System will automatically allocate the next unique CLR-XXXX code if omitted"
-            value={colorForm.code}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, code: e.target.value }))}
-          />
-
-          <FormField
-            label="Pantone Code"
-            placeholder="e.g. 19-3536 TCX, 286 C, 072 C"
-            hint="International Pantone color reference code"
-            value={colorForm.pantone_code}
-            onChange={(e) => setColorForm((prev) => ({ ...prev, pantone_code: e.target.value }))}
-          />
-
+          {/* 1. Pantone Color Code Input */}
           <div>
-            <label className="text-[11px] font-medium text-slate-600 block mb-1">Color Swatch <span className="text-slate-400">(visual reference)</span></label>
-            <div className="flex gap-2 items-center">
+            <label className="text-xs font-semibold text-slate-700 block mb-1">
+              Pantone Color Code <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
               <input
-                type="color"
-                className="w-10 h-9 p-0.5 rounded border border-slate-200 cursor-pointer bg-white"
-                value={colorForm.hex_code}
-                onChange={(e) => setColorForm((prev) => ({ ...prev, hex_code: e.target.value }))}
+                type="text"
+                value={colorPantoneInput}
+                onChange={(e) => setColorPantoneInput(e.target.value)}
+                placeholder="Enter Pantone code (e.g., 19-4052 TCX, 100 C, or custom code)"
+                className={`w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border transition-all duration-150 pr-9 ${
+                  colorIsVerified
+                    ? 'border-emerald-400 bg-emerald-50/20 text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200'
+                    : colorIsCustomMode
+                    ? 'border-amber-300 bg-amber-50/15 text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-200'
+                    : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
+                }`}
+                autoFocus
               />
-              <span className="text-xs text-slate-500">Pick a representative swatch for visual identification</span>
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
+                {colorLookupLoading ? (
+                  <Loader2 className="w-4 h-4 text-brand-600 animate-spin" />
+                ) : colorIsVerified ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                ) : colorIsCustomMode ? (
+                  <Sliders className="w-4 h-4 text-amber-500" />
+                ) : null}
+              </div>
+            </div>
+
+            {/* Validation & Status Indicator */}
+            <div className="mt-1.5 min-h-[18px]">
+              {colorLookupLoading && (
+                <div className="flex items-center gap-1.5 text-[11px] text-brand-600">
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                  <span>Looking up Pantone reference library & database...</span>
+                </div>
+              )}
+              {!colorLookupLoading && colorIsVerified && colorVerifiedInfo && (
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Verified {colorVerifiedInfo.system} ({colorVerifiedInfo.category})</span>
+                </div>
+              )}
+              {!colorLookupLoading && colorIsCustomMode && (
+                <div className="flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded-md">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Custom / Unlisted Pantone Color:</strong> Code not found in the reference library. You can enter the <strong>Color Name</strong> and digital <strong>RGB / HEX</strong> values below.
+                  </div>
+                </div>
+              )}
+              {!colorLookupLoading && !colorIsCustomMode && !colorIsVerified && !colorPantoneInput && (
+                <p className="text-[11px] text-slate-400">
+                  Type or paste a textile Pantone code (e.g. 19-4052 TCX, PANTONE 100 C) or enter any custom code.
+                </p>
+              )}
             </div>
           </div>
+
+          {/* 2. Color Name Field */}
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1 flex items-center justify-between">
+              <span>Color Name <span className="text-red-500">*</span></span>
+              <span className="text-[10px] text-slate-400 font-normal">
+                {colorIsVerified ? '(official reference, verified)' : '(manually enter or edit name)'}
+              </span>
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={colorName}
+                onChange={(e) => setColorName(e.target.value)}
+                readOnly={colorIsVerified}
+                placeholder={
+                  colorLookupLoading
+                    ? 'Looking up color name...'
+                    : colorIsVerified
+                    ? colorName
+                    : 'Enter color name (e.g. Classic Navy, Custom Red)'
+                }
+                className={`w-full px-3 py-2 text-xs rounded-lg border transition-all ${
+                  colorIsVerified
+                    ? 'bg-slate-50 border-slate-200 text-slate-900 font-semibold cursor-default select-text'
+                    : 'bg-white border-slate-300 text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
+                }`}
+              />
+              {colorIsVerified && (
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-semibold text-emerald-700">
+                    Verified
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 3. Digital Color Swatch & Manual RGB / HEX Specification */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-slate-700 block">Digital Color Specification</span>
+                <span className="text-[10px] text-slate-500">
+                  {colorIsVerified
+                    ? 'Official representative digital color (sRGB & Hex)'
+                    : 'Enter HEX value, adjust RGB numbers (0-255), or click the swatch to pick'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <div
+                    className="w-10 h-10 rounded-lg border border-slate-300 shrink-0 shadow-2xs flex items-center justify-center transition-all cursor-pointer overflow-hidden"
+                    style={{ backgroundColor: colorHexCode || '#0F2042' }}
+                    title="Click to pick or adjust color"
+                  >
+                    {!colorIsVerified && (
+                      <input
+                        type="color"
+                        value={colorHexCode.startsWith('#') && colorHexCode.length === 7 ? colorHexCode : '#0F2042'}
+                        onChange={(e) => handleColorHexChange(e.target.value)}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        title="Click to choose custom color visually"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* HEX & RGB inputs row */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-200/60">
+              <div className="sm:col-span-1">
+                <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                  HEX Code
+                </label>
+                <input
+                  type="text"
+                  value={colorHexCode}
+                  onChange={(e) => handleColorHexChange(e.target.value)}
+                  readOnly={colorIsVerified}
+                  maxLength={7}
+                  placeholder="#000000"
+                  className={`w-full px-2 py-1 text-xs font-mono font-semibold rounded border ${
+                    colorIsVerified
+                      ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
+                      : 'bg-white border-slate-300 text-slate-800 focus:border-brand-500'
+                  }`}
+                />
+              </div>
+
+              <div className="sm:col-span-1">
+                <label className="text-[10px] font-semibold text-red-600 block mb-0.5">
+                  Red (0-255)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={colorRgb.r}
+                  onChange={(e) => handleColorRgbChange('r', e.target.value)}
+                  readOnly={colorIsVerified}
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
+                    colorIsVerified
+                      ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
+                      : 'bg-white border-slate-300 text-slate-800 focus:border-red-400'
+                  }`}
+                />
+              </div>
+
+              <div className="sm:col-span-1">
+                <label className="text-[10px] font-semibold text-emerald-600 block mb-0.5">
+                  Green (0-255)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={colorRgb.g}
+                  onChange={(e) => handleColorRgbChange('g', e.target.value)}
+                  readOnly={colorIsVerified}
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
+                    colorIsVerified
+                      ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
+                      : 'bg-white border-slate-300 text-slate-800 focus:border-emerald-400'
+                  }`}
+                />
+              </div>
+
+              <div className="sm:col-span-1">
+                <label className="text-[10px] font-semibold text-blue-600 block mb-0.5">
+                  Blue (0-255)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={colorRgb.b}
+                  onChange={(e) => handleColorRgbChange('b', e.target.value)}
+                  readOnly={colorIsVerified}
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
+                    colorIsVerified
+                      ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
+                      : 'bg-white border-slate-300 text-slate-800 focus:border-blue-400'
+                  }`}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Verified Specification Summary Banner */}
+          {colorIsVerified && colorVerifiedInfo && (
+            <div className="p-2.5 bg-gradient-to-r from-slate-50 to-emerald-50/40 border border-emerald-200/80 rounded-lg flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="w-6 h-6 rounded-md border border-slate-300 shadow-2xs shrink-0"
+                  style={{ backgroundColor: colorHexCode }}
+                />
+                <div>
+                  <div className="font-semibold text-slate-900">{colorName}</div>
+                  <div className="text-[10px] text-slate-500 font-mono">
+                    {colorVerifiedInfo.code} &bull; {colorVerifiedInfo.category}
+                  </div>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-semibold text-[10px]">
+                {colorVerifiedInfo.system}
+              </span>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
             <Button
@@ -669,6 +1001,7 @@ export default function CreateProductionOrder() {
             </Button>
             <Button
               loading={colorSaving}
+              disabled={colorSaving || colorLookupLoading || !colorPantoneInput.trim() || !colorName.trim()}
               onClick={handleSaveColor}
             >
               Save & Select Color

@@ -112,6 +112,7 @@ export const api = {
   // Production
   getProductionStages: () => request<unknown[]>('/production-stages'),
   getProductionOrders: () => request<unknown[]>('/production-orders'),
+  getProductionOrder: (id: number | string) => request<unknown>(`/production-orders/${id}`),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
   moveStage: (data: unknown) =>
@@ -123,11 +124,53 @@ export const api = {
   recordQC: (data: unknown) => request<unknown>('/qc', 'POST', data),
 
   // Masters
+  lookupPantoneColor: (code: string) =>
+    request<{
+      found: boolean;
+      pantone_name?: string;
+      pantone_code?: string;
+      unique_code?: string;
+      hex_code?: string;
+      red?: number;
+      green?: number;
+      blue?: number;
+      color_system?: string;
+      message?: string;
+    }>(`/pantone-colors?code=${encodeURIComponent(code)}`),
+  getPantoneColors: (params?: { search?: string; page?: number; limit?: number; all?: boolean }) => {
+    const q = new URLSearchParams();
+    if (params?.all) q.append('all', '1');
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    return request<{
+      items: Array<{
+        id: number;
+        pantone_name: string;
+        pantone_code: string;
+        unique_code?: string;
+        hex_code: string;
+        red: number;
+        green: number;
+        blue: number;
+        color_system?: string;
+        created_at?: string;
+      }>;
+      total: number;
+      page: number;
+      limit: number;
+      total_pages: number;
+    }>(`/pantone-colors?${q.toString()}`);
+  },
+  createPantoneColor: (data: unknown) => request<unknown>('/pantone-colors', 'POST', data),
+  updatePantoneColor: (id: number, data: unknown) => request<unknown>(`/pantone-colors/${id}`, 'PUT', data),
+  deletePantoneColor: (id: number) => request<unknown>(`/pantone-colors/${id}`, 'DELETE'),
   getUnits: () => request<unknown[]>('/units'),
   createUnit: (data: unknown) => request<unknown>('/units', 'POST', data),
   getColors: () => request<unknown[]>('/colors'),
   createColor: (data: unknown) => request<unknown>('/colors', 'POST', data),
   updateColor: (id: number, data: unknown) => request<unknown>(`/colors/${id}`, 'PUT', data),
+  deleteColor: (id: number) => request<unknown>(`/colors/${id}`, 'DELETE'),
   getSizes: () => request<unknown[]>('/sizes'),
   createSize: (data: unknown) => request<unknown>('/sizes', 'POST', data),
   getDesigns: () => request<unknown[]>('/designs'),

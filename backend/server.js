@@ -1200,7 +1200,77 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, qcRec, 'QC recorded', 201);
     }
 
-    // 10. Masters (Colors, Sizes, Units, Designs)
+    // 10. Masters (Pantone Colors, Colors, Sizes, Units, Designs)
+    if (!db.pantone_colors) db.pantone_colors = [];
+    if (pathname === '/pantone-colors' && method === 'GET') {
+      const code = (parsedUrl.searchParams.get('code') || '').trim();
+      const search = (parsedUrl.searchParams.get('search') || '').trim();
+      const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10);
+      const limit = parseInt(parsedUrl.searchParams.get('limit') || '25', 10);
+      const isAll = parsedUrl.searchParams.get('all') === '1' || limit >= 3000;
+
+      if (code && !parsedUrl.searchParams.get('page')) {
+        const found = db.pantone_colors.find(p => p.pantone_code.toLowerCase() === code.toLowerCase() || p.pantone_name.toLowerCase() === code.toLowerCase());
+        if (found) {
+          return sendSuccess(res, { found: true, ...found });
+        }
+        return sendSuccess(res, { found: false, message: 'Not found' });
+      }
+
+      let filtered = [...db.pantone_colors];
+      if (search) {
+        const s = search.toLowerCase();
+        filtered = filtered.filter(p =>
+          (p.pantone_code || '').toLowerCase().includes(s) ||
+          (p.pantone_name || '').toLowerCase().includes(s) ||
+          (p.hex_code || '').toLowerCase().includes(s)
+        );
+      }
+
+      if (isAll) {
+        return sendSuccess(res, { items: filtered, total: filtered.length, page: 1, limit: filtered.length, total_pages: 1 });
+      }
+
+      const offset = (page - 1) * limit;
+      const items = filtered.slice(offset, offset + limit);
+      return sendSuccess(res, {
+        items,
+        total: filtered.length,
+        page,
+        limit,
+        total_pages: Math.ceil(filtered.length / limit) || 1,
+      });
+    }
+    if (pathname === '/pantone-colors' && method === 'POST') {
+      const newColor = {
+        id: db.pantone_colors.length + 1,
+        pantone_code: body.pantone_code || '',
+        pantone_name: body.pantone_name || body.name || '',
+        hex_code: body.hex_code || '#000000',
+        red: body.red || 0,
+        green: body.green || 0,
+        blue: body.blue || 0,
+        color_system: body.color_system || 'PMS Coated',
+        created_at: new Date().toISOString()
+      };
+      db.pantone_colors.push(newColor);
+      saveDB();
+      return sendSuccess(res, newColor, 'Pantone color created', 201);
+    }
+    if (pathname.startsWith('/pantone-colors/') && method === 'PUT') {
+      const id = Number(pathname.split('/')[2]);
+      const idx = db.pantone_colors.findIndex(p => p.id === id);
+      if (idx === -1) return sendError(res, 'Pantone color not found', 404);
+      Object.assign(db.pantone_colors[idx], body);
+      saveDB();
+      return sendSuccess(res, db.pantone_colors[idx], 'Pantone color updated');
+    }
+    if (pathname.startsWith('/pantone-colors/') && method === 'DELETE') {
+      const id = Number(pathname.split('/')[2]);
+      db.pantone_colors = db.pantone_colors.filter(p => p.id !== id);
+      saveDB();
+      return sendSuccess(res, null, 'Pantone color deleted');
+    }
     if (pathname === '/colors' && method === 'GET') return sendSuccess(res, db.colors);
     if (pathname === '/colors' && method === 'POST') {
       const name = (body.name || '').trim();
@@ -1211,10 +1281,35 @@ const server = http.createServer(async (req, res) => {
       } else if (db.colors.some(c => c.code === code)) {
         return sendError(res, `Color code '${code}' already exists`, 422);
       }
-      const col = { id: db.colors.length + 1, code, name, hex_code: body.hex_code || '#000000' };
+      const col = {
+        id: db.colors.length + 1,
+        code,
+        name,
+        hex_code: body.hex_code || '#000000',
+        pantone_code: body.pantone_code || null,
+      };
       db.colors.push(col);
       saveDB();
       return sendSuccess(res, col, 'Color added', 201);
+    }
+    if (pathname.startsWith('/colors/') && method === 'PUT') {
+      const id = Number(pathname.split('/')[2]);
+      const idx = db.colors.findIndex(c => c.id === id);
+      if (idx === -1) return sendError(res, 'Color not found', 404);
+      db.colors[idx] = {
+        ...db.colors[idx],
+        name: (body.name || db.colors[idx].name).trim(),
+        hex_code: body.hex_code || db.colors[idx].hex_code,
+        pantone_code: body.pantone_code !== undefined ? body.pantone_code : db.colors[idx].pantone_code,
+      };
+      saveDB();
+      return sendSuccess(res, db.colors[idx], 'Color updated');
+    }
+    if (pathname.startsWith('/colors/') && method === 'DELETE') {
+      const id = Number(pathname.split('/')[2]);
+      db.colors = db.colors.filter(c => c.id !== id);
+      saveDB();
+      return sendSuccess(res, null, 'Color deleted');
     }
 
     if (pathname === '/sizes' && method === 'GET') return sendSuccess(res, db.sizes);

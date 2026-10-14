@@ -301,6 +301,264 @@ class MastersController {
     // -------------------------------------------------------------
     // COLORS, SIZES, UNITS, DESIGNS
     // -------------------------------------------------------------
+    public function lookupPantoneColor(): void {
+        try {
+            $pdo = Database::getConnection();
+
+            // Check if pantone_colors table exists
+            $tableCheck = $pdo->query("SHOW TABLES LIKE 'pantone_colors'")->fetch();
+            if (!$tableCheck) {
+                Response::success([
+                    'found' => false,
+                    'items' => [],
+                    'total' => 0,
+                    'message' => 'pantone_colors table not yet created'
+                ]);
+                return;
+            }
+
+            $singleCode = trim($_GET['code'] ?? '');
+            $isLookup = !empty($singleCode) && !isset($_GET['page']) && !isset($_GET['list']) && !isset($_GET['search']);
+
+            // 1. Single Color Lookup mode (by code or name)
+            if ($isLookup) {
+                $clean = preg_replace('/^PANTONE\s+/i', '', $singleCode);
+                $withPantone = 'PANTONE ' . $clean;
+
+                $stmt = $pdo->prepare("
+                    SELECT id, pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system
+                    FROM pantone_colors
+                    WHERE pantone_name = ? 
+                       OR pantone_code = ? 
+                       OR pantone_name = ? 
+                       OR pantone_code = ?
+                       OR unique_code = ?
+                    LIMIT 1
+                ");
+                $stmt->execute([$singleCode, $singleCode, $withPantone, $clean, $singleCode]);
+                $row = $stmt->fetch();
+
+                if (!$row) {
+                    $stmt = $pdo->prepare("
+                        SELECT id, pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system
+                        FROM pantone_colors
+                        WHERE pantone_code LIKE ? OR pantone_name LIKE ?
+                        LIMIT 1
+                    ");
+                    $like = '%' . $clean . '%';
+                    $stmt->execute([$like, $like]);
+                    $row = $stmt->fetch();
+                }
+
+                if ($row) {
+                    Response::success([
+                        'found' => true,
+                        'pantone_name' => $row['pantone_name'],
+                        'pantone_code' => $row['pantone_code'],
+                        'unique_code' => $row['unique_code'],
+                        'hex_code' => $row['hex_code'],
+                        'red' => (int)$row['red'],
+                        'green' => (int)$row['green'],
+                        'blue' => (int)$row['blue'],
+                        'color_system' => $row['color_system'] ?? 'PMS Coated'
+                    ]);
+                    return;
+                }
+
+                Response::success(['found' => false, 'message' => 'Pantone color not found']);
+                return;
+            }
+
+            // 2. All Colors mode (e.g. for production order dropdowns)
+            $isAll = isset($_GET['all']) || ((int)($_GET['limit'] ?? 0) >= 3000);
+            if ($isAll) {
+                $stmt = $pdo->query("
+                    SELECT id, pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system, created_at
+                    FROM pantone_colors
+                    ORDER BY pantone_code ASC
+                ");
+                $items = $stmt->fetchAll();
+                Response::success([
+                    'items' => $items,
+                    'total' => count($items),
+                    'page' => 1,
+                    'limit' => count($items),
+                    'total_pages' => 1
+                ]);
+                return;
+            }
+
+            // 3. Table / List search mode with pagination
+            $search = trim($_GET['search'] ?? ($_GET['q'] ?? ''));
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $limit = max(10, min(200, (int)($_GET['limit'] ?? 25)));
+            $offset = ($page - 1) * $limit;
+
+            $whereSql = "WHERE 1=1";
+            $params = [];
+
+            if (!empty($search)) {
+                $cleanSearch = preg_replace('/^PANTONE\s+/i', '', $search);
+                $whereSql .= " AND (pantone_name LIKE ? OR pantone_code LIKE ? OR unique_code LIKE ? OR hex_code LIKE ? OR color_system LIKE ?)";
+                $like = '%' . $cleanSearch . '%';
+                $params = [$like, $like, $like, $like, $like];
+            }
+
+            // Count total
+            $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM pantone_colors {$whereSql}");
+            $cntStmt->execute($params);
+            $total = (int)$cntStmt->fetchColumn();
+
+            // Fetch records
+            $dataStmt = $pdo->prepare("
+                SELECT id, pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system, created_at
+                FROM pantone_colors
+                {$whereSql}
+                ORDER BY id ASC
+                LIMIT {$limit} OFFSET {$offset}
+            ");
+            $dataStmt->execute($params);
+            $items = $dataStmt->fetchAll();
+
+            Response::success([
+                'items' => $items,
+                'total' => $total,
+                'page' => $page,
+                'limit' => $limit,
+                'total_pages' => ceil($total / $limit)
+            ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function createPantoneColor(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $pantoneCode = trim($data['pantone_code'] ?? '');
+        $pantoneName = trim($data['pantone_name'] ?? ($data['name'] ?? ''));
+        $hex = trim($data['hex_code'] ?? '#000000');
+        if ($hex !== '' && !str_starts_with($hex, '#')) {
+            $hex = '#' . $hex;
+        }
+        $red = isset($data['red']) ? (int)$data['red'] : 0;
+        $green = isset($data['green']) ? (int)$data['green'] : 0;
+        $blue = isset($data['blue']) ? (int)$data['blue'] : 0;
+        $system = trim($data['color_system'] ?? 'PMS Coated');
+        $uniqueCode = trim($data['unique_code'] ?? ('CUST-' . rand(1000, 9999)));
+
+        if (empty($pantoneCode)) {
+            Response::error("Pantone code is required", 422);
+            return;
+        }
+        if (empty($pantoneName)) {
+            Response::error("Pantone color name is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+
+            // Insert into pantone_colors
+            $stmt = $pdo->prepare("
+                INSERT INTO pantone_colors (pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            ");
+            $stmt->execute([$pantoneName, $pantoneCode, $uniqueCode, $hex, $red, $green, $blue, $system]);
+            $newId = (int)$pdo->lastInsertId();
+
+            // Also keep legacy colors table in sync
+            try {
+                $chk = $pdo->prepare("SELECT id FROM colors WHERE pantone_code = ? OR name = ? LIMIT 1");
+                $chk->execute([$pantoneCode, $pantoneName]);
+                if (!$chk->fetch()) {
+                    $internalCode = 'CLR-' . str_pad((string)$newId, 4, '0', STR_PAD_LEFT);
+                    $ins = $pdo->prepare("INSERT INTO colors (code, name, hex_code, pantone_code) VALUES (?, ?, ?, ?)");
+                    $ins->execute([$internalCode, $pantoneName, $hex, $pantoneCode]);
+                }
+            } catch (Exception $e) {}
+
+            AuditLogger::log('PantoneColors', 'CREATE', $newId, null, $data);
+
+            Response::success([
+                'id' => $newId,
+                'pantone_name' => $pantoneName,
+                'pantone_code' => $pantoneCode,
+                'unique_code' => $uniqueCode,
+                'hex_code' => $hex,
+                'red' => $red,
+                'green' => $green,
+                'blue' => $blue,
+                'color_system' => $system
+            ], "Pantone color created successfully", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updatePantoneColor(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $pantoneCode = trim($data['pantone_code'] ?? '');
+        $pantoneName = trim($data['pantone_name'] ?? ($data['name'] ?? ''));
+        $hex = trim($data['hex_code'] ?? '#000000');
+        if ($hex !== '' && !str_starts_with($hex, '#')) {
+            $hex = '#' . $hex;
+        }
+        $red = isset($data['red']) ? (int)$data['red'] : 0;
+        $green = isset($data['green']) ? (int)$data['green'] : 0;
+        $blue = isset($data['blue']) ? (int)$data['blue'] : 0;
+        $system = trim($data['color_system'] ?? 'PMS Coated');
+
+        if (empty($pantoneCode) || empty($pantoneName)) {
+            Response::error("Pantone code and name are required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("
+                UPDATE pantone_colors
+                SET pantone_name = ?, pantone_code = ?, hex_code = ?, red = ?, green = ?, blue = ?, color_system = ?
+                WHERE id = ?
+            ");
+            $stmt->execute([$pantoneName, $pantoneCode, $hex, $red, $green, $blue, $system, $id]);
+
+            // Sync with legacy colors table
+            try {
+                $updColors = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ? WHERE pantone_code = ?");
+                $updColors->execute([$pantoneName, $hex, $pantoneCode]);
+            } catch (Exception $e) {}
+
+            AuditLogger::log('PantoneColors', 'UPDATE', $id, null, $data);
+
+            Response::success([
+                'id' => $id,
+                'pantone_name' => $pantoneName,
+                'pantone_code' => $pantoneCode,
+                'hex_code' => $hex,
+                'red' => $red,
+                'green' => $green,
+                'blue' => $blue,
+                'color_system' => $system
+            ], "Pantone color updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deletePantoneColor(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("DELETE FROM pantone_colors WHERE id = ?");
+            $stmt->execute([$id]);
+
+            AuditLogger::log('PantoneColors', 'DELETE', $id, null, null);
+
+            Response::success(null, "Pantone color deleted successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
     public function getColors(): void {
         try {
             $pdo = Database::getConnection();
@@ -428,17 +686,127 @@ class MastersController {
                 $pdo->exec("ALTER TABLE colors ADD COLUMN pantone_code VARCHAR(50) NULL DEFAULT NULL");
             } catch (Exception $alterEx) {}
 
+            $stmtCurr = $pdo->prepare("SELECT code FROM colors WHERE id = ?");
+            $stmtCurr->execute([$id]);
+            $currCode = $stmtCurr->fetchColumn();
+            $finalCode = $currCode ?: ($code ?: sprintf('CLR-%04d', $id));
+
             $stmt = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ?, pantone_code = ? WHERE id = ?");
             $stmt->execute([$name, $hex ?: null, $pantoneCode ?: null, $id]);
 
-            AuditLogger::log('Colors', 'UPDATE', $id, null, ['code' => $code, 'name' => $name, 'pantone_code' => $pantoneCode]);
+            AuditLogger::log('Colors', 'UPDATE', $id, null, ['code' => $finalCode, 'name' => $name, 'pantone_code' => $pantoneCode]);
             Response::success([
                 'id' => $id,
                 'name' => $name,
-                'code' => $code,
+                'code' => $finalCode,
                 'hex_code' => $hex ?: null,
                 'pantone_code' => $pantoneCode ?: null
             ], "Color updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteColor(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("SELECT * FROM colors WHERE id = ?");
+            $stmt->execute([$id]);
+            $color = $stmt->fetch();
+            if (!$color) {
+                Response::error("Color not found", 404);
+                return;
+            }
+
+            // Referential integrity checks across transactional and master tables
+            $refChecks = [];
+            $searchColors = array_values(array_filter([
+                $color['name'] ?? null,
+                $color['code'] ?? null,
+                $color['pantone_code'] ?? null
+            ]));
+
+            // 1. Production order items
+            try {
+                $poiCols = $pdo->query("DESCRIBE production_order_items")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color', $poiCols) && !empty($searchColors)) {
+                    $placeholders = implode(',', array_fill(0, count($searchColors), '?'));
+                    $poiStmt = $pdo->prepare("SELECT COUNT(*) FROM production_order_items WHERE color IN ($placeholders)");
+                    $poiStmt->execute($searchColors);
+                    $poiCount = (int)$poiStmt->fetchColumn();
+                    if ($poiCount > 0) {
+                        $refChecks[] = "{$poiCount} production order item(s)";
+                    }
+                }
+                if (in_array('color_id', $poiCols)) {
+                    $poiIdStmt = $pdo->prepare("SELECT COUNT(*) FROM production_order_items WHERE color_id = ?");
+                    $poiIdStmt->execute([$id]);
+                    $poiIdCount = (int)$poiIdStmt->fetchColumn();
+                    if ($poiIdCount > 0) {
+                        $refChecks[] = "{$poiIdCount} production order item(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            // 2. Purchase order items
+            try {
+                $poCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color', $poCols) && !empty($searchColors)) {
+                    $placeholders = implode(',', array_fill(0, count($searchColors), '?'));
+                    $poStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE color IN ($placeholders)");
+                    $poStmt->execute($searchColors);
+                    $poCount = (int)$poStmt->fetchColumn();
+                    if ($poCount > 0) {
+                        $refChecks[] = "{$poCount} purchase order item(s)";
+                    }
+                }
+                if (in_array('color_id', $poCols)) {
+                    $poIdStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE color_id = ?");
+                    $poIdStmt->execute([$id]);
+                    $poIdCount = (int)$poIdStmt->fetchColumn();
+                    if ($poIdCount > 0) {
+                        $refChecks[] = "{$poIdCount} purchase order item(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            // 3. Product variants
+            try {
+                $pvCols = $pdo->query("DESCRIBE product_variants")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('color_id', $pvCols)) {
+                    $pvStmt = $pdo->prepare("SELECT COUNT(*) FROM product_variants WHERE color_id = ?");
+                    $pvStmt->execute([$id]);
+                    $pvCount = (int)$pvStmt->fetchColumn();
+                    if ($pvCount > 0) {
+                        $refChecks[] = "{$pvCount} product variant(s)";
+                    }
+                }
+            } catch (Exception $e) {
+                // Table might not exist
+            }
+
+            if (!empty($refChecks)) {
+                $reason = implode(' and ', $refChecks);
+                Response::error(
+                    "Cannot delete color '{$color['name']}' ({$color['code']}) because it is actively referenced in {$reason}. Historical production records must be preserved.",
+                    422
+                );
+                return;
+            }
+
+            $del = $pdo->prepare("DELETE FROM colors WHERE id = ?");
+            $del->execute([$id]);
+
+            AuditLogger::log('Colors', 'DELETE', $id, $color, null);
+            Response::success([
+                'id' => $id,
+                'name' => $color['name'],
+                'code' => $color['code']
+            ], "Color '{$color['name']}' ({$color['code']}) deleted successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
