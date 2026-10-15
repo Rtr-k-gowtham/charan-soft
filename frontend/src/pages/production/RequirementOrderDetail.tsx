@@ -322,48 +322,6 @@ export default function RequirementOrderDetail() {
           </div>
         </div>
 
-        {/* 4 Summary KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Garments to Produce</span>
-              <Package className="w-4 h-4 text-brand-600" />
-            </div>
-            <p className="text-xl font-bold font-mono text-slate-800 mt-1">{fmt(summary.total_order_garments)} <span className="text-xs font-normal text-slate-400">pcs</span></p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Across {summary.total_products_count} garment products</p>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Raw Material Items</span>
-              <Layers className="w-4 h-4 text-indigo-600" />
-            </div>
-            <p className="text-xl font-bold font-mono text-indigo-600 mt-1">{summary.total_distinct_materials}</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Fabric, Trims, Thread, Packing</p>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Procurement Shortages</span>
-              <AlertTriangle className={`w-4 h-4 ${summary.shortage_count > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
-            </div>
-            <p className={`text-xl font-bold font-mono mt-1 ${summary.shortage_count > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-              {summary.shortage_count} <span className="text-xs font-normal text-slate-400">items</span>
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              {summary.in_stock_count} in stock • {summary.shortage_count} to purchase
-            </p>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Estimated Material Cost</span>
-              <DollarSign className="w-4 h-4 text-emerald-600" />
-            </div>
-            <p className="text-xl font-bold font-mono text-slate-800 mt-1">{fmtCurrency(summary.total_estimated_cost)}</p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Standard PO estimation</p>
-          </div>
-        </div>
 
         {/* Tab Navigation */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
