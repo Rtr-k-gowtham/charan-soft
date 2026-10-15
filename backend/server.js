@@ -913,9 +913,18 @@ const server = http.createServer(async (req, res) => {
       // Per Task 3.B: Initial status of newly created purchase orders must strictly be Draft
       const poStatus = 'Draft';
 
+      const prodOrderId = body.production_order_id ? Number(body.production_order_id) : null;
+      let prodOrderNumber = body.production_order_number || null;
+      if (prodOrderId && !prodOrderNumber) {
+        const linkedOrder = (db.productionOrders || []).find(o => o.id === prodOrderId);
+        if (linkedOrder) prodOrderNumber = linkedOrder.order_number;
+      }
+
       const newPO = {
         id: db.purchaseOrders.length + 1,
         po_number: poNumber,
+        production_order_id: prodOrderId,
+        production_order_number: prodOrderNumber,
         category_id: Number(body.category_id || 6),
         category_name: body.category_id == 7 ? 'ACCESSORY PO' : 'FABRIC PO',
         supplier_id: supplier.id,
@@ -934,6 +943,22 @@ const server = http.createServer(async (req, res) => {
         payments: [],
         receipts: [],
       };
+
+      // Automatically advance production order to Stage 02: PO when PO is issued
+      if (prodOrderId) {
+        const pOrder = (db.productionOrders || []).find(o => o.id === prodOrderId);
+        if (pOrder && Array.isArray(pOrder.items)) {
+          pOrder.items.forEach(it => {
+            const code = (it.stage_code || '').toUpperCase();
+            if (it.current_stage_id === 1 || code === 'REQ' || code === 'INST' || !it.current_stage_id) {
+              it.current_stage_id = 2;
+              it.current_stage_name = 'Purchase Order (PO)';
+              it.stage_code = 'PO';
+            }
+          });
+        }
+      }
+
       db.purchaseOrders.unshift(newPO);
       saveDB();
       return sendSuccess(res, newPO, 'Purchase Order created', 201);

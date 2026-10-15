@@ -30,6 +30,7 @@ import CreateProductionOrder from './pages/production/CreateProductionOrder';
 import ProductionBoard from './pages/production/ProductionBoard';
 import ProductionStageView from './pages/production/ProductionStageView';
 import RequirementOrderDetail from './pages/production/RequirementOrderDetail';
+import POOrderDetail from './pages/production/POOrderDetail';
 
 // Masters
 import Products from './pages/masters/Products';
@@ -99,6 +100,7 @@ function AppRoutes() {
               <Route path="/production/requirement" element={<ProductionStageView stageName="Requirement Gathering" stageCode="REQ" breadcrumb={['01. Requirement gathering']} />} />
               <Route path="/production/requirement/:id" element={<RequirementOrderDetail />} />
               <Route path="/production/po" element={<ProductionStageView stageName="Purchase Order (PO)" stageCode="PO" breadcrumb={['02. PO (Purchase Order)']} />} />
+              <Route path="/production/po/:id" element={<POOrderDetail />} />
               <Route path="/production/inward" element={<ProductionStageView stageName="Inward" stageCode="INW" breadcrumb={['03. Inward']} />} />
               <Route path="/production/dyeing" element={<ProductionStageView stageName="Dyeing" stageCode="DYE" breadcrumb={['04. Dyeing']} />} />
               <Route path="/production/cutting" element={<ProductionStageView stageName="Cutting — Product-wise" stageCode="CUT" breadcrumb={['05. Cutting — Product-wise']} />} />

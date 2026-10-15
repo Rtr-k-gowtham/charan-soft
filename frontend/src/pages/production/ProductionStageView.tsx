@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionOrderItem, ProductionStage } from '../../types';
+import { ProductionOrder, ProductionOrderItem, ProductionStage, OrderMaterialRequirementItem, PurchaseOrder } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -12,6 +12,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
+import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
 import {
   RefreshCw,
   ChevronRight,
@@ -29,7 +30,8 @@ import {
   Calendar,
   Sparkles,
   Filter,
-  CheckCheck
+  CheckCheck,
+  ShoppingCart
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -87,10 +89,69 @@ interface OrderGroup {
   unique_products_count: number;
 }
 
+function OrderPOIssuerWrapper({
+  orderId,
+  orderNumber,
+  orderTitle,
+  targetDeliveryDate,
+}: {
+  orderId: number;
+  orderNumber: string;
+  orderTitle?: string;
+  targetDeliveryDate?: string;
+}) {
+  const [materials, setMaterials] = useState<OrderMaterialRequirementItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`cheran_order_bom_${orderId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMaterials(parsed);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    api.getOrderMaterialRequirements(orderId)
+      .then(res => {
+        const report = (res as any)?.data || res;
+        setMaterials(report?.total_materials || []);
+      })
+      .catch(() => setMaterials([]))
+      .finally(() => setLoading(false));
+  }, [orderId]);
+
+  if (loading) {
+    return (
+      <div className="p-3 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-500 mb-3 flex items-center justify-center gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+        <span>Loading category materials and matched vendors for PO issuance...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <CategoryPOIssuer
+        orderId={orderId}
+        orderNumber={orderNumber}
+        orderTitle={orderTitle}
+        targetDeliveryDate={targetDeliveryDate}
+        materials={materials}
+      />
+    </div>
+  );
+}
+
 export default function ProductionStageView({ stageName, stageCode, breadcrumb }: Props) {
   const navigate = useNavigate();
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [allItems, setAllItems] = useState<StageItem[]>([]);
+  const [stagePOs, setStagePOs] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
   // View mode: 'orders' shows order cards with expandable products; 'items' shows flat item rows
@@ -122,9 +183,11 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     Promise.all([
       api.getProductionStages().catch(() => []),
       api.getProductionOrders().catch(() => []),
+      api.getPurchaseOrders().catch(() => []),
     ])
-      .then(([stgList, ordList]) => {
+      .then(([stgList, ordList, poList]) => {
         setStages((stgList || []) as ProductionStage[]);
+        setStagePOs((poList || []) as PurchaseOrder[]);
         const flat: StageItem[] = [];
         ((ordList || []) as ProductionOrder[]).forEach(ord => {
           (ord.items || []).forEach(it => {
@@ -792,6 +855,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                               </span>
                             )}
                             <StatusBadge status={group.priority || 'Medium'} />
+                            {activeCode === 'PO' && (() => {
+                              const ordNum = group.order_number;
+                              const count = stagePOs.filter(po => {
+                                if (po.production_order_id && String(po.production_order_id) === String(group.order_id)) return true;
+                                if (po.production_order_number && po.production_order_number === ordNum) return true;
+                                if (po.remarks && ordNum && po.remarks.includes(ordNum)) return true;
+                                if (Array.isArray(po.items) && ordNum && po.items.some((it: any) => it.order_no === ordNum)) return true;
+                                return false;
+                              }).length;
+                              return (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {count} {count === 1 ? 'PO Issued' : 'POs Issued'}
+                                </span>
+                              );
+                            })()}
                           </div>
 
                           <p className="text-xs font-medium text-slate-600 truncate mt-1">
@@ -838,6 +916,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             </button>
                           )}
 
+                          {activeCode === 'PO' && group.order_id && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(`/production/po/${group.order_id}`);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-2xs transition"
+                              title="Open Stage 02: Purchase Order Workspace for this order"
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5" />
+                              <span>Enter POs & Issue</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             onClick={e => {
@@ -850,7 +943,11 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                             }`}
                           >
-                            <span>{isExpanded ? 'Hide Products' : `Enter Order (${group.items.length})`}</span>
+                            <span>
+                              {isExpanded
+                                ? (activeCode === 'PO' ? 'Close Quick View' : 'Hide Products')
+                                : (activeCode === 'PO' ? `Quick View (${group.items.length})` : `Enter Order (${group.items.length})`)}
+                            </span>
                             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </button>
 
@@ -900,6 +997,17 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             </button>
                           </div>
                         )}
+
+                        {/* Purchase Order (PO) Stage: Category-Based Material Procurement & PO Issuance */}
+                        {activeCode === 'PO' && group.order_id && (
+                          <OrderPOIssuerWrapper
+                            orderId={group.order_id}
+                            orderNumber={group.order_number}
+                            orderTitle={group.order_title}
+                            targetDeliveryDate={group.target_delivery_date}
+                          />
+                        )}
+
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
