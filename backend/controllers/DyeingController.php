@@ -273,17 +273,37 @@ class DyeingController {
             $colorStmt = $pdo->prepare("
                 SELECT DISTINCT 
                     poi.color as color_name,
-                    col.pantone_code,
-                    col.hex_code,
+                    COALESCE(col.pantone_code, '') as pantone_code,
+                    COALESCE(col.hex_code, '#6366f1') as hex_code,
                     SUM(poi.total_quantity) as total_garment_qty
                 FROM production_order_items poi
-                LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code)
+                LEFT JOIN colors col ON (
+                    LOWER(TRIM(poi.color)) = LOWER(TRIM(col.name)) 
+                    OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.code))
+                    OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.pantone_code))
+                )
                 WHERE poi.production_order_id = ?
                 GROUP BY poi.color, col.pantone_code, col.hex_code
                 ORDER BY poi.color ASC
             ");
             $colorStmt->execute([$poId]);
             $suggestedColors = $colorStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Enrich any missing pantone codes from pantone_colors reference table
+            foreach ($suggestedColors as &$sc) {
+                if (empty($sc['pantone_code']) && !empty($sc['color_name'])) {
+                    try {
+                        $pSearch = $pdo->prepare("SELECT pantone_code, hex_code FROM pantone_colors WHERE LOWER(pantone_name) LIKE ? OR LOWER(pantone_code) LIKE ? LIMIT 1");
+                        $cTerm = '%' . strtolower(trim((string)$sc['color_name'])) . '%';
+                        $pSearch->execute([$cTerm, $cTerm]);
+                        $foundP = $pSearch->fetch(PDO::FETCH_ASSOC);
+                        if ($foundP) {
+                            $sc['pantone_code'] = $foundP['pantone_code'];
+                            if (!empty($foundP['hex_code'])) $sc['hex_code'] = $foundP['hex_code'];
+                        }
+                    } catch (Exception $e) {}
+                }
+            }
 
             // 5. Fetch dyeing suppliers / mills
             $suppStmt = $pdo->query("

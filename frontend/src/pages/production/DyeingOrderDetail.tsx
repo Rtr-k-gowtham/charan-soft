@@ -138,14 +138,8 @@ export default function DyeingOrderDetail() {
   const [processType, setProcessType] = useState<string>('Reactive Dyeing & Soft Flow');
   const [remarks, setRemarks] = useState<string>('Outward sent for color dyeing process');
 
-  // Color breakdown rows
-  const [colorRows, setColorRows] = useState<NewColorRow[]>([
-    { color_name: 'Green', pantone_code: '18-5642 TCX', hex_code: '#2d6a4f', planned_quantity: 20, rate_per_unit: '', notes: '' },
-    { color_name: 'Red', pantone_code: '19-1664 TCX', hex_code: '#b91c1c', planned_quantity: 20, rate_per_unit: '', notes: '' },
-    { color_name: 'Orange', pantone_code: '16-1364 TCX', hex_code: '#ea580c', planned_quantity: 20, rate_per_unit: '', notes: '' },
-    { color_name: 'White', pantone_code: '11-0601 TCX', hex_code: '#f8fafc', planned_quantity: 20, rate_per_unit: '', notes: '' },
-    { color_name: 'Black', pantone_code: '19-4008 TCX', hex_code: '#0f172a', planned_quantity: 20, rate_per_unit: '', notes: '' },
-  ]);
+  // Color breakdown rows (auto-populated from Production Order)
+  const [colorRows, setColorRows] = useState<NewColorRow[]>([]);
 
   // Receive Dyed Fabric Modal
   const [showReceiveModal, setShowReceiveModal] = useState(false);
@@ -177,6 +171,99 @@ export default function DyeingOrderDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
+
+  // Helper: Automatically build color rows from production order & available fabric balance
+  const buildOrderColors = (ord: any, stock: any): NewColorRow[] => {
+    const avail = Number(stock?.balance_available_for_dyeing) > 0 
+      ? Number(stock.balance_available_for_dyeing) 
+      : (Number(stock?.total_fabric_inwarded) > 0 ? Number(stock.total_fabric_inwarded) : 100);
+
+    let candidateList: { color_name: string; pantone_code: string; hex_code: string; garment_qty: number }[] = [];
+
+    // 1. Try stock.suggested_colors from backend
+    if (stock?.suggested_colors && Array.isArray(stock.suggested_colors) && stock.suggested_colors.length > 0) {
+      candidateList = stock.suggested_colors.map((c: any) => {
+        const cName = (c.color_name || '').trim();
+        const pLookup = lookupPantone(cName);
+        const verified = VERIFIED_PANTONE_LIBRARY.find(
+          p => p.name.toLowerCase() === cName.toLowerCase() || p.name.toLowerCase().includes(cName.toLowerCase())
+        );
+        return {
+          color_name: cName || 'Standard Color',
+          pantone_code: c.pantone_code || pLookup.pantone_code || verified?.code || '',
+          hex_code: c.hex_code || pLookup.hex_code || verified?.hex || '#6366f1',
+          garment_qty: Number(c.total_garment_qty) || 0
+        };
+      });
+    } 
+    // 2. Or fallback to ord.items (production_order_items)
+    else if (ord?.items && Array.isArray(ord.items) && ord.items.length > 0) {
+      const colorMap = new Map<string, number>();
+      ord.items.forEach((it: any) => {
+        const cName = (it.color || it.color_name || '').trim();
+        if (cName) {
+          const qty = Number(it.quantity || it.total_quantity || 0);
+          colorMap.set(cName, (colorMap.get(cName) || 0) + qty);
+        }
+      });
+
+      candidateList = Array.from(colorMap.entries()).map(([cName, qty]) => {
+        const pLookup = lookupPantone(cName);
+        const verified = VERIFIED_PANTONE_LIBRARY.find(
+          p => p.name.toLowerCase() === cName.toLowerCase() || p.name.toLowerCase().includes(cName.toLowerCase())
+        );
+        return {
+          color_name: cName,
+          pantone_code: pLookup.pantone_code || verified?.code || '',
+          hex_code: pLookup.hex_code || verified?.hex || '#6366f1',
+          garment_qty: qty
+        };
+      });
+    }
+
+    // 3. Fallback if no colors found on order items at all
+    if (candidateList.length === 0) {
+      candidateList = [
+        { color_name: 'Green', pantone_code: '18-5642 TCX', hex_code: '#2d6a4f', garment_qty: 20 },
+        { color_name: 'Red', pantone_code: '19-1664 TCX', hex_code: '#b91c1c', garment_qty: 20 },
+        { color_name: 'Orange', pantone_code: '16-1364 TCX', hex_code: '#ea580c', garment_qty: 20 },
+        { color_name: 'White', pantone_code: '11-0601 TCX', hex_code: '#f8fafc', garment_qty: 20 },
+        { color_name: 'Black', pantone_code: '19-4008 TCX', hex_code: '#0f172a', garment_qty: 20 },
+      ];
+    }
+
+    // Proportionally distribute fabric yardage
+    const totalGarments = candidateList.reduce((sum, c) => sum + c.garment_qty, 0);
+    const count = candidateList.length;
+
+    const rows: NewColorRow[] = candidateList.map((c) => {
+      let allocatedQty: number;
+      if (totalGarments > 0 && c.garment_qty > 0) {
+        allocatedQty = Math.round((avail * (c.garment_qty / totalGarments)) * 100) / 100;
+      } else {
+        allocatedQty = Math.round((avail / count) * 100) / 100;
+      }
+      return {
+        color_name: c.color_name,
+        pantone_code: c.pantone_code,
+        hex_code: c.hex_code,
+        planned_quantity: allocatedQty > 0 ? allocatedQty : 1,
+        rate_per_unit: '',
+        notes: c.garment_qty > 0 ? `For ${c.garment_qty} pcs in order` : ''
+      };
+    });
+
+    // Adjust any rounding drift on the last item so the total matches exactly
+    const currentSum = rows.reduce((s, r) => s + (Number(r.planned_quantity) || 0), 0);
+    const drift = Math.round((avail - currentSum) * 100) / 100;
+    if (rows.length > 0 && Math.abs(drift) > 0 && Math.abs(drift) < 5) {
+      const lastIdx = rows.length - 1;
+      const newLastQty = Math.max(0.1, Math.round(((Number(rows[lastIdx].planned_quantity) || 0) + drift) * 100) / 100);
+      rows[lastIdx].planned_quantity = newLastQty;
+    }
+
+    return rows;
+  };
 
   const loadData = async () => {
     if (!id) return;
@@ -226,6 +313,10 @@ export default function DyeingOrderDetail() {
       // Generate a default challan number
       setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
 
+      // Automatically populate color breakdown from Production Order
+      const autoColors = buildOrderColors(ord, stock);
+      setColorRows(autoColors);
+
     } catch (err: any) {
       console.error('Error loading dyeing data:', err);
       setError(err?.message || 'Failed to load dyeing workspace data');
@@ -237,6 +328,16 @@ export default function DyeingOrderDetail() {
   useEffect(() => {
     loadData();
   }, [id]);
+
+  // Open Create Dyeing Order Modal with auto-populated colors
+  const handleOpenCreateModal = () => {
+    setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
+    setCreateError('');
+    if (colorRows.length === 0) {
+      setColorRows(buildOrderColors(order, fabricStockData));
+    }
+    setShowCreateModal(true);
+  };
 
   // Handle Photo selection
   const handlePhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -274,50 +375,62 @@ export default function DyeingOrderDetail() {
 
     // Smart auto-detection for Pantone Code
     if (field === 'pantone_code' && typeof value === 'string') {
-      const lookup = lookupPantone(value);
-      if (lookup.found) {
-        if (lookup.name && !updated[index].color_name) {
-          updated[index].color_name = lookup.name;
-        }
-        if (lookup.hex_code) {
-          updated[index].hex_code = lookup.hex_code;
+      const clean = value.trim();
+      if (clean) {
+        const lookup = lookupPantone(clean);
+        if (lookup.found) {
+          if (lookup.name && !updated[index].color_name) {
+            updated[index].color_name = lookup.name;
+          }
+          if (lookup.hex_code) {
+            updated[index].hex_code = lookup.hex_code;
+          }
+        } else {
+          const verified = VERIFIED_PANTONE_LIBRARY.find(
+            p => p.code.toLowerCase() === clean.toLowerCase() ||
+                 p.code.toLowerCase().replace(/\s+/g, '') === clean.toLowerCase().replace(/\s+/g, '')
+          );
+          if (verified) {
+            if (!updated[index].color_name) updated[index].color_name = verified.name;
+            updated[index].hex_code = verified.hex;
+          }
         }
       }
     }
 
     // Smart auto-detection for Color Name
-    if (field === 'color_name' && typeof value === 'string' && !updated[index].pantone_code) {
-      const foundMatch = VERIFIED_PANTONE_LIBRARY.find(
-        p => p.name.toLowerCase().includes(value.toLowerCase().trim())
-      );
-      if (foundMatch) {
-        updated[index].pantone_code = foundMatch.code;
-        updated[index].hex_code = foundMatch.hex;
+    if (field === 'color_name' && typeof value === 'string') {
+      const clean = value.trim();
+      if (clean) {
+        const lookup = lookupPantone(clean);
+        if (lookup.found) {
+          if (lookup.pantone_code) {
+            updated[index].pantone_code = lookup.pantone_code;
+          }
+          if (lookup.hex_code) {
+            updated[index].hex_code = lookup.hex_code;
+          }
+        } else {
+          const verified = VERIFIED_PANTONE_LIBRARY.find(
+            p => p.name.toLowerCase() === clean.toLowerCase() ||
+                 p.name.toLowerCase().startsWith(clean.toLowerCase()) ||
+                 p.name.toLowerCase().includes(clean.toLowerCase())
+          );
+          if (verified) {
+            updated[index].pantone_code = verified.code;
+            updated[index].hex_code = verified.hex;
+          }
+        }
       }
     }
 
     setColorRows(updated);
   };
 
-  // Auto-fill from production order colors
+  // Re-sync/Reset colors directly from production order
   const handleAutofillColors = () => {
-    if (!fabricStockData?.suggested_colors || fabricStockData.suggested_colors.length === 0) {
-      alert('No specific colors found on this production order items.');
-      return;
-    }
-    const avail = fabricStockData.balance_available_for_dyeing || 100;
-    const count = fabricStockData.suggested_colors.length;
-    const splitQty = Math.round((avail / count) * 100) / 100;
-
-    const newRows: NewColorRow[] = fabricStockData.suggested_colors.map((c: any) => ({
-      color_name: c.color_name || 'Color',
-      pantone_code: c.pantone_code || '',
-      hex_code: c.hex_code || '#6366f1',
-      planned_quantity: splitQty,
-      rate_per_unit: '',
-      notes: ''
-    }));
-    setColorRows(newRows);
+    const autoColors = buildOrderColors(order, fabricStockData);
+    setColorRows(autoColors);
   };
 
   // Total planned in modal
@@ -547,11 +660,7 @@ export default function DyeingOrderDetail() {
               <RefreshCw className="w-4 h-4" />
             </button>
             <Button
-              onClick={() => {
-                setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
-                setCreateError('');
-                setShowCreateModal(true);
-              }}
+              onClick={handleOpenCreateModal}
               className="bg-purple-600 hover:bg-purple-700 text-white shadow-xs"
             >
               <Plus className="w-4 h-4 mr-1.5" />
@@ -634,11 +743,7 @@ export default function DyeingOrderDetail() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
-                  setCreateError('');
-                  setShowCreateModal(true);
-                }}
+                onClick={handleOpenCreateModal}
                 className="px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-purple-500 hover:bg-purple-400 text-white shadow-lg shadow-purple-600/30 transition flex items-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -744,11 +849,7 @@ export default function DyeingOrderDetail() {
                   You have <span className="font-bold text-slate-700">{fmt(totalFabricInwarded, 1)} MTR</span> of fabric inwarded from Stage 03. Create your first dyeing order to split quantities by color and Pantone codes (e.g. Green 20, Red 20, Orange 20, White 20, Black 20).
                 </p>
                 <Button
-                  onClick={() => {
-                    setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
-                    setCreateError('');
-                    setShowCreateModal(true);
-                  }}
+                  onClick={handleOpenCreateModal}
                   className="bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   <Plus className="w-4 h-4 mr-1.5" />
@@ -1084,14 +1185,14 @@ export default function DyeingOrderDetail() {
 
           {/* Color Breakdown Section */}
           <div className="pt-3 border-t border-slate-200">
-            <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                   <Palette className="w-3.5 h-3.5 text-purple-600" />
                   Color Breakdown & Pantone Codes
                 </h4>
                 <p className="text-[11px] text-slate-500">
-                  Specify outward quantities per color (e.g., Green 20, Red 20, Orange 20, White 20, Black 20).
+                  Colors auto-populated from order items. Edit or change any color, Pantone code, or quantity.
                 </p>
               </div>
 
@@ -1100,9 +1201,10 @@ export default function DyeingOrderDetail() {
                   type="button"
                   onClick={handleAutofillColors}
                   className="px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition"
+                  title="Reload colors from production order"
                 >
                   <Sparkles className="w-3 h-3 inline mr-1" />
-                  Auto-fill Order Colors
+                  Reset to Order Colors
                 </button>
                 <button
                   type="button"
@@ -1113,6 +1215,23 @@ export default function DyeingOrderDetail() {
                   Add Color
                 </button>
               </div>
+            </div>
+
+            {/* Auto-populated notice badge */}
+            <div className="mb-3 px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between text-xs text-purple-900">
+              <span className="flex items-center gap-1.5">
+                <CheckCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <span>
+                  <strong>Colors auto-loaded from Order {order.order_number}:</strong> You can freely change color names, adjust yardage, or modify Pantone shades.
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={handleAutofillColors}
+                className="text-[11px] font-bold text-purple-700 hover:text-purple-900 underline ml-2 shrink-0 cursor-pointer"
+              >
+                Reset to Order
+              </button>
             </div>
 
             <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
@@ -1129,6 +1248,7 @@ export default function DyeingOrderDetail() {
                     />
                     <input
                       type="text"
+                      list="pantone-colors-datalist"
                       value={row.color_name}
                       onChange={e => handleColorRowChange(idx, 'color_name', e.target.value)}
                       placeholder="Color (e.g. Green)"
@@ -1141,6 +1261,7 @@ export default function DyeingOrderDetail() {
                   <div className="w-full sm:w-44">
                     <input
                       type="text"
+                      list="pantone-codes-datalist"
                       value={row.pantone_code}
                       onChange={e => handleColorRowChange(idx, 'pantone_code', e.target.value)}
                       placeholder="Pantone (e.g. 18-5642 TCX)"
@@ -1188,6 +1309,22 @@ export default function DyeingOrderDetail() {
                 </div>
               ))}
             </div>
+
+            {/* Datalists for native browser autocomplete */}
+            <datalist id="pantone-colors-datalist">
+              {VERIFIED_PANTONE_LIBRARY.map((p) => (
+                <option key={p.code} value={p.name}>
+                  {p.name} ({p.code})
+                </option>
+              ))}
+            </datalist>
+            <datalist id="pantone-codes-datalist">
+              {VERIFIED_PANTONE_LIBRARY.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.code} — {p.name}
+                </option>
+              ))}
+            </datalist>
 
             {/* Total planned summary */}
             <div className="mt-3 p-3 rounded-xl bg-slate-100 flex items-center justify-between text-xs">
