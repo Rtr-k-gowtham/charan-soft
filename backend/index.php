@@ -29,6 +29,7 @@ require_once __DIR__ . '/controllers/TemplatesController.php';
 require_once __DIR__ . '/controllers/ReportsController.php';
 require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/POTemplateController.php';
+require_once __DIR__ . '/controllers/DyeingController.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -104,6 +105,13 @@ try {
         $r0 === 'production' && $r1 === 'rework' && $method === 'GET' => (new ProductionController)->reworkList(),
         $r0 === 'production' && $r1 === 'qc' && $method === 'GET' => (new ProductionController)->qcList(),
         $r0 === 'qc' && $method === 'POST' => (new ProductionController)->recordQC(),
+
+        // ---------------- DYEING (STAGE 04) ----------------
+        $r0 === 'dyeing' && $r1 === 'orders' && $method === 'GET' && !$id => (new DyeingController)->index(),
+        $r0 === 'dyeing' && $r1 === 'orders' && $method === 'POST' && !$id => (new DyeingController)->store(),
+        $r0 === 'dyeing' && $r1 === 'orders' && $method === 'GET' && $id => (new DyeingController)->show($id),
+        $r0 === 'dyeing' && $r1 === 'orders' && $id && $r2 === 'receive' && $method === 'POST' => (new DyeingController)->receive($id),
+        $r0 === 'dyeing' && $r1 === 'fabric-stock' && $method === 'GET' => (new DyeingController)->fabricStock(),
 
         // ---------------- MASTERS ----------------
         $r0 === 'products' && $method === 'GET' => (new MastersController)->getProducts(),

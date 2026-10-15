@@ -32,6 +32,7 @@ import ProductionStageView from './pages/production/ProductionStageView';
 import RequirementOrderDetail from './pages/production/RequirementOrderDetail';
 import POOrderDetail from './pages/production/POOrderDetail';
 import InwardOrderDetail from './pages/production/InwardOrderDetail';
+import DyeingOrderDetail from './pages/production/DyeingOrderDetail';
 
 // Masters
 import Products from './pages/masters/Products';
@@ -107,6 +108,7 @@ function AppRoutes() {
               <Route path="/production/inward" element={<ProductionStageView stageName="Inward" stageCode="INW" breadcrumb={['03. Inward']} />} />
               <Route path="/production/inward/:id" element={<InwardOrderDetail />} />
               <Route path="/production/dyeing" element={<ProductionStageView stageName="Dyeing" stageCode="DYE" breadcrumb={['04. Dyeing']} />} />
+              <Route path="/production/dyeing/:id" element={<DyeingOrderDetail />} />
               <Route path="/production/cutting" element={<ProductionStageView stageName="Cutting — Product-wise" stageCode="CUT" breadcrumb={['05. Cutting — Product-wise']} />} />
               <Route path="/production/embroidery" element={<ProductionStageView stageName="Embroidery — Outward / Inward" stageCode="EMB" breadcrumb={['06. Embroidery — Outward / Inward']} />} />
               <Route path="/production/stitching" element={<ProductionStageView stageName="Stitching — Color-wise Tracking" stageCode="STI" breadcrumb={['07. Stitching — Color-wise Tracking']} />} />

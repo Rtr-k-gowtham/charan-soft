@@ -130,6 +130,15 @@ export const api = {
   getQCList: () => request<unknown[]>('/production/qc'),
   recordQC: (data: unknown) => request<unknown>('/qc', 'POST', data),
 
+  // Dyeing (Stage 04)
+  getDyeingOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/dyeing/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getDyeingOrder: (id: number | string) => request<any>(`/dyeing/orders/${id}`),
+  createDyeingOrder: (data: any) => request<any>('/dyeing/orders', 'POST', data),
+  receiveDyeingOrder: (id: number | string, data: any) => request<any>(`/dyeing/orders/${id}/receive`, 'POST', data),
+  getDyeingFabricStock: (productionOrderId: number | string) =>
+    request<any>(`/dyeing/fabric-stock?production_order_id=${productionOrderId}`),
+
   // Masters
   lookupPantoneColor: (code: string) =>
     request<{

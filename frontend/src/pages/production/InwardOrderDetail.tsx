@@ -36,7 +36,8 @@ import {
   Download,
   ShieldCheck,
   ShoppingCart,
-  Boxes
+  Boxes,
+  Droplets
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -409,6 +410,14 @@ export default function InwardOrderDetail() {
   const pendingUnits = Math.max(0, totalOrderedUnits - totalReceivedUnits);
   const progressPercent = totalOrderedUnits > 0 ? Math.min(100, Math.round((totalReceivedUnits / totalOrderedUnits) * 100)) : 0;
 
+  const fabricPOItems = allPOItems.filter(it => 
+    (it.category_name || '').toUpperCase().includes('FABRIC') ||
+    (it.item_description || '').toUpperCase().includes('FABRIC') ||
+    (it.item_description || '').toUpperCase().includes('MAT-FAB')
+  );
+  const totalFabricInwarded = fabricPOItems.reduce((sum, it) => sum + Number(it.received_quantity || 0), 0);
+  const totalFabricOrdered = fabricPOItems.reduce((sum, it) => sum + Number(it.quantity || 0), 0);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400">
@@ -626,6 +635,38 @@ export default function InwardOrderDetail() {
             </div>
           </div>
         </div>
+
+        {/* STAGE 04 FABRIC DYEING PIPELINE SHORTCUT */}
+        {totalFabricInwarded > 0 && (
+          <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-slate-50 border border-purple-200 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <Droplets className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
+                    Next Stage: 04. Dyeing
+                  </span>
+                  <span className="text-xs font-bold text-slate-800">
+                    {fmt(totalFabricInwarded)} MTR Fabric Inwarded
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Only fabric materials are sent to dyeing. Create a Dyeing Order to split your {fmt(totalFabricInwarded)} MTR fabric by color & Pantone code (e.g. Green 20, Red 20, Orange 20, White 20, Black 20).
+                </p>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => navigate(`/production/dyeing/${order.id}`)}
+              className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-2xs shrink-0 self-end sm:self-auto"
+            >
+              <Droplets className="w-3.5 h-3.5 mr-1.5" />
+              <span>Create Dyeing Order & Track Outward</span>
+            </Button>
+          </div>
+        )}
 
         {/* SECTION 1: INWARD MATERIAL MANAGEMENT & PO ITEMS RECEIVING */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">

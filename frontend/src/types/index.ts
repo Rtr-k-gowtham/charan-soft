@@ -242,6 +242,61 @@ export interface Color {
   status?: string;
 }
 
+export interface DyeingOrderItem {
+  id?: number;
+  dyeing_order_id?: number;
+  color_id?: number;
+  color_name: string;
+  pantone_code?: string;
+  hex_code?: string;
+  planned_quantity: number;
+  received_quantity?: number;
+  rate_per_unit?: number;
+  shrinkage_loss_percent?: number;
+  shade_match_status?: string;
+  notes?: string;
+}
+
+export interface DyeingReceipt {
+  id: number;
+  receipt_no: string;
+  dyeing_order_id: number;
+  production_order_id: number;
+  receipt_date: string;
+  delivery_challan_no?: string;
+  received_by?: string;
+  total_received_quantity: number;
+  photo_url?: string;
+  shade_condition?: string;
+  remarks?: string;
+  items_data?: any;
+  created_at: string;
+}
+
+export interface DyeingOrder {
+  id: number;
+  dyeing_order_no: string;
+  production_order_id: number;
+  fabric_material_id?: number;
+  fabric_name: string;
+  fabric_code?: string;
+  uom: string;
+  supplier_id?: number;
+  dyeing_mill_name?: string;
+  supplier_name?: string;
+  challan_no?: string;
+  order_date: string;
+  expected_delivery_date?: string;
+  total_fabric_quantity: number;
+  total_received_quantity: number;
+  status: 'Sent to Dyeing' | 'In Process' | 'Partially Received' | 'Received' | 'Cancelled';
+  process_type?: string;
+  remarks?: string;
+  created_at?: string;
+  items?: DyeingOrderItem[];
+  receipts?: DyeingReceipt[];
+}
+
 export interface ProductionStage {
   id: number;
   name: string;

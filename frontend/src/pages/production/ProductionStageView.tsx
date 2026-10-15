@@ -32,7 +32,8 @@ import {
   Filter,
   CheckCheck,
   ShoppingCart,
-  PackageOpen
+  PackageOpen,
+  Droplets
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -944,6 +945,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             >
                               <PackageOpen className="w-3.5 h-3.5" />
                               <span>Inward & Proof</span>
+                            </button>
+                          )}
+
+                          {activeCode === 'DYE' && group.order_id && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(`/production/dyeing/${group.order_id}`);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-2xs transition"
+                              title="Open Stage 04: Fabric Dyeing & Pantone Color Orders Workspace"
+                            >
+                              <Droplets className="w-3.5 h-3.5" />
+                              <span>Dyeing & Inward</span>
                             </button>
                           )}
 

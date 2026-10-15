@@ -1576,6 +1576,121 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, qcRec, 'QC recorded', 201);
     }
 
+    // 9.5 Dyeing (Stage 04)
+    if (!db.dyeingOrders) db.dyeingOrders = [];
+    if (!db.dyeingReceipts) db.dyeingReceipts = [];
+
+    if (pathname === '/dyeing/orders' && method === 'GET') {
+      const pId = parsedUrl.searchParams.get('production_order_id');
+      let list = [...(db.dyeingOrders || [])];
+      if (pId) list = list.filter(d => String(d.production_order_id) === String(pId));
+      return sendSuccess(res, list.reverse());
+    }
+
+    if (pathname === '/dyeing/orders' && method === 'POST') {
+      const newDye = {
+        id: (db.dyeingOrders || []).length + 1,
+        dyeing_order_no: `DYE-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: 'Sent to Dyeing',
+        total_received_quantity: 0,
+        created_at: new Date().toISOString(),
+        ...body,
+      };
+      if (!db.dyeingOrders) db.dyeingOrders = [];
+      db.dyeingOrders.push(newDye);
+      saveDB();
+      return sendSuccess(res, newDye, 'Dyeing Order created successfully', 201);
+    }
+
+    const dyeReceiveMatch = pathname.match(/^\/dyeing\/orders\/(\d+)\/receive$/);
+    if (dyeReceiveMatch && method === 'POST') {
+      const dyeId = Number(dyeReceiveMatch[1]);
+      const dyeOrder = (db.dyeingOrders || []).find(d => d.id === dyeId);
+      if (!dyeOrder) return sendError(res, 'Dyeing order not found', 404);
+
+      const items = body.items || [];
+      let batchRec = 0;
+      (dyeOrder.items || []).forEach(it => {
+        const matching = items.find(i => (i.item_id || i.id) === it.id);
+        if (matching) {
+          const q = Number(matching.received_quantity || 0);
+          it.received_quantity = (it.received_quantity || 0) + q;
+          it.shrinkage_loss_percent = Number(matching.shrinkage_loss_percent || 0);
+          it.shade_match_status = matching.shade_match_status || 'Matched';
+          batchRec += q;
+        }
+      });
+      dyeOrder.total_received_quantity = (dyeOrder.total_received_quantity || 0) + batchRec;
+      dyeOrder.status = dyeOrder.total_received_quantity >= dyeOrder.total_fabric_quantity ? 'Received' : 'Partially Received';
+
+      const rec = {
+        id: (db.dyeingReceipts || []).length + 1,
+        receipt_no: `DYE-GRN-${Math.floor(1000 + Math.random() * 9000)}`,
+        dyeing_order_id: dyeId,
+        production_order_id: dyeOrder.production_order_id,
+        receipt_date: body.receipt_date || new Date().toISOString().split('T')[0],
+        delivery_challan_no: body.delivery_challan_no || '',
+        received_by: body.received_by || 'Stores & QC Inward',
+        total_received_quantity: batchRec,
+        photo_url: body.photo_url || null,
+        shade_condition: body.shade_condition || 'Approved - Pantone Matched',
+        remarks: body.remarks || '',
+        created_at: new Date().toISOString(),
+      };
+      if (!dyeOrder.receipts) dyeOrder.receipts = [];
+      dyeOrder.receipts.unshift(rec);
+      if (!db.dyeingReceipts) db.dyeingReceipts = [];
+      db.dyeingReceipts.unshift(rec);
+      saveDB();
+      return sendSuccess(res, { receipt: rec, dyeing_status: dyeOrder.status }, 'Dyed fabric received successfully');
+    }
+
+    if (pathname === '/dyeing/fabric-stock' && method === 'GET') {
+      const pId = Number(parsedUrl.searchParams.get('production_order_id') || 0);
+      const prodOrder = (db.productionOrders || []).find(o => o.id === pId);
+      if (!prodOrder) return sendError(res, 'Production order not found', 404);
+
+      let totalInwarded = 0;
+      let totalOrdered = 0;
+      const fabricMats = [];
+      (db.purchaseOrders || []).forEach(po => {
+        if (po.production_order_id === pId || (po.remarks || '').includes(prodOrder.order_number)) {
+          (po.items || []).forEach(it => {
+            if ((po.category_name || '').toUpperCase().includes('FABRIC') || (it.item_description || '').toUpperCase().includes('FABRIC')) {
+              totalInwarded += Number(it.received_quantity || 0);
+              totalOrdered += Number(it.quantity || 0);
+              fabricMats.push(it);
+            }
+          });
+        }
+      });
+
+      let totalOutward = 0;
+      (db.dyeingOrders || []).forEach(d => {
+        if (d.production_order_id === pId && d.status !== 'Cancelled') {
+          totalOutward += Number(d.total_fabric_quantity || 0);
+        }
+      });
+
+      const suggestedColors = [];
+      (prodOrder.items || []).forEach(it => {
+        if (!suggestedColors.some(c => c.color_name === it.color)) {
+          suggestedColors.push({ color_name: it.color, pantone_code: it.color_pantone_code || '', hex_code: it.color_hex_code || '#6366f1' });
+        }
+      });
+
+      return sendSuccess(res, {
+        production_order: prodOrder,
+        total_fabric_ordered: totalOrdered,
+        total_fabric_inwarded: totalInwarded,
+        total_fabric_outward: totalOutward,
+        balance_available_for_dyeing: Math.max(0, totalInwarded - totalOutward),
+        fabric_materials: fabricMats,
+        suggested_colors: suggestedColors,
+        dyeing_mills: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('DYE') || true),
+      });
+    }
+
     // 10. Masters (Pantone Colors, Colors, Sizes, Units, Designs)
     if (!db.pantone_colors) db.pantone_colors = [];
     if (pathname === '/pantone-colors' && method === 'GET') {
