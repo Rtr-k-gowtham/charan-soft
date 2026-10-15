@@ -75,6 +75,8 @@ export const api = {
   // Suppliers, Customers & Buyers
   getSuppliers: () => request<unknown[]>('/suppliers'),
   createSupplier: (data: unknown) => request<unknown>('/suppliers', 'POST', data),
+  updateSupplier: (id: number | string, data: unknown) => request<unknown>(`/suppliers/${id}`, 'PUT', data),
+  deleteSupplier: (id: number | string) => request<unknown>(`/suppliers/${id}`, 'DELETE'),
   getCustomers: () => request<unknown[]>('/customers'),
   createCustomer: (data: unknown) => request<unknown>('/customers', 'POST', data),
   updateCustomer: (id: number | string, data: unknown) => request<unknown>(`/customers/${id}`, 'PUT', data),

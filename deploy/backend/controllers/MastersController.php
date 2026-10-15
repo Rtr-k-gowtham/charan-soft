@@ -143,8 +143,42 @@ class MastersController {
     public function getSuppliers(): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->query("SELECT * FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC");
+            $stmt = $pdo->query("
+                SELECT s.*, 
+                       c.name AS category_name, 
+                       c.code AS category_code, 
+                       c.icon AS category_icon
+                FROM suppliers s
+                LEFT JOIN categories c ON s.category_id = c.id
+                WHERE s.deleted_at IS NULL
+                ORDER BY s.name ASC
+            ");
             Response::success($stmt->fetchAll());
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function getSupplier(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("
+                SELECT s.*, 
+                       c.name AS category_name, 
+                       c.code AS category_code, 
+                       c.icon AS category_icon
+                FROM suppliers s
+                LEFT JOIN categories c ON s.category_id = c.id
+                WHERE s.id = ? AND s.deleted_at IS NULL
+                LIMIT 1
+            ");
+            $stmt->execute([$id]);
+            $supplier = $stmt->fetch();
+            if (!$supplier) {
+                Response::error("Supplier not found", 404);
+                return;
+            }
+            Response::success($supplier);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -153,29 +187,124 @@ class MastersController {
     public function createSupplier(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
+        $categoryId = !empty($data['category_id']) ? (int)$data['category_id'] : null;
         $contactPerson = trim($data['contact_person'] ?? '');
         $phone = trim($data['phone'] ?? '');
         $email = trim($data['email'] ?? '');
         $gstin = trim($data['gstin'] ?? '');
         $address = trim($data['address'] ?? ($data['city'] ?? ''));
         $paymentTerms = (int)($data['payment_terms_days'] ?? 30);
+        $status = trim($data['status'] ?? 'active');
 
         if (empty($name)) {
             Response::error("Supplier name is required", 422);
             return;
         }
 
+        if (empty($categoryId)) {
+            Response::error("Supplier category is required", 422);
+            return;
+        }
+
         try {
             $pdo = Database::getConnection();
+
+            // Validate category exists in categories master
+            $catCheck = $pdo->prepare("SELECT id, name FROM categories WHERE id = ?");
+            $catCheck->execute([$categoryId]);
+            $catRow = $catCheck->fetch();
+            if (!$catRow) {
+                Response::error("Selected category is invalid or does not exist", 422);
+                return;
+            }
+
             $code = trim($data['code'] ?? 'SUP-' . rand(100, 999));
             $stmt = $pdo->prepare("
-                INSERT INTO suppliers (name, code, contact_person, phone, email, gstin, address, payment_terms_days)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO suppliers (name, category_id, code, contact_person, phone, email, gstin, address, payment_terms_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $address, $paymentTerms]);
+            $stmt->execute([$name, $categoryId, $code, $contactPerson, !empty($phone) ? $phone : 'N/A', $email, $gstin, $address, $paymentTerms, $status]);
             $id = (int)$pdo->lastInsertId();
             AuditLogger::log('Suppliers', 'CREATE', $id, null, $data);
-            Response::success(['id' => $id, 'code' => $code, 'name' => $name], "Supplier created successfully", 201);
+            Response::success([
+                'id' => $id, 
+                'code' => $code, 
+                'name' => $name, 
+                'category_id' => $categoryId, 
+                'category_name' => $catRow['name']
+            ], "Supplier created successfully", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateSupplier(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $categoryId = !empty($data['category_id']) ? (int)$data['category_id'] : null;
+        $contactPerson = trim($data['contact_person'] ?? '');
+        $phone = trim($data['phone'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $gstin = trim($data['gstin'] ?? '');
+        $address = trim($data['address'] ?? ($data['city'] ?? ''));
+        $paymentTerms = (int)($data['payment_terms_days'] ?? 30);
+        $status = trim($data['status'] ?? 'active');
+
+        if (empty($name)) {
+            Response::error("Supplier name is required", 422);
+            return;
+        }
+
+        if (empty($categoryId)) {
+            Response::error("Supplier category is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+
+            // Check supplier exists
+            $supCheck = $pdo->prepare("SELECT id FROM suppliers WHERE id = ? AND deleted_at IS NULL");
+            $supCheck->execute([$id]);
+            if (!$supCheck->fetch()) {
+                Response::error("Supplier not found", 404);
+                return;
+            }
+
+            // Validate category exists in categories master
+            $catCheck = $pdo->prepare("SELECT id, name FROM categories WHERE id = ?");
+            $catCheck->execute([$categoryId]);
+            $catRow = $catCheck->fetch();
+            if (!$catRow) {
+                Response::error("Selected category is invalid or does not exist", 422);
+                return;
+            }
+
+            $stmt = $pdo->prepare("
+                UPDATE suppliers 
+                SET name = ?, category_id = ?, contact_person = ?, phone = ?, email = ?, gstin = ?, address = ?, payment_terms_days = ?, status = ?
+                WHERE id = ?
+            ");
+            $stmt->execute([$name, $categoryId, $contactPerson, !empty($phone) ? $phone : 'N/A', $email, $gstin, $address, $paymentTerms, $status, $id]);
+            AuditLogger::log('Suppliers', 'UPDATE', $id, null, $data);
+            Response::success([
+                'id' => $id, 
+                'name' => $name, 
+                'category_id' => $categoryId, 
+                'category_name' => $catRow['name']
+            ], "Supplier updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteSupplier(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("UPDATE suppliers SET deleted_at = NOW() WHERE id = ?");
+            $stmt->execute([$id]);
+            AuditLogger::log('Suppliers', 'DELETE', $id, null, null);
+            Response::success(null, "Supplier deleted successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
