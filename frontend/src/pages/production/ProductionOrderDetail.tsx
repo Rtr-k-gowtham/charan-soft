@@ -247,6 +247,17 @@ export default function ProductionOrderDetail() {
     return Array.from(set).sort();
   }, [bomReport]);
 
+  const groupedProducts = useMemo(() => {
+    if (!order?.items) return {};
+    const groups: Record<string, ProductionOrderItem[]> = {};
+    order.items.forEach(item => {
+      const cat = item.category_name || order.category_name || 'General';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [order]);
+
   if (loading) {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -292,16 +303,7 @@ export default function ProductionOrderDetail() {
   const overallPct = totalQty > 0 ? Math.min(100, Math.round((completedQty / totalQty) * 100)) : 0;
   const items = order.items || [];
 
-  const groupedProducts = useMemo(() => {
-    const list = order.items || [];
-    const groups: Record<string, ProductionOrderItem[]> = {};
-    list.forEach(item => {
-      const cat = item.category_name || order.category_name || 'General';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(item);
-    });
-    return groups;
-  }, [order]);
+
 
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-slate-50/50">
