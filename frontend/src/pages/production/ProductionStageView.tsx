@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionOrderItem, ProductionStage } from '../../types';
+import { ProductionOrder, ProductionOrderItem, ProductionStage, OrderMaterialRequirementItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -12,6 +12,7 @@ import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
+import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
 import {
   RefreshCw,
   ChevronRight,
@@ -85,6 +86,64 @@ interface OrderGroup {
   total_stage_quantity: number;
   total_order_quantity: number;
   unique_products_count: number;
+}
+
+function OrderPOIssuerWrapper({
+  orderId,
+  orderNumber,
+  orderTitle,
+  targetDeliveryDate,
+}: {
+  orderId: number;
+  orderNumber: string;
+  orderTitle?: string;
+  targetDeliveryDate?: string;
+}) {
+  const [materials, setMaterials] = useState<OrderMaterialRequirementItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`cheran_order_bom_${orderId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMaterials(parsed);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (e) {}
+
+    api.getOrderMaterialRequirements(orderId)
+      .then(res => {
+        const report = (res as any)?.data || res;
+        setMaterials(report?.total_materials || []);
+      })
+      .catch(() => setMaterials([]))
+      .finally(() => setLoading(false));
+  }, [orderId]);
+
+  if (loading) {
+    return (
+      <div className="p-3 bg-white rounded-xl border border-slate-200 text-center text-xs text-slate-500 mb-3 flex items-center justify-center gap-2">
+        <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
+        <span>Loading category materials and matched vendors for PO issuance...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <CategoryPOIssuer
+        orderId={orderId}
+        orderNumber={orderNumber}
+        orderTitle={orderTitle}
+        targetDeliveryDate={targetDeliveryDate}
+        materials={materials}
+      />
+    </div>
+  );
 }
 
 export default function ProductionStageView({ stageName, stageCode, breadcrumb }: Props) {
@@ -900,6 +959,17 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             </button>
                           </div>
                         )}
+
+                        {/* Purchase Order (PO) Stage: Category-Based Material Procurement & PO Issuance */}
+                        {activeCode === 'PO' && group.order_id && (
+                          <OrderPOIssuerWrapper
+                            orderId={group.order_id}
+                            orderNumber={group.order_number}
+                            orderTitle={group.order_title}
+                            targetDeliveryDate={group.target_delivery_date}
+                          />
+                        )}
+
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">

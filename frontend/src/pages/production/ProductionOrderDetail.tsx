@@ -3,13 +3,14 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionOrderItem, ProductionStage, ProductionOrderBOMReport } from '../../types';
+import { ProductionOrder, ProductionOrderItem, ProductionStage, ProductionOrderBOMReport, OrderMaterialRequirementItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
+import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
 import {
   ArrowLeft,
   Calendar,
@@ -28,7 +29,14 @@ import {
   ChevronDown,
   ChevronUp,
   Search,
-  DollarSign
+  DollarSign,
+  Pencil,
+  Trash2,
+  Plus,
+  Save,
+  RotateCcw,
+  Check,
+  X
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -54,14 +62,16 @@ export default function ProductionOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-
-
   // Material Requirements (BOM) State
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
   const [loadingBOM, setLoadingBOM] = useState(false);
   const [bomSearchQuery, setBomSearchQuery] = useState('');
   const [bomCategoryFilter, setBomCategoryFilter] = useState('ALL');
 
+  // BOM Editing State
+  const [isEditingBOM, setIsEditingBOM] = useState(false);
+  const [editedMaterials, setEditedMaterials] = useState<OrderMaterialRequirementItem[]>([]);
+  const [sendingToPO, setSendingToPO] = useState(false);
 
   // Move stage modal state
   const [moveOpen, setMoveOpen] = useState(false);
@@ -99,6 +109,24 @@ export default function ProductionOrderDetail() {
         setStages((stagesRes as ProductionStage[]) || []);
         if (bomRes) {
           const bData = (bomRes as any)?.data || (bomRes as ProductionOrderBOMReport);
+          // Check for saved customized BOM in localStorage
+          try {
+            const saved = localStorage.getItem(`cheran_order_bom_${id}`);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                bData.total_materials = parsed;
+                bData.summary = {
+                  ...bData.summary,
+                  total_distinct_materials: parsed.length,
+                  total_estimated_cost: parsed.reduce(
+                    (sum: number, it: any) => sum + (Number(it.total_required_qty || 0) * Number(it.unit_cost || 0)),
+                    0
+                  ),
+                };
+              }
+            }
+          } catch (e) {}
           setBomReport(bData);
         }
       })
@@ -132,6 +160,123 @@ export default function ProductionOrderDetail() {
       setError((err as Error).message || 'Failed to generate material requirements list');
     } finally {
       setLoadingBOM(false);
+    }
+  };
+
+  // BOM Editing Handlers
+  const handleStartEditBOM = () => {
+    if (!bomReport?.total_materials) return;
+    setEditedMaterials(JSON.parse(JSON.stringify(bomReport.total_materials)));
+    setIsEditingBOM(true);
+  };
+
+  const handleCancelEditBOM = () => {
+    setIsEditingBOM(false);
+    setEditedMaterials([]);
+  };
+
+  const handleUpdateEditedRow = (index: number, field: keyof OrderMaterialRequirementItem, value: any) => {
+    setEditedMaterials(prev => {
+      const copy = [...prev];
+      const row = { ...copy[index], [field]: value };
+      if (field === 'total_required_qty' || field === 'unit_cost') {
+        const qty = Number(field === 'total_required_qty' ? value : row.total_required_qty) || 0;
+        const rate = Number(field === 'unit_cost' ? value : row.unit_cost) || 0;
+        row.total_estimated_cost = Math.round(qty * rate * 100) / 100;
+      }
+      copy[index] = row;
+      return copy;
+    });
+  };
+
+  const handleAddMaterialRow = () => {
+    setEditedMaterials(prev => [
+      ...prev,
+      {
+        material_id: null,
+        material_code: `CUST-${prev.length + 1}`,
+        name: 'New Material',
+        category: 'Fabric',
+        uom: 'MTR',
+        total_required_qty: 100,
+        current_stock: 0,
+        shortage_qty: 100,
+        unit_cost: 0,
+        total_estimated_cost: 0,
+        status: 'Needs Procurement',
+      }
+    ]);
+  };
+
+  const handleDeleteMaterialRow = (index: number) => {
+    setEditedMaterials(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveBOM = () => {
+    if (!id) return;
+    const cleaned = editedMaterials.map(m => {
+      const qty = Number(m.total_required_qty) || 0;
+      const rate = Number(m.unit_cost) || 0;
+      return {
+        ...m,
+        total_required_qty: qty,
+        unit_cost: rate,
+        total_estimated_cost: Math.round(qty * rate * 100) / 100,
+      };
+    });
+
+    try {
+      localStorage.setItem(`cheran_order_bom_${id}`, JSON.stringify(cleaned));
+    } catch (e) {}
+
+    setBomReport(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        total_materials: cleaned,
+        summary: {
+          ...prev.summary,
+          total_distinct_materials: cleaned.length,
+          total_estimated_cost: cleaned.reduce((sum, it) => sum + (it.total_estimated_cost || 0), 0),
+        }
+      };
+    });
+
+    setIsEditingBOM(false);
+    setToastMessage('Material Requirements (BOM) saved successfully!');
+  };
+
+  const handleResetBOM = async () => {
+    if (!id) return;
+    try {
+      localStorage.removeItem(`cheran_order_bom_${id}`);
+    } catch (e) {}
+    await handleGenerateBOM();
+    setToastMessage('BOM reset to default Buyer Master components!');
+  };
+
+  // Advance Order to Stage 2: Purchase Order (PO)
+  const handleSendToPOStage = async () => {
+    if (!order || !order.items || order.items.length === 0) return;
+    setSendingToPO(true);
+    try {
+      const poStage = stages.find(s => s.code === 'PO' || s.name.toLowerCase().includes('purchase order')) || { id: 2 };
+      await Promise.all(
+        order.items.map(it =>
+          api.moveStage({
+            order_item_id: it.id,
+            to_stage_id: poStage.id,
+            quantity_moved: it.total_quantity,
+            remarks: 'BOM requirements confirmed, advanced to Purchase Order (PO) stage',
+          })
+        )
+      );
+      setToastMessage(`Order ${order.order_number} successfully moved to 02. Purchase Order (PO) stage!`);
+      loadData();
+    } catch (err: unknown) {
+      setError((err as Error).message || 'Failed to move order to PO stage');
+    } finally {
+      setSendingToPO(false);
     }
   };
 
@@ -258,6 +403,20 @@ export default function ProductionOrderDetail() {
     return groups;
   }, [order]);
 
+  const hasCustomBOM = useMemo(() => {
+    if (!id) return false;
+    return !!localStorage.getItem(`cheran_order_bom_${id}`);
+  }, [id, bomReport]);
+
+  const isAtPOStage = useMemo(() => {
+    if (!order?.items) return false;
+    return order.items.some(it => {
+      const sName = (it.current_stage_name || '').toLowerCase();
+      const sCode = ((it as any).stage_code || '').toUpperCase();
+      return sCode === 'PO' || sName.includes('purchase order') || (it.current_stage_id === 2);
+    });
+  }, [order]);
+
   if (loading) {
     return (
       <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -325,7 +484,7 @@ export default function ProductionOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Button
               variant="secondary"
               icon={<ArrowLeft className="w-3.5 h-3.5" />}
@@ -333,6 +492,18 @@ export default function ProductionOrderDetail() {
             >
               Back
             </Button>
+
+            {!isAtPOStage && (
+              <Button
+                variant="primary"
+                disabled={sendingToPO}
+                icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                onClick={handleSendToPOStage}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs"
+              >
+                {sendingToPO ? 'Moving to PO Stage...' : 'Send to PO Stage'}
+              </Button>
+            )}
 
             <Button
               variant="secondary"
@@ -369,6 +540,12 @@ export default function ProductionOrderDetail() {
             )}
             <StatusBadge status={order.priority} />
             <StatusBadge status={order.status} />
+            {isAtPOStage && (
+              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                <Check className="w-3 h-3 text-emerald-600" />
+                Stage 02: PO Active
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
@@ -391,10 +568,10 @@ export default function ProductionOrderDetail() {
           </div>
         </div>
 
-        {/* SECTION 1: Material Requirements Table */}
+        {/* SECTION 1: Material Requirements Table (Editable BOM) */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Sparkles className="w-4 h-4 text-indigo-600" />
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                 Material Requirements (BOM)
@@ -404,39 +581,273 @@ export default function ProductionOrderDetail() {
                   ({filteredMaterials.length} of {bomReport.summary.total_distinct_materials} items)
                 </span>
               )}
+              {hasCustomBOM && (
+                <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded">
+                  Customized BOM
+                </span>
+              )}
             </div>
 
-            {/* Filter and Search Bar */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-56">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={bomSearchQuery}
-                  onChange={e => setBomSearchQuery(e.target.value)}
-                  placeholder="Search material..."
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-                />
-              </div>
+            {/* Actions & Filters */}
+            <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
+              {!isEditingBOM ? (
+                <>
+                  <div className="relative flex-1 sm:w-48">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={bomSearchQuery}
+                      onChange={e => setBomSearchQuery(e.target.value)}
+                      placeholder="Search material..."
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                    />
+                  </div>
 
-              {availableBOMCategories.length > 1 && (
-                <select
-                  value={bomCategoryFilter}
-                  onChange={e => setBomCategoryFilter(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-                >
-                  <option value="ALL">All Categories</option>
-                  {availableBOMCategories.map(c => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                  {availableBOMCategories.length > 1 && (
+                    <select
+                      value={bomCategoryFilter}
+                      onChange={e => setBomCategoryFilter(e.target.value)}
+                      className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                    >
+                      <option value="ALL">All Categories</option>
+                      {availableBOMCategories.map(c => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Pencil className="w-3.5 h-3.5 text-indigo-600" />}
+                    onClick={handleStartEditBOM}
+                    className="text-xs font-semibold"
+                  >
+                    Edit BOM
+                  </Button>
+
+                  {hasCustomBOM && (
+                    <button
+                      type="button"
+                      onClick={handleResetBOM}
+                      title="Reset to Buyer Master BOM"
+                      className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+
+                  {!isAtPOStage && (
+                    <Button
+                      size="sm"
+                      disabled={sendingToPO}
+                      icon={<ArrowRight className="w-3.5 h-3.5" />}
+                      onClick={handleSendToPOStage}
+                      className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs"
+                    >
+                      Send to PO Stage
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Plus className="w-3.5 h-3.5 text-emerald-600" />}
+                    onClick={handleAddMaterialRow}
+                    className="text-xs font-semibold"
+                  >
+                    Add Material
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    icon={<Save className="w-3.5 h-3.5" />}
+                    onClick={handleSaveBOM}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
+                  >
+                    Save BOM
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<X className="w-3.5 h-3.5" />}
+                    onClick={handleCancelEditBOM}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                </>
               )}
             </div>
           </div>
 
-          {loadingBOM ? (
+          {isEditingBOM ? (
+            /* Editable BOM Mode */
+            <div className="overflow-x-auto p-2">
+              <div className="mb-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg text-xs text-indigo-800 flex items-center justify-between">
+                <span>
+                  <strong>Edit Mode Active:</strong> You can adjust required quantities, unit rates, UOM, category, or add/remove materials. Click <strong>Save BOM</strong> when finished.
+                </span>
+                <span className="font-mono font-bold">
+                  Total Items: {editedMaterials.length}
+                </span>
+              </div>
+
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">#</th>
+                    <th className="py-2.5 px-3 min-w-[200px]">Material Name & Code</th>
+                    <th className="py-2.5 px-3 w-36">Category</th>
+                    <th className="py-2.5 px-3 w-28">UOM</th>
+                    <th className="py-2.5 px-3 w-32 text-right">Required Qty</th>
+                    <th className="py-2.5 px-3 w-32 text-right">Unit Rate (₹)</th>
+                    <th className="py-2.5 px-3 w-32 text-right">Total Cost</th>
+                    <th className="py-2.5 px-3 w-16 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {editedMaterials.map((m, idx) => {
+                    const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
+
+                    return (
+                      <tr key={idx} className="hover:bg-indigo-50/30 transition">
+                        <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
+
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            value={m.name}
+                            onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-brand-500"
+                            placeholder="Material Name"
+                          />
+                          <input
+                            type="text"
+                            value={m.material_code || ''}
+                            onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
+                            className="w-full mt-1 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-500"
+                            placeholder="Code (optional)"
+                          />
+                        </td>
+
+                        <td className="py-2 px-3">
+                          <select
+                            value={m.category}
+                            onChange={e => handleUpdateEditedRow(idx, 'category', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800 focus:ring-1 focus:ring-brand-500"
+                          >
+                            <option value="Fabric">Fabric</option>
+                            <option value="Thread">Thread</option>
+                            <option value="Trims">Trims</option>
+                            <option value="Elastic">Elastic</option>
+                            <option value="Button">Button</option>
+                            <option value="Zip">Zip</option>
+                            <option value="Label">Label</option>
+                            <option value="Packaging">Packaging</option>
+                            <option value="General">General</option>
+                          </select>
+                        </td>
+
+                        <td className="py-2 px-3">
+                          <select
+                            value={m.uom}
+                            onChange={e => handleUpdateEditedRow(idx, 'uom', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-semibold text-slate-700"
+                          >
+                            <option value="MTR">MTR (Meters)</option>
+                            <option value="KG">KG (Kilograms)</option>
+                            <option value="PCS">PCS (Pieces)</option>
+                            <option value="CONE">CONE (Cones)</option>
+                            <option value="ROLL">ROLL (Rolls)</option>
+                            <option value="SET">SET (Sets)</option>
+                            <option value="BOX">BOX (Boxes)</option>
+                            <option value="YDS">YDS (Yards)</option>
+                          </select>
+                        </td>
+
+                        <td className="py-2 px-3 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={m.total_required_qty}
+                            onChange={e => handleUpdateEditedRow(idx, 'total_required_qty', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900 focus:ring-1 focus:ring-brand-500"
+                          />
+                        </td>
+
+                        <td className="py-2 px-3 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={m.unit_cost}
+                            onChange={e => handleUpdateEditedRow(idx, 'unit_cost', e.target.value)}
+                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800 focus:ring-1 focus:ring-brand-500"
+                          />
+                        </td>
+
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 text-xs">
+                          {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
+                        </td>
+
+                        <td className="py-2 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMaterialRow(idx)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                            title="Delete row"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div className="mt-3 flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<Plus className="w-3.5 h-3.5 text-emerald-600" />}
+                  onClick={handleAddMaterialRow}
+                  className="text-xs font-semibold"
+                >
+                  Add Another Material Line
+                </Button>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleCancelEditBOM}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    icon={<Save className="w-3.5 h-3.5" />}
+                    onClick={handleSaveBOM}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
+                  >
+                    Save BOM Changes
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : loadingBOM ? (
             <div className="p-8 text-center">
               <RefreshCw className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
               <span className="text-xs text-slate-500">Calculating raw material requirements...</span>
@@ -493,6 +904,19 @@ export default function ProductionOrderDetail() {
             </div>
           )}
         </div>
+
+        {/* SECTION 2: Category-Based Material Procurement & Vendor PO Issuance */}
+        <CategoryPOIssuer
+          orderId={order.id}
+          orderNumber={order.order_number}
+          orderTitle={order.title}
+          targetDeliveryDate={order.target_delivery_date}
+          materials={bomReport?.total_materials || []}
+          onPOCreated={(poNum) => {
+            setToastMessage(`Purchase Order ${poNum} created successfully!`);
+            loadData();
+          }}
+        />
 
         {/* SECTION 2: Products Ordered (Grouped by Category) */}
         <div className="space-y-4 pt-2">
