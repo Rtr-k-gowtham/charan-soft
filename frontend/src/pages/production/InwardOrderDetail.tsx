@@ -160,20 +160,36 @@ export default function InwardOrderDetail() {
         if (Array.isArray(po.items) && ordNum && po.items.some((it: any) => it.order_no === ordNum)) return true;
         return false;
       });
-      setExistingPOs(related);
+      const detailedRelated = await Promise.all(
+        related.map(async (p) => {
+          if (Array.isArray(p.items) && p.items.length > 0) return p;
+          try {
+            const full = await api.getPurchaseOrder(p.id);
+            const data = (full as any)?.data || full;
+            return {
+              ...p,
+              items: Array.isArray(data?.items) ? data.items : p.items || [],
+              receipts: Array.isArray(data?.receipts) ? data.receipts : p.receipts || [],
+            };
+          } catch {
+            return p;
+          }
+        })
+      );
+      setExistingPOs(detailedRelated);
 
       // Collect receipts for this project
       const rawReceipts = (receiptsRes as any)?.data || receiptsRes || [];
       const relReceipts = (Array.isArray(rawReceipts) ? rawReceipts : []).filter((r: any) => {
         if (r.production_order_id && String(r.production_order_id) === String(id)) return true;
         if (r.production_order_number && r.production_order_number === ordNum) return true;
-        if (related.some(p => p.id === r.po_id || p.po_number === r.po_number)) return true;
+        if (detailedRelated.some(p => p.id === r.po_id || p.po_number === r.po_number)) return true;
         return false;
       });
 
       // Also gather directly from related PO receipts array
       const allPoReceipts: any[] = [];
-      related.forEach(p => {
+      detailedRelated.forEach(p => {
         (p.receipts || []).forEach((r: any) => {
           allPoReceipts.push({
             ...r,
@@ -211,10 +227,27 @@ export default function InwardOrderDetail() {
   }, [successToast]);
 
   // Open Inward Receive Modal for a PO
-  const handleOpenReceive = (po: PurchaseOrder) => {
-    setSelectedPO(po);
+  const handleOpenReceive = async (po: PurchaseOrder) => {
+    let currentPO = po;
+    if (!currentPO.items || currentPO.items.length === 0) {
+      try {
+        const full = await api.getPurchaseOrder(po.id);
+        const data = (full as any)?.data || full;
+        if (data && Array.isArray(data.items) && data.items.length > 0) {
+          currentPO = {
+            ...po,
+            items: data.items,
+            receipts: data.receipts || po.receipts || [],
+          };
+        }
+      } catch (err) {
+        console.warn('Could not load full PO items', err);
+      }
+    }
+
+    setSelectedPO(currentPO);
     const initialQty: Record<number, string> = {};
-    (po.items || []).forEach(it => {
+    (currentPO.items || []).forEach(it => {
       if (it.id) {
         const ordered = Number(it.quantity || 0);
         const received = Number(it.received_quantity || 0);
@@ -229,7 +262,7 @@ export default function InwardOrderDetail() {
     setReceiptDate(new Date().toISOString().split('T')[0]);
     setReceivedBy('Stores Executive');
     setCondition('Good & Verified');
-    setRemarks(`Material inward received against PO ${po.po_number}`);
+    setRemarks(`Material inward received against PO ${currentPO.po_number}`);
     setPhotoProof(null);
     setPhotoName('');
     setReceiveError('');

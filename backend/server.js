@@ -1099,6 +1099,20 @@ const server = http.createServer(async (req, res) => {
           d.setDate(d.getDate() + 15);
           po.payment_due_date = d.toISOString().split('T')[0];
         }
+
+        // Auto-advance linked production order items to Stage 03: Inward
+        if (po.production_order_id && Array.isArray(db.productionOrders)) {
+          const prodOrder = db.productionOrders.find(o => o.id === po.production_order_id);
+          if (prodOrder && Array.isArray(prodOrder.items)) {
+            prodOrder.items.forEach(it => {
+              if (it.current_stage_id === 2 || it.current_stage_id === 1) {
+                it.current_stage_id = 3;
+                it.current_stage_name = 'Inward';
+                it.stage_sequence = 3;
+              }
+            });
+          }
+        }
       }
       saveDB();
       return sendSuccess(res, { id: po.id, status: po.status, payment_due_date: po.payment_due_date }, `Purchase Order status updated to ${po.status}`);

@@ -576,18 +576,25 @@ class PurchaseOrderController {
                 return;
             }
 
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN photo_url LONGTEXT NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN received_by VARCHAR(255) NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN condition_status VARCHAR(100) NULL"); } catch (Exception $e) {}
+
             $receiptNo = 'GRN-' . str_pad((string)rand(100, 99999), 5, '0', STR_PAD_LEFT);
             $grnStmt = $pdo->prepare("
-                INSERT INTO purchase_receipts (receipt_no, purchase_order_id, receipt_date, delivery_challan_no, vehicle_no, remarks)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO purchase_receipts (receipt_no, purchase_order_id, receipt_date, delivery_challan_no, vehicle_no, remarks, photo_url, received_by, condition_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $grnStmt->execute([
                 $receiptNo,
                 $poId,
                 $data['receipt_date'] ?? date('Y-m-d'),
-                $data['challan_no'] ?? null,
+                $data['delivery_challan_no'] ?? $data['challan_no'] ?? null,
                 $data['vehicle_no'] ?? null,
-                $data['remarks'] ?? 'Received'
+                $data['remarks'] ?? 'Received',
+                $data['photo_url'] ?? null,
+                $data['received_by'] ?? null,
+                $data['condition'] ?? $data['condition_status'] ?? 'Good & Verified'
             ]);
             $receiptId = (int)$pdo->lastInsertId();
 
@@ -741,11 +748,12 @@ class PurchaseOrderController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("
-                SELECT pr.*, po.po_number, s.name as supplier_name,
+                SELECT pr.*, po.po_number, po.production_order_id, pro.order_number as production_order_number, s.name as supplier_name,
                        (SELECT COUNT(*) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as item_count,
                        (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as total_quantity
                 FROM purchase_receipts pr
                 JOIN purchase_orders po ON pr.purchase_order_id = po.id
+                LEFT JOIN production_orders pro ON po.production_order_id = pro.id
                 JOIN suppliers s ON po.supplier_id = s.id
                 ORDER BY pr.id DESC
             ");
@@ -951,7 +959,7 @@ class PurchaseOrderController {
 
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date, production_order_id FROM purchase_orders WHERE id = ? FOR UPDATE");
             $stmt->execute([$poId]);
             $po = $stmt->fetch();
 
@@ -990,6 +998,13 @@ class PurchaseOrderController {
 
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ?, ordered_at = ?, payment_due_date = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $orderedAt, $dueDate, $poId]);
+
+                // Auto-advance linked production order items to Stage 03: Inward (current_stage_id = 3)
+                if (!empty($po['production_order_id'])) {
+                    try {
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_id = 3 WHERE production_order_id = ? AND current_stage_id IN (1, 2)")->execute([(int)$po['production_order_id']]);
+                    } catch (Exception $stageEx) {}
+                }
             } else {
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $poId]);

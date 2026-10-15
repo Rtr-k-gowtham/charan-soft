@@ -1,8 +1,6 @@
 // Service Worker for CHERAN SOFT GOODS PWA
-const CACHE_NAME = 'cheran-soft-v1';
+const CACHE_NAME = 'cheran-soft-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -39,12 +37,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Always use network directly for API or backend calls
-  if (url.pathname.startsWith('/api') || url.pathname.includes('/backend/') || event.request.method !== 'GET') {
+  // Always use network directly for API or backend calls or non-GET requests
+  if (url.pathname.startsWith('/api') || url.pathname.includes('/backend') || event.request.method !== 'GET') {
     return;
   }
 
-  // Network first with cache fallback for navigation and static assets
+  // For navigation requests, ALWAYS fetch from network first so app updates are instant
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return caches.match('/index.html');
+      })
+    );
+    return;
+  }
+
+  // Network first with cache fallback for static assets
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -57,12 +65,7 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => {
-        return caches.match(event.request).then((cached) => {
-          if (cached) return cached;
-          if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
-          }
-        });
+        return caches.match(event.request);
       })
   );
 });

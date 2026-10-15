@@ -8,6 +8,7 @@ if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || wi
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').then((reg) => {
       console.log('PWA ServiceWorker registered successfully:', reg.scope);
+      reg.update().catch(() => {});
     }).catch((err) => {
       console.warn('PWA ServiceWorker registration failed:', err);
     });

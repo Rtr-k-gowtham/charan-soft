@@ -28,7 +28,8 @@ import {
   Check,
   Send,
   FileText,
-  DollarSign
+  DollarSign,
+  PackageCheck
 } from 'lucide-react';
 
 interface Props {
@@ -299,7 +300,30 @@ export default function CategoryPOIssuer({
     setActionError(null);
     try {
       await api.updatePurchaseOrderStatus(po.id, 'Ordered');
-      setActionSuccess(`Purchase Order ${po.po_number} is officially Issued to ${po.supplier_name || 'supplier'}!`);
+
+      // Auto-advance linked production order items to Stage 03: Inward
+      try {
+        if (orderId) {
+          const ordRes = await api.getProductionOrder(Number(orderId));
+          const ord = (ordRes as any)?.data || ordRes;
+          if (ord && Array.isArray(ord.items)) {
+            await Promise.all(
+              ord.items.map((it: any) =>
+                api.moveStage({
+                  order_item_id: it.id,
+                  to_stage_id: 3, // Stage 03: Inward
+                  quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
+                  remarks: `PO ${po.po_number} issued to ${po.supplier_name || 'supplier'} — advanced to Inward stage`,
+                }).catch(() => {})
+              )
+            );
+          }
+        }
+      } catch (stageErr) {
+        console.warn('Could not auto-advance stage on client:', stageErr);
+      }
+
+      setActionSuccess(`Purchase Order ${po.po_number} is officially Issued! Order has moved to Stage 03: Inward.`);
       // Refresh POs
       const updatedPOs = await api.getPurchaseOrders().catch(() => []);
       const rel = (updatedPOs as PurchaseOrder[]).filter(p => {
@@ -422,11 +446,40 @@ export default function CategoryPOIssuer({
 
   return (
     <div className="bg-white rounded-xl border border-indigo-200/90 shadow-2xs overflow-hidden space-y-4">
-      {/* Action Notification */}
+      {/* Action Notification with Direct Inward Route */}
       {actionSuccess && (
-        <div className="mx-4 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-800 flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{actionSuccess}</span>
+        <div className="mx-4 mt-4 p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-300 rounded-xl text-xs font-semibold text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{actionSuccess}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/production/inward/${orderId}`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-2xs text-xs self-start sm:self-auto transition shrink-0"
+          >
+            <PackageCheck className="w-4 h-4" />
+            <span>Go to Stage 03: Inward Receive →</span>
+          </button>
+        </div>
+      )}
+
+      {/* Persistent Inward Stage Notice when POs are issued */}
+      {existingPOs.some(p => (p.status || '').toLowerCase() !== 'draft') && (
+        <div className="mx-4 mt-3 p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center gap-2.5">
+            <PackageCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span className="text-indigo-950 font-medium">
+              Purchase Orders are officially issued! This project has advanced to <strong>Stage 03: Inward</strong> where raw materials can be received against PO items with photo proof.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate(`/production/inward/${orderId}`)}
+            className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-2xs shrink-0 transition self-start sm:self-auto"
+          >
+            <span>Inward Workspace →</span>
+          </button>
         </div>
       )}
 
@@ -594,14 +647,25 @@ export default function CategoryPOIssuer({
                                 </button>
                               </>
                             ) : (
-                              /* Ordered PO: immutable — show locked badge */
-                              <span
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed"
-                                title="This PO has been officially issued to the vendor and is locked for editing"
-                              >
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                Issued & Locked
-                              </span>
+                              /* Ordered PO: immutable — show locked badge & direct Inward Receive action */
+                              <>
+                                <span
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed"
+                                  title="This PO has been officially issued to the vendor and is locked for editing"
+                                >
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Issued & Locked
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/production/inward/${orderId}`)}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition"
+                                  title="Receive ordered items from this PO in Stage 03 Inward"
+                                >
+                                  <PackageCheck className="w-3 h-3" />
+                                  <span>Receive in Inward →</span>
+                                </button>
+                              </>
                             )}
 
                             <button
