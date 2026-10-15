@@ -31,7 +31,8 @@ import {
   Sparkles,
   Filter,
   CheckCheck,
-  ShoppingCart
+  ShoppingCart,
+  PackageOpen
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -928,6 +929,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             >
                               <ShoppingCart className="w-3.5 h-3.5" />
                               <span>Enter POs & Issue</span>
+                            </button>
+                          )}
+
+                          {activeCode === 'INW' && group.order_id && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(`/production/inward/${group.order_id}`);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition"
+                              title="Open Stage 03: Material Inward & Proof Workspace for this order"
+                            >
+                              <PackageOpen className="w-3.5 h-3.5" />
+                              <span>Inward & Proof</span>
                             </button>
                           )}
 

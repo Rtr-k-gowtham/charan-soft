@@ -8,10 +8,46 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Drawer from '../../components/ui/Drawer';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
-import { PackageOpen, RefreshCw, CheckCircle2, AlertCircle, Building2, Calendar, Eye, Layers } from 'lucide-react';
+import { PackageOpen, RefreshCw, CheckCircle2, AlertCircle, Building2, Calendar, Eye, Layers, Camera, Upload, ZoomIn, Trash2, ShieldCheck, Download } from 'lucide-react';
 
 const fmtCur = (n: number) => '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
+
+function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(event.target?.result as string);
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function MaterialReceipts() {
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
@@ -23,6 +59,13 @@ export default function MaterialReceipts() {
   const [error, setError] = useState('');
   const [receiveForm, setReceiveForm] = useState<Record<number, string>>({});
   const [itemErrors, setItemErrors] = useState<Record<number, string>>({});
+  const [dcNumber, setDcNumber] = useState('');
+  const [vehicleNumber, setVehicleNumber] = useState('');
+  const [photoProof, setPhotoProof] = useState<string | null>(null);
+  const [photoName, setPhotoName] = useState('');
+  const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string; dcNo?: string } | null>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -44,15 +87,30 @@ export default function MaterialReceipts() {
         const ordered = Number(it.quantity || 0);
         const prevRecv = Number(it.received_quantity || 0);
         const remaining = Math.max(0, ordered - prevRecv);
-        // Auto-fill by default with the ordered/remaining quantity
         init[it.id] = String(remaining > 0 ? remaining : ordered);
       }
     });
     setReceiveForm(init);
     setItemErrors({});
     setError('');
+    setDcNumber(`DC-${Math.floor(1000 + Math.random() * 9000)}`);
+    setVehicleNumber('');
+    setPhotoProof(null);
+    setPhotoName('');
     setReceivePO(po);
     setReceiveOpen(true);
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setPhotoName(file.name);
+      const dataUrl = await processImageFile(file);
+      setPhotoProof(dataUrl);
+    } catch {
+      setError('Failed to process image file');
+    }
   };
 
   const handleQtyChange = (itemId: number, valStr: string, remaining: number, desc: string, uom: string) => {
@@ -150,7 +208,14 @@ export default function MaterialReceipts() {
         })
         .filter(it => it.quantity_received > 0);
 
-      await api.receiveGoods(receivePO.id, { items });
+      await api.receiveGoods(receivePO.id, {
+        items,
+        delivery_challan_no: dcNumber || undefined,
+        challan_no: dcNumber || undefined,
+        vehicle_no: vehicleNumber || undefined,
+        photo_url: photoProof || undefined,
+        photo_proof: photoProof || undefined,
+      });
       setReceiveOpen(false);
       load();
     } catch (e: unknown) {
@@ -405,6 +470,49 @@ export default function MaterialReceipts() {
                 </tbody>
               </table>
             </div>
+
+            {/* Receipts Log with Proof Photos */}
+            {viewPO.receipts && viewPO.receipts.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <h4 className="text-[11px] font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                  Past GRN Receipts & Delivery Proofs ({viewPO.receipts.length})
+                </h4>
+                <div className="space-y-2">
+                  {viewPO.receipts.map((rc: any, idx: number) => (
+                    <div key={idx} className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-3 text-xs">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                            {rc.receipt_no}
+                          </span>
+                          <span className="text-slate-500">{rc.receipt_date}</span>
+                          <span className="font-mono font-semibold text-emerald-700">
+                            DC: {rc.delivery_challan_no || rc.challan_no || '—'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-1">
+                          Inward Qty: <strong className="font-mono text-slate-800">{fmt(rc.quantity_received)} units</strong>
+                          {rc.vehicle_no && ` • Vehicle: ${rc.vehicle_no}`}
+                          {rc.remarks && ` • "${rc.remarks}"`}
+                        </p>
+                      </div>
+
+                      {rc.photo_url && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewPhoto({ url: rc.photo_url, title: `Proof: ${rc.receipt_no}`, dcNo: rc.delivery_challan_no || rc.challan_no })}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-700 shadow-2xs shrink-0"
+                        >
+                          <Eye className="w-3 h-3 text-indigo-600" />
+                          <span>View Proof</span>
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Drawer>
@@ -558,7 +666,138 @@ export default function MaterialReceipts() {
               </table>
             </div>
           </div>
+
+          {/* Metadata & Photo Proof Section */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                Delivery Challan (DC) / Invoice No.
+              </label>
+              <input
+                type="text"
+                value={dcNumber}
+                onChange={e => setDcNumber(e.target.value)}
+                placeholder="e.g. DC-1042"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                Vehicle / Transport No.
+              </label>
+              <input
+                type="text"
+                value={vehicleNumber}
+                onChange={e => setVehicleNumber(e.target.value)}
+                placeholder="e.g. TN 38 BX 4102"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+              />
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                Delivery Proof Photo (Camera / Upload)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                ref={cameraInputRef}
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+
+              {!photoProof ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Camera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold transition"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-2 bg-white p-1.5 px-2.5 rounded-lg border border-emerald-300">
+                  <span className="text-[11px] font-bold text-emerald-800 truncate flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    {photoName || 'Proof Photo Attached'}
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewPhoto({ url: photoProof, title: 'Inward Proof Photo', dcNo: dcNumber })}
+                      className="p-1 text-slate-500 hover:text-brand-600 rounded"
+                      title="Preview"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPhotoProof(null); setPhotoName(''); }}
+                      className="p-1 text-slate-400 hover:text-red-600 rounded"
+                      title="Remove"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+      </Modal>
+
+      {/* Lightbox Photo Preview */}
+      <Modal
+        open={!!previewPhoto}
+        onClose={() => setPreviewPhoto(null)}
+        title={previewPhoto?.title || 'Proof Document'}
+        subtitle={previewPhoto?.dcNo ? `Challan No: ${previewPhoto.dcNo}` : undefined}
+        size="2xl"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-slate-400">Material Inward Physical Proof Document</span>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={() => setPreviewPhoto(null)}>
+                Close
+              </Button>
+              {previewPhoto?.url && (
+                <a
+                  href={previewPhoto.url}
+                  download="Proof_Document.jpg"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-bold transition shadow-xs"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
+                </a>
+              )}
+            </div>
+          </div>
+        }
+      >
+        {previewPhoto && (
+          <div className="flex justify-center p-2 bg-slate-900/90 rounded-lg">
+            <img src={previewPhoto.url} alt="Proof" className="max-h-[65vh] w-auto max-w-full rounded object-contain" />
+          </div>
+        )}
       </Modal>
     </div>
   );

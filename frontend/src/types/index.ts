@@ -177,6 +177,7 @@ export interface PurchaseOrderItem {
   material_id?: number;
   line_number?: number;
   item_description: string;
+  description?: string;
   spec?: string;
   design?: string;
   color?: string;
@@ -229,6 +230,7 @@ export interface PurchaseOrder {
   production_order_title?: string;
   items?: PurchaseOrderItem[];
   payments?: PurchasePayment[];
+  receipts?: any[];
 }
 
 export interface Color {

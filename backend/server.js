@@ -1170,27 +1170,60 @@ const server = http.createServer(async (req, res) => {
         }
       });
 
+      const receivedItemsDetailed = rItems
+        .filter(ri => Number(ri.quantity_received || ri.received_quantity || 0) > 0)
+        .map(ri => {
+          const itemId = Number(ri.purchase_order_item_id || ri.item_id || 0);
+          const item = (po.items || []).find(i => i.id === itemId) || {};
+          return {
+            purchase_order_item_id: itemId,
+            item_description: item.item_description || item.description || ri.item_description || 'Material Item',
+            material_id: item.material_id,
+            uom: item.uom || 'PCS',
+            quantity_received: Number(ri.quantity_received || ri.received_quantity || 0),
+          };
+        });
+
       const grn = {
         id: (po.receipts || []).length + 1,
-        receipt_no: `GRN-000${20 + Math.floor(Math.random() * 80)}`,
+        receipt_no: body.receipt_no || `GRN-000${20 + Math.floor(Math.random() * 80)}`,
         receipt_date: body.receipt_date || new Date().toISOString().split('T')[0],
-        delivery_challan_no: body.challan_no || `DC-${Math.floor(1000 + Math.random() * 9000)}`,
+        delivery_challan_no: body.challan_no || body.delivery_challan_no || `DC-${Math.floor(1000 + Math.random() * 9000)}`,
         vehicle_no: body.vehicle_no || '',
+        received_by: body.received_by || 'Stores Executive',
+        condition: body.condition || 'Good',
         quantity_received: totalQty,
+        photo_url: body.photo_url || body.photo_proof || body.photo || null,
         remarks: body.remarks || 'Goods verified and added to inventory',
+        items: receivedItemsDetailed,
+        po_id: po.id,
+        po_number: po.po_number,
+        supplier_id: po.supplier_id,
+        supplier_name: po.supplier_name,
+        category_id: po.category_id,
+        category_name: po.category_name,
+        production_order_id: po.production_order_id,
+        production_order_number: po.production_order_number,
+        created_at: new Date().toISOString(),
       };
       po.receipts = po.receipts || [];
       po.receipts.unshift(grn);
       po.status = 'Ordered';
       saveDB();
-      return sendSuccess(res, grn, 'Goods received and stock updated');
+      return sendSuccess(res, grn, 'Goods received and stock updated with photo proof');
     }
 
     // Receipts / Payments / Returns endpoints
     if (pathname === '/purchase/receipts' && method === 'GET') {
       const allReceipts = [];
       db.purchaseOrders.forEach(p => {
-        (p.receipts || []).forEach(r => allReceipts.push({ ...r, po_number: p.po_number, supplier_name: p.supplier_name }));
+        (p.receipts || []).forEach(r => allReceipts.push({
+          ...r,
+          po_number: p.po_number,
+          supplier_name: p.supplier_name,
+          production_order_id: p.production_order_id,
+          production_order_number: p.production_order_number
+        }));
       });
       return sendSuccess(res, allReceipts);
     }

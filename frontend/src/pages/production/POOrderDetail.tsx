@@ -149,9 +149,9 @@ export default function POOrderDetail() {
           })
         )
       );
-      setSuccessToast(`Order ${order.order_number} successfully advanced to next stage!`);
+      setSuccessToast(`Order ${order.order_number} successfully advanced to Stage 03: Inward!`);
       setMoveOpen(false);
-      navigate('/production/inward');
+      navigate(`/production/inward/${order.id}`);
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to advance order stage');
     } finally {
