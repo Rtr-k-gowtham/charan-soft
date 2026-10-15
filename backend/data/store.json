@@ -274,8 +274,8 @@
       "gstin": "27AABCT1234A1Z9",
       "city": "Mumbai",
       "state": "Maharashtra",
-      "avatar_style": "adventurer",
-      "avatar_seed": "Zudio-Adventurer-1"
+      "avatar_style": "lorelei",
+      "avatar_seed": "Zudio-Lorelei-1"
     },
     {
       "id": 2,
@@ -300,8 +300,8 @@
       "gstin": "29AABCA9012C1Z3",
       "city": "Bengaluru",
       "state": "Karnataka",
-      "avatar_style": "adventurer",
-      "avatar_seed": "AllenSolly-Adventurer-3"
+      "avatar_style": "lorelei",
+      "avatar_seed": "AllenSolly-Lorelei-3"
     },
     {
       "id": 4,
@@ -317,8 +317,8 @@
       "name": "Global Retailers LLC",
       "phone": "9876543210",
       "billing_address": "45 Broadway",
-      "avatar_style": "adventurer",
-      "avatar_seed": "Global-Adventurer-5"
+      "avatar_style": "lorelei",
+      "avatar_seed": "Global-Lorelei-5"
     }
   ],
   "materials": [

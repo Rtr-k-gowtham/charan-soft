@@ -93,7 +93,7 @@ export interface Buyer {
   billing_address?: string;
   gstin?: string;
   status: string;
-  avatar_style?: 'adventurer' | 'lorelei' | string;
+  avatar_style?: 'lorelei' | string;
   avatar_seed?: string;
   avatar_config?: string | Record<string, any>;
 }

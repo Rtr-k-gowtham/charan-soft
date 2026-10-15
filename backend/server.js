@@ -599,7 +599,7 @@ const server = http.createServer(async (req, res) => {
       const newCust = {
         id: db.customers.length + 1,
         code: generatedCode,
-        avatar_style: body.avatar_style || 'adventurer',
+        avatar_style: body.avatar_style || 'lorelei',
         avatar_seed: body.avatar_seed || `buyer-${generatedCode}`,
         avatar_config: body.avatar_config || null,
         ...body,
@@ -1156,7 +1156,7 @@ const server = http.createServer(async (req, res) => {
           ...po,
           customer_code: cust?.code || '',
           customer_name: cust?.name || po.customer_name || 'Buyer',
-          customer_avatar_style: cust?.avatar_style || 'adventurer',
+          customer_avatar_style: cust?.avatar_style || 'lorelei',
           customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${po.customer_id || 1}`,
           customer_avatar_config: cust?.avatar_config || null,
         };
@@ -1215,7 +1215,7 @@ const server = http.createServer(async (req, res) => {
         customer_id: matchedCust?.id || null,
         customer_code: matchedCust?.code || null,
         customer_name: matchedCust?.name || 'Direct Order',
-        customer_avatar_style: matchedCust?.avatar_style || 'adventurer',
+        customer_avatar_style: matchedCust?.avatar_style || 'lorelei',
         customer_avatar_seed: matchedCust?.avatar_seed || (matchedCust ? `buyer-${matchedCust.code || matchedCust.id}` : null),
         customer_avatar_config: matchedCust?.avatar_config || null,
         category_id: Number(body.category_id || 1),

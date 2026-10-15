@@ -3,14 +3,13 @@ import React, { useState, useMemo } from 'react';
 import {
   AvatarStyle,
   AvatarConfig,
-  ADVENTURER_PRESETS,
   LORELEI_PRESETS,
   AVATAR_BG_PALETTE,
   AVATAR_LICENSES,
 } from '../../lib/avatarService';
 import BuyerAvatar from '../ui/BuyerAvatar';
 import Button from '../ui/Button';
-import { Check, Dices, Sparkles, Palette, ShieldCheck, X, RefreshCw } from 'lucide-react';
+import { Check, Dices, Sparkles, Palette, ShieldCheck, X, RefreshCw, Search } from 'lucide-react';
 
 interface AvatarSelectorModalProps {
   open: boolean;
@@ -30,15 +29,13 @@ interface AvatarSelectorModalProps {
 export default function AvatarSelectorModal({
   open,
   onClose,
-  initialStyle = 'adventurer',
   initialSeed = '',
   initialConfig,
-  buyerName = 'New Buyer',
   buyerCode = 'BUY-NEW',
   onSelect,
 }: AvatarSelectorModalProps) {
-  // Active style tab
-  const [selectedStyle, setSelectedStyle] = useState<AvatarStyle>(initialStyle);
+  // Style is strictly Lorelei
+  const selectedStyle: AvatarStyle = 'lorelei';
   
   // Active seed
   const [currentSeed, setCurrentSeed] = useState<string>(
@@ -56,13 +53,12 @@ export default function AvatarSelectorModal({
   // Filter or custom search input
   const [searchFilter, setSearchFilter] = useState('');
 
-  // Active presets based on style tab
+  // Active presets based on Lorelei style
   const currentPresets = useMemo(() => {
-    const list = selectedStyle === 'lorelei' ? LORELEI_PRESETS : ADVENTURER_PRESETS;
-    if (!searchFilter.trim()) return list;
+    if (!searchFilter.trim()) return LORELEI_PRESETS;
     const q = searchFilter.toLowerCase();
-    return list.filter((p) => p.label.toLowerCase().includes(q) || p.seed.toLowerCase().includes(q));
-  }, [selectedStyle, searchFilter]);
+    return LORELEI_PRESETS.filter((p) => p.label.toLowerCase().includes(q) || p.seed.toLowerCase().includes(q));
+  }, [searchFilter]);
 
   // Current config object
   const activeConfig: AvatarConfig = useMemo(() => {
@@ -74,23 +70,23 @@ export default function AvatarSelectorModal({
 
   if (!open) return null;
 
-  // Quick seed randomizer
+  // Quick seed randomizer for Lorelei
   const handleRandomizeSeed = () => {
-    const prefixes = ['Star', 'Sun', 'Moon', 'Sky', 'River', 'Nova', 'Apex', 'Cloud', 'Echo', 'Zen'];
+    const prefixes = ['Avery', 'Bella', 'Caleb', 'Daphne', 'Ethan', 'Fiona', 'Gavin', 'Harper', 'Iris', 'Jasper', 'Keira', 'Liam', 'Maya', 'Noah', 'Olivia', 'Quinn', 'Rowan', 'Theo', 'Zoe'];
     const randomName = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(100 + Math.random() * 900)}`;
     setCurrentSeed(randomName);
   };
 
   const handleApply = () => {
     onSelect({
-      avatar_style: selectedStyle,
+      avatar_style: 'lorelei',
       avatar_seed: currentSeed.trim() || `buyer-${buyerCode}`,
       avatar_config: activeConfig,
     });
     onClose();
   };
 
-  const activeLicense = AVATAR_LICENSES[selectedStyle];
+  const activeLicense = AVATAR_LICENSES.lorelei;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
@@ -103,8 +99,8 @@ export default function AvatarSelectorModal({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 leading-tight">Choose Cartoon Avatar</h3>
-              <p className="text-xs text-slate-500">Pick from Adventurer & Lorelei styles or customize your own</p>
+              <h3 className="text-base font-bold text-slate-900 leading-tight">Choose Cartoon Avatar (Lorelei)</h3>
+              <p className="text-xs text-slate-500">Pick from our Lorelei character collection or create your own custom seed</p>
             </div>
           </div>
           <button
@@ -125,7 +121,7 @@ export default function AvatarSelectorModal({
             <div className="flex flex-col items-center gap-2">
               <div className="relative group">
                 <BuyerAvatar
-                  style={selectedStyle}
+                  style="lorelei"
                   seed={currentSeed}
                   config={activeConfig}
                   size="2xl"
@@ -135,7 +131,7 @@ export default function AvatarSelectorModal({
                 <button
                   type="button"
                   onClick={handleRandomizeSeed}
-                  title="Randomize expression & features"
+                  title="Randomize character"
                   className="absolute -bottom-1 -right-1 p-1.5 bg-brand-600 text-white rounded-full shadow hover:bg-brand-700 transition"
                 >
                   <Dices className="w-4 h-4" />
@@ -185,7 +181,7 @@ export default function AvatarSelectorModal({
                       type="text"
                       value={currentSeed}
                       onChange={(e) => setCurrentSeed(e.target.value)}
-                      placeholder="e.g. Oliver, Emma, BUY-001"
+                      placeholder="e.g. Avery, Emma, BUY-001"
                       className="flex-1 text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
                     />
                     <button
@@ -233,33 +229,23 @@ export default function AvatarSelectorModal({
             </div>
           </div>
 
-          {/* Style Selector Tabs & Presets Gallery */}
+          {/* Presets Gallery Header & Search */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-              {/* Style Tabs */}
-              <div className="inline-flex p-1 bg-slate-100 rounded-xl gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedStyle('adventurer')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
-                    selectedStyle === 'adventurer'
-                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Adventurer Style
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStyle('lorelei')}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
-                    selectedStyle === 'lorelei'
-                      ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Lorelei Style
-                </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">
+                  Lorelei Gallery ({currentPresets.length})
+                </span>
+                <div className="relative">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    placeholder="Search characters..."
+                    className="text-[11px] pl-6 pr-2 py-1 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 w-36"
+                  />
+                </div>
               </div>
 
               {/* License Info Badge */}
@@ -274,19 +260,16 @@ export default function AvatarSelectorModal({
             {/* Presets Gallery Grid */}
             <div>
               <p className="text-xs text-slate-500 mb-2">
-                Click any character card below to load its features:
+                Click any character card below to apply its features:
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5 max-h-56 overflow-y-auto p-1">
                 {currentPresets.map((preset) => {
-                  const isSelected =
-                    selectedStyle === preset.style &&
-                    currentSeed.toLowerCase() === preset.seed.toLowerCase();
+                  const isSelected = currentSeed.toLowerCase() === preset.seed.toLowerCase();
                   return (
                     <button
                       key={preset.id}
                       type="button"
                       onClick={() => {
-                        setSelectedStyle(preset.style);
                         setCurrentSeed(preset.seed);
                         if (preset.backgroundColor) {
                           setSelectedBg(preset.backgroundColor);
@@ -300,7 +283,7 @@ export default function AvatarSelectorModal({
                     >
                       <div className="relative mb-1.5">
                         <BuyerAvatar
-                          style={preset.style}
+                          style="lorelei"
                           seed={preset.seed}
                           config={{ backgroundColor: preset.backgroundColor || selectedBg }}
                           size="lg"
@@ -316,7 +299,7 @@ export default function AvatarSelectorModal({
                         {preset.seed}
                       </span>
                       <span className="text-[9px] text-slate-400 capitalize">
-                        {preset.style}
+                        Lorelei
                       </span>
                     </button>
                   );
@@ -329,7 +312,7 @@ export default function AvatarSelectorModal({
         {/* Footer */}
         <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="text-xs text-slate-500 text-center sm:text-left">
-            Selected: <span className="font-semibold text-slate-700 capitalize">{selectedStyle}</span> ({currentSeed})
+            Selected: <span className="font-semibold text-slate-700 capitalize">Lorelei</span> ({currentSeed})
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button variant="secondary" onClick={onClose} className="flex-1 sm:flex-none">

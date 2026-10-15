@@ -108,7 +108,7 @@ export default function CreateProductionOrder() {
     billing_address: '',
     gstin: '',
   });
-  const [buyerAvatarStyle, setBuyerAvatarStyle] = useState<AvatarStyle>('adventurer');
+  const [buyerAvatarStyle, setBuyerAvatarStyle] = useState<AvatarStyle>('lorelei');
   const [buyerAvatarSeed, setBuyerAvatarSeed] = useState<string>('');
   const [buyerAvatarConfig, setBuyerAvatarConfig] = useState<AvatarConfig>({ backgroundColor: 'b6e3f4' });
 
@@ -122,7 +122,7 @@ export default function CreateProductionOrder() {
       billing_address: '',
       gstin: '',
     });
-    setBuyerAvatarStyle('adventurer');
+    setBuyerAvatarStyle('lorelei');
     setBuyerAvatarSeed(`buyer-${nextCode}`);
     setBuyerAvatarConfig({ backgroundColor: 'b6e3f4' });
     setBuyerError('');
@@ -130,11 +130,9 @@ export default function CreateProductionOrder() {
   };
 
   const handleRandomizeBuyerAvatar = () => {
-    const styles: AvatarStyle[] = ['adventurer', 'lorelei'];
-    const randomStyle = styles[Math.floor(Math.random() * styles.length)];
-    const prefixes = ['Client', 'Partner', 'Apex', 'Star', 'Zen', 'Nova', 'Titan'];
+    const prefixes = ['Avery', 'Bella', 'Caleb', 'Daphne', 'Ethan', 'Fiona', 'Gavin', 'Harper', 'Iris', 'Jasper', 'Keira', 'Liam', 'Maya', 'Noah', 'Olivia', 'Quinn', 'Rowan', 'Theo', 'Zoe'];
     const randomSeed = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(100 + Math.random() * 900)}`;
-    setBuyerAvatarStyle(randomStyle);
+    setBuyerAvatarStyle('lorelei');
     setBuyerAvatarSeed(randomSeed);
   };
 
@@ -771,7 +769,7 @@ export default function CreateProductionOrder() {
                           {selectedCustomer.code || `BUY-${selectedCustomer.id}`}
                         </span>
                         <span className="text-[10px] uppercase font-semibold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                          {selectedCustomer.avatar_style || 'adventurer'}
+                          {selectedCustomer.avatar_style || 'lorelei'}
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 mt-0.5">

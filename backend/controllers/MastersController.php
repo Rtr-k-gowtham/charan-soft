@@ -209,7 +209,7 @@ class MastersController {
             return;
         }
 
-        $avatarStyle = trim($data['avatar_style'] ?? 'adventurer');
+        $avatarStyle = trim($data['avatar_style'] ?? 'lorelei');
         $avatarSeed = trim($data['avatar_seed'] ?? ('buyer-' . $code));
         $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
 

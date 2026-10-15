@@ -39,7 +39,7 @@ export default function Buyers() {
   });
 
   // Avatar state for create/edit
-  const [avatarStyle, setAvatarStyle] = useState<AvatarStyle>('adventurer');
+  const [avatarStyle, setAvatarStyle] = useState<AvatarStyle>('lorelei');
   const [avatarSeed, setAvatarSeed] = useState<string>('');
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>({ backgroundColor: 'b6e3f4' });
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
@@ -85,7 +85,7 @@ export default function Buyers() {
       gstin: '',
     });
     const nextCode = `BUY-${String(data.length + 1).padStart(3, '0')}`;
-    setAvatarStyle('adventurer');
+    setAvatarStyle('lorelei');
     setAvatarSeed(`buyer-${nextCode}`);
     setAvatarConfig({ backgroundColor: 'b6e3f4' });
     setError('');
@@ -102,7 +102,7 @@ export default function Buyers() {
       billing_address: buyer.billing_address || '',
       gstin: buyer.gstin || '',
     });
-    setAvatarStyle((buyer.avatar_style as AvatarStyle) || 'adventurer');
+    setAvatarStyle('lorelei');
     setAvatarSeed(buyer.avatar_seed || `buyer-${buyer.code || buyer.id}`);
     setAvatarConfig(parseAvatarConfig(buyer.avatar_config) || { backgroundColor: 'b6e3f4' });
     setError('');
@@ -110,11 +110,9 @@ export default function Buyers() {
   };
 
   const handleRandomizeAvatar = () => {
-    const styles: AvatarStyle[] = ['adventurer', 'lorelei'];
-    const randomStyle = styles[Math.floor(Math.random() * styles.length)];
-    const prefixes = ['Buyer', 'Artisan', 'Prime', 'Apex', 'Star', 'Zen', 'Nova', 'Titan'];
+    const prefixes = ['Avery', 'Bella', 'Caleb', 'Daphne', 'Ethan', 'Fiona', 'Gavin', 'Harper', 'Iris', 'Jasper', 'Keira', 'Liam', 'Maya', 'Noah', 'Olivia', 'Quinn', 'Rowan', 'Theo', 'Zoe'];
     const randomSeed = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(100 + Math.random() * 900)}`;
-    setAvatarStyle(randomStyle);
+    setAvatarStyle('lorelei');
     setAvatarSeed(randomSeed);
   };
 
