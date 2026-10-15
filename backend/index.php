@@ -120,6 +120,7 @@ try {
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'DELETE' => (new MastersController)->deleteBuyerProduct($id, (int)$segments[3]),
         ($r0 === 'customers' || $r0 === 'buyers') && $method === 'GET' && !$id => (new MastersController)->getCustomers(),
         ($r0 === 'customers' || $r0 === 'buyers') && $method === 'POST' && !$id => (new MastersController)->createCustomer(),
+        ($r0 === 'customers' || $r0 === 'buyers') && ($method === 'PUT' || $method === 'PATCH') && $id => (new MastersController)->updateCustomer((int)$id),
 
         $r0 === 'pantone-colors' && $method === 'GET' => (new MastersController)->lookupPantoneColor(),
         $r0 === 'pantone-colors' && $method === 'POST' => (new MastersController)->createPantoneColor(),

@@ -273,7 +273,9 @@
       "email": "buying@zudio.com",
       "gstin": "27AABCT1234A1Z9",
       "city": "Mumbai",
-      "state": "Maharashtra"
+      "state": "Maharashtra",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Zudio-Lorelei-1"
     },
     {
       "id": 2,
@@ -284,7 +286,9 @@
       "email": "sourcing@maxlifestyle.in",
       "gstin": "29AABCL5678B1Z1",
       "city": "Bengaluru",
-      "state": "Karnataka"
+      "state": "Karnataka",
+      "avatar_style": "lorelei",
+      "avatar_seed": "MaxLifestyle-Lorelei-2"
     },
     {
       "id": 3,
@@ -295,20 +299,26 @@
       "email": "production@allensolly.com",
       "gstin": "29AABCA9012C1Z3",
       "city": "Bengaluru",
-      "state": "Karnataka"
+      "state": "Karnataka",
+      "avatar_style": "lorelei",
+      "avatar_seed": "AllenSolly-Lorelei-3"
     },
     {
       "id": 4,
       "code": "CUST-004",
       "name": "Metro Retail Apparel",
-      "phone": "9123456789"
+      "phone": "9123456789",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Metro-Lorelei-4"
     },
     {
       "id": 5,
       "code": "CUST-005",
       "name": "Global Retailers LLC",
       "phone": "9876543210",
-      "billing_address": "45 Broadway"
+      "billing_address": "45 Broadway",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Global-Lorelei-5"
     }
   ],
   "materials": [

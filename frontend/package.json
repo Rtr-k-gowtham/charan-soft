@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "@tailwindcss/postcss": "^4.3.3",
     "cheran-erp-textile-suite": "file:..",
     "lucide-react": "^1.52.0",

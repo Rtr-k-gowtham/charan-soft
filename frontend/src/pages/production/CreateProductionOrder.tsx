@@ -30,7 +30,13 @@ import {
   Loader2,
   Sliders,
   Sparkles,
+  UserPlus,
+  UserCheck,
+  Dices,
 } from 'lucide-react';
+import BuyerAvatar from '../../components/ui/BuyerAvatar';
+import AvatarSelectorModal from '../../components/buyers/AvatarSelectorModal';
+import { getBuyerAvatarDataUri, AvatarStyle, AvatarConfig } from '../../lib/avatarService';
 
 interface ColorRecord {
   id: number;
@@ -89,6 +95,90 @@ export default function CreateProductionOrder() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Quick New Buyer modal & avatar state
+  const [addBuyerModalOpen, setAddBuyerModalOpen] = useState(false);
+  const [buyerAvatarModalOpen, setBuyerAvatarModalOpen] = useState(false);
+  const [buyerSaving, setBuyerSaving] = useState(false);
+  const [buyerError, setBuyerError] = useState('');
+  const [buyerForm, setBuyerForm] = useState({
+    name: '',
+    contact_person: '',
+    phone: '',
+    email: '',
+    billing_address: '',
+    gstin: '',
+  });
+  const [buyerAvatarStyle, setBuyerAvatarStyle] = useState<AvatarStyle>('lorelei');
+  const [buyerAvatarSeed, setBuyerAvatarSeed] = useState<string>('');
+  const [buyerAvatarConfig, setBuyerAvatarConfig] = useState<AvatarConfig>({ backgroundColor: 'b6e3f4' });
+
+  const handleOpenNewBuyer = () => {
+    const nextCode = `BUY-${String(customers.length + 1).padStart(3, '0')}`;
+    setBuyerForm({
+      name: '',
+      contact_person: '',
+      phone: '',
+      email: '',
+      billing_address: '',
+      gstin: '',
+    });
+    setBuyerAvatarStyle('lorelei');
+    setBuyerAvatarSeed(`buyer-${nextCode}`);
+    setBuyerAvatarConfig({ backgroundColor: 'b6e3f4' });
+    setBuyerError('');
+    setAddBuyerModalOpen(true);
+  };
+
+  const handleRandomizeBuyerAvatar = () => {
+    const prefixes = ['Avery', 'Bella', 'Caleb', 'Daphne', 'Ethan', 'Fiona', 'Gavin', 'Harper', 'Iris', 'Jasper', 'Keira', 'Liam', 'Maya', 'Noah', 'Olivia', 'Quinn', 'Rowan', 'Theo', 'Zoe'];
+    const randomSeed = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(100 + Math.random() * 900)}`;
+    setBuyerAvatarStyle('lorelei');
+    setBuyerAvatarSeed(randomSeed);
+  };
+
+  const handleSaveNewBuyer = async () => {
+    if (!buyerForm.name.trim() || !buyerForm.phone.trim()) {
+      setBuyerError('Buyer name and phone are required');
+      return;
+    }
+    setBuyerSaving(true);
+    setBuyerError('');
+    const autoCode = `BUY-${String(customers.length + 1).padStart(3, '0')}`;
+    try {
+      const res = (await api.createBuyer({
+        ...buyerForm,
+        code: autoCode,
+        avatar_style: buyerAvatarStyle,
+        avatar_seed: buyerAvatarSeed || `buyer-${autoCode}`,
+        avatar_config: buyerAvatarConfig,
+      })) as any;
+
+      const newId = res?.id || res?.data?.id || Date.now();
+      const newCust: Customer = {
+        id: Number(newId),
+        code: autoCode,
+        name: buyerForm.name,
+        contact_person: buyerForm.contact_person,
+        phone: buyerForm.phone,
+        email: buyerForm.email,
+        billing_address: buyerForm.billing_address,
+        gstin: buyerForm.gstin,
+        status: 'Active',
+        avatar_style: buyerAvatarStyle,
+        avatar_seed: buyerAvatarSeed || `buyer-${autoCode}`,
+        avatar_config: buyerAvatarConfig,
+      };
+
+      setCustomers((prev) => [...prev, newCust]);
+      setForm((f) => ({ ...f, customer_id: String(newCust.id) }));
+      setAddBuyerModalOpen(false);
+    } catch (e: unknown) {
+      setBuyerError((e as Error).message || 'Failed to save buyer');
+    } finally {
+      setBuyerSaving(false);
+    }
+  };
 
   // Add Color Modal State (Pantone lookup driven + Custom RGB/HEX fallback)
   const [addColorModalOpen, setAddColorModalOpen] = useState(false);
@@ -354,14 +444,20 @@ export default function CreateProductionOrder() {
     });
   }, [colors]);
 
-  // Format buyers (customers) for SearchableSelect
+  // Format buyers (customers) for SearchableSelect with avatars
   const customerOptions: SelectOption[] = useMemo(() => {
     return customers.map((c) => ({
       value: String(c.id),
-      label: c.name + (c.code ? ` (${c.code})` : ''),
-      sublabel: [c.phone, c.email].filter(Boolean).join(' • ') || undefined,
+      label: `${c.name}${c.code ? ` (${c.code})` : ''}`,
+      sublabel: [c.code, c.contact_person, c.phone].filter(Boolean).join(' • ') || undefined,
+      avatarUri: getBuyerAvatarDataUri(c),
     }));
   }, [customers]);
+
+  // Selected buyer profile
+  const selectedCustomer = useMemo(() => {
+    return customers.find((c) => String(c.id) === String(form.customer_id)) || null;
+  }, [customers, form.customer_id]);
 
   // Priority options for SearchableSelect
   const priorityOptions: SelectOption[] = [
@@ -646,17 +742,74 @@ export default function CreateProductionOrder() {
                 />
               </div>
 
-              <div>
+              <div className="lg:col-span-2">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-medium text-slate-600">Buyer Selection</label>
+                  <button
+                    type="button"
+                    onClick={handleOpenNewBuyer}
+                    className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-1 transition"
+                  >
+                    <Plus className="w-3 h-3" />
+                    New Buyer
+                  </button>
+                </div>
                 <SearchableSelect
-                  label="Buyer *"
                   placeholder="— Select Buyer —"
                   searchPlaceholder="Search buyer by name, code..."
                   options={customerOptions}
                   value={form.customer_id}
                   onChange={(val) => handleBuyerChange(val)}
                   clearable
+                  actionButton={{
+                    label: '+ Add New Buyer',
+                    onClick: handleOpenNewBuyer,
+                  }}
                 />
               </div>
+
+              {/* Selected Buyer Profile Card */}
+              {selectedCustomer && (
+                <div className="lg:col-span-4 bg-gradient-to-r from-brand-50/70 via-indigo-50/40 to-slate-50 border border-brand-200/90 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3.5">
+                    <BuyerAvatar
+                      buyer={selectedCustomer}
+                      size="xl"
+                      shape="circle"
+                      className="ring-2 ring-white shadow-sm"
+                    />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-sm">{selectedCustomer.name}</span>
+                        <span className="font-mono text-xs font-bold text-brand-700 bg-brand-100/80 px-2 py-0.5 rounded border border-brand-200">
+                          {selectedCustomer.code || `BUY-${selectedCustomer.id}`}
+                        </span>
+                        <span className="text-[10px] uppercase font-semibold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          {selectedCustomer.avatar_style || 'lorelei'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Company: <span className="font-medium text-slate-800">{selectedCustomer.name}</span>
+                        {selectedCustomer.contact_person && (
+                          <span className="ml-2 text-slate-500">• Attn: {selectedCustomer.contact_person}</span>
+                        )}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {[selectedCustomer.phone, selectedCustomer.email].filter(Boolean).join(' • ')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      onClick={() => setForm((f) => ({ ...f, customer_id: '' }))}
+                    >
+                      Clear / Change
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <SearchableSelect
@@ -1235,6 +1388,132 @@ export default function CreateProductionOrder() {
           </div>
         </div>
       </Modal>
+
+      {/* Quick Add Buyer Modal with Avatar Selection */}
+      <Modal
+        open={addBuyerModalOpen}
+        onClose={() => setAddBuyerModalOpen(false)}
+        title="Add New Buyer"
+        size="md"
+      >
+        <div className="space-y-4">
+          {buyerError && (
+            <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              {buyerError}
+            </div>
+          )}
+
+          {/* Avatar Preview & Quick Customizer */}
+          <div className="bg-gradient-to-r from-brand-50/60 via-indigo-50/40 to-slate-50 border border-brand-200/80 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <BuyerAvatar
+                style={buyerAvatarStyle}
+                seed={buyerAvatarSeed || 'buyer-new'}
+                config={buyerAvatarConfig}
+                size="lg"
+                shape="circle"
+                className="shadow-sm ring-2 ring-white"
+              />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-800">Cartoon Avatar</span>
+                  <span className="text-[10px] uppercase font-semibold text-brand-700 bg-brand-100/70 px-1.5 py-0.2 rounded">
+                    {buyerAvatarStyle}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setBuyerAvatarModalOpen(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:text-brand-800"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    Pick Character
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={handleRandomizeBuyerAvatar}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                    title="Generate random character"
+                  >
+                    <Dices className="w-3 h-3 text-slate-400" />
+                    Roll
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={() => setBuyerAvatarModalOpen(true)}
+              className="text-xs"
+            >
+              Gallery
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <FormField
+                label="Buyer Name / Company"
+                required
+                value={buyerForm.name}
+                onChange={(e) => setBuyerForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. ABC Textiles Ltd"
+              />
+            </div>
+            <FormField
+              label="Contact Person"
+              value={buyerForm.contact_person}
+              onChange={(e) => setBuyerForm((f) => ({ ...f, contact_person: e.target.value }))}
+              placeholder="e.g. John Doe"
+            />
+            <FormField
+              label="Phone Number"
+              required
+              value={buyerForm.phone}
+              onChange={(e) => setBuyerForm((f) => ({ ...f, phone: e.target.value }))}
+              placeholder="e.g. +91 98765 43210"
+            />
+            <div className="sm:col-span-2">
+              <FormField
+                label="Email Address"
+                type="email"
+                value={buyerForm.email}
+                onChange={(e) => setBuyerForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="buyer@example.com"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setAddBuyerModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button loading={buyerSaving} onClick={handleSaveNewBuyer}>
+              Save & Select Buyer
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Avatar Selection Modal for Quick Buyer */}
+      <AvatarSelectorModal
+        open={buyerAvatarModalOpen}
+        onClose={() => setBuyerAvatarModalOpen(false)}
+        initialStyle={buyerAvatarStyle}
+        initialSeed={buyerAvatarSeed}
+        initialConfig={buyerAvatarConfig}
+        buyerName={buyerForm.name || 'New Buyer'}
+        buyerCode={`BUY-${customers.length + 1}`}
+        onSelect={(selection) => {
+          setBuyerAvatarStyle(selection.avatar_style);
+          setBuyerAvatarSeed(selection.avatar_seed);
+          setBuyerAvatarConfig(selection.avatar_config);
+        }}
+      />
     </div>
   );
 }

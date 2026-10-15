@@ -93,6 +93,9 @@ export interface Buyer {
   billing_address?: string;
   gstin?: string;
   status: string;
+  avatar_style?: 'lorelei' | string;
+  avatar_seed?: string;
+  avatar_config?: string | Record<string, any>;
 }
 
 export type Customer = Buyer;
@@ -273,7 +276,12 @@ export interface ProductionOrder {
   category_id: number;
   category_name?: string;
   customer_id?: number;
+  customer_code?: string;
   customer_name?: string;
+  customer_avatar_style?: string;
+  customer_avatar_seed?: string;
+  customer_avatar_config?: string | Record<string, any>;
+  buyer?: Buyer;
   title: string;
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   start_date: string;
