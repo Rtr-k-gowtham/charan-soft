@@ -191,8 +191,36 @@ class ProductionController {
             }
 
             // First stage in pipeline
-            $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE status = 'active' ORDER BY sequence_order ASC LIMIT 1");
-            $firstStageId = (int)$stgStmt->fetchColumn();
+            $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE status = 'active' ORDER BY sequence_order ASC, id ASC LIMIT 1");
+            $firstStageId = (int)($stgStmt ? $stgStmt->fetchColumn() : 0);
+            if ($firstStageId <= 0) {
+                $stgFallback = $pdo->query("SELECT id FROM production_stages ORDER BY sequence_order ASC, id ASC LIMIT 1");
+                $firstStageId = (int)($stgFallback ? $stgFallback->fetchColumn() : 0);
+            }
+
+            // Auto-heal: If production_stages table has no rows, seed standard stages
+            if ($firstStageId <= 0) {
+                try {
+                    $pdo->exec("
+                        INSERT INTO production_stages (id, code, name, sequence_order, description, color_badge, is_qc_stage, is_final_stage, status) VALUES
+                        (1, 'REQ', 'Requirement Gathering', 1, 'Production Requirement created for the product.', '#6366f1', 0, 0, 'active'),
+                        (2, 'PO', 'Purchase Order (PO)', 2, 'Purchase order creation and tracking.', '#0284c7', 0, 0, 'active'),
+                        (3, 'INW', 'Inward', 3, 'Receive materials or products into inventory.', '#0d9488', 0, 0, 'active'),
+                        (4, 'DYE', 'Dyeing', 4, 'Send material for dyeing and track color-wise processing.', '#7c3aed', 0, 0, 'active'),
+                        (5, 'CUT', 'Cutting — Product-wise', 5, 'Track cutting quantities separately for each product and size.', '#d97706', 0, 0, 'active'),
+                        (6, 'EMB', 'Embroidery — Outward / Inward', 6, 'Track material sent to the embroidery unit and the quantity received back.', '#ec4899', 0, 0, 'active'),
+                        (7, 'STI', 'Stitching — Color-wise Tracking', 7, 'Track stitching progress by product, color, size and quantity.', '#2563eb', 0, 0, 'active'),
+                        (8, 'CHK', 'Checking', 8, 'Quality inspection, defect recording and approval.', '#ef4444', 1, 0, 'active'),
+                        (9, 'PCK', 'Packing', 9, 'Pack approved products and track packed quantities.', '#059669', 0, 0, 'active'),
+                        (10, 'COMP', 'Completed', 10, 'Production order completed with final quantities recorded.', '#16a34a', 0, 1, 'active')
+                        ON DUPLICATE KEY UPDATE status = 'active'
+                    ");
+                    $stgStmt = $pdo->query("SELECT id FROM production_stages ORDER BY sequence_order ASC, id ASC LIMIT 1");
+                    $firstStageId = (int)($stgStmt ? $stgStmt->fetchColumn() : 1);
+                } catch (Exception $seedEx) {
+                    $firstStageId = 1;
+                }
+            }
 
             $orderNo = 'ORD-' . rand(1000, 9999);
             $totalQty = 0;
