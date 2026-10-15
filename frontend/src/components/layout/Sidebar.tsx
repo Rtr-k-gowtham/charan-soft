@@ -16,7 +16,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { label: 'Sales / Orders', icon: ShoppingCart, path: '/orders' },
+
   {
     label: 'Purchase', icon: ClipboardList,
     children: [
@@ -225,9 +225,8 @@ function NavNode({
   return (
     <div>
       <div
-        className={`flex items-center justify-between rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0 ${
-          isDirectActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
-        }`}
+        className={`flex items-center justify-between rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0 ${isDirectActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
+          }`}
       >
         {item.path ? (
           <NavLink
@@ -235,8 +234,7 @@ function NavNode({
             end
             onClick={onItemClick}
             className={({ isActive }) =>
-              `flex-1 truncate px-2.5 py-1.5 sm:py-1 transition-colors ${
-                isActive ? 'text-brand-700 font-bold' : 'text-slate-600 hover:text-slate-900'
+              `flex-1 truncate px-2.5 py-1.5 sm:py-1 transition-colors ${isActive ? 'text-brand-700 font-bold' : 'text-slate-600 hover:text-slate-900'
               }`
             }
           >

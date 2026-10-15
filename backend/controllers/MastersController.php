@@ -259,38 +259,90 @@ class MastersController {
 
         try {
             $pdo = Database::getConnection();
+
+            // Fetch existing customer to resolve fields without SQL NULLIF collation conflicts
+            $stmtFind = $pdo->prepare("SELECT * FROM customers WHERE id = ? AND deleted_at IS NULL");
+            $stmtFind->execute([$id]);
+            $existing = $stmtFind->fetch(PDO::FETCH_ASSOC);
+
+            if (!$existing) {
+                Response::error("Customer not found", 404);
+                return;
+            }
+
+            $finalName = ($name !== '') ? $name : $existing['name'];
+            $finalCode = ($code !== '') ? $code : $existing['code'];
+            $finalContact = ($contactPerson !== '') ? $contactPerson : ($existing['contact_person'] ?? null);
+            $finalPhone = ($phone !== '') ? $phone : $existing['phone'];
+            $finalEmail = ($email !== '') ? $email : ($existing['email'] ?? null);
+            $finalGstin = ($gstin !== '') ? $gstin : ($existing['gstin'] ?? null);
+            $finalAddress = ($billingAddress !== '') ? $billingAddress : ($existing['billing_address'] ?? null);
+            $finalAvatarStyle = ($avatarStyle !== null && $avatarStyle !== '') ? $avatarStyle : ($existing['avatar_style'] ?? 'lorelei');
+            $finalAvatarSeed = ($avatarSeed !== null && $avatarSeed !== '') ? $avatarSeed : ($existing['avatar_seed'] ?? ('buyer-' . $finalCode));
+            $finalAvatarConfig = ($avatarConfig !== null && $avatarConfig !== '') ? $avatarConfig : ($existing['avatar_config'] ?? null);
+
             try {
                 $stmt = $pdo->prepare("
                     UPDATE customers 
-                    SET name = COALESCE(NULLIF(?, ''), name),
-                        code = COALESCE(NULLIF(?, ''), code),
+                    SET name = ?,
+                        code = ?,
                         contact_person = ?,
-                        phone = COALESCE(NULLIF(?, ''), phone),
+                        phone = ?,
                         email = ?,
                         gstin = ?,
                         billing_address = ?,
-                        avatar_style = COALESCE(?, avatar_style),
-                        avatar_seed = COALESCE(?, avatar_seed),
-                        avatar_config = COALESCE(?, avatar_config)
+                        avatar_style = ?,
+                        avatar_seed = ?,
+                        avatar_config = ?
                     WHERE id = ? AND deleted_at IS NULL
                 ");
-                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig, $id]);
+                $stmt->execute([
+                    $finalName,
+                    $finalCode,
+                    $finalContact,
+                    $finalPhone,
+                    $finalEmail,
+                    $finalGstin,
+                    $finalAddress,
+                    $finalAvatarStyle,
+                    $finalAvatarSeed,
+                    $finalAvatarConfig,
+                    $id
+                ]);
             } catch (Exception $colEx) {
+                // Fallback for tables where avatar columns are not yet added
                 $stmt = $pdo->prepare("
                     UPDATE customers 
-                    SET name = COALESCE(NULLIF(?, ''), name),
-                        code = COALESCE(NULLIF(?, ''), code),
+                    SET name = ?,
+                        code = ?,
                         contact_person = ?,
-                        phone = COALESCE(NULLIF(?, ''), phone),
+                        phone = ?,
                         email = ?,
                         gstin = ?,
                         billing_address = ?
                     WHERE id = ? AND deleted_at IS NULL
                 ");
-                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $id]);
+                $stmt->execute([
+                    $finalName,
+                    $finalCode,
+                    $finalContact,
+                    $finalPhone,
+                    $finalEmail,
+                    $finalGstin,
+                    $finalAddress,
+                    $id
+                ]);
             }
+
             AuditLogger::log('Customers', 'UPDATE', $id, null, $data);
-            Response::success(['id' => $id, 'name' => $name, 'avatar_style' => $avatarStyle, 'avatar_seed' => $avatarSeed], "Customer updated successfully");
+            Response::success([
+                'id' => $id,
+                'name' => $finalName,
+                'code' => $finalCode,
+                'avatar_style' => $finalAvatarStyle,
+                'avatar_seed' => $finalAvatarSeed,
+                'avatar_config' => $finalAvatarConfig
+            ], "Customer updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
