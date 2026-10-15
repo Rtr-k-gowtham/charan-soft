@@ -194,6 +194,18 @@ export default function CategoryPOIssuer({
       return;
     }
 
+    // Guard: prevent duplicate PO if one already exists for this category
+    const catLower = categoryName.toLowerCase();
+    const alreadyExists = existingPOs.some(p => {
+      if ((p.category_name || '').toLowerCase() === catLower) return true;
+      if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
+      return false;
+    });
+    if (alreadyExists) {
+      setActionError(`A Purchase Order already exists for "${categoryName}". Please edit the existing PO in the table above instead of creating a new one.`);
+      return;
+    }
+
     setActionError(null);
     setIssuingPO(prev => ({ ...prev, [categoryName]: true }));
 
@@ -550,15 +562,15 @@ export default function CategoryPOIssuer({
 
                         <td className="py-2.5 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {/* If Draft, allow Editing and Issuing */}
-                            {isDraft && (
+                            {isDraft ? (
                               <>
+                                {/* Draft PO: allow Edit + Issue to Vendor */}
                                 <button
                                   type="button"
                                   onClick={() => handleMarkPOAsIssued(po)}
                                   disabled={isUpdating}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition"
-                                  title="Issue PO to Supplier"
+                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-60"
+                                  title="Issue PO to Supplier (marks as Ordered — cannot be undone)"
                                 >
                                   <Send className="w-3 h-3" />
                                   <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
@@ -574,6 +586,15 @@ export default function CategoryPOIssuer({
                                   <span>Edit</span>
                                 </button>
                               </>
+                            ) : (
+                              /* Ordered PO: immutable — show locked badge */
+                              <span
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed"
+                                title="This PO has been officially issued to the vendor and is locked for editing"
+                              >
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Issued & Locked
+                              </span>
                             )}
 
                             <a
@@ -584,7 +605,7 @@ export default function CategoryPOIssuer({
                               title="View & Print PO"
                             >
                               <Printer className="w-3 h-3" />
-                              <span>View / Print</span>
+                              <span>View</span>
                               <ExternalLink className="w-2.5 h-2.5 text-brand-400" />
                             </a>
                           </div>
@@ -623,10 +644,18 @@ export default function CategoryPOIssuer({
               const isSaving = !!issuingPO[categoryName];
               const selectedSupId = selectedVendors[categoryName] || '';
 
-              // Check if any PO is already created for this category
-              const matchingPOs = existingPOs.filter(
-                p => (p.category_name || '').toLowerCase() === categoryName.toLowerCase()
-              );
+              // Check if any PO is already created for this category (by name, remarks, or items)
+              const matchingPOs = existingPOs.filter(p => {
+                const catLower = categoryName.toLowerCase();
+                if ((p.category_name || '').toLowerCase() === catLower) return true;
+                // Match via remarks containing category name
+                if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
+                return false;
+              });
+              // PO is locked if any matching PO exists (Draft = revisable, Ordered = fully locked)
+              const hasAnyPO = matchingPOs.length > 0;
+              const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
+              const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
 
               return (
                 <div
@@ -702,17 +731,42 @@ export default function CategoryPOIssuer({
                         </select>
                       </div>
 
-                      {/* Issue PO Button */}
-                      <div className="pt-4 sm:pt-0">
-                        <Button
-                          size="sm"
-                          disabled={isSaving || !selectedSupId}
-                          onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 shadow-xs shrink-0"
-                          icon={<ShoppingCart className="w-3.5 h-3.5" />}
-                        >
-                          {isSaving ? 'Creating PO...' : `Issue PO (${catMaterials.length})`}
-                        </Button>
+                      {/* Issue PO Button — LOCKED once PO exists */}
+                      <div className="pt-4 sm:pt-0 flex flex-col items-end gap-1.5">
+                        {hasOrderedPO ? (
+                          // Fully locked: PO has been officially issued to vendor
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 cursor-not-allowed">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>PO Issued & Locked</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {matchingPOs.map(p => p.po_number).join(', ')}
+                            </span>
+                          </div>
+                        ) : hasDraftPO ? (
+                          // Draft PO exists — allow editing via the PO table above, not re-issuing
+                          <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800 cursor-not-allowed">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Draft PO Pending Issue</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {matchingPOs.map(p => p.po_number).join(', ')} — Edit above
+                            </span>
+                          </div>
+                        ) : (
+                          // No PO yet — allow issuance
+                          <Button
+                            size="sm"
+                            disabled={isSaving || !selectedSupId}
+                            onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 shadow-xs shrink-0"
+                            icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                          >
+                            {isSaving ? 'Creating PO...' : `Issue PO (${catMaterials.length})`}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
