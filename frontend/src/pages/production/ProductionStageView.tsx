@@ -1,5 +1,6 @@
 // src/pages/production/ProductionStageView.tsx
 // Production Stage Workspace for the 10 Core Production Pipeline Stages
+// Optimized Order-First and Product-Breakdown view for Requirement Gathering & Pipeline
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
@@ -14,10 +15,21 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import {
   RefreshCw,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   AlertCircle,
   Boxes,
-  Plus
+  Plus,
+  Search,
+  Layers,
+  ArrowRight,
+  ExternalLink,
+  Package,
+  Calendar,
+  Sparkles,
+  Filter,
+  CheckCheck
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -42,6 +54,7 @@ const STAGE_ROUTE_MAP: Record<string, string> = {
 };
 
 type StageItem = ProductionOrderItem & {
+  order_id?: number;
   order_number: string;
   order_title: string;
   customer_id?: number;
@@ -55,23 +68,53 @@ type StageItem = ProductionOrderItem & {
   target_delivery_date?: string;
 };
 
+interface OrderGroup {
+  order_id: number;
+  order_number: string;
+  order_title: string;
+  customer_id?: number;
+  customer_name?: string;
+  customer_code?: string;
+  customer_avatar_style?: string;
+  customer_avatar_seed?: string;
+  customer_avatar_config?: any;
+  priority?: string;
+  target_delivery_date?: string;
+  status?: string;
+  items: StageItem[];
+  total_stage_quantity: number;
+  total_order_quantity: number;
+  unique_products_count: number;
+}
+
 export default function ProductionStageView({ stageName, stageCode, breadcrumb }: Props) {
   const navigate = useNavigate();
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [allItems, setAllItems] = useState<StageItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // View mode: 'orders' shows order cards with expandable products; 'items' shows flat item rows
+  const activeCode = (stageCode || 'REQ').toUpperCase();
+  const [viewMode, setViewMode] = useState<'orders' | 'items'>(activeCode === 'REQ' ? 'orders' : 'orders');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('ALL');
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+
   // Modals
   const [moveOpen, setMoveOpen] = useState(false);
   const [qcOpen, setQcOpen] = useState(false);
+  const [batchMoveOpen, setBatchMoveOpen] = useState(false);
+  const [orderModalGroup, setOrderModalGroup] = useState<OrderGroup | null>(null);
 
   const [selectedItem, setSelectedItem] = useState<StageItem | null>(null);
+  const [selectedOrderForBatch, setSelectedOrderForBatch] = useState<OrderGroup | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // Forms
   const [moveForm, setMoveForm] = useState({ next_stage_id: '', quantity: '', notes: '' });
+  const [batchMoveForm, setBatchMoveForm] = useState({ next_stage_id: '', notes: '' });
   const [qcForm, setQcForm] = useState({ passed: '', rejected: '', rework: '', defect_reason: '', remarks: '', rework_stage_id: '7' });
 
   const loadData = () => {
@@ -87,6 +130,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           (ord.items || []).forEach(it => {
             flat.push({
               ...it,
+              order_id: ord.id,
               order_number: ord.order_number,
               order_title: ord.title,
               customer_id: ord.customer_id,
@@ -108,7 +152,11 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
 
   useEffect(() => {
     loadData();
-  }, [stageName, stageCode]);
+    // Default to 'orders' view for requirement gathering
+    if (activeCode === 'REQ') {
+      setViewMode('orders');
+    }
+  }, [stageName, stageCode, activeCode]);
 
   useEffect(() => {
     if (successToast) {
@@ -117,7 +165,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     }
   }, [successToast]);
 
-  const activeCode = (stageCode || 'REQ').toUpperCase();
   const isQC = activeCode === 'CHK';
   const isCompleted = activeCode === 'COMP';
 
@@ -148,10 +195,87 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     });
   }, [allItems, activeCode, stageName]);
 
+  // Group items by Order for the Order-Centric view
+  const orderGroups = useMemo(() => {
+    const map = new Map<string, OrderGroup>();
+
+    items.forEach(it => {
+      const key = it.order_number || String(it.order_id || 'unknown');
+      if (!map.has(key)) {
+        map.set(key, {
+          order_id: it.order_id || (it.production_order_id as number) || 0,
+          order_number: it.order_number,
+          order_title: it.order_title,
+          customer_id: it.customer_id,
+          customer_name: it.customer_name,
+          customer_code: it.customer_code,
+          customer_avatar_style: it.customer_avatar_style,
+          customer_avatar_seed: it.customer_avatar_seed,
+          customer_avatar_config: it.customer_avatar_config,
+          priority: it.priority,
+          target_delivery_date: it.target_delivery_date,
+          status: it.status,
+          items: [],
+          total_stage_quantity: 0,
+          total_order_quantity: 0,
+          unique_products_count: 0,
+        });
+      }
+      const group = map.get(key)!;
+      group.items.push(it);
+      group.total_stage_quantity += (it.current_stage_quantity || it.total_quantity || 0);
+      group.total_order_quantity += (it.total_quantity || 0);
+    });
+
+    // Compute unique product names
+    map.forEach(group => {
+      const set = new Set(group.items.map(i => i.product_name || i.product_id));
+      group.unique_products_count = set.size;
+    });
+
+    return Array.from(map.values());
+  }, [items]);
+
+  // Filtered order groups based on search & priority
+  const filteredOrderGroups = useMemo(() => {
+    return orderGroups.filter(g => {
+      if (priorityFilter !== 'ALL' && g.priority?.toUpperCase() !== priorityFilter) {
+        return false;
+      }
+      if (!searchTerm) return true;
+      const q = searchTerm.toLowerCase();
+      const matchOrder = g.order_number.toLowerCase().includes(q) || g.order_title?.toLowerCase().includes(q);
+      const matchBuyer = g.customer_name?.toLowerCase().includes(q) || g.customer_code?.toLowerCase().includes(q);
+      const matchProduct = g.items.some(it =>
+        it.product_name?.toLowerCase().includes(q) ||
+        it.product_code?.toLowerCase().includes(q) ||
+        it.color?.toLowerCase().includes(q)
+      );
+      return matchOrder || matchBuyer || matchProduct;
+    });
+  }, [orderGroups, searchTerm, priorityFilter]);
+
+  const toggleExpandOrder = (orderNum: string) => {
+    setExpandedOrders(prev => ({
+      ...prev,
+      [orderNum]: !prev[orderNum]
+    }));
+  };
+
+  const expandAllOrders = () => {
+    const next: Record<string, boolean> = {};
+    filteredOrderGroups.forEach(g => { next[g.order_number] = true; });
+    setExpandedOrders(next);
+  };
+
+  const collapseAllOrders = () => {
+    setExpandedOrders({});
+  };
+
   const currentStage = stages.find(s => s.code === activeCode || s.name === stageName);
   const nextStages = stages.filter(s => s.sequence_order > (currentStage?.sequence_order || 0));
 
-  // Stage Move Handler
+  // Stage Move Handler for Single Product Item
   const handleMove = async () => {
     if (!moveForm.next_stage_id || !moveForm.quantity) {
       setError('Select destination stage and enter quantity');
@@ -161,91 +285,139 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     setError('');
     try {
       await api.moveStage({
-        item_id: selectedItem?.id,
-        to_stage_id: moveForm.next_stage_id,
-        quantity: Number(moveForm.quantity),
-        notes: moveForm.notes,
+        order_item_id: selectedItem?.id || 0,
+        to_stage_id: parseInt(moveForm.next_stage_id),
+        quantity_moved: parseInt(moveForm.quantity),
+        remarks: moveForm.notes || undefined,
       });
       setMoveOpen(false);
-      setSuccessToast(`Moved ${fmt(Number(moveForm.quantity))} pcs to next production stage`);
+      setSuccessToast(`Moved ${moveForm.quantity} pcs of ${selectedItem?.product_name || 'item'} to next stage`);
       loadData();
     } catch (err: unknown) {
-      setError((err as Error)?.message || 'Failed to move order item');
+      setError((err as Error).message || 'Failed to move item stage');
     } finally {
       setSaving(false);
     }
   };
 
-  // Quality Inspection / QC Handler
-  const handleQC = async () => {
-    const passed = Number(qcForm.passed) || 0;
-    const rejected = Number(qcForm.rejected) || 0;
-    const rework = Number(qcForm.rework) || 0;
-    if (passed + rejected + rework === 0) {
-      setError('Please enter at least one quantity (Passed, Rejected, or Rework)');
+  // Batch Move Handler for All Products of an Order
+  const handleBatchMove = async () => {
+    if (!batchMoveForm.next_stage_id || !selectedOrderForBatch) {
+      setError('Select destination stage');
       return;
     }
     setSaving(true);
     setError('');
     try {
-      await api.recordQC({
-        item_id: selectedItem?.id,
-        passed_quantity: passed,
-        rejected_quantity: rejected,
-        rework_quantity: rework,
-        defect_reason: qcForm.defect_reason,
-        remarks: qcForm.remarks,
-        order_number: selectedItem?.order_number,
-        product_name: selectedItem?.product_name,
-      });
-
-      // If items passed QC, automatically advance them to Stage 09 Packing
-      if (passed > 0) {
-        const packingStage = stages.find(s => s.code === 'PCK' || s.sequence_order === 9);
-        if (packingStage && selectedItem) {
-          await api.moveStage({
-            item_id: selectedItem.id,
-            to_stage_id: packingStage.id,
-            quantity: passed,
-            notes: 'Passed quality check and forwarded to packing',
-          }).catch(() => null);
-        }
-      }
-
-      setQcOpen(false);
-      setSuccessToast(`Quality inspection saved: ${passed} Passed, ${rework} Rework, ${rejected} Rejected`);
+      const destId = parseInt(batchMoveForm.next_stage_id);
+      // Move each item in the order group
+      await Promise.all(
+        selectedOrderForBatch.items.map(it =>
+          api.moveStage({
+            order_item_id: it.id,
+            to_stage_id: destId,
+            quantity_moved: it.current_stage_quantity || it.total_quantity || 0,
+            remarks: batchMoveForm.notes || `Batch advanced from ${stageName}`,
+          })
+        )
+      );
+      setBatchMoveOpen(false);
+      setSuccessToast(`Successfully advanced all ${selectedOrderForBatch.items.length} products of order ${selectedOrderForBatch.order_number}`);
       loadData();
     } catch (err: unknown) {
-      setError((err as Error)?.message || 'Failed to record QC inspection');
+      setError((err as Error).message || 'Failed to batch advance order items');
     } finally {
       setSaving(false);
     }
   };
 
-  // Open move modal with prefilled quantity
-  const openMoveModal = (r: StageItem) => {
-    setSelectedItem(r);
-    // Find next sequential stage
-    const nextSeq = stages.find(s => s.sequence_order === (currentStage?.sequence_order || 0) + 1);
+  // QC / Checking Handler
+  const handleQC = async () => {
+    const passed = Number(qcForm.passed || 0);
+    const rejected = Number(qcForm.rejected || 0);
+    const rework = Number(qcForm.rework || 0);
+    const total = passed + rejected + rework;
+    const avail = selectedItem?.current_stage_quantity || selectedItem?.total_quantity || 0;
+
+    if (total <= 0) {
+      setError('Enter at least 1 inspected piece');
+      return;
+    }
+    if (total > avail) {
+      setError(`Total inspected (${total}) exceeds available stage quantity (${avail})`);
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    try {
+      await api.recordQC({
+        order_item_id: selectedItem?.id || 0,
+        stage_id: currentStage?.id || 8,
+        inspected_quantity: total,
+        passed_quantity: passed,
+        rejected_quantity: rejected,
+        rework_quantity: rework,
+        defect_reason: qcForm.defect_reason || undefined,
+        remarks: qcForm.remarks || undefined,
+        rework_stage_id: rework > 0 ? Number(qcForm.rework_stage_id) : undefined,
+      });
+
+      // Automatically advance passed pieces to next stage (Packing / 9)
+      if (passed > 0) {
+        const packingStage = stages.find(s => s.code === 'PCK' || s.sequence_order === 9);
+        const nextId = packingStage ? packingStage.id : 9;
+        await api.moveStage({
+          order_item_id: selectedItem?.id || 0,
+          to_stage_id: nextId,
+          quantity_moved: passed,
+          remarks: 'QC Passed - Auto advanced to Packing',
+        });
+      }
+
+      setQcOpen(false);
+      setSuccessToast(`QC recorded: ${passed} passed, ${rework} rework, ${rejected} rejected`);
+      loadData();
+    } catch (err: unknown) {
+      setError((err as Error).message || 'Failed to record QC inspection');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openMoveModal = (item: StageItem) => {
+    setSelectedItem(item);
+    setError('');
+    const defaultNext = nextStages[0]?.id ? String(nextStages[0].id) : '';
     setMoveForm({
-      next_stage_id: nextSeq ? String(nextSeq.id) : '',
-      quantity: String(r.current_stage_quantity || r.total_quantity || 100),
+      next_stage_id: defaultNext,
+      quantity: String(item.current_stage_quantity || item.total_quantity || 0),
       notes: '',
     });
-    setError('');
     setMoveOpen(true);
   };
 
-  // Dynamic columns
-  const columns = [
+  const openBatchMoveModal = (group: OrderGroup) => {
+    setSelectedOrderForBatch(group);
+    setError('');
+    const defaultNext = nextStages[0]?.id ? String(nextStages[0].id) : '';
+    setBatchMoveForm({
+      next_stage_id: defaultNext,
+      notes: `Requirement completed for Order ${group.order_number}`,
+    });
+    setBatchMoveOpen(true);
+  };
+
+  // Flat table columns
+  const flatColumns = [
     {
       key: 'order_number',
-      label: 'Order',
+      label: 'Order #',
       sortable: true,
       render: (r: StageItem) => (
         <div>
-          <span className="font-semibold text-brand-700 block">{r.order_number}</span>
-          <span className="text-[10px] text-slate-400 truncate max-w-[140px] block">{r.order_title}</span>
+          <span className="font-mono font-bold text-brand-700 text-xs block">{r.order_number}</span>
+          <span className="text-[11px] text-slate-500 truncate max-w-[130px] block">{r.order_title}</span>
         </div>
       ),
     },
@@ -320,20 +492,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         </span>
       ),
     },
-    ...(isCompleted
-      ? [
-          {
-            key: 'completed_quantity',
-            label: 'Final Passed',
-            render: (r: StageItem) => <span className="font-mono font-bold text-emerald-600">{fmt(r.completed_quantity || r.total_quantity)}</span>,
-          },
-          {
-            key: 'rejected_quantity',
-            label: 'Rejection',
-            render: (r: StageItem) => <span className="font-mono font-bold text-red-500">{fmt(r.rejected_quantity)}</span>,
-          },
-        ]
-      : []),
     {
       key: 'priority',
       label: 'Priority',
@@ -358,10 +516,23 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
 
       <PageHeader
         title={stageName}
-        subtitle={`Production orders currently at ${stageName} stage`}
+        subtitle={
+          activeCode === 'REQ'
+            ? 'Requirement Gathering: View orders and expand to review & advance individual products'
+            : `Production orders currently at ${stageName} stage`
+        }
         breadcrumb={[{ label: 'Production' }, ...breadcrumb.map(b => ({ label: b }))]}
         actions={
           <div className="flex gap-2 items-center">
+            {activeCode === 'REQ' && (
+              <Button
+                icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+                onClick={() => navigate('/production/orders/create')}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs"
+              >
+                <span>New Production Order</span>
+              </Button>
+            )}
             {activeCode === 'PO' && (
               <Button
                 icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
@@ -381,34 +552,13 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
             <button
               onClick={loadData}
               title="Refresh Stage Data"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         }
       />
-
-      {/* Mobile Action Banner when on PO stage */}
-      {activeCode === 'PO' && (
-        <div className="sm:hidden px-3 pt-2.5 pb-1 bg-white border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => navigate('/purchase/orders?create=true')}
-            className="w-full flex items-center justify-between gap-2 p-2.5 bg-gradient-to-r from-brand-600 to-brand-700 text-white rounded-xl shadow-sm active:scale-[0.99] transition"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
-                <Plus className="w-4 h-4 text-white stroke-[2.5]" />
-              </div>
-              <span className="text-xs font-bold">Create Purchase Order</span>
-            </div>
-            <span className="text-[11px] font-bold bg-white text-brand-700 px-2 py-0.5 rounded-md shadow-2xs">
-              + New PO
-            </span>
-          </button>
-        </div>
-      )}
 
       {/* 10-Stage Pipeline Stepper */}
       <div className="px-3 sm:px-4 pt-2 pb-2 bg-white border-b border-slate-200">
@@ -442,55 +592,451 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         </div>
       </div>
 
-      {/* Main Order Items Table */}
-      <div className="flex-1 overflow-hidden p-2 sm:p-4">
-        <DataTable
-          data={items}
-          columns={columns}
-          rowKey="id"
-          onRowClick={r => openMoveModal(r)}
-          actions={(r: StageItem) => (
-            <div className="flex items-center gap-1.5">
-              {isQC ? (
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    setSelectedItem(r);
-                    setQcForm({
-                      passed: String(r.current_stage_quantity || r.total_quantity || 0),
-                      rejected: '0',
-                      rework: '0',
-                      defect_reason: '',
-                      remarks: '',
-                      rework_stage_id: '7',
-                    });
-                    setQcOpen(true);
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition font-semibold"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> QC Check
-                </button>
-              ) : !isCompleted ? (
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    openMoveModal(r);
-                  }}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition font-semibold"
-                >
-                  Move <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <span className="text-[11px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
-                  ✓ Done
-                </span>
-              )}
-            </div>
-          )}
-        />
+      {/* Stage Summary Statistics Cards */}
+      <div className="px-3 sm:px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Orders in Stage</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{orderGroups.length}</p>
+          </div>
+          <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+            <Package className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Garments in Stage</p>
+            <p className="text-lg font-bold text-brand-600 mt-0.5">
+              {fmt(orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0))} <span className="text-xs font-normal text-slate-400">pcs</span>
+            </p>
+          </div>
+          <div className="w-9 h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
+            <Layers className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Product Line Items</p>
+            <p className="text-lg font-bold text-slate-800 mt-0.5">{items.length}</p>
+          </div>
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+            <CheckCheck className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Current Pipeline</p>
+            <p className="text-xs font-bold text-slate-800 truncate mt-1">
+              Step {currentStage?.sequence_order || 1}: {stageName}
+            </p>
+          </div>
+          <div
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-2xs"
+            style={{ backgroundColor: currentStage?.color_badge || '#6366f1' }}
+          >
+            {activeCode}
+          </div>
+        </div>
       </div>
 
-      {/* Move Stage Modal */}
+      {/* Search & Control Filter Bar */}
+      <div className="px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2 flex-1 max-w-md">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search by Order #, Buyer, Product, Color..."
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+            />
+          </div>
+
+          <select
+            value={priorityFilter}
+            onChange={e => setPriorityFilter(e.target.value)}
+            className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+          >
+            <option value="ALL">All Priorities</option>
+            <option value="URGENT">Urgent</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+
+        {/* View Switcher: Orders View (Default) vs Flat Items */}
+        <div className="flex items-center gap-2">
+          {viewMode === 'orders' && filteredOrderGroups.length > 0 && (
+            <div className="flex items-center gap-1 text-[11px]">
+              <button
+                type="button"
+                onClick={expandAllOrders}
+                className="px-2 py-1 text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition font-medium shadow-2xs"
+              >
+                Expand All
+              </button>
+              <button
+                type="button"
+                onClick={collapseAllOrders}
+                className="px-2 py-1 text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition font-medium shadow-2xs"
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
+
+          <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setViewMode('orders')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                viewMode === 'orders'
+                  ? 'bg-white text-slate-800 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Orders View ({filteredOrderGroups.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('items')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                viewMode === 'items'
+                  ? 'bg-white text-slate-800 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Flat Items ({items.length})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center p-12 text-slate-400">
+            <RefreshCw className="w-7 h-7 animate-spin text-brand-600 mb-2" />
+            <p className="text-xs font-medium">Loading stage pipeline data...</p>
+          </div>
+        ) : viewMode === 'orders' ? (
+          /* ========================================================================= */
+          /* ORDER-CENTRIC VIEW: Only see the Order & Expand to see list of products */
+          /* ========================================================================= */
+          filteredOrderGroups.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-10 text-center shadow-2xs">
+              <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <h3 className="text-sm font-bold text-slate-700">No Orders in {stageName}</h3>
+              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                {searchTerm
+                  ? 'No orders match your filter criteria. Try clearing search.'
+                  : `There are currently no active production orders at the ${stageName} stage.`}
+              </p>
+              {activeCode === 'REQ' && (
+                <Button
+                  onClick={() => navigate('/production/orders/create')}
+                  className="mt-4 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs"
+                >
+                  Create Production Order
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {filteredOrderGroups.map(group => {
+                const isExpanded = !!expandedOrders[group.order_number];
+                return (
+                  <div
+                    key={group.order_number}
+                    className={`bg-white rounded-xl border transition-all duration-200 overflow-hidden shadow-2xs ${
+                      isExpanded ? 'border-brand-300 ring-1 ring-brand-100' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {/* Order Master Header Row */}
+                    <div
+                      onClick={() => toggleExpandOrder(group.order_number)}
+                      className="p-3.5 sm:p-4 cursor-pointer select-none hover:bg-slate-50/70 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      {/* Left: Order Info & Buyer with Lorelei Avatar */}
+                      <div className="flex items-start sm:items-center gap-3 min-w-0">
+                        <BuyerAvatar
+                          buyer={{
+                            id: group.customer_id,
+                            code: group.customer_code,
+                            name: group.customer_name,
+                            avatar_style: group.customer_avatar_style,
+                            avatar_seed: group.customer_avatar_seed,
+                            avatar_config: group.customer_avatar_config,
+                          }}
+                          size="md"
+                          shape="circle"
+                          className="shrink-0"
+                        />
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-bold text-sm text-brand-700 bg-brand-50/80 px-2 py-0.5 rounded border border-brand-200">
+                              {group.order_number}
+                            </span>
+                            <span className="text-xs font-bold text-slate-800">
+                              {group.customer_name || 'Direct Buyer'}
+                            </span>
+                            {group.customer_code && (
+                              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {group.customer_code}
+                              </span>
+                            )}
+                            <StatusBadge status={group.priority || 'Medium'} />
+                          </div>
+
+                          <p className="text-xs font-medium text-slate-600 truncate mt-1">
+                            {group.order_title || 'Garment Production Requirement'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: Quantity, Date, & Expand Button */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                        {/* Target Delivery Date */}
+                        {group.target_delivery_date && (
+                          <div className="text-left sm:text-right">
+                            <span className="text-[10px] text-slate-400 block font-medium">Target Delivery</span>
+                            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-400" />
+                              {group.target_delivery_date}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Quantity Badge */}
+                        <div className="text-left sm:text-right">
+                          <span className="text-[10px] text-slate-400 block font-medium">Stage Quantity</span>
+                          <span className="font-mono font-bold text-sm text-brand-700">
+                            {fmt(group.total_stage_quantity)} <span className="text-xs font-normal text-slate-500">pcs</span>
+                          </span>
+                        </div>
+
+                        {/* Action buttons: Enter Order & Accordion Chevron */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleExpandOrder(group.order_number);
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                              isExpanded
+                                ? 'bg-brand-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span>{isExpanded ? 'Hide Products' : `Enter Order (${group.items.length})`}</span>
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              if (group.order_id) {
+                                navigate(`/production/orders/${group.order_id}`);
+                              }
+                            }}
+                            title="Open full order details"
+                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 rounded-lg transition"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expandable Product List inside this Order */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4 animate-in fade-in slide-in-from-top-1">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                              Products in Order ({group.items.length} line items)
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              • Total {fmt(group.total_stage_quantity)} pcs at {stageName}
+                            </span>
+                          </div>
+
+                          {/* Quick Batch Advance for Entire Order */}
+                          {!isCompleted && nextStages.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => openBatchMoveModal(group)}
+                              className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-brand-50 text-brand-700 border border-brand-200 rounded-md hover:bg-brand-100 transition font-bold"
+                            >
+                              <ArrowRight className="w-3.5 h-3.5" />
+                              <span>Advance All Products in Order</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Product Items Table / Cards */}
+                        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-50/90 text-slate-500 font-semibold border-b border-slate-200 text-[11px]">
+                                <tr>
+                                  <th className="py-2.5 px-3">Product Name & Code</th>
+                                  <th className="py-2.5 px-3">Color</th>
+                                  <th className="py-2.5 px-3">Size</th>
+                                  <th className="py-2.5 px-3 text-right">Order Qty</th>
+                                  <th className="py-2.5 px-3 text-right">At This Stage</th>
+                                  <th className="py-2.5 px-3">Status</th>
+                                  <th className="py-2.5 px-3 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {group.items.map(it => (
+                                  <tr key={it.id} className="hover:bg-slate-50/60 transition">
+                                    <td className="py-2.5 px-3">
+                                      <span className="font-semibold text-slate-800 block">
+                                        {it.product_name || 'Garment Product'}
+                                      </span>
+                                      {it.product_code && (
+                                        <span className="font-mono text-[10px] text-slate-400 block">
+                                          {it.product_code}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-2.5 px-3">
+                                      <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-medium text-slate-700 border border-slate-200">
+                                        {it.color}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
+                                      {it.size ? (
+                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px]">
+                                          {it.size}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 font-normal">—</span>
+                                      )}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-600">
+                                      {fmt(it.total_quantity)}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right">
+                                      <span className="font-mono font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                                        {fmt(it.current_stage_quantity || it.total_quantity)} pcs
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 px-3">
+                                      <StatusBadge status={it.status || 'In Progress'} />
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right">
+                                      {isQC ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedItem(it);
+                                            setQcForm({
+                                              passed: String(it.current_stage_quantity || it.total_quantity || 0),
+                                              rejected: '0',
+                                              rework: '0',
+                                              defect_reason: '',
+                                              remarks: '',
+                                              rework_stage_id: '7',
+                                            });
+                                            setQcOpen(true);
+                                          }}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition font-semibold"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" /> QC Check
+                                        </button>
+                                      ) : !isCompleted ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => openMoveModal(it)}
+                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition font-bold"
+                                        >
+                                          <span>Move</span>
+                                          <ChevronRight className="w-3.5 h-3.5" />
+                                        </button>
+                                      ) : (
+                                        <span className="text-[11px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
+                                          ✓ Done
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : (
+          /* ========================================================================= */
+          /* FLAT ITEMS VIEW: Flat tabular view of all order items                     */
+          /* ========================================================================= */
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+            <DataTable
+              data={items}
+              columns={flatColumns}
+              rowKey="id"
+              onRowClick={r => openMoveModal(r)}
+              actions={(r: StageItem) => (
+                <div className="flex items-center gap-1.5">
+                  {isQC ? (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSelectedItem(r);
+                        setQcForm({
+                          passed: String(r.current_stage_quantity || r.total_quantity || 0),
+                          rejected: '0',
+                          rework: '0',
+                          defect_reason: '',
+                          remarks: '',
+                          rework_stage_id: '7',
+                        });
+                        setQcOpen(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition font-semibold"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> QC Check
+                    </button>
+                  ) : !isCompleted ? (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        openMoveModal(r);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition font-semibold"
+                    >
+                      Move <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
+                      ✓ Done
+                    </span>
+                  )}
+                </div>
+              )}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Move Stage Modal for Single Product */}
       <Modal
         open={moveOpen}
         onClose={() => setMoveOpen(false)}
@@ -561,7 +1107,71 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
             value={moveForm.notes}
             onChange={e => setMoveForm(f => ({ ...f, notes: e.target.value }))}
             rows={2}
-            placeholder="e.g. Batch processed, passed visual check..."
+            placeholder="e.g. Requirement confirmed, ready for purchase order..."
+          />
+        </div>
+      </Modal>
+
+      {/* Batch Advance Modal for Entire Order */}
+      <Modal
+        open={batchMoveOpen}
+        onClose={() => setBatchMoveOpen(false)}
+        title={`Advance Entire Order — ${selectedOrderForBatch?.order_number}`}
+        subtitle={`Advance all ${selectedOrderForBatch?.items.length} products (${fmt(selectedOrderForBatch?.total_stage_quantity || 0)} pcs) to the next stage`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setBatchMoveOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              loading={saving}
+              onClick={handleBatchMove}
+              icon={<ArrowRight className="w-3.5 h-3.5" />}
+            >
+              Advance All Products
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {error && (
+            <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-xs text-brand-800">
+            <p className="font-semibold">
+              You are about to advance all {selectedOrderForBatch?.items.length} product line items in this order.
+            </p>
+            <p className="text-[11px] text-brand-600 mt-1">
+              Total quantity: <strong>{fmt(selectedOrderForBatch?.total_stage_quantity || 0)} pcs</strong> across all colors and sizes.
+            </p>
+          </div>
+
+          <FormField
+            as="select"
+            label="Select Destination Stage for All Products"
+            required
+            value={batchMoveForm.next_stage_id}
+            onChange={e => setBatchMoveForm(f => ({ ...f, next_stage_id: e.target.value }))}
+          >
+            <option value="">— Select destination stage —</option>
+            {nextStages.map(s => (
+              <option key={s.id} value={s.id}>
+                {String(s.sequence_order).padStart(2, '0')}. {s.name}
+              </option>
+            ))}
+          </FormField>
+
+          <FormField
+            as="textarea"
+            label="Batch Notes"
+            value={batchMoveForm.notes}
+            onChange={e => setBatchMoveForm(f => ({ ...f, notes: e.target.value }))}
+            rows={2}
+            placeholder="e.g. Requirement gathering completed. Advancing order to PO/Cutting."
           />
         </div>
       </Modal>
