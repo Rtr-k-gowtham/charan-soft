@@ -16,6 +16,7 @@ export interface Category {
   code: string;
   type?: string;
   description?: string;
+  icon?: string;
   status: string;
   sort_order: number;
   fields?: CategoryField[];

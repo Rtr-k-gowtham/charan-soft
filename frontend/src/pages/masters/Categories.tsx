@@ -18,8 +18,176 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   ListPlus,
-  AlertCircle
+  AlertCircle,
+  Grid3X3,
+  Repeat,
+  Droplets,
+  Sparkles,
+  Feather,
+  ShoppingBag,
+  Scissors,
+  Tags,
+  Disc,
+  Package,
+  FlaskConical,
+  type LucideIcon,
 } from 'lucide-react';
+
+export interface CategoryVisual {
+  id: string;
+  label: string;
+  Icon: LucideIcon;
+  bg: string;
+  border: string;
+  color: string;
+}
+
+export const CATEGORY_ICONS: Record<string, CategoryVisual> = {
+  grid: {
+    id: 'grid',
+    label: 'Weaving / Loom',
+    Icon: Grid3X3,
+    bg: 'bg-indigo-50',
+    border: 'border-indigo-200',
+    color: 'text-indigo-600',
+  },
+  repeat: {
+    id: 'repeat',
+    label: 'Weaving Process',
+    Icon: Repeat,
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    color: 'text-blue-600',
+  },
+  droplets: {
+    id: 'droplets',
+    label: 'Dyeing / Wet Process',
+    Icon: Droplets,
+    bg: 'bg-purple-50',
+    border: 'border-purple-200',
+    color: 'text-purple-600',
+  },
+  sparkles: {
+    id: 'sparkles',
+    label: 'Scouring / Jiggar',
+    Icon: Sparkles,
+    bg: 'bg-amber-50',
+    border: 'border-amber-200',
+    color: 'text-amber-600',
+  },
+  feather: {
+    id: 'feather',
+    label: 'Fiber / Polyfill',
+    Icon: Feather,
+    bg: 'bg-teal-50',
+    border: 'border-teal-200',
+    color: 'text-teal-600',
+  },
+  'shopping-bag': {
+    id: 'shopping-bag',
+    label: 'Fabric Procurement',
+    Icon: ShoppingBag,
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    color: 'text-emerald-600',
+  },
+  scissors: {
+    id: 'scissors',
+    label: 'Cutting & Stitching',
+    Icon: Scissors,
+    bg: 'bg-rose-50',
+    border: 'border-rose-200',
+    color: 'text-rose-600',
+  },
+  tags: {
+    id: 'tags',
+    label: 'Trims & Accessories',
+    Icon: Tags,
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    color: 'text-orange-600',
+  },
+  disc: {
+    id: 'disc',
+    label: 'Yarn & Spinning',
+    Icon: Disc,
+    bg: 'bg-cyan-50',
+    border: 'border-cyan-200',
+    color: 'text-cyan-600',
+  },
+  package: {
+    id: 'package',
+    label: 'Packaging Materials',
+    Icon: Package,
+    bg: 'bg-slate-50',
+    border: 'border-slate-300',
+    color: 'text-slate-600',
+  },
+  flask: {
+    id: 'flask',
+    label: 'Chemicals & Dyes',
+    Icon: FlaskConical,
+    bg: 'bg-fuchsia-50',
+    border: 'border-fuchsia-200',
+    color: 'text-fuchsia-600',
+  },
+  layers: {
+    id: 'layers',
+    label: 'General Category',
+    Icon: Layers,
+    bg: 'bg-slate-50',
+    border: 'border-slate-200',
+    color: 'text-slate-600',
+  },
+};
+
+export function getCategoryVisual(category: Partial<Category> | null | undefined): CategoryVisual {
+  if (!category) return CATEGORY_ICONS.layers;
+
+  // 1. Explicit icon set on record
+  if (category.icon && CATEGORY_ICONS[category.icon]) {
+    return CATEGORY_ICONS[category.icon];
+  }
+
+  // 2. Intelligent heuristic matching by code and name
+  const text = `${category.code || ''} ${category.name || ''}`.toLowerCase();
+
+  if (text.includes('weaving') && (text.includes('proc') || text.includes('process'))) {
+    return CATEGORY_ICONS.repeat;
+  }
+  if (text.includes('weaving') || text.includes('loom')) {
+    return CATEGORY_ICONS.grid;
+  }
+  if (text.includes('dye') || text.includes('color') || text.includes('wash')) {
+    return CATEGORY_ICONS.droplets;
+  }
+  if (text.includes('kitty') || text.includes('jiggar') || text.includes('jigger') || text.includes('scour')) {
+    return CATEGORY_ICONS.sparkles;
+  }
+  if (text.includes('fill') || text.includes('fiber') || text.includes('polyfill') || text.includes('pillow')) {
+    return CATEGORY_ICONS.feather;
+  }
+  if (text.includes('fabric') && (text.includes('po') || text.includes('purchas'))) {
+    return CATEGORY_ICONS['shopping-bag'];
+  }
+  if (text.includes('stich') || text.includes('stitch') || text.includes('cut') || text.includes('sew')) {
+    return CATEGORY_ICONS.scissors;
+  }
+  if (text.includes('accessor') || text.includes('trim') || text.includes('zipper') || text.includes('button')) {
+    return CATEGORY_ICONS.tags;
+  }
+  if (text.includes('yarn') || text.includes('spin') || text.includes('cone')) {
+    return CATEGORY_ICONS.disc;
+  }
+  if (text.includes('pack') || text.includes('carton') || text.includes('box')) {
+    return CATEGORY_ICONS.package;
+  }
+  if (text.includes('chem') || text.includes('auxiliar')) {
+    return CATEGORY_ICONS.flask;
+  }
+
+  return CATEGORY_ICONS.layers;
+}
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Text / String' },
@@ -40,7 +208,7 @@ export default function Categories() {
   const [createCatOpen, setCreateCatOpen] = useState(false);
   const [catSaving, setCatSaving] = useState(false);
   const [catError, setCatError] = useState('');
-  const [catForm, setCatForm] = useState({ name: '', description: '' });
+  const [catForm, setCatForm] = useState({ name: '', description: '', icon: 'grid', iconTouched: false });
 
   // Add Item/Field to Category Modal
   const [addItemOpen, setAddItemOpen] = useState(false);
@@ -90,10 +258,11 @@ export default function Categories() {
         name: catForm.name.trim(),
         description: catForm.description.trim() || undefined,
         code: autoCode,
+        icon: catForm.icon,
         fields: [],
       });
       setCreateCatOpen(false);
-      setCatForm({ name: '', description: '' });
+      setCatForm({ name: '', description: '', icon: 'grid', iconTouched: false });
       await loadCategories();
     } catch (e: unknown) {
       setCatError((e as Error).message || 'Failed to create category');
@@ -174,12 +343,34 @@ export default function Categories() {
       key: 'name',
       label: 'Category Name',
       sortable: true,
-      render: (r: Category) => (
-        <div>
-          <span className="font-semibold text-slate-800 text-xs block">{r.name}</span>
-          {r.description && <span className="text-[11px] text-slate-400 truncate max-w-xs block">{r.description}</span>}
-        </div>
-      ),
+      render: (r: Category) => {
+        const visual = getCategoryVisual(r);
+        const IconComponent = visual.Icon;
+        return (
+          <div className="flex items-center gap-3 py-1">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border shadow-2xs ${visual.bg} ${visual.border} ${visual.color}`}
+              title={visual.label}
+            >
+              <IconComponent className="w-4 h-4 stroke-[2.2]" />
+            </div>
+            <div className="min-w-0">
+              <span className="font-semibold text-slate-800 text-xs block leading-tight">
+                {r.name}
+              </span>
+              {r.description ? (
+                <span className="text-[11px] text-slate-400 truncate max-w-sm block mt-0.5" title={r.description}>
+                  {r.description}
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 block mt-0.5 italic">
+                  {visual.label}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       key: 'fields_count',
@@ -333,34 +524,40 @@ export default function Categories() {
 
         {/* Category Details Banner */}
         <div className="p-4 pb-2">
-          <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-700">
-                <FileSpreadsheet className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-900">{selectedCategory.name}</h2>
-                  <StatusBadge status={selectedCategory.status || 'active'} />
+          {(() => {
+            const visual = getCategoryVisual(selectedCategory);
+            const IconComponent = visual.Icon;
+            return (
+              <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${visual.bg} border ${visual.border} flex items-center justify-center ${visual.color} shadow-2xs`}>
+                    <IconComponent className="w-5 h-5 stroke-[2.2]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900">{selectedCategory.name}</h2>
+                      <StatusBadge status={selectedCategory.status || 'active'} />
+                    </div>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      Code: <span className="font-semibold text-slate-700">{selectedCategory.code}</span>
+                      {selectedCategory.description && ` • ${selectedCategory.description}`}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  Code: <span className="font-semibold text-slate-700">{selectedCategory.code}</span>
-                  {selectedCategory.description && ` • ${selectedCategory.description}`}
-                </p>
-              </div>
-            </div>
 
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Configured Items</span>
-                <span className="text-lg font-bold text-slate-800">{fieldsList.length}</span>
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Configured Items</span>
+                    <span className="text-lg font-bold text-slate-800">{fieldsList.length}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Required Items</span>
+                    <span className="text-lg font-bold text-red-600">{fieldsList.filter(f => f.is_required).length}</span>
+                  </div>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Required Items</span>
-                <span className="text-lg font-bold text-red-600">{fieldsList.filter(f => f.is_required).length}</span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
 
         {/* Items Table */}
@@ -491,7 +688,7 @@ export default function Categories() {
               icon={<Plus className="w-3.5 h-3.5" />}
               onClick={() => {
                 setCatError('');
-                setCatForm({ name: '', description: '' });
+                setCatForm({ name: '', description: '', icon: 'grid', iconTouched: false });
                 setCreateCatOpen(true);
               }}
             >
@@ -543,10 +740,55 @@ export default function Categories() {
             label="Category Name"
             required
             value={catForm.name}
-            onChange={e => setCatForm(f => ({ ...f, name: e.target.value }))}
+            onChange={e => {
+              const val = e.target.value;
+              setCatForm(f => {
+                const autoIcon = getCategoryVisual({ name: val }).id;
+                return {
+                  ...f,
+                  name: val,
+                  icon: f.iconTouched ? f.icon : autoIcon,
+                };
+              });
+            }}
             placeholder="e.g. YARN PURCHASE ORDER, FABRIC WEAVING"
             hint="Category Code will be automatically generated (e.g. CAT_YARN_PURCHASE_ORDER)"
           />
+
+          {/* Category Icon Picker */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-slate-700">
+                Category Icon
+              </label>
+              <span className="text-[10px] text-slate-400">
+                {CATEGORY_ICONS[catForm.icon]?.label || 'Select icon'}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.values(CATEGORY_ICONS).map(item => {
+                const isSelected = catForm.icon === item.id;
+                const IconCmp = item.Icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setCatForm(f => ({ ...f, icon: item.id, iconTouched: true }))}
+                    className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all ${
+                      isSelected
+                        ? `${item.bg} ${item.border} ${item.color} ring-2 ring-brand-500 font-semibold shadow-2xs`
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-600'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSelected ? item.bg : 'bg-slate-100'} ${item.color} mb-1`}>
+                      <IconCmp className="w-4 h-4 stroke-[2.2]" />
+                    </div>
+                    <span className="text-[10px] leading-tight line-clamp-1">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <FormField
             as="textarea"

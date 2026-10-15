@@ -121,12 +121,13 @@ class CategoryController {
 
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("INSERT INTO categories (name, code, type, description) VALUES (:name, :code, :type, :desc)");
+            $stmt = $pdo->prepare("INSERT INTO categories (name, code, type, description, icon) VALUES (:name, :code, :type, :desc, :icon)");
             $stmt->execute([
                 ':name' => $name,
                 ':code' => $code,
                 ':type' => $type,
-                ':desc' => $description
+                ':desc' => $description,
+                ':icon' => !empty($data['icon']) ? trim($data['icon']) : null
             ]);
             $categoryId = (int)$pdo->lastInsertId();
 
@@ -182,10 +183,11 @@ class CategoryController {
                 return;
             }
 
-            $stmt = $pdo->prepare("UPDATE categories SET name = :name, description = :desc WHERE id = :id");
-            $stmt->execute([':name' => $name, ':desc' => $description, ':id' => $id]);
-            AuditLogger::log('Categories', 'UPDATE', $id, null, ['name' => $name, 'description' => $description]);
-            Response::success(['id' => $id, 'name' => $name], "Category updated successfully");
+            $icon = isset($data['icon']) ? trim($data['icon']) : null;
+            $stmt = $pdo->prepare("UPDATE categories SET name = :name, description = :desc, icon = :icon WHERE id = :id");
+            $stmt->execute([':name' => $name, ':desc' => $description, ':icon' => $icon, ':id' => $id]);
+            AuditLogger::log('Categories', 'UPDATE', $id, null, ['name' => $name, 'description' => $description, 'icon' => $icon]);
+            Response::success(['id' => $id, 'name' => $name, 'icon' => $icon], "Category updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
