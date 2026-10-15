@@ -550,6 +550,8 @@ class ProductionController {
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
+    }
+
     public function materialRequirements(int $orderId): void {
         try {
             $pdo = Database::getConnection();
