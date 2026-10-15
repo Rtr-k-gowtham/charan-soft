@@ -111,8 +111,11 @@ try {
         $r0 === 'products' && $id && $method === 'PUT' => (new MastersController)->updateProduct($id),
         $r0 === 'products' && $id && $method === 'DELETE' => (new MastersController)->deleteProduct($id),
 
-        $r0 === 'suppliers' && $method === 'GET' => (new MastersController)->getSuppliers(),
-        $r0 === 'suppliers' && $method === 'POST' => (new MastersController)->createSupplier(),
+        $r0 === 'suppliers' && $method === 'GET' && !$id => (new MastersController)->getSuppliers(),
+        $r0 === 'suppliers' && $method === 'GET' && $id => (new MastersController)->getSupplier((int)$id),
+        $r0 === 'suppliers' && $method === 'POST' && !$id => (new MastersController)->createSupplier(),
+        $r0 === 'suppliers' && $id && in_array($method, ['PUT', 'PATCH', 'POST']) => (new MastersController)->updateSupplier((int)$id),
+        $r0 === 'suppliers' && $id && $method === 'DELETE' => (new MastersController)->deleteSupplier((int)$id),
 
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'GET' => (new MastersController)->getBuyerProduct($id, (int)$segments[3]),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'GET' => (new MastersController)->getBuyerProducts($id),

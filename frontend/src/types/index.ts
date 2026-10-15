@@ -75,6 +75,10 @@ export interface Supplier {
   id: number;
   code: string;
   name: string;
+  category_id?: number | null;
+  category_name?: string;
+  category_code?: string;
+  category_icon?: string;
   contact_person?: string;
   phone: string;
   email?: string;

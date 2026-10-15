@@ -585,12 +585,57 @@ const server = http.createServer(async (req, res) => {
     }
 
     // 6. Suppliers & Customers
-    if (pathname === '/suppliers' && method === 'GET') return sendSuccess(res, db.suppliers);
+    if (pathname === '/suppliers' && method === 'GET') {
+      const enriched = db.suppliers.map(s => {
+        const cat = (db.categories || []).find(c => c.id === Number(s.category_id));
+        return {
+          ...s,
+          category_name: cat ? cat.name : (s.category_name || null),
+          category_code: cat ? cat.code : (s.category_code || null),
+          category_icon: cat ? cat.icon : (s.category_icon || null),
+        };
+      });
+      return sendSuccess(res, enriched);
+    }
     if (pathname === '/suppliers' && method === 'POST') {
-      const newSup = { id: db.suppliers.length + 1, code: body.code || `SUP-00${db.suppliers.length + 1}`, ...body };
+      const cat = (db.categories || []).find(c => c.id === Number(body.category_id));
+      const newSup = { 
+        id: db.suppliers.length + 1, 
+        code: body.code || `SUP-00${db.suppliers.length + 1}`, 
+        ...body,
+        category_name: cat ? cat.name : null,
+        category_code: cat ? cat.code : null,
+        category_icon: cat ? cat.icon : null,
+      };
       db.suppliers.push(newSup);
       saveDB();
       return sendSuccess(res, newSup, 'Supplier added', 201);
+    }
+
+    const supMatch = pathname.match(/^\/suppliers\/(\d+)$/);
+    if (supMatch && (method === 'PUT' || method === 'PATCH')) {
+      const supId = Number(supMatch[1]);
+      const idx = db.suppliers.findIndex(s => s.id === supId);
+      if (idx === -1) return sendError(res, 'Supplier not found', 404);
+      const cat = (db.categories || []).find(c => c.id === Number(body.category_id));
+      db.suppliers[idx] = {
+        ...db.suppliers[idx],
+        ...body,
+        id: supId,
+        category_name: cat ? cat.name : (db.suppliers[idx].category_name || null),
+        category_code: cat ? cat.code : (db.suppliers[idx].category_code || null),
+        category_icon: cat ? cat.icon : (db.suppliers[idx].category_icon || null),
+      };
+      saveDB();
+      return sendSuccess(res, db.suppliers[idx], 'Supplier updated');
+    }
+    if (supMatch && method === 'DELETE') {
+      const supId = Number(supMatch[1]);
+      const idx = db.suppliers.findIndex(s => s.id === supId);
+      if (idx === -1) return sendError(res, 'Supplier not found', 404);
+      db.suppliers.splice(idx, 1);
+      saveDB();
+      return sendSuccess(res, null, 'Supplier deleted');
     }
 
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
