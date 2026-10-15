@@ -1,6 +1,6 @@
 // src/pages/purchase/PurchaseOrders.tsx
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import { PurchaseOrder, Supplier, Category, PurchaseOrderItem, Material } from '../../types';
@@ -95,6 +95,7 @@ function calcItem(item: any): any {
 
 export default function PurchaseOrders() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -581,6 +582,13 @@ export default function PurchaseOrders() {
     setCreateOpen(true);
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('create') === 'true' || params.get('action') === 'create') {
+      handleOpenCreate();
+    }
+  }, [location.search, suppliers, categories]);
+
   const handleCreate = async (_status?: string) => {
     // Graceful resolution: if user didn't pick, auto-fallback to first available supplier / category
     const finalSupplierId = form.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : '');
@@ -997,37 +1005,40 @@ export default function PurchaseOrders() {
     return (
       <div className="flex flex-col h-full bg-slate-50 overflow-y-auto">
         {/* Top Sticky Header */}
-        <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center gap-4">
+        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 shadow-sm">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <button
               onClick={() => setCreateOpen(false)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Back to Orders
+              <span className="hidden sm:inline">Back to Orders</span>
+              <span className="sm:hidden">Back</span>
             </button>
-            <div className="h-5 w-px bg-slate-200" />
-            <div>
-              <h1 className="text-base font-bold text-slate-800 leading-tight">Create Purchase Order</h1>
-              <p className="text-[11px] text-slate-500">Full-page order creation with searchable dropdowns & material catalog</p>
+            <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">Create Purchase Order</h1>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 hidden sm:block">Full-page order creation with searchable dropdowns & material catalog</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <Button variant="secondary" size="xs" className="sm:text-xs" onClick={() => setCreateOpen(false)}>
               Cancel
             </Button>
             <button
               type="button"
               disabled={saving}
               onClick={() => handleCreate('Draft')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition-colors disabled:opacity-50"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-amber-700" />
-              Save as Draft
+              <span className="hidden sm:inline">Save as Draft</span>
+              <span className="sm:hidden">Draft</span>
             </button>
-            <Button loading={saving} onClick={() => handleCreate('Draft')} icon={<Plus className="w-4 h-4" />}>
-              Create PO (Draft)
+            <Button loading={saving} size="sm" onClick={() => handleCreate('Draft')} icon={<Plus className="w-3.5 h-3.5" />}>
+              <span className="hidden sm:inline">Create PO (Draft)</span>
+              <span className="sm:hidden">Create</span>
             </Button>
           </div>
         </div>
@@ -2877,43 +2888,85 @@ export default function PurchaseOrders() {
         subtitle="Manage supplier purchase orders and line items"
         breadcrumb={[{ label: 'Purchase' }, { label: 'Orders' }]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button 
               onClick={load} 
               disabled={loading} 
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 bg-white"
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 bg-white"
               title="Refresh"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
 
-            {/* Direct navigation to Supplier Payments as requested */}
+            {/* Direct navigation to Supplier Payments as requested - Desktop only */}
             <Button 
               variant="secondary" 
               icon={<CreditCard className="w-3.5 h-3.5 text-emerald-600" />} 
               onClick={() => navigate('/purchase/payments')}
+              className="hidden lg:inline-flex"
             >
               Supplier Payments
             </Button>
 
-            {/* Direct navigation to PO Template Settings */}
+            {/* Direct navigation to PO Template Settings - Desktop only */}
             <Button 
               variant="secondary" 
               icon={<FileSpreadsheet className="w-3.5 h-3.5 text-brand-600" />} 
               onClick={() => navigate('/settings/po-template')}
+              className="hidden md:inline-flex"
             >
               PO Template Settings
             </Button>
 
-            <Button icon={<Plus className="w-3.5 h-3.5" />} onClick={handleOpenCreate}>
-              New PO (Full Page)
+            {/* Create Purchase Order Button */}
+            <Button 
+              icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />} 
+              onClick={handleOpenCreate}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-xs"
+            >
+              <span className="hidden sm:inline">Create Purchase Order</span>
+              <span className="sm:hidden font-bold">Create PO</span>
             </Button>
           </div>
         }
       />
 
+      {/* Mobile Quick Action Banner (< sm) */}
+      <div className="sm:hidden px-3 pt-3 pb-1">
+        <button
+          type="button"
+          onClick={handleOpenCreate}
+          className="w-full flex items-center justify-between gap-3 p-3 bg-gradient-to-r from-brand-600 to-brand-700 active:from-brand-700 active:to-brand-800 text-white rounded-xl shadow-md transition-all active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+              <Plus className="w-5 h-5 text-white stroke-[2.5]" />
+            </div>
+            <div className="text-left min-w-0">
+              <p className="text-xs font-bold leading-tight truncate">Create Purchase Order</p>
+              <p className="text-[10px] text-brand-100 truncate">New supplier PO with item specs & tax</p>
+            </div>
+          </div>
+          <span className="text-[11px] font-bold bg-white text-brand-700 px-2.5 py-1.5 rounded-lg shadow-xs shrink-0 flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            New PO
+          </span>
+        </button>
+      </div>
+
+      {/* Floating Action Button (FAB) for Mobile (< sm) */}
+      <button
+        type="button"
+        onClick={handleOpenCreate}
+        className="sm:hidden fixed bottom-20 right-4 z-40 flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white px-4 py-3 rounded-full shadow-2xl transition-all font-bold text-xs border border-white/20 ring-4 ring-brand-100/50"
+        aria-label="Create Purchase Order"
+      >
+        <Plus className="w-4 h-4 stroke-[3]" />
+        <span>Create PO</span>
+      </button>
+
       {/* Mobile Card List (< sm) */}
-      <div className="sm:hidden px-3 py-2 space-y-3">
+      <div className="sm:hidden px-3 py-2 space-y-3 pb-24">
         {pos.length === 0 && !loading && (
           <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
             No purchase orders found.
