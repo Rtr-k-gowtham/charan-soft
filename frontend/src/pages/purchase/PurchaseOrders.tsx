@@ -13,6 +13,7 @@ import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSe
 import Modal from '../../components/ui/Modal';
 import DynamicPOTemplate from '../../components/purchase/DynamicPOTemplate';
 import { printHtmlElement } from '../../lib/printUtils';
+import { getBuyerAvatarDataUri } from '../../lib/avatarService';
 import { 
   Plus, 
   Eye, 
@@ -223,6 +224,7 @@ export default function PurchaseOrders() {
       value: String(o.id),
       label: `${o.order_number || `PO-${o.id}`}${o.title ? ` - ${o.title}` : ''}`,
       sublabel: `${o.customer_name ? `Customer: ${o.customer_name} | ` : ''}Status: ${o.status || 'Active'}${o.target_delivery_date ? ` | Due: ${o.target_delivery_date}` : ''}`.trim(),
+      avatarUri: getBuyerAvatarDataUri(o),
     }));
   }, [productionOrders]);
 

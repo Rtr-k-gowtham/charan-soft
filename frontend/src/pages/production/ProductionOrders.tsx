@@ -8,6 +8,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
+import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import {
   Plus,
   Eye,
@@ -367,8 +368,8 @@ export default function ProductionOrders() {
                 {/* Compact Info Row: Visible when collapsed so multiple cards are readable at a glance */}
                 <div className="flex items-center justify-between gap-2 text-xs text-slate-500 flex-wrap pt-0.5">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="flex items-center gap-1 text-slate-700 font-medium">
-                      <User className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                    <span className="flex items-center gap-1.5 text-slate-700 font-medium">
+                      <BuyerAvatar buyer={ord} size="xs" shape="circle" />
                       <span className="truncate max-w-[140px]">{ord.customer_name || 'Direct Order'}</span>
                     </span>
                     <span className="flex items-center gap-1 text-slate-400 font-mono text-[11px]">
@@ -633,9 +634,7 @@ export default function ProductionOrders() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 flex-1 min-w-0">
                     {/* 1. Buyer / Customer */}
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                        <User className="w-3.5 h-3.5 text-brand-600" />
-                      </div>
+                      <BuyerAvatar buyer={ord} size="sm" shape="circle" className="shrink-0" />
                       <div className="min-w-0">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                           Buyer / Customer

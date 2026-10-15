@@ -209,16 +209,88 @@ class MastersController {
             return;
         }
 
+        $avatarStyle = trim($data['avatar_style'] ?? 'adventurer');
+        $avatarSeed = trim($data['avatar_seed'] ?? ('buyer-' . $code));
+        $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
+
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->prepare("
-                INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress]);
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address, avatar_style, avatar_seed, avatar_config)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig]);
+            } catch (Exception $colEx) {
+                // Fallback if avatar columns don't exist yet in active table
+                $stmt = $pdo->prepare("
+                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress]);
+            }
             $id = (int)$pdo->lastInsertId();
             AuditLogger::log('Customers', 'CREATE', $id, null, $data);
-            Response::success(['id' => $id, 'code' => $code, 'name' => $name], "Customer created successfully", 201);
+            Response::success([
+                'id' => $id, 
+                'code' => $code, 
+                'name' => $name,
+                'avatar_style' => $avatarStyle,
+                'avatar_seed' => $avatarSeed,
+                'avatar_config' => $avatarConfig
+            ], "Customer created successfully", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateCustomer(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $code = trim($data['code'] ?? '');
+        $contactPerson = trim($data['contact_person'] ?? '');
+        $phone = trim($data['phone'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $gstin = trim($data['gstin'] ?? '');
+        $billingAddress = trim($data['billing_address'] ?? ($data['address'] ?? ''));
+        $avatarStyle = isset($data['avatar_style']) ? trim($data['avatar_style']) : null;
+        $avatarSeed = isset($data['avatar_seed']) ? trim($data['avatar_seed']) : null;
+        $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
+
+        try {
+            $pdo = Database::getConnection();
+            try {
+                $stmt = $pdo->prepare("
+                    UPDATE customers 
+                    SET name = COALESCE(NULLIF(?, ''), name),
+                        code = COALESCE(NULLIF(?, ''), code),
+                        contact_person = ?,
+                        phone = COALESCE(NULLIF(?, ''), phone),
+                        email = ?,
+                        gstin = ?,
+                        billing_address = ?,
+                        avatar_style = COALESCE(?, avatar_style),
+                        avatar_seed = COALESCE(?, avatar_seed),
+                        avatar_config = COALESCE(?, avatar_config)
+                    WHERE id = ? AND deleted_at IS NULL
+                ");
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig, $id]);
+            } catch (Exception $colEx) {
+                $stmt = $pdo->prepare("
+                    UPDATE customers 
+                    SET name = COALESCE(NULLIF(?, ''), name),
+                        code = COALESCE(NULLIF(?, ''), code),
+                        contact_person = ?,
+                        phone = COALESCE(NULLIF(?, ''), phone),
+                        email = ?,
+                        gstin = ?,
+                        billing_address = ?
+                    WHERE id = ? AND deleted_at IS NULL
+                ");
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $id]);
+            }
+            AuditLogger::log('Customers', 'UPDATE', $id, null, $data);
+            Response::success(['id' => $id, 'name' => $name, 'avatar_style' => $avatarStyle, 'avatar_seed' => $avatarSeed], "Customer updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

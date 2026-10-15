@@ -10,6 +10,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
+import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import {
   RefreshCw,
   ChevronRight,
@@ -43,7 +44,12 @@ const STAGE_ROUTE_MAP: Record<string, string> = {
 type StageItem = ProductionOrderItem & {
   order_number: string;
   order_title: string;
+  customer_id?: number;
   customer_name?: string;
+  customer_code?: string;
+  customer_avatar_style?: string;
+  customer_avatar_seed?: string;
+  customer_avatar_config?: any;
   stage_code?: string;
   priority?: string;
   target_delivery_date?: string;
@@ -83,7 +89,12 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               ...it,
               order_number: ord.order_number,
               order_title: ord.title,
+              customer_id: ord.customer_id,
               customer_name: ord.customer_name,
+              customer_code: ord.customer_code,
+              customer_avatar_style: ord.customer_avatar_style,
+              customer_avatar_seed: ord.customer_avatar_seed,
+              customer_avatar_config: ord.customer_avatar_config,
               priority: ord.priority,
               target_delivery_date: ord.target_delivery_date,
               stage_code: (it as { stage_code?: string }).stage_code || '',
@@ -235,6 +246,32 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         <div>
           <span className="font-semibold text-brand-700 block">{r.order_number}</span>
           <span className="text-[10px] text-slate-400 truncate max-w-[140px] block">{r.order_title}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'customer_name',
+      label: 'Buyer',
+      render: (r: StageItem) => (
+        <div className="flex items-center gap-2 min-w-0">
+          <BuyerAvatar
+            buyer={{
+              id: r.customer_id,
+              code: r.customer_code,
+              name: r.customer_name,
+              avatar_style: r.customer_avatar_style,
+              avatar_seed: r.customer_avatar_seed,
+              avatar_config: r.customer_avatar_config,
+            }}
+            size="sm"
+            shape="circle"
+          />
+          <div className="min-w-0">
+            <span className="font-semibold text-slate-800 text-xs truncate block">{r.customer_name || 'Direct Buyer'}</span>
+            {r.customer_code && (
+              <span className="font-mono text-[10px] text-slate-400 block">{r.customer_code}</span>
+            )}
+          </div>
         </div>
       ),
     },

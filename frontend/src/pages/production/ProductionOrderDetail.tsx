@@ -8,6 +8,7 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import {
   ArrowLeft,
   Calendar,
@@ -222,9 +223,16 @@ export default function ProductionOrderDetail() {
           </div>
 
           <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
-            <span className="flex items-center gap-1.5">
-              <User className="w-3.5 h-3.5 text-slate-400" />
-              Buyer / Customer: <strong className="text-slate-800">{order.customer_name || 'Direct Order'}</strong>
+            <span className="flex items-center gap-2">
+              <BuyerAvatar buyer={order} size="sm" shape="circle" />
+              <span>
+                Buyer / Customer: <strong className="text-slate-800">{order.customer_name || 'Direct Order'}</strong>
+                {order.customer_code && (
+                  <span className="ml-1.5 font-mono text-[10px] font-bold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                    {order.customer_code}
+                  </span>
+                )}
+              </span>
             </span>
             <span>•</span>
             <span className="flex items-center gap-1.5">

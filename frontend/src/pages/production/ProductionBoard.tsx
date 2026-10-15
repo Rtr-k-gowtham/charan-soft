@@ -3,6 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ProductionOrder, ProductionOrderItem, ProductionStage } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
+import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
@@ -654,10 +655,10 @@ export default function ProductionBoard() {
                                 {order.title}
                               </p>
                               {order.customer_name && (
-                                <p className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5 truncate">
-                                  <User className="w-2.5 h-2.5 shrink-0" />
-                                  <span className="truncate">{order.customer_name}</span>
-                                </p>
+                                <div className="flex items-center gap-1.5 mt-1 truncate">
+                                  <BuyerAvatar buyer={order} size="xs" shape="circle" />
+                                  <span className="text-[10px] font-medium text-slate-600 truncate">{order.customer_name}</span>
+                                </div>
                               )}
                             </div>
 

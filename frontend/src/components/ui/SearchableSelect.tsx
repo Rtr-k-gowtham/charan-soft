@@ -9,6 +9,7 @@ export interface SelectOption {
   sublabel?: string;
   group?: string;
   colorSwatch?: string;
+  avatarUri?: string;
 }
 
 interface SearchableSelectProps {
@@ -213,6 +214,13 @@ export default function SearchableSelect({
         <div className="flex-1 min-w-0">
           {selectedOption ? (
             <div className="flex items-center gap-2 truncate">
+              {selectedOption.avatarUri && (
+                <img
+                  src={selectedOption.avatarUri}
+                  alt=""
+                  className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                />
+              )}
               {selectedOption.colorSwatch && (
                 <span
                   className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
@@ -315,6 +323,13 @@ export default function SearchableSelect({
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              {opt.avatarUri && (
+                                <img
+                                  src={opt.avatarUri}
+                                  alt=""
+                                  className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                                />
+                              )}
                               {opt.colorSwatch && (
                                 <span
                                   className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-xs"
@@ -357,6 +372,13 @@ export default function SearchableSelect({
                               }`}
                             >
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                {opt.avatarUri && (
+                                  <img
+                                    src={opt.avatarUri}
+                                    alt=""
+                                    className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                                  />
+                                )}
                                 {opt.colorSwatch && (
                                   <span
                                     className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-xs"
@@ -452,6 +474,13 @@ export default function SearchableSelect({
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            {opt.avatarUri && (
+                              <img
+                                src={opt.avatarUri}
+                                alt=""
+                                className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                              />
+                            )}
                             {opt.colorSwatch && (
                               <span
                                 className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"
@@ -494,6 +523,13 @@ export default function SearchableSelect({
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              {opt.avatarUri && (
+                                <img
+                                  src={opt.avatarUri}
+                                  alt=""
+                                  className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                                />
+                              )}
                               {opt.colorSwatch && (
                                 <span
                                   className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 shadow-xs"

@@ -595,10 +595,32 @@ const server = http.createServer(async (req, res) => {
 
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'POST') {
-      const newCust = { id: db.customers.length + 1, code: body.code || `BUY-00${db.customers.length + 1}`, ...body };
+      const generatedCode = body.code || `BUY-${String(db.customers.length + 1).padStart(3, '0')}`;
+      const newCust = {
+        id: db.customers.length + 1,
+        code: generatedCode,
+        avatar_style: body.avatar_style || 'adventurer',
+        avatar_seed: body.avatar_seed || `buyer-${generatedCode}`,
+        avatar_config: body.avatar_config || null,
+        ...body,
+      };
       db.customers.push(newCust);
       saveDB();
       return sendSuccess(res, newCust, 'Buyer added', 201);
+    }
+
+    const custPutMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)$/);
+    if (custPutMatch && (method === 'PUT' || method === 'PATCH')) {
+      const custId = Number(custPutMatch[1]);
+      const idx = db.customers.findIndex(c => c.id === custId);
+      if (idx === -1) return sendError(res, 'Buyer not found', 404);
+      db.customers[idx] = {
+        ...db.customers[idx],
+        ...body,
+        id: custId,
+      };
+      saveDB();
+      return sendSuccess(res, db.customers[idx], 'Buyer updated successfully');
     }
 
     // Buyer Products
@@ -1127,7 +1149,20 @@ const server = http.createServer(async (req, res) => {
 
     // 9. Production Orders & Stages
     if (pathname === '/production-stages' && method === 'GET') return sendSuccess(res, db.productionStages);
-    if (pathname === '/production-orders' && method === 'GET') return sendSuccess(res, db.productionOrders);
+    if (pathname === '/production-orders' && method === 'GET') {
+      const enriched = (db.productionOrders || []).map(po => {
+        const cust = (db.customers || []).find(c => c.id === Number(po.customer_id));
+        return {
+          ...po,
+          customer_code: cust?.code || '',
+          customer_name: cust?.name || po.customer_name || 'Buyer',
+          customer_avatar_style: cust?.avatar_style || 'adventurer',
+          customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${po.customer_id || 1}`,
+          customer_avatar_config: cust?.avatar_config || null,
+        };
+      });
+      return sendSuccess(res, enriched);
+    }
     if (pathname === '/production-orders' && method === 'POST') {
       const customerId = Number(body.customer_id);
       if (!customerId) {
@@ -1171,13 +1206,18 @@ const server = http.createServer(async (req, res) => {
       });
 
       const totalQty = items.reduce((s, i) => s + i.total_quantity, 0);
-      const custObj = (db.customers || []).find(c => c.id === customerId) || { name: 'Customer' };
+      const customerId = body.customer_id ? Number(body.customer_id) : null;
+      const matchedCust = customerId ? (db.customers || []).find(c => c.id === customerId) : null;
       const newOrder = {
         id: db.productionOrders.length + 1,
         order_number: `ORD-${1000 + db.productionOrders.length + 1}`,
         title: body.title || 'Export Garment Batch',
-        customer_id: customerId,
-        customer_name: custObj.name,
+        customer_id: matchedCust?.id || null,
+        customer_code: matchedCust?.code || null,
+        customer_name: matchedCust?.name || 'Direct Order',
+        customer_avatar_style: matchedCust?.avatar_style || 'adventurer',
+        customer_avatar_seed: matchedCust?.avatar_seed || (matchedCust ? `buyer-${matchedCust.code || matchedCust.id}` : null),
+        customer_avatar_config: matchedCust?.avatar_config || null,
         category_id: Number(body.category_id || 1),
         priority: body.priority || 'Medium',
         start_date: body.start_date || new Date().toISOString().split('T')[0],
