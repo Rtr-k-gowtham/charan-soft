@@ -1206,7 +1206,6 @@ const server = http.createServer(async (req, res) => {
       });
 
       const totalQty = items.reduce((s, i) => s + i.total_quantity, 0);
-      const customerId = body.customer_id ? Number(body.customer_id) : null;
       const matchedCust = customerId ? (db.customers || []).find(c => c.id === customerId) : null;
       const newOrder = {
         id: db.productionOrders.length + 1,
