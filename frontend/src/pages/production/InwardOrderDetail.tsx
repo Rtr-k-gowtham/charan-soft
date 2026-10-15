@@ -451,13 +451,14 @@ export default function InwardOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => navigate('/production/inward')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
-              <span>Back to Inward Stage</span>
+              <span className="hidden sm:inline">Back to Inward Stage</span>
+              <span className="inline sm:hidden">Back</span>
             </button>
 
             <button
@@ -471,9 +472,10 @@ export default function InwardOrderDetail() {
             <Button
               icon={<ChevronRight className="w-4 h-4 stroke-[2.5]" />}
               onClick={() => setAdvanceModalOpen(true)}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs whitespace-nowrap"
             >
-              <span>Advance to Stage 04: Dyeing</span>
+              <span className="hidden sm:inline">Advance to Stage 04: Dyeing</span>
+              <span className="inline sm:hidden">To Dyeing</span>
             </Button>
           </div>
         }
@@ -716,8 +718,67 @@ export default function InwardOrderDetail() {
                         </div>
                       </div>
 
-                      {/* Line Items Table */}
-                      <div className="overflow-x-auto">
+                      {/* Mobile Card Layout for PO Items */}
+                      <div className="block sm:hidden divide-y divide-slate-100">
+                        {items.map((it, idx) => {
+                          const ordered = Number(it.quantity || 0);
+                          const received = Number(it.received_quantity || 0);
+                          const rem = Math.max(0, ordered - received);
+                          const done = ordered > 0 && received >= ordered;
+
+                          return (
+                            <div key={it.id || idx} className="p-3 bg-white space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <span className="font-bold text-xs text-slate-800 block truncate">
+                                    {it.item_description || it.description || 'Raw Material Item'}
+                                  </span>
+                                  {it.spec && <span className="text-[10px] text-slate-400 block truncate">{it.spec}</span>}
+                                </div>
+                                <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0">
+                                  {it.uom || 'PCS'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-1.5 py-1.5 px-2 bg-slate-50 rounded-lg text-center">
+                                <div>
+                                  <span className="text-[9px] text-slate-400 block font-semibold uppercase">Ordered</span>
+                                  <span className="font-mono font-bold text-xs text-slate-700">{fmt(ordered)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-emerald-600 block font-semibold uppercase">Received</span>
+                                  <span className="font-mono font-bold text-xs text-emerald-600">{fmt(received)}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-amber-700 block font-semibold uppercase">Balance</span>
+                                  <span className="font-mono font-bold text-xs text-amber-700">{fmt(rem)}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[11px] pt-0.5">
+                                <span className="text-[10px] text-slate-400 font-mono">Item #{idx + 1}</span>
+                                {done ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                    Complete
+                                  </span>
+                                ) : received > 0 ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Partial Inward
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                    Pending Inward
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Desktop Line Items Table */}
+                      <div className="hidden sm:block overflow-x-auto">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                             <tr>
@@ -930,15 +991,16 @@ export default function InwardOrderDetail() {
         subtitle={`Supplier: ${selectedPO?.supplier_name || 'Vendor'} • Enter Received Quantities & Snap Delivery Proof`}
         size="2xl"
         footer={
-          <div className="flex items-center justify-between w-full">
-            <span className="text-[11px] text-slate-400">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 w-full">
+            <span className="text-[11px] text-slate-400 hidden sm:inline">
               * Live stock balances will be updated immediately upon receipt
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <Button
                 variant="secondary"
                 disabled={savingReceive}
                 onClick={() => setReceiveModalOpen(false)}
+                className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0 text-xs font-semibold"
               >
                 Cancel
               </Button>
@@ -946,7 +1008,7 @@ export default function InwardOrderDetail() {
                 loading={savingReceive}
                 onClick={handleSubmitInward}
                 icon={<PackageOpen className="w-4 h-4" />}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white font-bold min-h-[44px] sm:min-h-0 shadow-md text-xs"
               >
                 Confirm Inward & Save
               </Button>
@@ -963,7 +1025,7 @@ export default function InwardOrderDetail() {
           )}
 
           {/* Top metadata grid: DC Number, Inward Date, Vehicle, Received By */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-200">
             <div>
               <label className="text-[11px] font-bold text-slate-600 block mb-1">
                 DC / Challan No. *
@@ -973,7 +1035,7 @@ export default function InwardOrderDetail() {
                 value={dcNumber}
                 onChange={e => setDcNumber(e.target.value)}
                 placeholder="e.g. DC-4821"
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:ring-1 focus:ring-emerald-500 min-h-[38px]"
               />
             </div>
 
@@ -985,7 +1047,7 @@ export default function InwardOrderDetail() {
                 type="date"
                 value={receiptDate}
                 onChange={e => setReceiptDate(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 min-h-[38px]"
               />
             </div>
 
@@ -998,7 +1060,7 @@ export default function InwardOrderDetail() {
                 value={vehicleNumber}
                 onChange={e => setVehicleNumber(e.target.value)}
                 placeholder="e.g. TN 38 BX 4102"
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 min-h-[38px]"
               />
             </div>
 
@@ -1011,17 +1073,84 @@ export default function InwardOrderDetail() {
                 value={receivedBy}
                 onChange={e => setReceivedBy(e.target.value)}
                 placeholder="Staff Name"
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500"
+                className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500 min-h-[38px]"
               />
             </div>
           </div>
 
-          {/* Line Items Receiving Table */}
+          {/* Line Items Receiving Section */}
           <div>
             <label className="text-xs font-bold uppercase tracking-wider text-slate-700 block mb-1.5">
               Material Items Inward Quantities
             </label>
-            <div className="overflow-x-auto border border-slate-200 rounded-lg">
+
+            {/* Mobile Card Inputs for Touch Devices */}
+            <div className="block sm:hidden space-y-2.5">
+              {(selectedPO?.items || []).map((it) => {
+                const ordered = Number(it.quantity || 0);
+                const received = Number(it.received_quantity || 0);
+                const remaining = Math.max(0, ordered - received);
+                const currentVal = receiveQuantities[it.id!] || '';
+                const errorMsg = itemErrors[it.id!];
+
+                return (
+                  <div key={it.id} className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="font-bold text-xs text-slate-800 block truncate">
+                          {it.item_description || it.description || 'Material Item'}
+                        </span>
+                        {errorMsg && (
+                          <span className="text-[10px] text-red-600 font-medium block mt-0.5">
+                            {errorMsg}
+                          </span>
+                        )}
+                      </div>
+                      <span className="bg-slate-100 text-slate-700 font-bold px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                        {it.uom || 'PCS'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] px-2.5 py-1.5 bg-slate-50 rounded-lg">
+                      <span className="text-slate-500">
+                        Ordered: <strong className="text-slate-700 font-mono">{fmt(ordered)}</strong>
+                      </span>
+                      <span className="text-amber-800">
+                        Remaining: <strong className="font-mono font-bold text-amber-700">{fmt(remaining)}</strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetMaxQty(it.id!, remaining)}
+                        className="px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition shrink-0 min-h-[42px] flex items-center justify-center"
+                        title="Receive all remaining"
+                      >
+                        MAX ({fmt(remaining)})
+                      </button>
+                      <input
+                        type="number"
+                        min="0"
+                        max={remaining}
+                        step="0.01"
+                        value={currentVal}
+                        onChange={e => handleQtyChange(it.id!, e.target.value, remaining)}
+                        className={`flex-1 px-3 py-2 text-sm font-mono font-bold text-right rounded-lg border min-h-[42px] focus:outline-none focus:ring-1 ${
+                          errorMsg
+                            ? 'border-red-400 bg-red-50 text-red-800 focus:ring-red-500'
+                            : 'border-slate-300 bg-white text-slate-900 focus:ring-emerald-500'
+                        }`}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table Inputs */}
+            <div className="hidden sm:block overflow-x-auto border border-slate-200 rounded-lg">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
@@ -1096,7 +1225,7 @@ export default function InwardOrderDetail() {
           </div>
 
           {/* 📸 TAKE PHOTO OF PROOF SECTION */}
-          <div className="p-4 bg-emerald-50/50 rounded-xl border-2 border-dashed border-emerald-300">
+          <div className="p-3.5 sm:p-4 bg-emerald-50/60 rounded-xl border-2 border-dashed border-emerald-300">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Camera className="w-4 h-4 text-emerald-700" />
@@ -1105,7 +1234,7 @@ export default function InwardOrderDetail() {
                 </span>
               </div>
               <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">
-                Camera & Upload Supported
+                Camera & Upload
               </span>
             </div>
 
@@ -1127,80 +1256,83 @@ export default function InwardOrderDetail() {
             />
 
             {!photoProof ? (
-              <div className="py-4 flex flex-col items-center justify-center gap-3">
-                <div className="flex items-center gap-3">
+              <div className="py-3 flex flex-col items-center justify-center gap-3">
+                <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full">
                   {/* Camera Button */}
                   <button
                     type="button"
                     onClick={() => cameraInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition active:scale-95 cursor-pointer"
+                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-sm transition active:scale-98 cursor-pointer min-h-[48px]"
                   >
                     <Camera className="w-4 h-4" />
-                    <span>Take Photo (Camera)</span>
+                    <span>Take Camera Photo</span>
                   </button>
 
                   {/* Upload from Gallery Button */}
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs shadow-2xs transition active:scale-95 cursor-pointer"
+                    className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold text-xs shadow-2xs transition active:scale-98 cursor-pointer min-h-[42px]"
                   >
                     <Upload className="w-4 h-4 text-slate-500" />
                     <span>Upload Proof Image</span>
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 text-center">
-                  Snap delivery challan, LR lorry receipt, or parcel photo with your mobile or webcam.
+                  Snap delivery challan, LR lorry receipt, or parcel photo with your mobile camera.
                 </p>
               </div>
             ) : (
               /* Photo Preview with Controls */
-              <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3 rounded-lg border border-emerald-200">
-                <div className="relative group w-32 h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+              <div className="flex flex-col sm:flex-row items-center gap-3.5 bg-white p-3 rounded-xl border border-emerald-200">
+                <div
+                  onClick={() =>
+                    setPreviewPhoto({
+                      url: photoProof,
+                      title: 'Attached Inward Proof Photo',
+                      dcNo: dcNumber,
+                    })
+                  }
+                  className="relative group w-full sm:w-36 h-40 sm:h-24 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0 cursor-pointer"
+                >
                   <img
                     src={photoProof}
                     alt="Proof Preview"
                     className="w-full h-full object-cover"
                   />
-                  <div
-                    onClick={() =>
-                      setPreviewPhoto({
-                        url: photoProof,
-                        title: 'Attached Inward Proof Photo',
-                        dcNo: dcNumber,
-                      })
-                    }
-                    className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white cursor-pointer"
-                  >
-                    <ZoomIn className="w-5 h-5" />
+                  <div className="absolute inset-0 bg-slate-900/30 flex items-center justify-center text-white text-xs font-bold gap-1">
+                    <ZoomIn className="w-4 h-4" />
+                    <span className="sm:hidden">Tap to Enlarge</span>
                   </div>
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 w-full">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span className="font-bold text-xs text-slate-800">Photo Proof Attached Successfully</span>
                   </div>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">
                     {photoName || 'Captured Proof Photo'}
                   </p>
-                  <div className="flex items-center gap-2 mt-2">
+                  <div className="flex items-center gap-2 mt-2.5">
                     <button
                       type="button"
                       onClick={() => cameraInputRef.current?.click()}
-                      className="text-[11px] font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 min-h-[38px] transition"
                     >
-                      <Camera className="w-3 h-3" />
-                      Retake Photo
+                      <Camera className="w-3.5 h-3.5" />
+                      <span>Retake Photo</span>
                     </button>
-                    <span className="text-slate-300">•</span>
                     <button
                       type="button"
-                      onClick={() => { setPhotoProof(null); setPhotoName(''); }}
-                      className="text-[11px] font-semibold text-red-600 hover:underline flex items-center gap-1"
+                      onClick={() => {
+                        setPhotoProof(null);
+                        setPhotoName('');
+                      }}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-red-700 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 min-h-[38px] transition"
                     >
-                      <Trash2 className="w-3 h-3" />
-                      Remove
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
                     </button>
                   </div>
                 </div>
@@ -1252,19 +1384,23 @@ export default function InwardOrderDetail() {
         subtitle={previewPhoto?.dcNo ? `DC Number: ${previewPhoto.dcNo}` : undefined}
         size="3xl"
         footer={
-          <div className="flex items-center justify-between w-full">
-            <span className="text-xs text-slate-500">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 w-full">
+            <span className="text-[11px] text-slate-500 truncate">
               {previewPhoto?.grnNo ? `Reference: ${previewPhoto.grnNo}` : 'Material Inward Proof Document'}
             </span>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={() => setPreviewPhoto(null)}>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Button
+                variant="secondary"
+                onClick={() => setPreviewPhoto(null)}
+                className="flex-1 sm:flex-none min-h-[40px] sm:min-h-0"
+              >
                 Close
               </Button>
               {previewPhoto?.url && (
                 <a
                   href={previewPhoto.url}
                   download={`Inward_Proof_${previewPhoto.dcNo || 'Photo'}.jpg`}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition"
+                  className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition min-h-[40px] sm:min-h-0"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download Photo</span>
@@ -1295,18 +1431,19 @@ export default function InwardOrderDetail() {
         subtitle={`Order: ${order.order_number} (${order.customer_name || 'Buyer'})`}
         size="md"
         footer={
-          <div className="flex items-center justify-end gap-2 w-full">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 w-full">
             <Button
               variant="secondary"
               disabled={savingAdvance}
               onClick={() => setAdvanceModalOpen(false)}
+              className="flex-1 sm:flex-none min-h-[42px] sm:min-h-0"
             >
               Cancel
             </Button>
             <Button
               loading={savingAdvance}
               onClick={handleAdvanceToNextStage}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white font-bold min-h-[42px] sm:min-h-0"
               icon={<ChevronRight className="w-4 h-4" />}
             >
               Advance to Stage 04 (Dyeing)
