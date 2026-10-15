@@ -105,14 +105,16 @@ const initialData = {
     { id: 4, code: 'DSN-004', name: 'Typography Chest Graphic', pattern: 'Pigment Discharge Screen Print' },
   ],
   productionStages: [
-    { id: 1, code: 'INST', name: 'Installation', sequence_order: 1, color_badge: '#6366f1', standard_cycle_time_mins: 45, status: 'active' },
-    { id: 2, code: 'DYE', name: 'Dyeing', sequence_order: 2, color_badge: '#0ea5e9', standard_cycle_time_mins: 180, status: 'active' },
-    { id: 3, code: 'DET', name: 'Detailing', sequence_order: 3, color_badge: '#8b5cf6', standard_cycle_time_mins: 60, status: 'active' },
-    { id: 4, code: 'CUT', name: 'Cutting', sequence_order: 4, color_badge: '#f59e0b', standard_cycle_time_mins: 90, status: 'active' },
-    { id: 5, code: 'STI', name: 'Stitching', sequence_order: 5, color_badge: '#10b981', standard_cycle_time_mins: 240, status: 'active' },
-    { id: 6, code: 'QC', name: 'QC', sequence_order: 6, color_badge: '#ef4444', standard_cycle_time_mins: 30, status: 'active' },
-    { id: 7, code: 'RWK', name: 'Rework', sequence_order: 7, color_badge: '#ec4899', standard_cycle_time_mins: 60, status: 'active' },
-    { id: 8, code: 'COMP', name: 'Completed', sequence_order: 8, color_badge: '#059669', standard_cycle_time_mins: 15, status: 'active' },
+    { id: 1, code: 'REQ', name: 'Requirement Gathering', sequence_order: 1, color_badge: '#6366f1', description: 'Production Requirement created for the product.', standard_cycle_time_mins: 60, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 2, code: 'PO', name: 'Purchase Order (PO)', sequence_order: 2, color_badge: '#0284c7', description: 'Purchase order creation and tracking.', standard_cycle_time_mins: 120, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 3, code: 'INW', name: 'Inward', sequence_order: 3, color_badge: '#0d9488', description: 'Receive materials or products into inventory.', standard_cycle_time_mins: 60, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 4, code: 'DYE', name: 'Dyeing', sequence_order: 4, color_badge: '#7c3aed', description: 'Send material for dyeing and track color-wise processing.', standard_cycle_time_mins: 240, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 5, code: 'CUT', name: 'Cutting — Product-wise', sequence_order: 5, color_badge: '#d97706', description: 'Track cutting quantities separately for each product and size.', standard_cycle_time_mins: 180, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 6, code: 'EMB', name: 'Embroidery — Outward / Inward', sequence_order: 6, color_badge: '#ec4899', description: 'Track material sent to the embroidery unit and the quantity received back.', standard_cycle_time_mins: 180, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 7, code: 'STI', name: 'Stitching — Color-wise Tracking', sequence_order: 7, color_badge: '#2563eb', description: 'Track stitching progress by product, color, size and quantity.', standard_cycle_time_mins: 300, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 8, code: 'CHK', name: 'Checking', sequence_order: 8, color_badge: '#ef4444', description: 'Quality inspection, defect recording and approval.', standard_cycle_time_mins: 60, status: 'active', is_qc_stage: true, is_final_stage: false },
+    { id: 9, code: 'PCK', name: 'Packing', sequence_order: 9, color_badge: '#059669', description: 'Pack approved products and track packed quantities.', standard_cycle_time_mins: 90, status: 'active', is_qc_stage: false, is_final_stage: false },
+    { id: 10, code: 'COMP', name: 'Completed', sequence_order: 10, color_badge: '#16a34a', description: 'Production order completed with final quantities recorded.', standard_cycle_time_mins: 30, status: 'active', is_qc_stage: false, is_final_stage: true },
   ],
   purchaseOrders: [
     {
@@ -412,15 +414,38 @@ const server = http.createServer(async (req, res) => {
     // 3. Categories
     if (pathname === '/categories' && method === 'GET') {
       const type = parsedUrl.searchParams.get('type');
-      const cats = type ? db.categories.filter(c => c.type === type) : db.categories;
+      const cats = (type && type !== 'all') ? db.categories.filter(c => !c.type || c.type === type) : db.categories;
       return sendSuccess(res, cats);
     }
     if (pathname === '/categories' && method === 'POST') {
-      const autoCode = body.code || 'CAT_' + (body.name || 'CATEGORY').trim().toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
-      const newCat = { id: db.categories.length + 1, ...body, code: autoCode, fields: body.fields || [], created_at: new Date().toISOString() };
+      const name = (body.name || '').trim();
+      if (!name) {
+        return sendError(res, 'Category name is required', 422);
+      }
+      const existing = db.categories.find(c => (c.name || '').trim().toLowerCase() === name.toLowerCase());
+      if (existing) {
+        return sendError(res, `A category with the name '${name}' already exists`, 409);
+      }
+      let autoCode = body.code || 'CAT_' + name.toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+      let baseCode = autoCode;
+      let counter = 1;
+      while (db.categories.some(c => c.code === autoCode)) {
+        counter++;
+        autoCode = `${baseCode}_${counter}`;
+      }
+      const newCat = {
+        id: db.categories.length + 1,
+        ...body,
+        name,
+        code: autoCode,
+        type: body.type || null,
+        description: body.description || null,
+        fields: body.fields || [],
+        created_at: new Date().toISOString()
+      };
       db.categories.push(newCat);
       saveDB();
-      return sendSuccess(res, newCat, 'Category created', 201);
+      return sendSuccess(res, newCat, 'Category created successfully', 201);
     }
     if (pathname.match(/^\/categories\/\d+$/) && method === 'GET') {
       const id = Number(pathname.split('/')[2]);
@@ -570,10 +595,32 @@ const server = http.createServer(async (req, res) => {
 
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'POST') {
-      const newCust = { id: db.customers.length + 1, code: body.code || `BUY-00${db.customers.length + 1}`, ...body };
+      const generatedCode = body.code || `BUY-${String(db.customers.length + 1).padStart(3, '0')}`;
+      const newCust = {
+        id: db.customers.length + 1,
+        code: generatedCode,
+        avatar_style: body.avatar_style || 'lorelei',
+        avatar_seed: body.avatar_seed || `buyer-${generatedCode}`,
+        avatar_config: body.avatar_config || null,
+        ...body,
+      };
       db.customers.push(newCust);
       saveDB();
       return sendSuccess(res, newCust, 'Buyer added', 201);
+    }
+
+    const custPutMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)$/);
+    if (custPutMatch && (method === 'PUT' || method === 'PATCH')) {
+      const custId = Number(custPutMatch[1]);
+      const idx = db.customers.findIndex(c => c.id === custId);
+      if (idx === -1) return sendError(res, 'Buyer not found', 404);
+      db.customers[idx] = {
+        ...db.customers[idx],
+        ...body,
+        id: custId,
+      };
+      saveDB();
+      return sendSuccess(res, db.customers[idx], 'Buyer updated successfully');
     }
 
     // Buyer Products
@@ -583,6 +630,15 @@ const server = http.createServer(async (req, res) => {
       if (!db.buyer_products) db.buyer_products = [];
       const prods = db.buyer_products.filter(p => p.buyer_id === buyerId);
       return sendSuccess(res, prods);
+    }
+    const bpGetSingleMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products\/(\d+)$/);
+    if (bpGetSingleMatch && method === 'GET') {
+      const buyerId = Number(bpGetSingleMatch[1]);
+      const prodId = Number(bpGetSingleMatch[2]);
+      if (!db.buyer_products) db.buyer_products = [];
+      const prod = db.buyer_products.find(p => p.buyer_id === buyerId && p.id === prodId);
+      if (!prod) return sendError(res, 'Buyer product not found', 404);
+      return sendSuccess(res, prod);
     }
     const bpPostMatch = pathname.match(/^\/(?:buyers|customers)\/(\d+)\/products$/);
     if (bpPostMatch && method === 'POST') {
@@ -1093,32 +1149,74 @@ const server = http.createServer(async (req, res) => {
 
     // 9. Production Orders & Stages
     if (pathname === '/production-stages' && method === 'GET') return sendSuccess(res, db.productionStages);
-    if (pathname === '/production-orders' && method === 'GET') return sendSuccess(res, db.productionOrders);
+    if (pathname === '/production-orders' && method === 'GET') {
+      const enriched = (db.productionOrders || []).map(po => {
+        const cust = (db.customers || []).find(c => c.id === Number(po.customer_id));
+        return {
+          ...po,
+          customer_code: cust?.code || '',
+          customer_name: cust?.name || po.customer_name || 'Buyer',
+          customer_avatar_style: cust?.avatar_style || 'lorelei',
+          customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${po.customer_id || 1}`,
+          customer_avatar_config: cust?.avatar_config || null,
+        };
+      });
+      return sendSuccess(res, enriched);
+    }
     if (pathname === '/production-orders' && method === 'POST') {
-      const items = (body.items || []).map((it, idx) => ({
-        id: idx + 1,
-        product_id: it.product_id || 1,
-        product_name: it.product_name || 'Crew Neck T-Shirt',
-        color: it.color || 'Navy Blue',
-        size: it.size || 'M',
-        total_quantity: Number(it.total_quantity || 100),
-        current_stage_id: 1,
-        current_stage_name: 'Installation',
-        stage_code: 'INST',
-        current_stage_quantity: Number(it.total_quantity || 100),
-        completed_quantity: 0,
-        rejected_quantity: 0,
-        rework_quantity: 0,
-        status: 'In Progress',
-      }));
+      const customerId = Number(body.customer_id);
+      if (!customerId) {
+        return sendError(res, 'A valid Buyer is required for production order creation', 422);
+      }
+
+      const inputItems = body.items || [];
+      if (!inputItems.length) {
+        return sendError(res, 'At least one product line is required', 422);
+      }
+
+      // Validate buyer products
+      if (db.buyer_products && db.buyer_products.length > 0) {
+        for (let i = 0; i < inputItems.length; i++) {
+          const it = inputItems[i];
+          const bp = db.buyer_products.find(p => p.id === Number(it.product_id) && p.buyer_id === customerId);
+          if (!bp) {
+            return sendError(res, `Line #${i + 1}: Product does not belong to the selected buyer`, 422);
+          }
+        }
+      }
+
+      const items = inputItems.map((it, idx) => {
+        const bp = (db.buyer_products || []).find(p => p.id === Number(it.product_id));
+        return {
+          id: idx + 1,
+          product_id: Number(it.product_id) || 1,
+          product_name: bp?.product_name || it.product_name || 'Buyer Product',
+          product_code: bp?.product_code || 'BPRD-001',
+          color: it.color || 'White',
+          total_quantity: Number(it.total_quantity || 100),
+          current_stage_id: 1,
+          current_stage_name: 'Requirement Gathering',
+          stage_code: 'REQ',
+          current_stage_quantity: Number(it.total_quantity || 100),
+          completed_quantity: 0,
+          rejected_quantity: 0,
+          rework_quantity: 0,
+          status: 'In Progress',
+        };
+      });
 
       const totalQty = items.reduce((s, i) => s + i.total_quantity, 0);
+      const matchedCust = customerId ? (db.customers || []).find(c => c.id === customerId) : null;
       const newOrder = {
         id: db.productionOrders.length + 1,
         order_number: `ORD-${1000 + db.productionOrders.length + 1}`,
         title: body.title || 'Export Garment Batch',
-        customer_id: body.customer_id || 1,
-        customer_name: (db.customers.find(c => c.id === Number(body.customer_id)) || db.customers[0]).name,
+        customer_id: matchedCust?.id || null,
+        customer_code: matchedCust?.code || null,
+        customer_name: matchedCust?.name || 'Direct Order',
+        customer_avatar_style: matchedCust?.avatar_style || 'lorelei',
+        customer_avatar_seed: matchedCust?.avatar_seed || (matchedCust ? `buyer-${matchedCust.code || matchedCust.id}` : null),
+        customer_avatar_config: matchedCust?.avatar_config || null,
         category_id: Number(body.category_id || 1),
         priority: body.priority || 'Medium',
         start_date: body.start_date || new Date().toISOString().split('T')[0],
@@ -1433,9 +1531,26 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, u, 'User created', 201);
     }
     if (pathname === '/settings/roles') return sendSuccess(res, db.roles);
-    if (pathname === '/settings/permissions') return sendSuccess(res, db.permissions);
-    if (pathname === '/settings/stages') return sendSuccess(res, db.productionStages);
-    if (pathname === '/settings/company' && method === 'GET') return sendSuccess(res, db.companySettings);
+    if (pathname === '/settings/stages') {
+      if (method === 'GET') return sendSuccess(res, db.productionStages);
+      if (method === 'POST') {
+        const newStg = {
+          id: db.productionStages.length + 1,
+          code: body.code || `STG-${db.productionStages.length + 1}`,
+          name: body.name,
+          sequence_order: Number(body.sequence_order || db.productionStages.length + 1),
+          color_badge: body.color_badge || '#6366f1',
+          description: body.description || '',
+          is_qc_stage: Boolean(body.is_qc_stage),
+          is_final_stage: Boolean(body.is_final_stage),
+          status: 'active',
+          ...body,
+        };
+        db.productionStages.push(newStg);
+        saveDB();
+        return sendSuccess(res, newStg, 'Production stage created', 201);
+      }
+    }
     if (pathname === '/settings/company' && method === 'POST') {
       db.companySettings = { ...db.companySettings, ...body };
       saveDB();

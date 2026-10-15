@@ -273,7 +273,9 @@
       "email": "buying@zudio.com",
       "gstin": "27AABCT1234A1Z9",
       "city": "Mumbai",
-      "state": "Maharashtra"
+      "state": "Maharashtra",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Zudio-Lorelei-1"
     },
     {
       "id": 2,
@@ -284,7 +286,9 @@
       "email": "sourcing@maxlifestyle.in",
       "gstin": "29AABCL5678B1Z1",
       "city": "Bengaluru",
-      "state": "Karnataka"
+      "state": "Karnataka",
+      "avatar_style": "lorelei",
+      "avatar_seed": "MaxLifestyle-Lorelei-2"
     },
     {
       "id": 3,
@@ -295,20 +299,26 @@
       "email": "production@allensolly.com",
       "gstin": "29AABCA9012C1Z3",
       "city": "Bengaluru",
-      "state": "Karnataka"
+      "state": "Karnataka",
+      "avatar_style": "lorelei",
+      "avatar_seed": "AllenSolly-Lorelei-3"
     },
     {
       "id": 4,
       "code": "CUST-004",
       "name": "Metro Retail Apparel",
-      "phone": "9123456789"
+      "phone": "9123456789",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Metro-Lorelei-4"
     },
     {
       "id": 5,
       "code": "CUST-005",
       "name": "Global Retailers LLC",
       "phone": "9876543210",
-      "billing_address": "45 Broadway"
+      "billing_address": "45 Broadway",
+      "avatar_style": "lorelei",
+      "avatar_seed": "Global-Lorelei-5"
     }
   ],
   "materials": [
@@ -614,75 +624,123 @@
   "productionStages": [
     {
       "id": 1,
-      "code": "INST",
-      "name": "Installation",
+      "code": "REQ",
+      "name": "Requirement Gathering",
       "sequence_order": 1,
       "color_badge": "#6366f1",
-      "standard_cycle_time_mins": 45,
-      "status": "active"
+      "description": "Production Requirement created for the product.",
+      "standard_cycle_time_mins": 60,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 2,
-      "code": "DYE",
-      "name": "Dyeing",
+      "code": "PO",
+      "name": "Purchase Order (PO)",
       "sequence_order": 2,
-      "color_badge": "#0ea5e9",
-      "standard_cycle_time_mins": 180,
-      "status": "active"
+      "color_badge": "#0284c7",
+      "description": "Purchase order creation and tracking.",
+      "standard_cycle_time_mins": 120,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 3,
-      "code": "DET",
-      "name": "Detailing",
+      "code": "INW",
+      "name": "Inward",
       "sequence_order": 3,
-      "color_badge": "#8b5cf6",
+      "color_badge": "#0d9488",
+      "description": "Receive materials or products into inventory.",
       "standard_cycle_time_mins": 60,
-      "status": "active"
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 4,
-      "code": "CUT",
-      "name": "Cutting",
+      "code": "DYE",
+      "name": "Dyeing",
       "sequence_order": 4,
-      "color_badge": "#f59e0b",
-      "standard_cycle_time_mins": 90,
-      "status": "active"
+      "color_badge": "#7c3aed",
+      "description": "Send material for dyeing and track color-wise processing.",
+      "standard_cycle_time_mins": 240,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 5,
-      "code": "STI",
-      "name": "Stitching",
+      "code": "CUT",
+      "name": "Cutting — Product-wise",
       "sequence_order": 5,
-      "color_badge": "#10b981",
-      "standard_cycle_time_mins": 240,
-      "status": "active"
+      "color_badge": "#d97706",
+      "description": "Track cutting quantities separately for each product and size.",
+      "standard_cycle_time_mins": 180,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 6,
-      "code": "QC",
-      "name": "QC",
+      "code": "EMB",
+      "name": "Embroidery — Outward / Inward",
       "sequence_order": 6,
-      "color_badge": "#ef4444",
-      "standard_cycle_time_mins": 30,
-      "status": "active"
+      "color_badge": "#ec4899",
+      "description": "Track material sent to the embroidery unit and the quantity received back.",
+      "standard_cycle_time_mins": 180,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 7,
-      "code": "RWK",
-      "name": "Rework",
+      "code": "STI",
+      "name": "Stitching — Color-wise Tracking",
       "sequence_order": 7,
-      "color_badge": "#ec4899",
-      "standard_cycle_time_mins": 60,
-      "status": "active"
+      "color_badge": "#2563eb",
+      "description": "Track stitching progress by product, color, size and quantity.",
+      "standard_cycle_time_mins": 300,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
     },
     {
       "id": 8,
+      "code": "CHK",
+      "name": "Checking",
+      "sequence_order": 8,
+      "color_badge": "#ef4444",
+      "description": "Quality inspection, defect recording and approval.",
+      "standard_cycle_time_mins": 60,
+      "status": "active",
+      "is_qc_stage": true,
+      "is_final_stage": false
+    },
+    {
+      "id": 9,
+      "code": "PCK",
+      "name": "Packing",
+      "sequence_order": 9,
+      "color_badge": "#059669",
+      "description": "Pack approved products and track packed quantities.",
+      "standard_cycle_time_mins": 90,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": false
+    },
+    {
+      "id": 10,
       "code": "COMP",
       "name": "Completed",
-      "sequence_order": 8,
-      "color_badge": "#059669",
-      "standard_cycle_time_mins": 15,
-      "status": "active"
+      "sequence_order": 10,
+      "color_badge": "#16a34a",
+      "description": "Production order completed with final quantities recorded.",
+      "standard_cycle_time_mins": 30,
+      "status": "active",
+      "is_qc_stage": false,
+      "is_final_stage": true
     }
   ],
   "purchaseOrders": [
@@ -910,14 +968,15 @@
           "color": "Navy Blue",
           "size": "M",
           "total_quantity": 400,
-          "current_stage_id": 5,
-          "current_stage_name": "Stitching",
+          "current_stage_id": 7,
+          "current_stage_name": "Stitching — Color-wise Tracking",
           "stage_code": "STI",
           "current_stage_quantity": 400,
           "completed_quantity": 0,
           "rejected_quantity": 0,
           "rework_quantity": 0,
-          "status": "In Progress"
+          "status": "In Progress",
+          "color_badge": "#2563eb"
         },
         {
           "id": 2,
@@ -927,14 +986,15 @@
           "color": "Jet Black",
           "size": "L",
           "total_quantity": 400,
-          "current_stage_id": 4,
-          "current_stage_name": "Cutting",
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
           "stage_code": "CUT",
           "current_stage_quantity": 400,
           "completed_quantity": 0,
           "rejected_quantity": 0,
           "rework_quantity": 0,
-          "status": "In Progress"
+          "status": "In Progress",
+          "color_badge": "#d97706"
         },
         {
           "id": 3,
@@ -944,14 +1004,15 @@
           "color": "Heather Grey",
           "size": "XL",
           "total_quantity": 400,
-          "current_stage_id": 2,
+          "current_stage_id": 4,
           "current_stage_name": "Dyeing",
           "stage_code": "DYE",
           "current_stage_quantity": 400,
           "completed_quantity": 0,
           "rejected_quantity": 0,
           "rework_quantity": 0,
-          "status": "In Progress"
+          "status": "In Progress",
+          "color_badge": "#7c3aed"
         }
       ]
     },
@@ -978,14 +1039,15 @@
           "color": "Pure White",
           "size": "M",
           "total_quantity": 400,
-          "current_stage_id": 6,
-          "current_stage_name": "QC",
-          "stage_code": "QC",
+          "current_stage_id": 8,
+          "current_stage_name": "Checking",
+          "stage_code": "CHK",
           "current_stage_quantity": 200,
           "completed_quantity": 200,
           "rejected_quantity": 4,
           "rework_quantity": 8,
-          "status": "In Progress"
+          "status": "In Progress",
+          "color_badge": "#ef4444"
         },
         {
           "id": 5,
@@ -996,13 +1058,14 @@
           "size": "L",
           "total_quantity": 400,
           "current_stage_id": 3,
-          "current_stage_name": "Detailing",
-          "stage_code": "DET",
+          "current_stage_name": "Inward",
+          "stage_code": "INW",
           "current_stage_quantity": 400,
           "completed_quantity": 0,
           "rejected_quantity": 0,
           "rework_quantity": 0,
-          "status": "In Progress"
+          "status": "In Progress",
+          "color_badge": "#0d9488"
         }
       ]
     }

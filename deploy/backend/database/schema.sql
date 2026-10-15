@@ -217,6 +217,9 @@ CREATE TABLE customers (
     shipping_address TEXT NULL,
     gstin VARCHAR(30) NULL,
     status ENUM('active', 'inactive') DEFAULT 'active',
+    avatar_style VARCHAR(50) DEFAULT 'lorelei',
+    avatar_seed VARCHAR(100) NULL,
+    avatar_config LONGTEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP NULL

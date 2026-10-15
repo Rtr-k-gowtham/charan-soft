@@ -20,14 +20,26 @@ class ProductionController {
     public function index(): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->query("
-                SELECT po.*, c.name as category_name, cu.name as customer_name
-                FROM production_orders po
-                JOIN categories c ON po.category_id = c.id
-                LEFT JOIN customers cu ON po.customer_id = cu.id
-                WHERE po.deleted_at IS NULL
-                ORDER BY po.id DESC
-            ");
+            try {
+                $stmt = $pdo->query("
+                    SELECT po.*, c.name as category_name, cu.name as customer_name, cu.code as customer_code,
+                           cu.avatar_style as customer_avatar_style, cu.avatar_seed as customer_avatar_seed, cu.avatar_config as customer_avatar_config
+                    FROM production_orders po
+                    JOIN categories c ON po.category_id = c.id
+                    LEFT JOIN customers cu ON po.customer_id = cu.id
+                    WHERE po.deleted_at IS NULL
+                    ORDER BY po.id DESC
+                ");
+            } catch (Exception $colEx) {
+                $stmt = $pdo->query("
+                    SELECT po.*, c.name as category_name, cu.name as customer_name
+                    FROM production_orders po
+                    JOIN categories c ON po.category_id = c.id
+                    LEFT JOIN customers cu ON po.customer_id = cu.id
+                    WHERE po.deleted_at IS NULL
+                    ORDER BY po.id DESC
+                ");
+            }
             $orders = $stmt->fetchAll();
 
             foreach ($orders as &$ord) {
@@ -58,13 +70,24 @@ class ProductionController {
     public function show(int $id): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->prepare("
-                SELECT po.*, c.name as category_name, cu.name as customer_name
-                FROM production_orders po
-                JOIN categories c ON po.category_id = c.id
-                LEFT JOIN customers cu ON po.customer_id = cu.id
-                WHERE po.id = ? AND po.deleted_at IS NULL
-            ");
+            try {
+                $stmt = $pdo->prepare("
+                    SELECT po.*, c.name as category_name, cu.name as customer_name, cu.code as customer_code,
+                           cu.avatar_style as customer_avatar_style, cu.avatar_seed as customer_avatar_seed, cu.avatar_config as customer_avatar_config
+                    FROM production_orders po
+                    JOIN categories c ON po.category_id = c.id
+                    LEFT JOIN customers cu ON po.customer_id = cu.id
+                    WHERE po.id = ? AND po.deleted_at IS NULL
+                ");
+            } catch (Exception $colEx) {
+                $stmt = $pdo->prepare("
+                    SELECT po.*, c.name as category_name, cu.name as customer_name
+                    FROM production_orders po
+                    JOIN categories c ON po.category_id = c.id
+                    LEFT JOIN customers cu ON po.customer_id = cu.id
+                    WHERE po.id = ? AND po.deleted_at IS NULL
+                ");
+            }
             $stmt->execute([$id]);
             $order = $stmt->fetch();
 
@@ -178,6 +201,7 @@ class ProductionController {
             // Auto-heal: If production_stages table has no rows, seed standard stages
             if ($firstStageId <= 0) {
                 try {
+                    // Detect available columns in production_stages to avoid missing-column SQL errors
                     $colStmt = $pdo->query("SHOW COLUMNS FROM production_stages");
                     $existingCols = $colStmt ? $colStmt->fetchAll(PDO::FETCH_COLUMN) : [];
                     $hasDesc = in_array('description', $existingCols);
