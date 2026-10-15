@@ -245,6 +245,23 @@ export default function CreateProductionOrder() {
     });
   }, [colors]);
 
+  // Format buyers (customers) for SearchableSelect
+  const customerOptions: SelectOption[] = useMemo(() => {
+    return customers.map((c) => ({
+      value: String(c.id),
+      label: c.name + (c.code ? ` (${c.code})` : ''),
+      sublabel: [c.phone, c.email].filter(Boolean).join(' • ') || undefined,
+    }));
+  }, [customers]);
+
+  // Priority options for SearchableSelect
+  const priorityOptions: SelectOption[] = [
+    { value: 'Low', label: 'Low Priority', sublabel: 'Standard lead time' },
+    { value: 'Medium', label: 'Medium Priority', sublabel: 'Normal scheduling' },
+    { value: 'High', label: 'High Priority', sublabel: 'Expedited production' },
+    { value: 'Urgent', label: 'Urgent Priority', sublabel: 'Immediate manufacturing' },
+  ];
+
   // Item row operations
   const handleAddItemRow = () => {
     setOrderItems((prev) => [
@@ -424,55 +441,63 @@ export default function CreateProductionOrder() {
           { label: 'Create Order' },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <Button
               variant="secondary"
+              size="xs"
+              className="sm:text-xs"
               icon={<ArrowLeft className="w-3.5 h-3.5" />}
               onClick={() => navigate('/production/orders')}
             >
-              Back to Orders
+              <span className="hidden sm:inline">Back to Orders</span>
+              <span className="sm:hidden">Back</span>
             </Button>
             <Button
               variant="secondary"
+              size="xs"
+              className="sm:text-xs hidden xs:inline-flex"
               onClick={() => navigate('/production/orders')}
             >
               Cancel
             </Button>
             <Button
               loading={saving}
-              icon={<Check className="w-3.5 h-3.5" />}
+              size="sm"
+              icon={<Check className="w-3.5 h-3.5 stroke-[2.5]" />}
               onClick={handleCreate}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-xs"
             >
-              Create Order
+              <span className="hidden sm:inline">Create Order</span>
+              <span className="sm:hidden font-bold">Create</span>
             </Button>
           </div>
         }
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 p-4 md:p-6 max-w-7xl mx-auto w-full space-y-6">
+      <div className="flex-1 p-3 sm:p-5 md:p-6 max-w-7xl mx-auto w-full space-y-4 sm:space-y-6 pb-28 md:pb-12">
         {/* Error banner */}
         {error && (
-          <div className="p-3.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2 shadow-xs">
+          <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2 shadow-xs">
             <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
             <span className="font-medium">{error}</span>
           </div>
         )}
 
         {/* Section 1: Order Details */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-xs overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Package className="w-4 h-4 text-brand-600" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                 Order Information & Scheduling
               </h2>
             </div>
-            <span className="text-[11px] text-slate-400">All fields marked with * are required</span>
+            <span className="text-[10px] sm:text-[11px] text-slate-400 hidden xs:inline">* Required fields</span>
           </div>
 
-          <div className="p-5 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="p-4 sm:p-5 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
               <div className="lg:col-span-4">
                 <FormField
                   label="Order Title"
@@ -483,48 +508,49 @@ export default function CreateProductionOrder() {
                 />
               </div>
 
-              <FormField
-                as="select"
-                label="Buyer"
-                value={form.customer_id}
-                onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}
-              >
-                <option value="">— Select Buyer (Optional) —</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.code ? `(${c.code})` : ''}
-                  </option>
-                ))}
-              </FormField>
+              <div>
+                <SearchableSelect
+                  label="Buyer"
+                  placeholder="— Select Buyer (Optional) —"
+                  searchPlaceholder="Search buyer by name, code..."
+                  options={customerOptions}
+                  value={form.customer_id}
+                  onChange={(val) => setForm((f) => ({ ...f, customer_id: val }))}
+                  clearable
+                />
+              </div>
 
-              <FormField
-                as="select"
-                label="Priority"
-                value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-              >
-                {['Low', 'Medium', 'High', 'Urgent'].map((p) => (
-                  <option key={p} value={p}>
-                    {p} Priority
-                  </option>
-                ))}
-              </FormField>
+              <div>
+                <SearchableSelect
+                  label="Priority"
+                  placeholder="Select Priority"
+                  searchPlaceholder="Search priority..."
+                  options={priorityOptions}
+                  value={form.priority}
+                  onChange={(val) => setForm((f) => ({ ...f, priority: val }))}
+                  clearable={false}
+                />
+              </div>
 
-              <FormField
-                label="Start Date"
-                type="date"
-                required
-                value={form.start_date}
-                onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
-              />
+              <div>
+                <FormField
+                  label="Start Date"
+                  type="date"
+                  required
+                  value={form.start_date}
+                  onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+                />
+              </div>
 
-              <FormField
-                label="Target Delivery Date"
-                type="date"
-                required
-                value={form.target_delivery_date}
-                onChange={(e) => setForm((f) => ({ ...f, target_delivery_date: e.target.value }))}
-              />
+              <div>
+                <FormField
+                  label="Target Delivery Date"
+                  type="date"
+                  required
+                  value={form.target_delivery_date}
+                  onChange={(e) => setForm((f) => ({ ...f, target_delivery_date: e.target.value }))}
+                />
+              </div>
 
               <div className="lg:col-span-4">
                 <FormField
@@ -541,48 +567,76 @@ export default function CreateProductionOrder() {
         </div>
 
         {/* Section 2: Product Lines */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-xs overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-brand-600" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Layers className="w-4 h-4 text-brand-600 shrink-0" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 truncate">
                 Product Lines & Variants
               </h2>
-              <span className="ml-2 px-2 py-0.5 text-[11px] font-semibold bg-brand-50 text-brand-700 rounded-full border border-brand-200">
+              <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 rounded-full border border-brand-200 shrink-0">
                 {orderItems.length} {orderItems.length === 1 ? 'Line' : 'Lines'}
               </span>
             </div>
             <Button
               variant="secondary"
+              size="xs"
+              className="sm:text-xs"
               icon={<Plus className="w-3.5 h-3.5" />}
               onClick={handleAddItemRow}
             >
-              Add Product Line
+              <span className="hidden sm:inline">Add Product Line</span>
+              <span className="sm:hidden font-semibold">+ Line</span>
             </Button>
           </div>
 
-          <div className="p-5">
-            <div className="space-y-3">
+          <div className="p-3.5 sm:p-5">
+            <div className="space-y-3.5">
               {orderItems.map((item, idx) => (
                 <div
                   key={idx}
-                  className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors"
+                  className="bg-slate-50/70 hover:bg-slate-50/90 border border-slate-200 rounded-xl p-3.5 sm:p-4 transition-all shadow-2xs"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                    {/* Line Number indicator */}
-                    <div className="md:col-span-1 flex items-center gap-1.5 pb-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0">
+                  {/* Card Header for Mobile with Item # and Trash button */}
+                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-200/60 md:hidden">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-brand-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                         {idx + 1}
                       </span>
-                      <span className="text-[10px] uppercase font-semibold text-slate-400 md:hidden">
-                        Item #{idx + 1}
+                      <span className="text-xs font-bold text-slate-700">
+                        Product Line #{idx + 1}
+                      </span>
+                      {item.total_quantity > 0 && (
+                        <span className="text-[10px] font-mono font-medium text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                          {item.total_quantity} pcs
+                        </span>
+                      )}
+                    </div>
+                    {orderItems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveItemRow(idx)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        title="Remove product line"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Desktop view (md+) & Mobile view */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                    {/* Line Number indicator (Desktop only) */}
+                    <div className="hidden md:flex md:col-span-1 items-center gap-1.5 pb-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
                       </span>
                     </div>
 
                     {/* Searchable Product */}
                     <div className="md:col-span-4">
                       <SearchableSelect
-                        label={idx === 0 ? 'Product *' : undefined}
+                        label="Product *"
                         placeholder="— Select Product —"
                         searchPlaceholder="Search product by name, code, design..."
                         options={productOptions}
@@ -594,22 +648,20 @@ export default function CreateProductionOrder() {
                     {/* Searchable Color with + Add Color */}
                     <div className="md:col-span-3">
                       <div className="flex flex-col">
-                        {idx === 0 && (
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="text-[11px] font-medium text-slate-600">
-                              Color Variant *
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAddColor(idx)}
-                              className="text-[10px] text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-0.5"
-                            >
-                              <Plus className="w-2.5 h-2.5" /> Add Color
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-medium text-slate-600">
+                            Color Variant *
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAddColor(idx)}
+                            className="text-[10px] text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-0.5"
+                          >
+                            <Plus className="w-2.5 h-2.5" /> Add Color
+                          </button>
+                        </div>
                         <div className="flex items-center gap-1.5">
-                          <div className="flex-1">
+                          <div className="flex-1 min-w-0">
                             <SearchableSelect
                               placeholder="— Select Color —"
                               searchPlaceholder="Search color by name or HEX..."
@@ -635,48 +687,47 @@ export default function CreateProductionOrder() {
                       </div>
                     </div>
 
-                    {/* Size Decimal Input */}
-                    <div className="md:col-span-2">
-                      {idx === 0 && (
+                    {/* Size & Quantity Container: Side-by-side on mobile, individual columns on desktop */}
+                    <div className="grid grid-cols-2 gap-2.5 md:contents">
+                      {/* Size Decimal Input */}
+                      <div className="md:col-span-2">
                         <label className="text-[11px] font-medium text-slate-600 block mb-1">
                           Size *
                         </label>
-                      )}
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={item.size}
-                        onChange={(e) => handleItemChange(idx, 'size', e.target.value)}
-                        placeholder="e.g. 2.5"
-                        className="w-full min-h-[34px] px-2.5 py-1.5 text-xs font-mono font-medium bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800 placeholder:text-slate-400 placeholder:font-normal"
-                      />
-                    </div>
+                        <input
+                          type="number"
+                          step="any"
+                          min="0"
+                          value={item.size}
+                          onChange={(e) => handleItemChange(idx, 'size', e.target.value)}
+                          placeholder="e.g. 2.5"
+                          className="w-full min-h-[36px] px-2.5 py-1.5 text-xs font-mono font-medium bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800 placeholder:text-slate-400 placeholder:font-normal"
+                        />
+                      </div>
 
-                    {/* Quantity Input */}
-                    <div className="md:col-span-1">
-                      {idx === 0 && (
+                      {/* Quantity Input */}
+                      <div className="md:col-span-1">
                         <label className="text-[11px] font-medium text-slate-600 block mb-1">
                           Qty (pcs) *
                         </label>
-                      )}
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.total_quantity || ''}
-                        onChange={(e) =>
-                          handleItemChange(
-                            idx,
-                            'total_quantity',
-                            parseInt(e.target.value, 10) || 0
-                          )
-                        }
-                        className="w-full min-h-[34px] px-2.5 py-1.5 text-xs text-right font-mono font-semibold bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800"
-                      />
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.total_quantity || ''}
+                          onChange={(e) =>
+                            handleItemChange(
+                              idx,
+                              'total_quantity',
+                              parseInt(e.target.value, 10) || 0
+                            )
+                          }
+                          className="w-full min-h-[36px] px-2.5 py-1.5 text-xs text-right font-mono font-semibold bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800"
+                        />
+                      </div>
                     </div>
 
-                    {/* Remove Action */}
-                    <div className="md:col-span-1 flex items-center justify-end pb-1">
+                    {/* Remove Action (Desktop only) */}
+                    <div className="hidden md:flex md:col-span-1 items-center justify-end pb-1">
                       <button
                         type="button"
                         disabled={orderItems.length <= 1}
@@ -697,24 +748,24 @@ export default function CreateProductionOrder() {
             </div>
 
             {/* Bottom summary bar of product lines */}
-            <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 p-3 rounded-lg">
+            <div className="mt-4 pt-3.5 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 p-3 rounded-xl">
               <button
                 type="button"
                 onClick={handleAddItemRow}
-                className="text-xs text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-1.5 py-1 px-2.5 rounded hover:bg-brand-50 transition-colors"
+                className="w-full sm:w-auto text-xs text-brand-600 hover:text-brand-700 font-bold flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-brand-200 bg-white hover:bg-brand-50 transition-colors shadow-2xs"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Add Another Product Line</span>
               </button>
 
-              <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-3 text-xs w-full sm:w-auto justify-between sm:justify-end">
                 <span className="text-slate-500">
-                  Total Lines: <strong className="text-slate-800">{orderItems.length}</strong>
+                  Total Lines: <strong className="text-slate-800 font-semibold">{orderItems.length}</strong>
                 </span>
                 <span className="text-slate-300">|</span>
                 <span className="text-slate-500">
                   Total Order Quantity:{' '}
-                  <strong className="text-brand-700 font-mono text-sm">{totalPieces.toLocaleString()} pcs</strong>
+                  <strong className="text-brand-700 font-mono text-sm font-bold">{totalPieces.toLocaleString()} pcs</strong>
                 </span>
               </div>
             </div>
@@ -722,23 +773,30 @@ export default function CreateProductionOrder() {
         </div>
 
         {/* Form Footer Action Bar */}
-        <div className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-lg shadow-xs">
-          <div className="text-xs text-slate-500 flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
-            <span>Target Delivery: <strong>{form.target_delivery_date || 'Not set'}</strong></span>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-3 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Target Delivery: <strong className="text-slate-800">{form.target_delivery_date || 'Not set'}</strong></span>
+            </div>
+            <div className="sm:hidden font-mono font-bold text-brand-700">
+              {totalPieces.toLocaleString()} pcs
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="w-full sm:w-auto flex items-center gap-2">
             <Button
               variant="secondary"
+              className="flex-1 sm:flex-none"
               onClick={() => navigate('/production/orders')}
             >
               Cancel
             </Button>
             <Button
               loading={saving}
-              icon={<Check className="w-3.5 h-3.5" />}
+              icon={<Check className="w-3.5 h-3.5 stroke-[2.5]" />}
               onClick={handleCreate}
+              className="flex-1 sm:flex-none bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-xs"
             >
               Create Production Order
             </Button>
