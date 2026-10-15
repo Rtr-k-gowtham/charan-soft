@@ -18,6 +18,7 @@ import {
 import {
   ArrowLeft,
   Plus,
+  Copy,
   Trash2,
   Check,
   AlertCircle,
@@ -381,6 +382,21 @@ export default function CreateProductionOrder() {
   const handleRemoveItemRow = (index: number) => {
     if (orderItems.length <= 1) return;
     setOrderItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDuplicateItemRow = (index: number) => {
+    const itemToClone = orderItems[index];
+    if (!itemToClone) return;
+    const cloned = {
+      product_id: itemToClone.product_id,
+      color: itemToClone.color,
+      total_quantity: itemToClone.total_quantity || 100,
+    };
+    setOrderItems((prev) => {
+      const copy = [...prev];
+      copy.splice(index + 1, 0, cloned);
+      return copy;
+    });
   };
 
   const handleProductChange = (index: number, newProductId: string) => {
@@ -752,16 +768,26 @@ export default function CreateProductionOrder() {
                         </span>
                       )}
                     </div>
-                    {orderItems.length > 1 && (
+                    <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => handleRemoveItemRow(idx)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                        title="Remove product line"
+                        onClick={() => handleDuplicateItemRow(idx)}
+                        className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
+                        title="Duplicate product line"
                       >
-                        <Trash2 className="w-4 h-4 text-red-500" />
+                        <Copy className="w-4 h-4 text-slate-500 hover:text-brand-600" />
                       </button>
-                    )}
+                      {orderItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemRow(idx)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          title="Remove product line"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Desktop view (md+) & Mobile view */}
@@ -860,8 +886,16 @@ export default function CreateProductionOrder() {
                       />
                     </div>
 
-                    {/* Remove Action (Desktop only) */}
-                    <div className="hidden md:flex md:col-span-1 items-center justify-end pb-1">
+                    {/* Actions: Duplicate & Remove (Desktop only) */}
+                    <div className="hidden md:flex md:col-span-1 items-center justify-end gap-1 pb-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDuplicateItemRow(idx)}
+                        className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
+                        title="Duplicate product line"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
                       <button
                         type="button"
                         disabled={orderItems.length <= 1}
