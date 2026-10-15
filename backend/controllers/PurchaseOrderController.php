@@ -293,6 +293,21 @@ class PurchaseOrderController {
                 $itemStmt->execute($rParams);
             }
 
+            // If linked to a production order, auto-advance its items from Stage 1 to Stage 2 (PO)
+            if (!empty($data['production_order_id'])) {
+                try {
+                    $pOrdId = (int)$data['production_order_id'];
+                    $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE code = 'PO' OR name LIKE '%Purchase Order%' ORDER BY sequence_order ASC LIMIT 1");
+                    $poStageId = $stgStmt ? $stgStmt->fetchColumn() : null;
+                    if ($poStageId) {
+                        $updatePoi = $pdo->prepare("UPDATE production_order_items SET current_stage_id = ? WHERE production_order_id = ? AND (current_stage_id = 1 OR current_stage_id IN (SELECT id FROM production_stages WHERE sequence_order < 2))");
+                        $updatePoi->execute([$poStageId, $pOrdId]);
+                    }
+                } catch (\Throwable $exIgnore) {
+                    // Stage auto-advance non-fatal
+                }
+            }
+
             $pdo->commit();
             AuditLogger::log('PurchaseOrders', 'CREATE', $poId, null, ['po_number' => $poNumber, 'status' => $poStatus, 'net_amount' => $netTotal]);
             Response::success(['id' => $poId, 'po_number' => $poNumber, 'status' => $poStatus], "Purchase Order created successfully", 201);
