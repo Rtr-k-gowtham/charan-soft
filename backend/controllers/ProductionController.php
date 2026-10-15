@@ -201,20 +201,47 @@ class ProductionController {
             // Auto-heal: If production_stages table has no rows, seed standard stages
             if ($firstStageId <= 0) {
                 try {
-                    $pdo->exec("
-                        INSERT INTO production_stages (id, code, name, sequence_order, description, color_badge, is_qc_stage, is_final_stage, status) VALUES
-                        (1, 'REQ', 'Requirement Gathering', 1, 'Production Requirement created for the product.', '#6366f1', 0, 0, 'active'),
-                        (2, 'PO', 'Purchase Order (PO)', 2, 'Purchase order creation and tracking.', '#0284c7', 0, 0, 'active'),
-                        (3, 'INW', 'Inward', 3, 'Receive materials or products into inventory.', '#0d9488', 0, 0, 'active'),
-                        (4, 'DYE', 'Dyeing', 4, 'Send material for dyeing and track color-wise processing.', '#7c3aed', 0, 0, 'active'),
-                        (5, 'CUT', 'Cutting — Product-wise', 5, 'Track cutting quantities separately for each product and size.', '#d97706', 0, 0, 'active'),
-                        (6, 'EMB', 'Embroidery — Outward / Inward', 6, 'Track material sent to the embroidery unit and the quantity received back.', '#ec4899', 0, 0, 'active'),
-                        (7, 'STI', 'Stitching — Color-wise Tracking', 7, 'Track stitching progress by product, color, size and quantity.', '#2563eb', 0, 0, 'active'),
-                        (8, 'CHK', 'Checking', 8, 'Quality inspection, defect recording and approval.', '#ef4444', 1, 0, 'active'),
-                        (9, 'PCK', 'Packing', 9, 'Pack approved products and track packed quantities.', '#059669', 0, 0, 'active'),
-                        (10, 'COMP', 'Completed', 10, 'Production order completed with final quantities recorded.', '#16a34a', 0, 1, 'active')
-                        ON DUPLICATE KEY UPDATE status = 'active'
-                    ");
+                    // Detect available columns in production_stages to avoid missing-column SQL errors
+                    $colStmt = $pdo->query("SHOW COLUMNS FROM production_stages");
+                    $existingCols = $colStmt ? $colStmt->fetchAll(PDO::FETCH_COLUMN) : [];
+                    $hasDesc = in_array('description', $existingCols);
+                    $hasColor = in_array('color_badge', $existingCols);
+                    $hasQc = in_array('is_qc_stage', $existingCols);
+                    $hasFinal = in_array('is_final_stage', $existingCols);
+
+                    $cols = ['id', 'code', 'name', 'sequence_order', 'status'];
+                    if ($hasColor) $cols[] = 'color_badge';
+                    if ($hasDesc) $cols[] = 'description';
+                    if ($hasQc) $cols[] = 'is_qc_stage';
+                    if ($hasFinal) $cols[] = 'is_final_stage';
+
+                    $colList = implode(', ', array_map(fn($c) => "`$c`", $cols));
+                    
+                    $stagesData = [
+                        [1, 'REQ', 'Requirement Gathering', 1, 'Production Requirement created for the product.', '#6366f1', 0, 0],
+                        [2, 'PO', 'Purchase Order (PO)', 2, 'Purchase order creation and tracking.', '#0284c7', 0, 0],
+                        [3, 'INW', 'Inward', 3, 'Receive materials or products into inventory.', '#0d9488', 0, 0],
+                        [4, 'DYE', 'Dyeing', 4, 'Send material for dyeing and track color-wise processing.', '#7c3aed', 0, 0],
+                        [5, 'CUT', 'Cutting — Product-wise', 5, 'Track cutting quantities separately for each product and size.', '#d97706', 0, 0],
+                        [6, 'EMB', 'Embroidery — Outward / Inward', 6, 'Track material sent to the embroidery unit and the quantity received back.', '#ec4899', 0, 0],
+                        [7, 'STI', 'Stitching — Color-wise Tracking', 7, 'Track stitching progress by product, color, size and quantity.', '#2563eb', 0, 0],
+                        [8, 'CHK', 'Checking', 8, 'Quality inspection, defect recording and approval.', '#ef4444', 1, 0],
+                        [9, 'PCK', 'Packing', 9, 'Pack approved products and track packed quantities.', '#059669', 0, 0],
+                        [10, 'COMP', 'Completed', 10, 'Production order completed with final quantities recorded.', '#16a34a', 0, 1]
+                    ];
+
+                    foreach ($stagesData as $s) {
+                        $vals = [$s[0], $s[1], $s[2], $s[3], 'active'];
+                        if ($hasColor) $vals[] = $s[5];
+                        if ($hasDesc) $vals[] = $s[4];
+                        if ($hasQc) $vals[] = $s[6];
+                        if ($hasFinal) $vals[] = $s[7];
+
+                        $placeholders = implode(', ', array_fill(0, count($vals), '?'));
+                        $insStmt = $pdo->prepare("INSERT INTO production_stages ($colList) VALUES ($placeholders) ON DUPLICATE KEY UPDATE status = 'active'");
+                        $insStmt->execute($vals);
+                    }
+
                     $stgStmt = $pdo->query("SELECT id FROM production_stages ORDER BY sequence_order ASC, id ASC LIMIT 1");
                     $firstStageId = (int)($stgStmt ? $stgStmt->fetchColumn() : 1);
                 } catch (Exception $seedEx) {
