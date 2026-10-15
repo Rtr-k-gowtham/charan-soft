@@ -6,8 +6,8 @@ import { api } from '../../lib/api';
 import { OrderMaterialRequirementItem, Supplier, Category, PurchaseOrder, PurchaseOrderItem } from '../../types';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
-import FormField from '../ui/FormField';
 import StatusBadge from '../ui/StatusBadge';
+import SearchableSelect, { SelectOption } from '../ui/SearchableSelect';
 import {
   ShoppingCart,
   Building2,
@@ -170,17 +170,30 @@ export default function CategoryPOIssuer({
     };
   };
 
-  // Automatically select the first vendor if only 1 matches and not yet selected
+  // Automatically select vendor: if PO already exists for this category, select that PO's vendor;
+  // otherwise, select the first matched vendor if available
   useEffect(() => {
     const next: Record<string, string> = { ...selectedVendors };
     let changed = false;
 
     Object.keys(categorizedMaterials).forEach(cat => {
       if (!next[cat]) {
-        const { suppliers: catSups } = getCategorySuppliers(cat);
-        if (catSups.length > 0) {
-          next[cat] = String(catSups[0].id);
+        const catLower = cat.toLowerCase();
+        const existingPO = existingPOs.find(p => {
+          if ((p.category_name || '').toLowerCase() === catLower) return true;
+          if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
+          return false;
+        });
+
+        if (existingPO && existingPO.supplier_id) {
+          next[cat] = String(existingPO.supplier_id);
           changed = true;
+        } else {
+          const { suppliers: catSups } = getCategorySuppliers(cat);
+          if (catSups.length > 0) {
+            next[cat] = String(catSups[0].id);
+            changed = true;
+          }
         }
       }
     });
@@ -188,7 +201,7 @@ export default function CategoryPOIssuer({
     if (changed) {
       setSelectedVendors(next);
     }
-  }, [suppliers, categories, categorizedMaterials]);
+  }, [suppliers, categories, categorizedMaterials, existingPOs]);
 
   // Create / Issue new PO for a category
   const handleIssuePOForCategory = async (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
@@ -730,100 +743,128 @@ export default function CategoryPOIssuer({
               const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
               const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
 
+              // Ensure selected supplier is available in dropdown even if not category-matched
+              const availableSups = [...catSups];
+              if (selectedSupId) {
+                const curSup = suppliers.find(s => String(s.id) === String(selectedSupId));
+                if (curSup && !availableSups.some(s => String(s.id) === String(curSup.id))) {
+                  availableSups.unshift(curSup);
+                }
+              }
+
+              const vendorOptions: SelectOption[] = availableSups.map(sup => ({
+                value: String(sup.id),
+                label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
+                sublabel: [
+                  sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
+                  sup.category_name ? sup.category_name : null,
+                  sup.contact_person ? sup.contact_person : null,
+                ].filter(Boolean).join(' • '),
+              }));
+
               return (
                 <div
                   key={categoryName}
                   className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 hover:border-indigo-300 transition-all shadow-2xs"
                 >
                   {/* Category Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                    <div className="flex items-center gap-2.5">
-                      <span className="p-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold">
-                        <Layers className="w-4 h-4" />
-                      </span>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide">
-                            {categoryName}
-                          </h4>
-                          <span className="text-[11px] font-mono text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200">
-                            {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
-                          </span>
-                          {matchingPOs.length > 0 && (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {matchingPOs.length} PO Created ({matchingPOs.map(p => p.po_number).join(', ')})
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                    {/* Left: Category Title, Items Count, Cost & PO Status */}
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1.5 h-4">
+                        <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        <span>Material Category</span>
+                      </div>
+
+                      <div className="h-[34px] flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                        <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide truncate">
+                          {categoryName}
+                        </h4>
+                        <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs shrink-0">
+                          {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
+                        </span>
+                        {matchingPOs.length > 0 && (
+                          <span
+                            className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shadow-2xs shrink-0"
+                            title={matchingPOs.map(p => p.po_number).join(', ')}
+                          >
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                            <span>
+                              {matchingPOs.length === 1 ? matchingPOs[0].po_number : `${matchingPOs.length} POs Created`}
                             </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-slate-500">
-                          Total Estimated Cost:{' '}
-                          <strong className="text-slate-800 font-mono">
+                          </span>
+                        )}
+                        <span className="text-slate-300 hidden sm:inline">•</span>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1 shrink-0">
+                          <span>Total:</span>
+                          <strong className="text-slate-900 font-mono font-bold">
                             {totalCatCost > 0 ? fmtCurrency(totalCatCost) : '—'}
                           </strong>
-                        </span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Right: Vendor Selection & Action */}
-                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                      {/* Vendor Dropdown */}
-                      <div className="flex flex-col min-w-[210px] sm:min-w-[260px]">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between">
-                          <span className="flex items-center gap-1">
-                            <Building2 className="w-3 h-3 text-slate-400" />
-                            Select {categoryName} Vendor
+                    {/* Right: Vendor Selection & Action / Status */}
+                    <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
+                      {/* Vendor Dropdown Column */}
+                      <div className="flex flex-col w-full sm:w-72 md:w-80">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between h-4">
+                          <span className="flex items-center gap-1 truncate">
+                            <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>Vendor / Supplier</span>
                           </span>
                           {isExactMatch ? (
-                            <span className="text-[9px] font-normal text-emerald-600 bg-emerald-50 px-1 rounded">
+                            <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 whitespace-nowrap">
                               Category Matched ({catSups.length})
                             </span>
                           ) : (
-                            <span className="text-[9px] font-normal text-amber-600 bg-amber-50 px-1 rounded">
+                            <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 whitespace-nowrap">
                               All Vendors ({catSups.length})
                             </span>
                           )}
-                        </label>
+                        </div>
 
-                        <select
+                        <SearchableSelect
                           value={selectedSupId}
-                          onChange={e =>
+                          onChange={val =>
                             setSelectedVendors(prev => ({
                               ...prev,
-                              [categoryName]: e.target.value,
+                              [categoryName]: val,
                             }))
                           }
-                          className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none shadow-2xs"
-                        >
-                          <option value="">-- Choose Vendor / Supplier --</option>
-                          {catSups.map(sup => (
-                            <option key={sup.id} value={sup.id}>
-                              {sup.name} {sup.code ? `(${sup.code})` : ''}{' '}
-                              {sup.phone && sup.phone !== 'N/A' ? `• ${sup.phone}` : ''}
-                            </option>
-                          ))}
-                        </select>
+                          options={vendorOptions}
+                          placeholder="-- Select Vendor / Supplier --"
+                          searchPlaceholder="Search vendor by name, code..."
+                          disabled={hasOrderedPO}
+                          clearable={!hasOrderedPO}
+                        />
                       </div>
 
-                      {/* Issue PO Button — LOCKED once PO exists */}
-                      <div className="pt-4 sm:pt-0 flex flex-col items-end gap-1.5">
-                        {hasOrderedPO ? (
-                          // Fully locked: PO has been officially issued to vendor
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 cursor-not-allowed">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      {/* Action / Status Column */}
+                      <div className="flex flex-col shrink-0">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-end h-4">
+                          {matchingPOs.length > 0 ? (
+                            <span
+                              className="font-mono text-[10px] text-slate-500 font-bold"
+                              title={matchingPOs.map(p => p.po_number).join(', ')}
+                            >
+                              {matchingPOs.length === 1 ? matchingPOs[0].po_number : `${matchingPOs.length} POs Linked`}
+                            </span>
+                          ) : (
+                            <span>Action</span>
+                          )}
+                        </div>
+
+                        <div className="h-[34px] flex items-center">
+                          {hasOrderedPO ? (
+                            <div
+                              className="h-[34px] inline-flex items-center gap-1.5 px-3 rounded-md text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 shadow-2xs whitespace-nowrap cursor-not-allowed"
+                              title="Purchase Order has been officially issued and locked"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               <span>PO Issued & Locked</span>
                             </div>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {matchingPOs.map(p => p.po_number).join(', ')}
-                            </span>
-                          </div>
-                        ) : hasDraftPO ? (
-                          // Draft PO exists — allow editing via detail PO page
-                          <div className="flex flex-col items-end gap-1">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              <span>Draft PO Pending Issue</span>
-                            </div>
+                          ) : hasDraftPO ? (
                             <button
                               type="button"
                               onClick={() => {
@@ -834,25 +875,24 @@ export default function CategoryPOIssuer({
                                   });
                                 }
                               }}
-                              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline font-mono flex items-center gap-1"
-                              title="Click to open detailed edit page for this PO"
+                              className="h-[34px] inline-flex items-center gap-1.5 px-3 rounded-md text-xs font-bold bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 shadow-2xs whitespace-nowrap transition cursor-pointer"
+                              title="Click to open detailed edit page for this draft PO"
                             >
-                              <Pencil className="w-3 h-3" />
-                              Edit {matchingPOs.map(p => p.po_number).join(', ')}
+                              <Pencil className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span>Edit Draft PO →</span>
                             </button>
-                          </div>
-                        ) : (
-                          // No PO yet — allow issuance
-                          <Button
-                            size="sm"
-                            disabled={isSaving || !selectedSupId}
-                            onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 shadow-xs shrink-0"
-                            icon={<ShoppingCart className="w-3.5 h-3.5" />}
-                          >
-                            {isSaving ? 'Creating PO...' : `Issue PO (${catMaterials.length})`}
-                          </Button>
-                        )}
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={isSaving || !selectedSupId}
+                              onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
+                              className="h-[34px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 shadow-xs shrink-0 whitespace-nowrap"
+                              icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                            >
+                              {isSaving ? 'Creating PO...' : `Issue PO (${catMaterials.length})`}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -934,17 +974,22 @@ export default function CategoryPOIssuer({
                 <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
                   Vendor / Supplier
                 </label>
-                <select
+                <SearchableSelect
                   value={editSupplierId}
-                  onChange={e => setEditSupplierId(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 font-medium focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                >
-                  {suppliers.map(sup => (
-                    <option key={sup.id} value={sup.id}>
-                      {sup.name} {sup.code ? `(${sup.code})` : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={val => setEditSupplierId(val)}
+                  options={suppliers.map(sup => ({
+                    value: String(sup.id),
+                    label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
+                    sublabel: [
+                      sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
+                      sup.category_name ? sup.category_name : null,
+                      sup.contact_person ? sup.contact_person : null,
+                    ].filter(Boolean).join(' • '),
+                  }))}
+                  placeholder="Select Vendor"
+                  searchPlaceholder="Search vendor by name, code..."
+                  clearable={false}
+                />
               </div>
 
               <div>
