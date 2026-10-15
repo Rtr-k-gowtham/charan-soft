@@ -525,18 +525,45 @@ export default function ProductionOrderDetail() {
       />
 
       <div className="p-3 sm:p-5 space-y-4 max-w-7xl mx-auto w-full">
-        {/* Banner with order number, title, category, priority, status badges */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="font-mono text-brand-700 font-bold text-lg bg-brand-50 px-2.5 py-1 rounded-md border border-brand-200">
+        {/* Order Summary Header: Left (Buyer & Delivery) / Right (Order ID, Title, Category, Priority, Status) */}
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          {/* Left Group: Buyer / Customer & Target Delivery Information */}
+          <div className="flex items-center gap-2.5 sm:gap-3 text-xs text-slate-600 flex-wrap min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <BuyerAvatar buyer={order} size="sm" shape="circle" className="shrink-0" />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-slate-500 font-medium">Buyer / Customer:</span>
+                <strong className="text-slate-800 font-semibold">{order.customer_name || 'Direct Order'}</strong>
+                {order.customer_code && (
+                  <span className="font-mono text-[10px] font-bold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                    {order.customer_code}
+                  </span>
+                )}
+              </div>
+            </div>
+            <span className="text-slate-300 hidden sm:inline">•</span>
+            <div className="flex items-center gap-1.5 text-slate-500">
+              <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Target Delivery:</span>
+              <strong className="text-slate-800 font-mono font-semibold">{order.target_delivery_date || '—'}</strong>
+            </div>
+          </div>
+
+          {/* Right Group: Order Number, Title, Category, Priority, Status */}
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+            {/* Reduced size Order Number badge */}
+            <span className="font-mono text-brand-700 font-bold text-xs bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200 shadow-2xs">
               {order.order_number}
             </span>
             <span className="text-slate-300 font-normal hidden sm:inline">|</span>
-            <h2 className="text-base font-bold text-slate-800 break-words">{order.title}</h2>
+            <h2 className="text-xs sm:text-sm font-bold text-slate-800 break-words">{order.title}</h2>
             {order.category_name && (
-              <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                {order.category_name}
-              </span>
+              <>
+                <span className="text-slate-300 font-normal hidden sm:inline">|</span>
+                <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                  {order.category_name}
+                </span>
+              </>
             )}
             <StatusBadge status={order.priority} />
             <StatusBadge status={order.status} />
@@ -546,25 +573,6 @@ export default function ProductionOrderDetail() {
                 Stage 02: PO Active
               </span>
             )}
-          </div>
-
-          <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
-            <span className="flex items-center gap-2">
-              <BuyerAvatar buyer={order} size="sm" shape="circle" />
-              <span>
-                Buyer / Customer: <strong className="text-slate-800">{order.customer_name || 'Direct Order'}</strong>
-                {order.customer_code && (
-                  <span className="ml-1.5 font-mono text-[10px] font-bold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
-                    {order.customer_code}
-                  </span>
-                )}
-              </span>
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
-              Target Delivery: <strong className="text-slate-800 font-mono">{order.target_delivery_date || '—'}</strong>
-            </span>
           </div>
         </div>
 
@@ -1066,10 +1074,10 @@ export default function ProductionOrderDetail() {
                               <td className="px-4 py-3 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
                                   <Button
-                                    size="sm"
+                                    size="xs"
                                     variant="secondary"
                                     onClick={() => openMoveModal(item)}
-                                    className="text-[11px] font-semibold"
+                                    className="text-[11px] font-semibold px-2 py-0.5 h-6.5 whitespace-nowrap shadow-2xs hover:border-slate-300"
                                   >
                                     Move Stage
                                   </Button>
@@ -1077,9 +1085,9 @@ export default function ProductionOrderDetail() {
                                     type="button"
                                     onClick={() => openQCModal(item)}
                                     title="Quality Check"
-                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
+                                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
                                   >
-                                    <ShieldCheck className="w-4 h-4" />
+                                    <ShieldCheck className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </td>
