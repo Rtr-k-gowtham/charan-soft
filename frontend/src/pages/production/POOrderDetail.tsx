@@ -211,13 +211,14 @@ export default function POOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => navigate('/production/po')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
-              <span>Back to PO Stage</span>
+              <span className="hidden sm:inline">Back to PO Stage</span>
+              <span className="inline sm:hidden">Back</span>
             </button>
 
             <button
@@ -231,9 +232,10 @@ export default function POOrderDetail() {
             <Button
               icon={<ChevronRight className="w-4 h-4 stroke-[2.5]" />}
               onClick={() => setMoveOpen(true)}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs whitespace-nowrap"
             >
-              <span>Advance to Stage 03: Inward</span>
+              <span className="hidden sm:inline">Advance to Stage 03: Inward</span>
+              <span className="inline sm:hidden">To Inward</span>
             </Button>
           </div>
         }

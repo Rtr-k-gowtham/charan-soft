@@ -551,7 +551,104 @@ export default function CategoryPOIssuer({
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="overflow-x-auto">
+            {/* Mobile PO Cards */}
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {existingPOs.map((po, idx) => {
+                const isDraft = (po.status || '').toLowerCase() === 'draft';
+                const isUpdating = !!updatingPOStatus[po.id];
+
+                return (
+                  <div key={po.id} className="p-3.5 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                          {po.po_number}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          isDraft
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}
+                      >
+                        {po.status || 'Draft'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-slate-800 block">{po.supplier_name || 'Vendor'}</span>
+                        <span className="text-[10px] text-slate-400 font-medium">Category: {po.category_name || 'General'}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono font-bold text-sm text-slate-900 block">{fmtCurrency(po.net_amount || 0)}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">{po.po_date || '—'}</span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100">
+                      {isDraft ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleMarkPOAsIssued(po)}
+                            disabled={isUpdating}
+                            className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-60 min-h-[36px]"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigate(`/purchase/orders/${po.id}/edit`, {
+                                state: { from: location.pathname, poNumber: po.po_number }
+                              });
+                            }}
+                            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition hover:text-indigo-600 min-h-[36px] flex items-center gap-1"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Edit</span>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/production/inward/${orderId}`)}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition min-h-[36px]"
+                          >
+                            <PackageCheck className="w-3.5 h-3.5" />
+                            <span>Receive in Inward →</span>
+                          </button>
+                          <span className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
+                            Issued & Locked
+                          </span>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigate(`/purchase/orders/${po.id}`, {
+                            state: { from: location.pathname, poNumber: po.po_number }
+                          });
+                        }}
+                        className="px-2.5 py-2 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition min-h-[36px] flex items-center justify-center"
+                        title="View PO"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
                   <tr>
