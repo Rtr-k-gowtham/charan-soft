@@ -8,6 +8,7 @@ import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import StatusBadge from '../ui/StatusBadge';
 import SearchableSelect, { SelectOption } from '../ui/SearchableSelect';
+import { getCategoryVisual } from '../../pages/masters/Categories';
 import {
   ShoppingCart,
   Building2,
@@ -557,17 +558,25 @@ export default function CategoryPOIssuer({
                 const isDraft = (po.status || '').toLowerCase() === 'draft';
                 const isUpdating = !!updatingPOStatus[po.id];
 
+                // Category visual matching
+                const catObj = categories.find(c => 
+                  (po.category_id && String(c.id) === String(po.category_id)) ||
+                  (po.category_name && c.name.toLowerCase() === po.category_name.toLowerCase())
+                );
+                const visual = getCategoryVisual(catObj || { name: po.category_name });
+                const CatIcon = visual.Icon;
+
                 return (
-                  <div key={po.id} className="p-3.5 space-y-2.5">
+                  <div key={po.id} className="p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                        <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
                           {po.po_number}
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
                       </div>
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
                           isDraft
                             ? 'bg-amber-100 text-amber-800 border border-amber-200'
                             : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -579,26 +588,29 @@ export default function CategoryPOIssuer({
 
                     <div className="flex items-center justify-between text-xs">
                       <div>
-                        <span className="font-bold text-slate-800 block">{po.supplier_name || 'Vendor'}</span>
-                        <span className="text-[10px] text-slate-400 font-medium">Category: {po.category_name || 'General'}</span>
+                        <span className="font-bold text-slate-800 block text-[11px]">{po.supplier_name || 'Vendor'}</span>
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border mt-1 ${visual.bg} ${visual.border} ${visual.color}`}>
+                          <CatIcon className="w-2.5 h-2.5 shrink-0" />
+                          <span>{po.category_name || 'General'}</span>
+                        </span>
                       </div>
                       <div className="text-right">
-                        <span className="font-mono font-bold text-sm text-slate-900 block">{fmtCurrency(po.net_amount || 0)}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">{po.po_date || '—'}</span>
+                        <span className="font-mono font-bold text-xs text-slate-900 block">{fmtCurrency(po.net_amount || 0)}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">{po.po_date || '—'}</span>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-1 flex-wrap pt-1.5 border-t border-slate-100">
                       {isDraft ? (
                         <>
                           <button
                             type="button"
                             onClick={() => handleMarkPOAsIssued(po)}
                             disabled={isUpdating}
-                            className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-60 min-h-[36px]"
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-60 h-7"
                           >
-                            <Send className="w-3.5 h-3.5" />
+                            <Send className="w-2.5 h-2.5" />
                             <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
                           </button>
                           <button
@@ -608,25 +620,26 @@ export default function CategoryPOIssuer({
                                 state: { from: location.pathname, poNumber: po.po_number }
                               });
                             }}
-                            className="px-3 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition hover:text-indigo-600 min-h-[36px] flex items-center gap-1"
+                            className="px-2 py-1 text-[10px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-indigo-600 h-7 flex items-center gap-1"
                           >
-                            <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                            <Pencil className="w-2.5 h-2.5 text-indigo-600" />
                             <span>Edit</span>
                           </button>
                         </>
                       ) : (
                         <>
+                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 h-7 inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                            Issued & Locked
+                          </span>
                           <button
                             type="button"
                             onClick={() => navigate(`/production/inward/${orderId}`)}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition min-h-[36px]"
+                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition h-7"
                           >
-                            <PackageCheck className="w-3.5 h-3.5" />
-                            <span>Receive in Inward →</span>
+                            <PackageCheck className="w-2.5 h-2.5" />
+                            <span>Inward →</span>
                           </button>
-                          <span className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
-                            Issued & Locked
-                          </span>
                         </>
                       )}
                       <button
@@ -636,10 +649,10 @@ export default function CategoryPOIssuer({
                             state: { from: location.pathname, poNumber: po.po_number }
                           });
                         }}
-                        className="px-2.5 py-2 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition min-h-[36px] flex items-center justify-center"
+                        className="px-2 py-1 text-[10px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition h-7 flex items-center justify-center"
                         title="View PO"
                       >
-                        <Printer className="w-3.5 h-3.5" />
+                        <Printer className="w-2.5 h-2.5" />
                       </button>
                     </div>
                   </div>
@@ -650,16 +663,16 @@ export default function CategoryPOIssuer({
             {/* Desktop Table View */}
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
-                    <th className="py-2.5 px-3 w-10 text-center">#</th>
-                    <th className="py-2.5 px-3 min-w-[140px]">PO Number</th>
-                    <th className="py-2.5 px-3 min-w-[120px]">Category</th>
-                    <th className="py-2.5 px-3 min-w-[180px]">Vendor / Supplier</th>
-                    <th className="py-2.5 px-3 min-w-[110px]">PO Date</th>
-                    <th className="py-2.5 px-3 text-right w-28">Net Amount</th>
-                    <th className="py-2.5 px-3 w-28 text-center">Status</th>
-                    <th className="py-2.5 px-3 text-right min-w-[190px]">Actions</th>
+                    <th className="py-2 px-2.5 w-10 text-center">#</th>
+                    <th className="py-2 px-2.5 min-w-[130px]">PO Number</th>
+                    <th className="py-2 px-2.5 min-w-[150px]">Category</th>
+                    <th className="py-2 px-2.5 min-w-[160px]">Vendor / Supplier</th>
+                    <th className="py-2 px-2.5 min-w-[110px]">PO Date</th>
+                    <th className="py-2 px-2.5 text-right w-24">Net Amount</th>
+                    <th className="py-2 px-2.5 w-24 text-center">Status</th>
+                    <th className="py-2 px-2.5 text-right min-w-[170px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -667,56 +680,65 @@ export default function CategoryPOIssuer({
                     const isDraft = (po.status || '').toLowerCase() === 'draft';
                     const isUpdating = !!updatingPOStatus[po.id];
 
+                    // Category visual matching with icon
+                    const catObj = categories.find(c => 
+                      (po.category_id && String(c.id) === String(po.category_id)) ||
+                      (po.category_name && c.name.toLowerCase() === po.category_name.toLowerCase())
+                    );
+                    const visual = getCategoryVisual(catObj || { name: po.category_name });
+                    const CatIcon = visual.Icon;
+
                     return (
                       <tr key={po.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-2.5 px-3 text-center font-mono text-slate-400 text-[11px]">
+                        <td className="py-2 px-2.5 text-center font-mono text-slate-400 text-[10px]">
                           {idx + 1}
                         </td>
 
-                        <td className="py-2.5 px-3">
-                          <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200 block w-fit">
+                        <td className="py-2 px-2.5">
+                          <span className="font-mono font-bold text-[11px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200 block w-fit shadow-2xs">
                             {po.po_number}
                           </span>
                           {po.items && po.items.length > 0 && (
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                            <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">
                               {po.items.length} {po.items.length === 1 ? 'item line' : 'item lines'}
                             </span>
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                            {po.category_name || 'General'}
+                        <td className="py-2 px-2.5">
+                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs whitespace-nowrap`}>
+                            <CatIcon className="w-3 h-3 shrink-0" />
+                            <span>{po.category_name || 'General'}</span>
                           </span>
                         </td>
 
-                        <td className="py-2.5 px-3">
-                          <span className="font-semibold text-slate-800 block text-xs">
+                        <td className="py-2 px-2.5">
+                          <span className="font-semibold text-slate-800 block text-[11px] truncate max-w-[170px]" title={po.supplier_name || 'Vendor'}>
                             {po.supplier_name || 'Vendor'}
                           </span>
                           {po.supplier_phone && (
-                            <span className="text-[10px] font-mono text-slate-400 block">
+                            <span className="text-[9px] font-mono text-slate-400 block mt-0.5">
                               {po.supplier_phone}
                             </span>
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 font-mono text-slate-600 text-[11px]">
+                        <td className="py-2 px-2.5 font-mono text-slate-600 text-[10px]">
                           {po.po_date || '—'}
                           {po.delivery_due_date && (
-                            <span className="text-[10px] text-slate-400 block">
+                            <span className="text-[9px] text-slate-400 block mt-0.5">
                               Due: {po.delivery_due_date}
                             </span>
                           )}
                         </td>
 
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs">
+                        <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 text-[11px]">
                           {fmtCurrency(po.net_amount || 0)}
                         </td>
 
-                        <td className="py-2.5 px-3 text-center">
+                        <td className="py-2 px-2.5 text-center">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
                               isDraft
                                 ? 'bg-amber-100 text-amber-800 border border-amber-200'
                                 : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
@@ -726,8 +748,8 @@ export default function CategoryPOIssuer({
                           </span>
                         </td>
 
-                        <td className="py-2.5 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        <td className="py-2 px-2.5 text-right">
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
                             {isDraft ? (
                               <>
                                 {/* Draft PO: allow Edit + Issue to Vendor */}
@@ -735,10 +757,10 @@ export default function CategoryPOIssuer({
                                   type="button"
                                   onClick={() => handleMarkPOAsIssued(po)}
                                   disabled={isUpdating}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-60"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-60 whitespace-nowrap"
                                   title="Issue PO to Supplier (marks as Ordered — cannot be undone)"
                                 >
-                                  <Send className="w-3 h-3" />
+                                  <Send className="w-2.5 h-2.5" />
                                   <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
                                 </button>
 
@@ -749,10 +771,10 @@ export default function CategoryPOIssuer({
                                       state: { from: location.pathname, poNumber: po.po_number }
                                     });
                                   }}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition hover:text-indigo-600"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-indigo-600 whitespace-nowrap"
                                   title="Open detailed PO edit page"
                                 >
-                                  <Pencil className="w-3 h-3 text-indigo-600" />
+                                  <Pencil className="w-2.5 h-2.5 text-indigo-600" />
                                   <span>Edit</span>
                                 </button>
                               </>
@@ -760,20 +782,20 @@ export default function CategoryPOIssuer({
                               /* Ordered PO: immutable — show locked badge & direct Inward Receive action */
                               <>
                                 <span
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed whitespace-nowrap"
                                   title="This PO has been officially issued to the vendor and is locked for editing"
                                 >
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  Issued & Locked
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Issued & Locked</span>
                                 </span>
                                 <button
                                   type="button"
                                   onClick={() => navigate(`/production/inward/${orderId}`)}
-                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition whitespace-nowrap"
                                   title="Receive ordered items from this PO in Stage 03 Inward"
                                 >
-                                  <PackageCheck className="w-3 h-3" />
-                                  <span>Receive in Inward →</span>
+                                  <PackageCheck className="w-2.5 h-2.5" />
+                                  <span>Inward →</span>
                                 </button>
                               </>
                             )}
@@ -785,10 +807,10 @@ export default function CategoryPOIssuer({
                                   state: { from: location.pathname, poNumber: po.po_number }
                                 });
                               }}
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
                               title="View & Print PO Details"
                             >
-                              <Printer className="w-3 h-3" />
+                              <Printer className="w-2.5 h-2.5" />
                               <span>View</span>
                             </button>
                           </div>
