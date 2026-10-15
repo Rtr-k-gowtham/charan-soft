@@ -259,6 +259,7 @@ export interface ProductionOrderItem {
   product_id: number;
   product_name?: string;
   product_code?: string;
+  category_name?: string;
   color: string;
   color_pantone_code?: string;
   color_hex_code?: string;
@@ -444,6 +445,7 @@ export interface ProductionOrderBOMReport {
     product_id: number;
     product_name: string;
     product_code?: string;
+    category_name?: string;
     color: string;
     size?: string | null;
     total_quantity: number;

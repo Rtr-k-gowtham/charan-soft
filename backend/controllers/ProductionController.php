@@ -100,11 +100,15 @@ class ProductionController {
                 SELECT poi.*, 
                        COALESCE(bp.product_name, p.name) as product_name, 
                        COALESCE(bp.product_code, p.code) as product_code, 
+                       COALESCE(cat.name, po_cat.name, 'General') as category_name,
                        ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
                        col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
                 FROM production_order_items poi
+                JOIN production_orders po ON poi.production_order_id = po.id
+                LEFT JOIN categories po_cat ON po.category_id = po_cat.id
                 LEFT JOIN buyer_products bp ON poi.product_id = bp.id
                 LEFT JOIN products p ON poi.product_id = p.id
+                LEFT JOIN categories cat ON p.category_id = cat.id
                 JOIN production_stages ps ON poi.current_stage_id = ps.id
                 LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
                 WHERE poi.production_order_id = ?
@@ -577,10 +581,14 @@ class ProductionController {
                 SELECT poi.*, 
                        COALESCE(bp.product_name, p.name) as product_name, 
                        COALESCE(bp.product_code, p.code) as product_code,
+                       COALESCE(cat.name, po_cat.name, 'General') as category_name,
                        bp.buyer_id
                 FROM production_order_items poi
+                JOIN production_orders po ON poi.production_order_id = po.id
+                LEFT JOIN categories po_cat ON po.category_id = po_cat.id
                 LEFT JOIN buyer_products bp ON poi.product_id = bp.id
                 LEFT JOIN products p ON poi.product_id = p.id
+                LEFT JOIN categories cat ON p.category_id = cat.id
                 WHERE poi.production_order_id = ?
                 ORDER BY poi.id ASC
             ");
@@ -685,6 +693,7 @@ class ProductionController {
                     'product_id' => $pId,
                     'product_name' => $item['product_name'],
                     'product_code' => $item['product_code'],
+                    'category_name' => $item['category_name'] ?? 'General',
                     'color' => $item['color'],
                     'size' => $item['size'] ?? null,
                     'total_quantity' => $itemQty,
