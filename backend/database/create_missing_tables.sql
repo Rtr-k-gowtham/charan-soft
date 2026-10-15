@@ -99,7 +99,7 @@ CREATE TABLE IF NOT EXISTS bom_items (
 CREATE TABLE IF NOT EXISTS stock_adjustments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     adjustment_no VARCHAR(50) NOT NULL UNIQUE,
-    material_id INT NOT NULL,
+    material_id INT NOT NULL,   
     adjustment_type ENUM('increase', 'decrease') NOT NULL,
     quantity DECIMAL(12, 2) NOT NULL,
     reason VARCHAR(255) NOT NULL,

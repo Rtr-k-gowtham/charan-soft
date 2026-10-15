@@ -15,7 +15,8 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertCircle,
-  Boxes
+  Boxes,
+  Plus
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -324,12 +325,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         breadcrumb={[{ label: 'Production' }, ...breadcrumb.map(b => ({ label: b }))]}
         actions={
           <div className="flex gap-2 items-center">
+            {activeCode === 'PO' && (
+              <Button
+                icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+                onClick={() => navigate('/purchase/orders?create=true')}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs"
+              >
+                <span>Create PO</span>
+              </Button>
+            )}
             <button
               onClick={() => navigate('/production/board')}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-xs"
             >
               <Boxes className="w-3.5 h-3.5 text-brand-600" />
-              Kanban Board
+              <span className="hidden sm:inline">Kanban Board</span>
             </button>
             <button
               onClick={loadData}
@@ -341,6 +351,27 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           </div>
         }
       />
+
+      {/* Mobile Action Banner when on PO stage */}
+      {activeCode === 'PO' && (
+        <div className="sm:hidden px-3 pt-2.5 pb-1 bg-white border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => navigate('/purchase/orders?create=true')}
+            className="w-full flex items-center justify-between gap-2 p-2.5 bg-gradient-to-r from-brand-600 to-brand-700 text-white rounded-xl shadow-sm active:scale-[0.99] transition"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center">
+                <Plus className="w-4 h-4 text-white stroke-[2.5]" />
+              </div>
+              <span className="text-xs font-bold">Create Purchase Order</span>
+            </div>
+            <span className="text-[11px] font-bold bg-white text-brand-700 px-2 py-0.5 rounded-md shadow-2xs">
+              + New PO
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* 10-Stage Pipeline Stepper */}
       <div className="px-3 sm:px-4 pt-2 pb-2 bg-white border-b border-slate-200">
