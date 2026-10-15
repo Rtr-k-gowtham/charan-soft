@@ -260,10 +260,12 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     {
       key: 'size',
       label: 'Size',
-      render: (r: StageItem) => (
+      render: (r: StageItem) => r.size ? (
         <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-mono font-bold text-slate-700">
           {r.size}
         </span>
+      ) : (
+        <span className="text-slate-400 font-mono text-xs">—</span>
       ),
     },
     {
@@ -425,7 +427,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         open={moveOpen}
         onClose={() => setMoveOpen(false)}
         title={`Advance Stage — Order ${selectedItem?.order_number}`}
-        subtitle={`${selectedItem?.product_name} | ${selectedItem?.color} | Size ${selectedItem?.size}`}
+        subtitle={`${selectedItem?.product_name} | ${selectedItem?.color}${selectedItem?.size ? ` | Size ${selectedItem.size}` : ''}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setMoveOpen(false)}>
@@ -501,7 +503,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         open={qcOpen}
         onClose={() => setQcOpen(false)}
         title={`08. Checking — Quality Inspection`}
-        subtitle={`Order ${selectedItem?.order_number} | ${selectedItem?.product_name} | ${selectedItem?.color} / Size ${selectedItem?.size}`}
+        subtitle={`Order ${selectedItem?.order_number} | ${selectedItem?.product_name} | ${selectedItem?.color}${selectedItem?.size ? ` / Size ${selectedItem.size}` : ''}`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setQcOpen(false)}>

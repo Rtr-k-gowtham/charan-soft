@@ -495,9 +495,11 @@ export default function ProductionOrders() {
                                     </span>
                                   )}
                                 </div>
-                                <span className="px-2 py-0.5 bg-blue-50 text-brand-700 rounded text-[11px] font-mono font-bold shrink-0">
-                                  Size {item.size}
-                                </span>
+                                {item.size ? (
+                                  <span className="px-2 py-0.5 bg-blue-50 text-brand-700 rounded text-[11px] font-mono font-bold shrink-0">
+                                    Size {item.size}
+                                  </span>
+                                ) : null}
                               </div>
 
                               {/* Color & Variant Info - Borderless soft chips */}
@@ -787,12 +789,14 @@ export default function ProductionOrders() {
                               {/* 3. Size & Product Quantities */}
                               <div>
                                 <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block mb-0.5">
-                                  Size & Quantities
+                                  {item.size ? 'Size & Quantities' : 'Quantities'}
                                 </span>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="px-1.5 py-0.5 bg-blue-50 text-brand-700 border border-brand-200 rounded text-[11px] font-mono font-bold">
-                                    {item.size}
-                                  </span>
+                                  {item.size ? (
+                                    <span className="px-1.5 py-0.5 bg-blue-50 text-brand-700 border border-brand-200 rounded text-[11px] font-mono font-bold">
+                                      {item.size}
+                                    </span>
+                                  ) : null}
                                   <span className="text-xs font-mono font-bold text-slate-800">
                                     {itTotal.toLocaleString()} pcs
                                   </span>
@@ -920,7 +924,7 @@ export default function ProductionOrders() {
         size="sm"
         subtitle={
           selectedItem
-            ? `${selectedItem.product_name} — ${selectedItem.color} / Size ${selectedItem.size}`
+            ? `${selectedItem.product_name} — ${selectedItem.color}${selectedItem.size ? ` / Size ${selectedItem.size}` : ''}`
             : ''
         }
         footer={
@@ -994,7 +998,7 @@ export default function ProductionOrders() {
         size="md"
         subtitle={
           selectedItem
-            ? `${selectedItem.product_name} — ${selectedItem.color} / Size ${selectedItem.size}`
+            ? `${selectedItem.product_name} — ${selectedItem.color}${selectedItem.size ? ` / Size ${selectedItem.size}` : ''}`
             : ''
         }
         footer={

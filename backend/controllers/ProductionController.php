@@ -32,10 +32,14 @@ class ProductionController {
 
             foreach ($orders as &$ord) {
                 $iStmt = $pdo->prepare("
-                    SELECT poi.*, p.name as product_name, p.code as product_code, ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
+                    SELECT poi.*, 
+                           COALESCE(bp.product_name, p.name) as product_name, 
+                           COALESCE(bp.product_code, p.code) as product_code, 
+                           ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
                            col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
                     FROM production_order_items poi
-                    JOIN products p ON poi.product_id = p.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
                     JOIN production_stages ps ON poi.current_stage_id = ps.id
                     LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
                     WHERE poi.production_order_id = ?
@@ -70,14 +74,18 @@ class ProductionController {
             }
 
             $iStmt = $pdo->prepare("
-                SELECT poi.*, p.name as product_name, p.code as product_code, ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
+                SELECT poi.*, 
+                       COALESCE(bp.product_name, p.name) as product_name, 
+                       COALESCE(bp.product_code, p.code) as product_code, 
+                       ps.name as current_stage_name, ps.color_badge, ps.sequence_order as stage_sequence,
                        col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
-                    FROM production_order_items poi
-                    JOIN products p ON poi.product_id = p.id
-                    JOIN production_stages ps ON poi.current_stage_id = ps.id
-                    LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
-                    WHERE poi.production_order_id = ?
-                    ORDER BY poi.id ASC
+                FROM production_order_items poi
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
+                JOIN production_stages ps ON poi.current_stage_id = ps.id
+                LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
+                WHERE poi.production_order_id = ?
+                ORDER BY poi.id ASC
             ");
             $iStmt->execute([$id]);
             $order['items'] = $iStmt->fetchAll();
@@ -91,24 +99,69 @@ class ProductionController {
     public function store(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $categoryId = (int)($data['category_id'] ?? 0);
+        $customerId = !empty($data['customer_id']) ? (int)$data['customer_id'] : 0;
         $title = trim($data['title'] ?? '');
         $items = $data['items'] ?? [];
 
-        if (empty($title) || empty($items)) {
-            Response::error("Order title and at least one item line are required", 422);
+        if (empty($title)) {
+            Response::error("Order title is required", 422);
+            return;
+        }
+
+        if (empty($items) || !is_array($items)) {
+            Response::error("At least one product line is required", 422);
+            return;
+        }
+
+        if (!$customerId) {
+            Response::error("A valid Buyer is required for production order creation", 422);
             return;
         }
 
         try {
             $pdo = Database::getConnection();
+
+            // Validate that selected buyer exists
+            $cCheck = $pdo->prepare("SELECT id, name FROM customers WHERE id = ?");
+            $cCheck->execute([$customerId]);
+            $customerRow = $cCheck->fetch();
+            if (!$customerRow) {
+                Response::error("Selected buyer does not exist", 422);
+                return;
+            }
+
+            // Validate that every product belongs to the selected buyer in buyer_products
+            $bpCheck = $pdo->prepare("SELECT id, product_name FROM buyer_products WHERE id = ? AND buyer_id = ?");
+            foreach ($items as $idx => $it) {
+                $lineNo = $idx + 1;
+                $pId = (int)($it['product_id'] ?? 0);
+                if (!$pId) {
+                    Response::error("Line #{$lineNo}: Product is required", 422);
+                    return;
+                }
+
+                $bpCheck->execute([$pId, $customerId]);
+                $bpRow = $bpCheck->fetch();
+                if (!$bpRow) {
+                    Response::error("Line #{$lineNo}: Product does not belong to the selected buyer", 422);
+                    return;
+                }
+
+                if (empty(trim((string)($it['color'] ?? '')))) {
+                    Response::error("Line #{$lineNo}: Color is required", 422);
+                    return;
+                }
+
+                $q = (int)($it['total_quantity'] ?? $it['qty'] ?? 0);
+                if ($q <= 0) {
+                    Response::error("Line #{$lineNo}: Quantity must be greater than zero", 422);
+                    return;
+                }
+            }
+
             $pdo->beginTransaction();
 
-            // Derive category if not provided (Requirement 7)
-            if (!$categoryId && !empty($items[0]['product_id'])) {
-                $pStmt = $pdo->prepare("SELECT category_id FROM products WHERE id = ?");
-                $pStmt->execute([(int)$items[0]['product_id']]);
-                $categoryId = (int)($pStmt->fetchColumn() ?: 0);
-            }
+            // Derive category if not provided
             if (!$categoryId) {
                 $cRow = $pdo->query("SELECT id FROM categories WHERE type = 'product' OR type = 'order' ORDER BY id ASC LIMIT 1")->fetch();
                 $categoryId = $cRow ? (int)$cRow['id'] : 1;
@@ -131,7 +184,7 @@ class ProductionController {
             $stmt->execute([
                 ':ord_no' => $orderNo,
                 ':cat_id' => $categoryId,
-                ':cust_id' => !empty($data['customer_id']) ? (int)$data['customer_id'] : null,
+                ':cust_id' => $customerId,
                 ':title' => $title,
                 ':prio' => $data['priority'] ?? 'Medium',
                 ':sdate' => $data['start_date'] ?? date('Y-m-d'),
@@ -141,9 +194,10 @@ class ProductionController {
             ]);
             $orderId = (int)$pdo->lastInsertId();
 
+            // Insert items without Size column
             $itemStmt = $pdo->prepare("
-                INSERT INTO production_order_items (production_order_id, product_id, color, size, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'In Progress')
+                INSERT INTO production_order_items (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, status)
+                VALUES (?, ?, ?, ?, ?, ?, 0, 'In Progress')
             ");
 
             foreach ($items as $it) {
@@ -151,8 +205,7 @@ class ProductionController {
                 $itemStmt->execute([
                     $orderId,
                     (int)$it['product_id'],
-                    $it['color'] ?? 'White',
-                    $it['size'] ?? 'M',
+                    trim((string)($it['color'] ?? 'White')),
                     $q,
                     $firstStageId,
                     $q
@@ -160,10 +213,10 @@ class ProductionController {
             }
 
             $pdo->commit();
-            AuditLogger::log('ProductionOrders', 'CREATE', $orderId, null, ['order_number' => $orderNo, 'total_qty' => $totalQty]);
+            AuditLogger::log('ProductionOrders', 'CREATE', $orderId, null, ['order_number' => $orderNo, 'customer_id' => $customerId, 'total_qty' => $totalQty]);
             Response::success(['id' => $orderId, 'order_number' => $orderNo], "Production order created successfully", 201);
         } catch (Exception $e) {
-            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
             Response::error($e->getMessage(), 500);
         }
     }
@@ -361,10 +414,13 @@ class ProductionController {
             $pdo = Database::getConnection();
             $stmt = $pdo->prepare("
                 SELECT poi.*, po.order_number, po.title as order_title, po.priority, po.target_delivery_date,
-                       p.name as product_name, p.code as product_code, ps.name as stage_name, ps.code as stage_code
+                       COALESCE(bp.product_name, p.name) as product_name, 
+                       COALESCE(bp.product_code, p.code) as product_code, 
+                       ps.name as stage_name, ps.code as stage_code
                 FROM production_order_items poi
                 JOIN production_orders po ON poi.production_order_id = po.id
-                JOIN products p ON poi.product_id = p.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
                 JOIN production_stages ps ON poi.current_stage_id = ps.id
                 WHERE UPPER(ps.code) = UPPER(?) AND po.deleted_at IS NULL
                 ORDER BY poi.id DESC
@@ -380,11 +436,14 @@ class ProductionController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("
-                SELECT rw.*, poi.color, poi.size, po.order_number, p.name as product_name, ps.name as target_stage_name
+                SELECT rw.*, poi.color, po.order_number, 
+                       COALESCE(bp.product_name, p.name) as product_name, 
+                       ps.name as target_stage_name
                 FROM rework_records rw
                 JOIN production_order_items poi ON rw.production_order_item_id = poi.id
                 JOIN production_orders po ON poi.production_order_id = po.id
-                JOIN products p ON poi.product_id = p.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
                 LEFT JOIN production_stages ps ON rw.rework_stage_id = ps.id
                 ORDER BY rw.id DESC
             ");
@@ -398,11 +457,13 @@ class ProductionController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("
-                SELECT qc.*, ps.name as stage_name, u.name as inspector_name, poi.color, poi.size, p.name as product_name, po.order_number
+                SELECT qc.*, ps.name as stage_name, u.name as inspector_name, poi.color, 
+                       COALESCE(bp.product_name, p.name) as product_name, po.order_number
                 FROM qc_records qc
                 LEFT JOIN production_stages ps ON qc.stage_id = ps.id
                 LEFT JOIN users u ON qc.inspector_user_id = u.id
                 LEFT JOIN production_order_items poi ON qc.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
                 LEFT JOIN products p ON poi.product_id = p.id
                 LEFT JOIN production_orders po ON poi.production_order_id = po.id
                 ORDER BY qc.id DESC LIMIT 100

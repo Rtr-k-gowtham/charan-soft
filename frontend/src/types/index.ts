@@ -254,7 +254,7 @@ export interface ProductionOrderItem {
   color: string;
   color_pantone_code?: string;
   color_hex_code?: string;
-  size: string;
+  size?: string;
   total_quantity: number;
   current_stage_id: number;
   current_stage_name?: string;

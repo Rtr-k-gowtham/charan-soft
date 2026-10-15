@@ -670,9 +670,11 @@ export default function ProductionBoard() {
                                 <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200/80 shadow-2xs">
                                   Color: <strong className="text-slate-800">{item.color}</strong>
                                 </span>
-                                <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200/80 shadow-2xs">
-                                  Size: <strong className="text-slate-800">{item.size}</strong>
-                                </span>
+                                {item.size && (
+                                  <span className="bg-white px-1.5 py-0.5 rounded border border-slate-200/80 shadow-2xs">
+                                    Size: <strong className="text-slate-800">{item.size}</strong>
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -786,7 +788,7 @@ export default function ProductionBoard() {
         open={moveModalOpen}
         onClose={() => setMoveModalOpen(false)}
         title={`Advance Production Stage — ${activeItemForMove?.order.order_number || ''}`}
-        subtitle={`${activeItemForMove?.item.product_name || ''} (${activeItemForMove?.item.color || ''} / ${activeItemForMove?.item.size || ''})`}
+        subtitle={`${activeItemForMove?.item.product_name || ''} (${activeItemForMove?.item.color || ''}${activeItemForMove?.item.size ? ` / ${activeItemForMove.item.size}` : ''})`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setMoveModalOpen(false)}>
@@ -866,7 +868,7 @@ export default function ProductionBoard() {
         open={qcModalOpen}
         onClose={() => setQcModalOpen(false)}
         title={`Quality Control Inspection — ${activeItemForQC?.order.order_number || ''}`}
-        subtitle={`${activeItemForQC?.item.product_name || ''} (${activeItemForQC?.item.color || ''} / ${activeItemForQC?.item.size || ''})`}
+        subtitle={`${activeItemForQC?.item.product_name || ''} (${activeItemForQC?.item.color || ''}${activeItemForQC?.item.size ? ` / ${activeItemForQC.item.size}` : ''})`}
         footer={
           <>
             <Button variant="secondary" onClick={() => setQcModalOpen(false)}>

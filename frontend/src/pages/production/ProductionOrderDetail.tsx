@@ -461,9 +461,13 @@ export default function ProductionOrderDetail() {
                         </td>
 
                         <td className="px-3 py-3 text-center">
-                          <span className="inline-block px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-mono font-bold text-slate-700 text-[11px]">
-                            {item.size}
-                          </span>
+                          {item.size ? (
+                            <span className="inline-block px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-mono font-bold text-slate-700 text-[11px]">
+                              {item.size}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-mono text-xs">—</span>
+                          )}
                         </td>
 
                         <td className="px-3 py-3 text-right font-mono font-bold text-slate-800">
@@ -587,7 +591,7 @@ export default function ProductionOrderDetail() {
         size="sm"
         subtitle={
           selectedItem
-            ? `${selectedItem.product_name} — ${selectedItem.color} / Size ${selectedItem.size}`
+            ? `${selectedItem.product_name} — ${selectedItem.color}${selectedItem.size ? ` / Size ${selectedItem.size}` : ''}`
             : ''
         }
         footer={
@@ -661,7 +665,7 @@ export default function ProductionOrderDetail() {
         size="md"
         subtitle={
           selectedItem
-            ? `${selectedItem.product_name} — ${selectedItem.color} / Size ${selectedItem.size}`
+            ? `${selectedItem.product_name} — ${selectedItem.color}${selectedItem.size ? ` / Size ${selectedItem.size}` : ''}`
             : ''
         }
         footer={

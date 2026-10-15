@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { Customer, Category, Product } from '../../types';
+import { Customer, Category } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
@@ -42,15 +42,26 @@ interface ColorRecord {
 interface OrderItem {
   product_id: string;
   color: string;
-  size: string;
   total_quantity: number;
+}
+
+interface BuyerProductItem {
+  id: number | string;
+  buyer_id: number | string;
+  product_name?: string;
+  name?: string;
+  product_code?: string;
+  code?: string;
+  uom?: string;
+  notes?: string;
 }
 
 export default function CreateProductionOrder() {
   const navigate = useNavigate();
 
   // Master data
-  const [products, setProducts] = useState<Product[]>([]);
+  const [buyerProducts, setBuyerProducts] = useState<BuyerProductItem[]>([]);
+  const [loadingBuyerProducts, setLoadingBuyerProducts] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [colors, setColors] = useState<ColorRecord[]>([]);
@@ -72,7 +83,7 @@ export default function CreateProductionOrder() {
   });
 
   const [orderItems, setOrderItems] = useState<OrderItem[]>([
-    { product_id: '', color: '', size: '', total_quantity: 100 },
+    { product_id: '', color: '', total_quantity: 100 },
   ]);
 
   const [saving, setSaving] = useState(false);
@@ -181,13 +192,11 @@ export default function CreateProductionOrder() {
   const loadMasterData = async () => {
     setLoading(true);
     try {
-      const [prdData, custData, catData, pantoneData] = await Promise.all([
-        api.getProducts(),
+      const [custData, catData, pantoneData] = await Promise.all([
         api.getCustomers(),
         api.getCategories(),
         api.getPantoneColors({ all: true }).catch(() => api.getColors()),
       ]);
-      setProducts((prdData || []) as Product[]);
       setCustomers((custData || []) as Customer[]);
       setCategories((catData || []) as Category[]);
 
@@ -211,22 +220,121 @@ export default function CreateProductionOrder() {
     loadMasterData();
   }, []);
 
-  // Format products for SearchableSelect
+  // Fetch configured products for a specific buyer from Buyer Master
+  const fetchProductsForBuyer = async (buyerId: string | number): Promise<BuyerProductItem[]> => {
+    if (!buyerId) return [];
+    try {
+      let serverList: any[] = [];
+      try {
+        const res = await api.getBuyerProducts(buyerId);
+        const rawList = Array.isArray(res) ? res : (res as any)?.data || [];
+        serverList = rawList;
+      } catch (err) {
+        console.warn('API getBuyerProducts failed or returned error', err);
+      }
+
+      const validServerProducts = serverList.filter((p: any) => {
+        if (!p || typeof p !== 'object') return false;
+        if (p.contact_person && !p.product_name) return false;
+        if (p.billing_address && !p.product_name) return false;
+        if (p.gstin && !p.product_name) return false;
+        return Boolean(p.product_name || p.name);
+      });
+
+      // Local storage fallback
+      const localKey = `cheran_buyer_products_${buyerId}`;
+      const localStored = localStorage.getItem(localKey);
+      let localList: any[] = [];
+      if (localStored) {
+        try {
+          const parsed = JSON.parse(localStored);
+          if (Array.isArray(parsed)) {
+            localList = parsed.filter(
+              (p: any) => p && typeof p === 'object' && Boolean(p.product_name || p.name)
+            );
+          }
+        } catch {
+          localList = [];
+        }
+      }
+
+      // Merge server products and local products
+      const map = new Map<string | number, any>();
+      localList.forEach((p: any) => {
+        const key = p.id || p.product_code || p.product_name;
+        map.set(key, p);
+      });
+      validServerProducts.forEach((p: any) => {
+        const key = p.id || p.product_code || p.product_name;
+        map.set(key, p);
+      });
+
+      return Array.from(map.values()).map((p: any, idx: number) => ({
+        id: p.id || idx + 1,
+        buyer_id: buyerId,
+        product_name: p.product_name || p.name || 'Product',
+        product_code: p.product_code || p.code || `BPRD-${String(p.id || idx + 1).padStart(3, '0')}`,
+        uom: p.uom || 'Pieces',
+      }));
+    } catch (err) {
+      console.error('Failed to load buyer products:', err);
+      return [];
+    }
+  };
+
+  // Handler when Buyer changes
+  const handleBuyerChange = async (buyerId: string) => {
+    setForm((f) => ({ ...f, customer_id: buyerId }));
+
+    if (!buyerId) {
+      setBuyerProducts([]);
+      // Clear product and color on all existing lines
+      setOrderItems((prev) =>
+        prev.map((it) => ({ ...it, product_id: '', color: '' }))
+      );
+      return;
+    }
+
+    setLoadingBuyerProducts(true);
+    try {
+      const prods = await fetchProductsForBuyer(buyerId);
+      setBuyerProducts(prods);
+
+      // Validate every line against the newly selected buyer's product list
+      const validIds = new Set(prods.map((p) => String(p.id)));
+      setOrderItems((prev) =>
+        prev.map((it) => {
+          if (!it.product_id || !validIds.has(String(it.product_id))) {
+            return { ...it, product_id: '', color: '' };
+          }
+          return it;
+        })
+      );
+    } catch (err) {
+      console.error('Failed to update buyer products:', err);
+      setBuyerProducts([]);
+      setOrderItems((prev) =>
+        prev.map((it) => ({ ...it, product_id: '', color: '' }))
+      );
+    } finally {
+      setLoadingBuyerProducts(false);
+    }
+  };
+
+  // Format configured buyer products for SearchableSelect
   const productOptions: SelectOption[] = useMemo(() => {
-    return products.map((p) => {
+    return buyerProducts.map((p) => {
       const details: string[] = [];
-      if (p.code) details.push(p.code);
-      if (p.design) details.push(p.design);
+      if (p.product_code) details.push(p.product_code);
       if (p.uom) details.push(p.uom);
-      if (p.selling_price && Number(p.selling_price) > 0) details.push(`₹${p.selling_price}`);
 
       return {
         value: String(p.id),
-        label: p.name,
+        label: p.product_name || p.name || 'Product',
         sublabel: details.join(' • '),
       };
     });
-  }, [products]);
+  }, [buyerProducts]);
 
   // Format Pantone colors for SearchableSelect
   const colorOptions: SelectOption[] = useMemo(() => {
@@ -249,13 +357,26 @@ export default function CreateProductionOrder() {
   const handleAddItemRow = () => {
     setOrderItems((prev) => [
       ...prev,
-      { product_id: '', color: '', size: '', total_quantity: 100 },
+      { product_id: '', color: '', total_quantity: 100 },
     ]);
   };
 
   const handleRemoveItemRow = (index: number) => {
     if (orderItems.length <= 1) return;
     setOrderItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleProductChange = (index: number, newProductId: string) => {
+    setOrderItems((prev) => {
+      const copy = [...prev];
+      // Reset color variant when product selection changes
+      copy[index] = {
+        ...copy[index],
+        product_id: newProductId,
+        color: '',
+      };
+      return copy;
+    });
   };
 
   const handleItemChange = <K extends keyof OrderItem>(
@@ -356,6 +477,12 @@ export default function CreateProductionOrder() {
       return;
     }
 
+    if (!form.customer_id) {
+      setError('Please select a Buyer in Order Information');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     if (orderItems.length === 0) {
       setError('At least one product line is required');
       return;
@@ -368,11 +495,7 @@ export default function CreateProductionOrder() {
         return;
       }
       if (!row.color.trim()) {
-        setError(`Please select a Color for line #${i + 1}`);
-        return;
-      }
-      if (!row.size || !String(row.size).trim()) {
-        setError(`Please enter a Size for line #${i + 1}`);
+        setError(`Please select a Color Variant for line #${i + 1}`);
         return;
       }
       if (!row.total_quantity || row.total_quantity <= 0) {
@@ -387,7 +510,7 @@ export default function CreateProductionOrder() {
     try {
       const payload = {
         title: form.title.trim(),
-        customer_id: form.customer_id || null,
+        customer_id: form.customer_id ? parseInt(form.customer_id) : null,
         category_id: form.category_id ? parseInt(form.category_id) : 7,
         priority: form.priority,
         start_date: form.start_date,
@@ -396,7 +519,6 @@ export default function CreateProductionOrder() {
         items: orderItems.map((item) => ({
           product_id: parseInt(item.product_id),
           color: item.color,
-          size: item.size,
           total_quantity: Number(item.total_quantity),
         })),
       };
@@ -485,11 +607,12 @@ export default function CreateProductionOrder() {
 
               <FormField
                 as="select"
-                label="Buyer"
+                label="Buyer *"
+                required
                 value={form.customer_id}
-                onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}
+                onChange={(e) => handleBuyerChange(e.target.value)}
               >
-                <option value="">— Select Buyer (Optional) —</option>
+                <option value="">— Select Buyer —</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.code ? `(${c.code})` : ''}
@@ -562,6 +685,24 @@ export default function CreateProductionOrder() {
           </div>
 
           <div className="p-5">
+            {!form.customer_id && (
+              <div className="mb-4 p-3 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-blue-600 shrink-0" />
+                <span>
+                  Please select a <strong>Buyer</strong> above in Order Information to view and select their configured products.
+                </span>
+              </div>
+            )}
+
+            {form.customer_id && !loadingBuyerProducts && buyerProducts.length === 0 && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  No products are currently configured for this buyer in <strong>Buyer Master → Products & Packing</strong>. Please configure products for this buyer before creating an order.
+                </span>
+              </div>
+            )}
+
             <div className="space-y-3">
               {orderItems.map((item, idx) => (
                 <div
@@ -580,19 +721,32 @@ export default function CreateProductionOrder() {
                     </div>
 
                     {/* Searchable Product */}
-                    <div className="md:col-span-4">
+                    <div className="md:col-span-5">
                       <SearchableSelect
                         label={idx === 0 ? 'Product *' : undefined}
-                        placeholder="— Select Product —"
-                        searchPlaceholder="Search product by name, code, design..."
+                        placeholder={
+                          !form.customer_id
+                            ? 'Select a buyer first'
+                            : loadingBuyerProducts
+                            ? 'Loading buyer products...'
+                            : buyerProducts.length === 0
+                            ? 'No products configured for this buyer'
+                            : '— Select Product —'
+                        }
+                        searchPlaceholder={
+                          !form.customer_id
+                            ? 'Select a buyer first'
+                            : 'Search configured product by name, code...'
+                        }
+                        disabled={!form.customer_id || loadingBuyerProducts || buyerProducts.length === 0}
                         options={productOptions}
                         value={item.product_id}
-                        onChange={(val) => handleItemChange(idx, 'product_id', val)}
+                        onChange={(val) => handleProductChange(idx, val)}
                       />
                     </div>
 
                     {/* Searchable Color with + Add Color */}
-                    <div className="md:col-span-3">
+                    <div className="md:col-span-4">
                       <div className="flex flex-col">
                         {idx === 0 && (
                           <div className="flex items-center justify-between mb-1">
@@ -633,24 +787,6 @@ export default function CreateProductionOrder() {
                           </button>
                         </div>
                       </div>
-                    </div>
-
-                    {/* Size Decimal Input */}
-                    <div className="md:col-span-2">
-                      {idx === 0 && (
-                        <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                          Size *
-                        </label>
-                      )}
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={item.size}
-                        onChange={(e) => handleItemChange(idx, 'size', e.target.value)}
-                        placeholder="e.g. 2.5"
-                        className="w-full min-h-[34px] px-2.5 py-1.5 text-xs font-mono font-medium bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800 placeholder:text-slate-400 placeholder:font-normal"
-                      />
                     </div>
 
                     {/* Quantity Input */}

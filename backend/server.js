@@ -1129,30 +1129,55 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/production-stages' && method === 'GET') return sendSuccess(res, db.productionStages);
     if (pathname === '/production-orders' && method === 'GET') return sendSuccess(res, db.productionOrders);
     if (pathname === '/production-orders' && method === 'POST') {
-      const items = (body.items || []).map((it, idx) => ({
-        id: idx + 1,
-        product_id: it.product_id || 1,
-        product_name: it.product_name || 'Crew Neck T-Shirt',
-        color: it.color || 'Navy Blue',
-        size: it.size || 'M',
-        total_quantity: Number(it.total_quantity || 100),
-        current_stage_id: 1,
-        current_stage_name: 'Requirement Gathering',
-        stage_code: 'REQ',
-        current_stage_quantity: Number(it.total_quantity || 100),
-        completed_quantity: 0,
-        rejected_quantity: 0,
-        rework_quantity: 0,
-        status: 'In Progress',
-      }));
+      const customerId = Number(body.customer_id);
+      if (!customerId) {
+        return sendError(res, 'A valid Buyer is required for production order creation', 422);
+      }
+
+      const inputItems = body.items || [];
+      if (!inputItems.length) {
+        return sendError(res, 'At least one product line is required', 422);
+      }
+
+      // Validate buyer products
+      if (db.buyer_products && db.buyer_products.length > 0) {
+        for (let i = 0; i < inputItems.length; i++) {
+          const it = inputItems[i];
+          const bp = db.buyer_products.find(p => p.id === Number(it.product_id) && p.buyer_id === customerId);
+          if (!bp) {
+            return sendError(res, `Line #${i + 1}: Product does not belong to the selected buyer`, 422);
+          }
+        }
+      }
+
+      const items = inputItems.map((it, idx) => {
+        const bp = (db.buyer_products || []).find(p => p.id === Number(it.product_id));
+        return {
+          id: idx + 1,
+          product_id: Number(it.product_id) || 1,
+          product_name: bp?.product_name || it.product_name || 'Buyer Product',
+          product_code: bp?.product_code || 'BPRD-001',
+          color: it.color || 'White',
+          total_quantity: Number(it.total_quantity || 100),
+          current_stage_id: 1,
+          current_stage_name: 'Requirement Gathering',
+          stage_code: 'REQ',
+          current_stage_quantity: Number(it.total_quantity || 100),
+          completed_quantity: 0,
+          rejected_quantity: 0,
+          rework_quantity: 0,
+          status: 'In Progress',
+        };
+      });
 
       const totalQty = items.reduce((s, i) => s + i.total_quantity, 0);
+      const custObj = (db.customers || []).find(c => c.id === customerId) || { name: 'Customer' };
       const newOrder = {
         id: db.productionOrders.length + 1,
         order_number: `ORD-${1000 + db.productionOrders.length + 1}`,
         title: body.title || 'Export Garment Batch',
-        customer_id: body.customer_id || 1,
-        customer_name: (db.customers.find(c => c.id === Number(body.customer_id)) || db.customers[0]).name,
+        customer_id: customerId,
+        customer_name: custObj.name,
         category_id: Number(body.category_id || 1),
         priority: body.priority || 'Medium',
         start_date: body.start_date || new Date().toISOString().split('T')[0],
