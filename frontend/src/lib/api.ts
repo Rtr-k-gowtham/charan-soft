@@ -117,6 +117,7 @@ export const api = {
   getProductionStages: () => request<unknown[]>('/production-stages'),
   getProductionOrders: () => request<unknown[]>('/production-orders'),
   getProductionOrder: (id: number | string) => request<unknown>(`/production-orders/${id}`),
+  getOrderMaterialRequirements: (id: number | string) => request<any>(`/production-orders/${id}/material-requirements`),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
   moveStage: (data: unknown) =>

@@ -821,8 +821,23 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                           </span>
                         </div>
 
-                        {/* Action buttons: Enter Order & Accordion Chevron */}
+                        {/* Action buttons: Material List (BOM), Enter Order & Accordion Chevron */}
                         <div className="flex items-center gap-1.5">
+                          {activeCode === 'REQ' && group.order_id && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                navigate(`/production/requirement/${group.order_id}`);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 shadow-2xs transition"
+                              title="Generate material requirement list (BOM) for this order"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Material List (BOM)</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             onClick={e => {
@@ -859,6 +874,32 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                     {/* Expandable Product List inside this Order */}
                     {isExpanded && (
                       <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4 animate-in fade-in slide-in-from-top-1">
+                        {/* Requirement Stage Material List Callout Banner */}
+                        {activeCode === 'REQ' && group.order_id && (
+                          <div className="mb-3 p-3 bg-gradient-to-r from-indigo-50 via-brand-50 to-indigo-50 border border-indigo-200/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                                <Sparkles className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold text-slate-800">
+                                  Auto-Generated Material Requirements & BOM
+                                </h4>
+                                <p className="text-[11px] text-slate-500">
+                                  Computed automatically from product raw materials configured in Buyer Master ({fmt(group.total_stage_quantity)} pcs).
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/production/requirement/${group.order_id}`)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0 transition"
+                            >
+                              <span>View Full Material List</span>
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">

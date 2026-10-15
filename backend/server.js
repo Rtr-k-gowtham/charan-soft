@@ -1163,6 +1163,165 @@ const server = http.createServer(async (req, res) => {
       });
       return sendSuccess(res, enriched);
     }
+
+    const prodOrdMatMatch = pathname.match(/^\/production-orders\/(\d+)\/(material-requirements|bom)$/);
+    if (prodOrdMatMatch && method === 'GET') {
+      const ordId = Number(prodOrdMatMatch[1]);
+      const ord = (db.productionOrders || []).find(o => o.id === ordId);
+      if (!ord) return sendError(res, 'Production order not found', 404);
+
+      const cust = (db.customers || []).find(c => c.id === Number(ord.customer_id));
+      const enrichedOrder = {
+        ...ord,
+        customer_code: cust?.code || '',
+        customer_name: cust?.name || ord.customer_name || 'Buyer',
+        customer_avatar_style: cust?.avatar_style || 'lorelei',
+        customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${ord.customer_id || 1}`,
+      };
+
+      const materialsMap = {};
+      const productsBreakdown = [];
+      let totalGarments = 0;
+
+      (ord.items || []).forEach(item => {
+        const pId = Number(item.product_id);
+        const itemQty = Number(item.total_quantity || 0);
+        totalGarments += itemQty;
+
+        const bp = (db.buyer_products || []).find(p => p.id === pId) || (db.products || []).find(p => p.id === pId);
+        const comps = (bp && bp.components && bp.components.length) ? bp.components : [
+          { name: '100% Cotton Knitted Fabric', category: 'Fabric', uom: 'Meters', quantity_per_product: 0.45, wastage_percent: 5 },
+          { name: 'Sewing Thread 2/40', category: 'Thread', uom: 'Cones', quantity_per_product: 0.02, wastage_percent: 2 },
+          { name: 'Brand Main Neck Label', category: 'Label', uom: 'Pieces', quantity_per_product: 1, wastage_percent: 1 },
+          { name: 'Polybag 10x14', category: 'Packaging', uom: 'Pieces', quantity_per_product: 1, wastage_percent: 2 }
+        ];
+
+        const productComps = [];
+        comps.forEach(c => {
+          const matName = c.name || 'Raw Material';
+          const cat = c.category || 'Fabric';
+          const uom = c.uom || 'Units';
+          const perPiece = Number(c.quantity_per_product || 0);
+          const wastage = Number(c.wastage_percent || 0);
+          const lineReq = Number((itemQty * perPiece * (1 + (wastage / 100))).toFixed(3));
+
+          // Match material in db.materials
+          const mat = (db.materials || []).find(m => (c.material_id && m.id === Number(c.material_id)) || m.name.toLowerCase() === matName.toLowerCase());
+          const rate = Number(mat?.purchase_rate || 120);
+          const stock = Number(mat?.current_stock || 150);
+
+          productComps.push({
+            material_id: mat?.id || c.material_id || null,
+            material_code: mat?.code || '',
+            name: matName,
+            category: cat,
+            uom,
+            quantity_per_product: perPiece,
+            wastage_percent: wastage,
+            required_quantity: lineReq,
+          });
+
+          const aggKey = mat?.id ? `id_${mat.id}` : `name_${matName}_${uom}`.toLowerCase();
+          if (!materialsMap[aggKey]) {
+            materialsMap[aggKey] = {
+              material_id: mat?.id || null,
+              material_code: mat?.code || '',
+              name: matName,
+              category: cat,
+              uom,
+              unit_cost: rate,
+              current_stock: stock,
+              total_required_qty: 0,
+              product_contributions: []
+            };
+          }
+
+          materialsMap[aggKey].total_required_qty = Number((materialsMap[aggKey].total_required_qty + lineReq).toFixed(3));
+          materialsMap[aggKey].product_contributions.push({
+            product_id: pId,
+            product_name: item.product_name || bp?.product_name || 'Garment Product',
+            product_code: item.product_code || bp?.product_code || '',
+            color: item.color,
+            garment_qty: itemQty,
+            per_piece_qty: perPiece,
+            wastage_percent: wastage,
+            required_qty: lineReq
+          });
+        });
+
+        productsBreakdown.push({
+          item_id: item.id,
+          product_id: pId,
+          product_name: item.product_name || bp?.product_name || 'Garment Product',
+          product_code: item.product_code || bp?.product_code || '',
+          color: item.color,
+          size: item.size || null,
+          total_quantity: itemQty,
+          components: productComps
+        });
+      });
+
+      const totalMaterialsList = [];
+      let totalEstCost = 0;
+      let inStockCount = 0;
+      let shortageCount = 0;
+
+      Object.values(materialsMap).forEach(m => {
+        const req = Number(m.total_required_qty.toFixed(3));
+        const stk = Number(m.current_stock.toFixed(3));
+        const shortage = Math.max(0, Number((req - stk).toFixed(3)));
+        const cost = Number((req * m.unit_cost).toFixed(2));
+        totalEstCost += cost;
+
+        let status = 'In Stock';
+        if (shortage > 0) {
+          status = stk > 0 ? 'Partial Stock' : 'Needs Procurement';
+          shortageCount++;
+        } else {
+          inStockCount++;
+        }
+
+        totalMaterialsList.push({
+          ...m,
+          total_required_qty: req,
+          shortage_qty: shortage,
+          total_estimated_cost: cost,
+          status
+        });
+      });
+
+      totalMaterialsList.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+
+      return sendSuccess(res, {
+        order: enrichedOrder,
+        products: productsBreakdown,
+        total_materials: totalMaterialsList,
+        summary: {
+          total_products_count: productsBreakdown.length,
+          total_order_garments: totalGarments,
+          total_distinct_materials: totalMaterialsList.length,
+          in_stock_count: inStockCount,
+          shortage_count: shortageCount,
+          total_estimated_cost: Number(totalEstCost.toFixed(2))
+        },
+        generated_at: new Date().toISOString()
+      });
+    }
+
+    const prodOrdMatch = pathname.match(/^\/production-orders\/(\d+)$/);
+    if (prodOrdMatch && method === 'GET') {
+      const ordId = Number(prodOrdMatch[1]);
+      const ord = (db.productionOrders || []).find(o => o.id === ordId);
+      if (!ord) return sendError(res, 'Production order not found', 404);
+      const cust = (db.customers || []).find(c => c.id === Number(ord.customer_id));
+      return sendSuccess(res, {
+        ...ord,
+        customer_code: cust?.code || '',
+        customer_name: cust?.name || ord.customer_name || 'Buyer',
+        customer_avatar_style: cust?.avatar_style || 'lorelei',
+        customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${ord.customer_id || 1}`,
+      });
+    }
     if (pathname === '/production-orders' && method === 'POST') {
       const customerId = Number(body.customer_id);
       if (!customerId) {

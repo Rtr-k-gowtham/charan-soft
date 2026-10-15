@@ -551,5 +551,207 @@ class ProductionController {
             Response::error($e->getMessage(), 500);
         }
     }
+
+    public function materialRequirements(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+
+            // 1. Fetch Order Details
+            $stmt = $pdo->prepare("
+                SELECT po.*, c.name as category_name, cu.name as customer_name, cu.code as customer_code,
+                       cu.avatar_style as customer_avatar_style, cu.avatar_seed as customer_avatar_seed, cu.avatar_config as customer_avatar_config
+                FROM production_orders po
+                JOIN categories c ON po.category_id = c.id
+                LEFT JOIN customers cu ON po.customer_id = cu.id
+                WHERE po.id = ? AND po.deleted_at IS NULL
+            ");
+            $stmt->execute([$orderId]);
+            $order = $stmt->fetch();
+            if (!$order) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            // 2. Fetch Order Items
+            $iStmt = $pdo->prepare("
+                SELECT poi.*, 
+                       COALESCE(bp.product_name, p.name) as product_name, 
+                       COALESCE(bp.product_code, p.code) as product_code,
+                       bp.buyer_id
+                FROM production_order_items poi
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
+                WHERE poi.production_order_id = ?
+                ORDER BY poi.id ASC
+            ");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            $materialsMap = [];
+            $productsBreakdown = [];
+            $totalGarments = 0;
+
+            foreach ($items as $item) {
+                $pId = (int)$item['product_id'];
+                $itemQty = (int)($item['total_quantity'] ?? 0);
+                $totalGarments += $itemQty;
+
+                // Load BOM components from buyer_product_components (configured in /masters/buyers/:id/products)
+                $compStmt = $pdo->prepare("
+                    SELECT bpc.*, m.code as material_code, m.purchase_rate, m.current_stock, m.uom as material_uom
+                    FROM buyer_product_components bpc
+                    LEFT JOIN materials m ON bpc.material_id = m.id
+                    WHERE bpc.buyer_product_id = ?
+                    ORDER BY bpc.id ASC
+                ");
+                $compStmt->execute([$pId]);
+                $comps = $compStmt->fetchAll();
+
+                // Fallback to bom_items if buyer_product_components empty
+                if (empty($comps)) {
+                    try {
+                        $fallbackStmt = $pdo->prepare("
+                            SELECT bi.*, m.name as name, m.code as material_code, m.uom as uom, 
+                                   m.purchase_rate, m.current_stock, bi.quantity_required as quantity_per_product,
+                                   bi.wastage_percent, 'Fabric' as category
+                            FROM bom_items bi
+                            JOIN boms b ON bi.bom_id = b.id
+                            LEFT JOIN materials m ON bi.material_id = m.id
+                            WHERE b.product_id = ?
+                        ");
+                        $fallbackStmt->execute([$pId]);
+                        $comps = $fallbackStmt->fetchAll();
+                    } catch (Exception $fbEx) {
+                        $comps = [];
+                    }
+                }
+
+                $productLineComps = [];
+                foreach ($comps as $c) {
+                    $matId = !empty($c['material_id']) ? (int)$c['material_id'] : null;
+                    $matName = trim((string)($c['name'] ?? ''));
+                    $category = trim((string)($c['category'] ?? 'Raw Material'));
+                    $uom = trim((string)($c['uom'] ?? $c['material_uom'] ?? 'Units'));
+                    $perPiece = (float)($c['quantity_per_product'] ?? 0);
+                    $wastage = (float)($c['wastage_percent'] ?? 0);
+                    $rate = (float)($c['purchase_rate'] ?? 0);
+                    $stock = isset($c['current_stock']) ? (float)$c['current_stock'] : 0.0;
+                    $matCode = $c['material_code'] ?? null;
+
+                    // Required quantity with wastage percentage calculation
+                    $lineRequired = round($itemQty * $perPiece * (1 + ($wastage / 100)), 3);
+                    $productLineComps[] = [
+                        'material_id' => $matId,
+                        'material_code' => $matCode,
+                        'name' => $matName,
+                        'category' => $category,
+                        'uom' => $uom,
+                        'quantity_per_product' => $perPiece,
+                        'wastage_percent' => $wastage,
+                        'required_quantity' => $lineRequired,
+                    ];
+
+                    // Aggregation key
+                    $aggKey = $matId ? "id_{$matId}" : "name_" . strtolower($matName . '_' . $uom);
+                    if (!isset($materialsMap[$aggKey])) {
+                        $materialsMap[$aggKey] = [
+                            'material_id' => $matId,
+                            'material_code' => $matCode,
+                            'name' => $matName,
+                            'category' => $category,
+                            'uom' => $uom,
+                            'unit_cost' => $rate,
+                            'current_stock' => $stock,
+                            'total_required_qty' => 0.0,
+                            'per_product_contributions' => [],
+                        ];
+                    }
+
+                    $materialsMap[$aggKey]['total_required_qty'] += $lineRequired;
+                    $materialsMap[$aggKey]['per_product_contributions'][] = [
+                        'product_id' => $pId,
+                        'product_name' => $item['product_name'],
+                        'product_code' => $item['product_code'],
+                        'color' => $item['color'],
+                        'garment_qty' => $itemQty,
+                        'per_piece_qty' => $perPiece,
+                        'wastage_percent' => $wastage,
+                        'required_qty' => $lineRequired,
+                    ];
+                }
+
+                $productsBreakdown[] = [
+                    'item_id' => (int)$item['id'],
+                    'product_id' => $pId,
+                    'product_name' => $item['product_name'],
+                    'product_code' => $item['product_code'],
+                    'color' => $item['color'],
+                    'size' => $item['size'] ?? null,
+                    'total_quantity' => $itemQty,
+                    'components' => $productLineComps,
+                ];
+            }
+
+            // Calculate Stock, Shortage, and Status for each aggregated material
+            $totalMaterialsList = [];
+            $totalEstimatedCost = 0.0;
+            $inStockCount = 0;
+            $shortageCount = 0;
+
+            foreach ($materialsMap as $m) {
+                $req = round($m['total_required_qty'], 3);
+                $stk = round($m['current_stock'], 3);
+                $shortage = max(0.0, round($req - $stk, 3));
+                $cost = round($req * $m['unit_cost'], 2);
+                $totalEstimatedCost += $cost;
+
+                $status = 'In Stock';
+                if ($shortage > 0) {
+                    $status = ($stk > 0) ? 'Partial Stock' : 'Needs Procurement';
+                    $shortageCount++;
+                } else {
+                    $inStockCount++;
+                }
+
+                $totalMaterialsList[] = [
+                    'material_id' => $m['material_id'],
+                    'material_code' => $m['material_code'],
+                    'name' => $m['name'],
+                    'category' => $m['category'],
+                    'uom' => $m['uom'],
+                    'total_required_qty' => $req,
+                    'current_stock' => $stk,
+                    'shortage_qty' => $shortage,
+                    'unit_cost' => $m['unit_cost'],
+                    'total_estimated_cost' => $cost,
+                    'status' => $status,
+                    'product_contributions' => $m['per_product_contributions'],
+                ];
+            }
+
+            // Sort materials by category then name
+            usort($totalMaterialsList, function($a, $b) {
+                $cmp = strcmp($a['category'], $b['category']);
+                return ($cmp !== 0) ? $cmp : strcmp($a['name'], $b['name']);
+            });
+
+            Response::success([
+                'order' => $order,
+                'products' => $productsBreakdown,
+                'total_materials' => $totalMaterialsList,
+                'summary' => [
+                    'total_products_count' => count($productsBreakdown),
+                    'total_order_garments' => $totalGarments,
+                    'total_distinct_materials' => count($totalMaterialsList),
+                    'in_stock_count' => $inStockCount,
+                    'shortage_count' => $shortageCount,
+                    'total_estimated_cost' => round($totalEstimatedCost, 2),
+                ],
+                'generated_at' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
 }
 
