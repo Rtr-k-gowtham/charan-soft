@@ -54,15 +54,14 @@ export default function ProductionOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Tab State: 'products' | 'bom'
-  const [activeTab, setActiveTab] = useState<'products' | 'bom'>('products');
+
 
   // Material Requirements (BOM) State
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
   const [loadingBOM, setLoadingBOM] = useState(false);
   const [bomSearchQuery, setBomSearchQuery] = useState('');
   const [bomCategoryFilter, setBomCategoryFilter] = useState('ALL');
-  const [expandedMaterialKey, setExpandedMaterialKey] = useState<string | null>(null);
+
 
   // Move stage modal state
   const [moveOpen, setMoveOpen] = useState(false);
@@ -93,10 +92,15 @@ export default function ProductionOrderDetail() {
     Promise.all([
       api.getProductionOrder(Number(id)),
       api.getProductionStages(),
+      api.getOrderMaterialRequirements(id).catch(() => null),
     ])
-      .then(([orderRes, stagesRes]) => {
+      .then(([orderRes, stagesRes, bomRes]) => {
         setOrder((orderRes as { data?: ProductionOrder })?.data || (orderRes as ProductionOrder));
         setStages((stagesRes as ProductionStage[]) || []);
+        if (bomRes) {
+          const bData = (bomRes as any)?.data || (bomRes as ProductionOrderBOMReport);
+          setBomReport(bData);
+        }
       })
       .catch((err: unknown) => {
         setError((err as Error).message || 'Failed to load production order details');
@@ -116,15 +120,14 @@ export default function ProductionOrderDetail() {
   }, [toastMessage]);
 
   // Generate / Load Material Requirements BOM
-  const handleGenerateBOM = async (switchToTab = true) => {
+  const handleGenerateBOM = async () => {
     if (!id) return;
     setLoadingBOM(true);
     try {
       const res = await api.getOrderMaterialRequirements(id);
       const data = (res as any)?.data || (res as ProductionOrderBOMReport);
       setBomReport(data);
-      if (switchToTab) setActiveTab('bom');
-      setToastMessage('Raw material requirement list (BOM) generated from Buyer Product master!');
+      setToastMessage('Raw material requirement list (BOM) updated!');
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to generate material requirements list');
     } finally {
@@ -289,6 +292,17 @@ export default function ProductionOrderDetail() {
   const overallPct = totalQty > 0 ? Math.min(100, Math.round((completedQty / totalQty) * 100)) : 0;
   const items = order.items || [];
 
+  const groupedProducts = useMemo(() => {
+    const list = order.items || [];
+    const groups: Record<string, ProductionOrderItem[]> = {};
+    list.forEach(item => {
+      const cat = item.category_name || order.category_name || 'General';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [order]);
+
   return (
     <div className="flex flex-col h-full overflow-y-auto bg-slate-50/50">
       {/* Toast Notification */}
@@ -319,12 +333,11 @@ export default function ProductionOrderDetail() {
             </Button>
 
             <Button
-              onClick={() => handleGenerateBOM(true)}
-              loading={loadingBOM}
-              icon={<Sparkles className="w-3.5 h-3.5 text-amber-200" />}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs"
+              variant="secondary"
+              icon={<Printer className="w-3.5 h-3.5" />}
+              onClick={() => window.print()}
             >
-              Generate Material List (BOM)
+              Print Requisition
             </Button>
 
             <button
@@ -339,7 +352,7 @@ export default function ProductionOrderDetail() {
       />
 
       <div className="p-3 sm:p-5 space-y-4 max-w-7xl mx-auto w-full">
-        {/* Banner with order number, title, priority, status badges */}
+        {/* Banner with order number, title, category, priority, status badges */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="font-mono text-brand-700 font-bold text-lg bg-brand-50 px-2.5 py-1 rounded-md border border-brand-200">
@@ -347,6 +360,11 @@ export default function ProductionOrderDetail() {
             </span>
             <span className="text-slate-300 font-normal hidden sm:inline">|</span>
             <h2 className="text-base font-bold text-slate-800 break-words">{order.title}</h2>
+            {order.category_name && (
+              <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                {order.category_name}
+              </span>
+            )}
             <StatusBadge status={order.priority} />
             <StatusBadge status={order.status} />
           </div>
@@ -371,566 +389,285 @@ export default function ProductionOrderDetail() {
           </div>
         </div>
 
-        {/* Section 1: Order Metrics Overview Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Total Order Qty
-            </span>
-            <span className="text-xl font-bold font-mono text-slate-900">{totalQty.toLocaleString()}</span>
-            <span className="text-[11px] text-slate-500 ml-1">pcs</span>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Completed Units
-            </span>
-            <span className="text-xl font-bold font-mono text-emerald-600">{completedQty.toLocaleString()}</span>
-            <span className="text-[11px] text-slate-500 ml-1">pcs</span>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Pending Remaining
-            </span>
-            <span className="text-xl font-bold font-mono text-amber-600">{pendingQty.toLocaleString()}</span>
-            <span className="text-[11px] text-slate-500 ml-1">pcs</span>
-          </div>
-
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                Overall Progress
-              </span>
-              <span className="text-xs font-bold font-mono text-brand-700">{overallPct}%</span>
-            </div>
-            <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden mt-2">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  overallPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                }`}
-                style={{ width: `${overallPct}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Automated Raw Material Requirement List (BOM) Banner */}
-        <div className="bg-gradient-to-r from-indigo-50 via-brand-50 to-indigo-50 border border-indigo-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-800">
-                Automated Raw Material Requirement List (BOM)
-              </h4>
-              <p className="text-[11px] text-slate-500">
-                Calculates total fabrics, trims, threads & packaging required based on ordered quantities and Buyer Master BOM.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleGenerateBOM(true)}
-              disabled={loadingBOM}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0 transition"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${loadingBOM ? 'animate-spin' : ''}`} />
-              <span>{bomReport ? 'Recalculate Material BOM' : 'Generate Material List (BOM)'}</span>
-            </button>
-            {bomReport && (
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex items-center gap-1 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold shadow-2xs transition"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-500" />
-                <span>Print</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Tab Navigation: Product Lines vs Material Requirements (BOM) */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('products')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'products'
-                  ? 'bg-brand-600 text-white shadow-2xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Product Lines & Stages ({items.length})</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (!bomReport) handleGenerateBOM(true);
-                else setActiveTab('bom');
-              }}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'bom'
-                  ? 'bg-indigo-600 text-white shadow-2xs'
-                  : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Material Requirements (BOM)</span>
+        {/* SECTION 1: Material Requirements Table */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Material Requirements (BOM)
+              </h3>
               {bomReport && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 ml-1">
-                  {bomReport.total_materials.length}
+                <span className="text-xs font-mono text-slate-500">
+                  ({filteredMaterials.length} of {bomReport.summary.total_distinct_materials} items)
                 </span>
               )}
-            </button>
+            </div>
+
+            {/* Filter and Search Bar */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={bomSearchQuery}
+                  onChange={e => setBomSearchQuery(e.target.value)}
+                  placeholder="Search material..."
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                />
+              </div>
+
+              {availableBOMCategories.length > 1 && (
+                <select
+                  value={bomCategoryFilter}
+                  onChange={e => setBomCategoryFilter(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                >
+                  <option value="ALL">All Categories</option>
+                  {availableBOMCategories.map(c => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
-          {activeTab === 'bom' && bomReport && bomReport.summary.shortage_count > 0 && (
-            <button
-              type="button"
-              onClick={() => navigate('/purchase/orders?create=true')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold shadow-2xs transition"
-            >
-              <ShoppingCart className="w-3.5 h-3.5" />
-              <span>Create PO for Shortages ({bomReport.summary.shortage_count})</span>
-            </button>
+          {loadingBOM ? (
+            <div className="p-8 text-center">
+              <RefreshCw className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
+              <span className="text-xs text-slate-500">Calculating raw material requirements...</span>
+            </div>
+          ) : !bomReport || filteredMaterials.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-xs">
+              No raw material requirements found for this order.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4 w-12 text-center">#</th>
+                    <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
+                    <th className="py-3 px-3">Category</th>
+                    <th className="py-3 px-3">UOM</th>
+                    <th className="py-3 px-3 text-right">Total Required</th>
+                    <th className="py-3 px-3 text-right">Unit Rate</th>
+                    <th className="py-3 px-4 text-right">Total Cost</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredMaterials.map((m, idx) => (
+                    <tr key={m.material_id ? `id_${m.material_id}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                      <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                        {idx + 1}
+                      </td>
+                      <td className="py-3 px-4 font-medium text-slate-800">
+                        <span className="font-bold text-slate-800 block">{m.name}</span>
+                        {m.material_code && (
+                          <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                          {m.category}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                        {fmt(m.total_required_qty, 2)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-600">
+                        {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                        {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        {/* TAB 1: PRODUCT LINES TABLE */}
-        {activeTab === 'products' && (
-          <div className="space-y-4">
-            {/* Section 2: Detailed Order Header Information Card */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-              <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-brand-600" />
-                  Order Specifications & Schedule
-                </h3>
-                <span className="text-xs font-mono text-slate-500">
-                  Category: <strong className="text-slate-700">{order.category_name || 'Apparel & Textiles'}</strong>
-                </span>
-              </div>
-
-              <div className="p-4 sm:p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Order Number</span>
-                  <span className="font-mono font-bold text-brand-700 text-sm">{order.order_number}</span>
-                </div>
-                <div className="sm:col-span-2">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Order Title</span>
-                  <span className="font-semibold text-slate-800 break-words">{order.title}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Buyer / Customer</span>
-                  <span className="font-medium text-slate-700">{order.customer_name || 'Direct / None'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Start Date</span>
-                  <span className="font-mono text-slate-700">{order.start_date || '—'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Target Delivery</span>
-                  <span className="font-mono font-bold text-slate-800">{order.target_delivery_date || '—'}</span>
-                </div>
-
-                {order.notes && (
-                  <div className="col-span-2 sm:col-span-3 lg:col-span-6 pt-3 border-t border-slate-100">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                      Production Notes & Instructions
-                    </span>
-                    <p className="text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 text-xs whitespace-pre-line leading-relaxed">
-                      {order.notes}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Product Lines Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-              <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-brand-600" />
-                  Product Lines & Workflow Stage Tracking
-                </h3>
-                <span className="text-xs text-slate-500 font-mono">
-                  {items.length} {items.length === 1 ? 'line item' : 'line items'}
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left border-collapse table-auto min-w-[760px]">
-                  <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="px-4 py-3 w-12 text-center">#</th>
-                      <th className="px-4 py-3 min-w-[180px]">Product</th>
-                      <th className="px-4 py-3 min-w-[170px]">Color / Pantone</th>
-                      <th className="px-3 py-3 text-center w-20">Size</th>
-                      <th className="px-3 py-3 text-right w-24">Total Qty</th>
-                      <th className="px-3 py-3 text-right w-24">Completed</th>
-                      <th className="px-3 py-3 text-right w-24">Pending</th>
-                      <th className="px-4 py-3 min-w-[160px]">Current Stage</th>
-                      <th className="px-4 py-3 min-w-[130px]">Progress</th>
-                      <th className="px-4 py-3 text-right w-36">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {items.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="py-12 text-center text-slate-400">
-                          No product lines associated with this production order.
-                        </td>
-                      </tr>
-                    ) : (
-                      items.map((item, idx) => {
-                        const itTotal = item.total_quantity || 0;
-                        const itDone = item.completed_quantity || 0;
-                        const itPending = Math.max(0, itTotal - itDone);
-                        const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
-                        const pantone = item.color_pantone_code;
-
-                        return (
-                          <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="px-4 py-3 text-center text-slate-400 font-mono font-medium">
-                              {idx + 1}
-                            </td>
-
-                            <td className="px-4 py-3">
-                              <span className="font-semibold text-slate-800 block text-xs">
-                                {item.product_name || 'Standard Product'}
-                              </span>
-                              {item.product_code && (
-                                <span className="text-[10px] font-mono text-slate-400">
-                                  {item.product_code}
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                {item.color_hex_code && (
-                                  <div
-                                    className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0"
-                                    style={{ backgroundColor: item.color_hex_code }}
-                                  />
-                                )}
-                                <div>
-                                  <span className="font-semibold text-slate-800 text-xs block">
-                                    {item.color}
-                                  </span>
-                                  {pantone && (
-                                    <span className="text-[10px] font-mono text-slate-400 block">
-                                      Pantone: {pantone}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-
-                            <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">
-                              {item.size || '—'}
-                            </td>
-
-                            <td className="px-3 py-3 text-right font-mono font-bold text-slate-900">
-                              {itTotal.toLocaleString()}
-                            </td>
-
-                            <td className="px-3 py-3 text-right font-mono text-emerald-600 font-semibold">
-                              {itDone.toLocaleString()}
-                            </td>
-
-                            <td className="px-3 py-3 text-right font-mono text-amber-600 font-semibold">
-                              {itPending.toLocaleString()}
-                            </td>
-
-                            <td className="px-4 py-3">
-                              <span
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-white shadow-2xs"
-                                style={{ backgroundColor: item.color_badge || '#0284c7' }}
-                              >
-                                {item.current_stage_name || 'Requirement Gathering'}
-                              </span>
-                            </td>
-
-                            <td className="px-4 py-3">
-                              <div className="w-full">
-                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mb-1">
-                                  <span>{itPct}%</span>
-                                  <span>{itDone}/{itTotal}</span>
-                                </div>
-                                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full ${itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'}`}
-                                    style={{ width: `${itPct}%` }}
-                                  />
-                                </div>
-                              </div>
-                            </td>
-
-                            <td className="px-4 py-3 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => openMoveModal(item)}
-                                  className="text-[11px] font-semibold"
-                                >
-                                  Move Stage
-                                </Button>
-                                <button
-                                  type="button"
-                                  onClick={() => openQCModal(item)}
-                                  title="Quality Check"
-                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
-                                >
-                                  <ShieldCheck className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        {/* SECTION 2: Products Ordered (Grouped by Category) */}
+        <div className="space-y-4 pt-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <Package className="w-4 h-4 text-brand-600" />
+              Products Ordered ({items.length})
+            </h3>
+            <span className="text-xs text-slate-500 font-mono">
+              Total Order Qty: <strong className="text-slate-800">{totalQty.toLocaleString()} pcs</strong>
+            </span>
           </div>
-        )}
 
-        {/* TAB 2: RAW MATERIAL REQUIREMENTS (BOM) */}
-        {activeTab === 'bom' && (
-          <div className="space-y-4">
-            {loadingBOM ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
-                <RefreshCw className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-3" />
-                <h4 className="text-sm font-bold text-slate-800">Calculating Raw Material Requirements...</h4>
-                <p className="text-xs text-slate-400 mt-1">Cross-referencing buyer products and raw material components</p>
-              </div>
-            ) : !bomReport ? (
-              <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-2xs">
-                <Sparkles className="w-10 h-10 text-indigo-400 mx-auto mb-3" />
-                <h4 className="text-sm font-bold text-slate-800">Generate Material List for {order.order_number}</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                  Click the button below to automatically compute the total bill of materials for this order based on the product quantities and buyer BOM masters.
-                </p>
-                <Button
-                  onClick={() => handleGenerateBOM(true)}
-                  className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs"
-                >
-                  Generate Material List (BOM)
-                </Button>
-              </div>
-            ) : (
-              <>
-                {/* 4 KPI Summary Cards for BOM */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Raw Material Items
-                    </span>
-                    <p className="text-xl font-bold font-mono text-indigo-600">
-                      {bomReport.summary.total_distinct_materials}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Distinct components</p>
-                  </div>
+          {Object.entries(groupedProducts).length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-xs shadow-2xs">
+              No products ordered.
+            </div>
+          ) : (
+            Object.entries(groupedProducts).map(([category, prods]) => {
+              const catTotal = prods.reduce((sum, p) => sum + (p.total_quantity || 0), 0);
+              const catDone = prods.reduce((sum, p) => sum + (p.completed_quantity || 0), 0);
+              const catPending = Math.max(0, catTotal - catDone);
 
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      In-Stock Items
-                    </span>
-                    <p className="text-xl font-bold font-mono text-emerald-600">
-                      {bomReport.summary.in_stock_count}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Sufficient stock in inventory</p>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Shortages to Procure
-                    </span>
-                    <p className={`text-xl font-bold font-mono ${bomReport.summary.shortage_count > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {bomReport.summary.shortage_count}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Requires purchase order</p>
-                  </div>
-
-                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Est. Material Cost
-                    </span>
-                    <p className="text-xl font-bold font-mono text-slate-800">
-                      {fmtCurrency(bomReport.summary.total_estimated_cost)}
-                    </p>
-                    <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">Standard PO rate</p>
-                  </div>
-                </div>
-
-                {/* Filter and Search Bar */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2 flex-1 max-w-md">
-                    <div className="relative flex-1">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={bomSearchQuery}
-                        onChange={e => setBomSearchQuery(e.target.value)}
-                        placeholder="Search material by name, code or category..."
-                        className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-                      />
+              return (
+                <div key={category} className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <Layers className="w-4 h-4 text-brand-600" />
+                      <span className="font-bold text-xs text-slate-800 uppercase tracking-wider">
+                        Category: {category}
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        ({prods.length} {prods.length === 1 ? 'product line' : 'product lines'})
+                      </span>
                     </div>
-
-                    <select
-                      value={bomCategoryFilter}
-                      onChange={e => setBomCategoryFilter(e.target.value)}
-                      className="px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-                    >
-                      <option value="ALL">All Categories</option>
-                      {availableBOMCategories.map(c => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                      <span className="text-slate-500">Ordered: <strong className="text-slate-800">{catTotal.toLocaleString()} pcs</strong></span>
+                      <span>•</span>
+                      <span className="text-emerald-600">Done: {catDone.toLocaleString()}</span>
+                      <span>•</span>
+                      <span className="text-amber-600">Pending: {catPending.toLocaleString()}</span>
+                    </div>
                   </div>
 
-                  <span className="text-xs text-slate-500">
-                    Showing <strong>{filteredMaterials.length}</strong> of {bomReport.summary.total_distinct_materials} materials
-                  </span>
-                </div>
-
-                {/* BOM Materials Table */}
-                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                    <table className="w-full text-xs text-left border-collapse table-auto min-w-[760px]">
+                      <thead className="bg-slate-100/60 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                         <tr>
-                          <th className="py-3 px-3.5">Raw Material</th>
-                          <th className="py-3 px-3">Category</th>
-                          <th className="py-3 px-3">UOM</th>
-                          <th className="py-3 px-3 text-right">Total Required</th>
-                          <th className="py-3 px-3 text-right">In Stock</th>
-                          <th className="py-3 px-3 text-right">Shortage</th>
-                          <th className="py-3 px-3 text-right">Unit Rate</th>
-                          <th className="py-3 px-3 text-right">Total Cost</th>
-                          <th className="py-3 px-3 text-center">Status</th>
-                          <th className="py-3 px-3 text-center">Breakdown</th>
+                          <th className="px-4 py-3 w-12 text-center">#</th>
+                          <th className="px-4 py-3 min-w-[180px]">Product</th>
+                          <th className="px-4 py-3 min-w-[170px]">Color / Pantone</th>
+                          <th className="px-3 py-3 text-center w-20">Size</th>
+                          <th className="px-3 py-3 text-right w-24">Total Qty</th>
+                          <th className="px-3 py-3 text-right w-24">Completed</th>
+                          <th className="px-3 py-3 text-right w-24">Pending</th>
+                          <th className="px-4 py-3 min-w-[160px]">Current Stage</th>
+                          <th className="px-4 py-3 min-w-[130px]">Progress</th>
+                          <th className="px-4 py-3 text-right w-36">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredMaterials.map(m => {
-                          const rowKey = m.material_id ? `id_${m.material_id}` : `name_${m.name}`;
-                          const isExpanded = expandedMaterialKey === rowKey;
-                          const hasShortage = m.shortage_qty > 0;
+                        {prods.map((item, idx) => {
+                          const itTotal = item.total_quantity || 0;
+                          const itDone = item.completed_quantity || 0;
+                          const itPending = Math.max(0, itTotal - itDone);
+                          const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
+                          const pantone = item.color_pantone_code;
 
                           return (
-                            <React.Fragment key={rowKey}>
-                              <tr className={`hover:bg-slate-50/70 transition ${hasShortage ? 'bg-amber-50/20' : ''}`}>
-                                <td className="py-3 px-3.5 font-medium text-slate-800">
-                                  <span className="font-bold text-slate-800 block">{m.name}</span>
-                                  {m.material_code && (
-                                    <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
-                                  )}
-                                </td>
+                            <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                              <td className="px-4 py-3 text-center text-slate-400 font-mono font-medium">
+                                {idx + 1}
+                              </td>
 
-                                <td className="py-3 px-3">
-                                  <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                    {m.category}
+                              <td className="px-4 py-3">
+                                <span className="font-semibold text-slate-800 block text-xs">
+                                  {item.product_name || 'Standard Product'}
+                                </span>
+                                {item.product_code && (
+                                  <span className="text-[10px] font-mono text-slate-400">
+                                    {item.product_code}
                                   </span>
-                                </td>
+                                )}
+                              </td>
 
-                                <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
-
-                                <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                                  {fmt(m.total_required_qty, 2)}
-                                </td>
-
-                                <td className="py-3 px-3 text-right font-mono font-medium text-slate-600">
-                                  {fmt(m.current_stock, 2)}
-                                </td>
-
-                                <td className="py-3 px-3 text-right font-mono font-bold">
-                                  {hasShortage ? (
-                                    <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                      {fmt(m.shortage_qty, 2)} {m.uom}
-                                    </span>
-                                  ) : (
-                                    <span className="text-emerald-600 font-medium">✓ 0</span>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  {item.color_hex_code && (
+                                    <div
+                                      className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0"
+                                      style={{ backgroundColor: item.color_hex_code }}
+                                    />
                                   )}
-                                </td>
-
-                                <td className="py-3 px-3 text-right font-mono text-slate-600">
-                                  {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                                </td>
-
-                                <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                                  {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
-                                </td>
-
-                                <td className="py-3 px-3 text-center">
-                                  {hasShortage ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                      Procure
+                                  <div>
+                                    <span className="font-semibold text-slate-800 text-xs block">
+                                      {item.color}
                                     </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                      In Stock
-                                    </span>
-                                  )}
-                                </td>
+                                    {pantone && (
+                                      <span className="text-[10px] font-mono text-slate-400 block">
+                                        Pantone: {pantone}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
 
-                                <td className="py-3 px-3 text-center">
+                              <td className="px-3 py-3 text-center font-mono font-bold text-slate-700">
+                                {item.size || '—'}
+                              </td>
+
+                              <td className="px-3 py-3 text-right font-mono font-bold text-slate-900">
+                                {itTotal.toLocaleString()}
+                              </td>
+
+                              <td className="px-3 py-3 text-right font-mono text-emerald-600 font-semibold">
+                                {itDone.toLocaleString()}
+                              </td>
+
+                              <td className="px-3 py-3 text-right font-mono text-amber-600 font-semibold">
+                                {itPending.toLocaleString()}
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <span
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-white shadow-2xs"
+                                  style={{ backgroundColor: item.color_badge || '#0284c7' }}
+                                >
+                                  {item.current_stage_name || 'Requirement Gathering'}
+                                </span>
+                              </td>
+
+                              <td className="px-4 py-3">
+                                <div className="w-full">
+                                  <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mb-1">
+                                    <span>{itPct}%</span>
+                                    <span>{itDone}/{itTotal}</span>
+                                  </div>
+                                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full ${itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'}`}
+                                      style={{ width: `${itPct}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => openMoveModal(item)}
+                                    className="text-[11px] font-semibold"
+                                  >
+                                    Move Stage
+                                  </Button>
                                   <button
                                     type="button"
-                                    onClick={() => setExpandedMaterialKey(isExpanded ? null : rowKey)}
-                                    className="p-1 rounded hover:bg-slate-200 text-slate-500 transition"
-                                    title="Toggle product breakdown"
+                                    onClick={() => openQCModal(item)}
+                                    title="Quality Check"
+                                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition"
                                   >
-                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-brand-600" /> : <ChevronDown className="w-4 h-4" />}
+                                    <ShieldCheck className="w-4 h-4" />
                                   </button>
-                                </td>
-                              </tr>
-
-                              {/* Expanded product-wise contribution */}
-                              {isExpanded && m.product_contributions && (
-                                <tr className="bg-slate-50/90">
-                                  <td colSpan={10} className="p-3">
-                                    <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-2xs">
-                                      <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
-                                        Product Contributions for &ldquo;{m.name}&rdquo;
-                                      </h5>
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                        {m.product_contributions.map((c, i) => (
-                                          <div key={i} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                                            <p className="font-bold text-slate-800">{c.product_name}</p>
-                                            <p className="text-[11px] text-slate-500">Color: {c.color || 'Default'}</p>
-                                            <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-200 pt-1 font-mono">
-                                              <span>{fmt(c.garment_qty)} pcs × {c.per_piece_qty} {m.uom} (+{c.wastage_percent}% w)</span>
-                                              <strong className="text-brand-700 font-bold">{fmt(c.required_qty, 2)} {m.uom}</strong>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              )}
-                            </React.Fragment>
+                                </div>
+                              </td>
+                            </tr>
                           );
                         })}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              </>
-            )}
-          </div>
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
 
       {/* Advance Stage Modal */}

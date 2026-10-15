@@ -1249,11 +1249,15 @@ const server = http.createServer(async (req, res) => {
           });
         });
 
+        const cat = (db.categories || []).find(c => c.id === Number(bp?.category_id || ord.category_id));
+        const category_name = cat?.name || bp?.category || ord.category_name || 'General';
+
         productsBreakdown.push({
           item_id: item.id,
           product_id: pId,
           product_name: item.product_name || bp?.product_name || 'Garment Product',
           product_code: item.product_code || bp?.product_code || '',
+          category_name,
           color: item.color,
           size: item.size || null,
           total_quantity: itemQty,

@@ -165,6 +165,18 @@ export default function RequirementOrderDetail() {
     });
   }, [bomReport, categoryFilter, searchQuery]);
 
+  // Grouped products by category
+  const groupedProducts = useMemo(() => {
+    if (!bomReport?.products) return {};
+    const groups: Record<string, typeof bomReport.products> = {};
+    bomReport.products.forEach(p => {
+      const cat = p.category_name || bomReport.order?.category_name || 'General';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(p);
+    });
+    return groups;
+  }, [bomReport]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-12 text-slate-400">
@@ -412,119 +424,49 @@ export default function RequirementOrderDetail() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
                     <tr>
-                      <th className="py-3 px-3.5">Raw Material</th>
+                      <th className="py-3 px-4 w-12 text-center">#</th>
+                      <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
                       <th className="py-3 px-3">Category</th>
                       <th className="py-3 px-3">UOM</th>
                       <th className="py-3 px-3 text-right">Total Req. Qty</th>
-                      <th className="py-3 px-3 text-right">In Stock</th>
-                      <th className="py-3 px-3 text-right">Shortage / Procure</th>
                       <th className="py-3 px-3 text-right">Unit Rate</th>
-                      <th className="py-3 px-3 text-right">Total Cost</th>
-                      <th className="py-3 px-3 text-center">Status</th>
-                      <th className="py-3 px-3 text-center">Breakdown</th>
+                      <th className="py-3 px-4 text-right">Total Cost</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredMaterials.map(m => {
-                      const rowKey = m.material_id ? `id_${m.material_id}` : `name_${m.name}`;
-                      const isExpanded = expandedMaterialKey === rowKey;
-                      const hasShortage = m.shortage_qty > 0;
-
-                      return (
-                        <React.Fragment key={rowKey}>
-                          <tr className={`hover:bg-slate-50/70 transition ${hasShortage ? 'bg-amber-50/20' : ''}`}>
-                            <td className="py-3 px-3.5 font-medium text-slate-800">
-                              <span className="font-bold text-slate-800 block">{m.name}</span>
-                              {m.material_code && (
-                                <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                {m.category}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
-
-                            <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                              {fmt(m.total_required_qty, 2)}
-                            </td>
-
-                            <td className="py-3 px-3 text-right font-mono font-medium text-slate-600">
-                              {fmt(m.current_stock, 2)}
-                            </td>
-
-                            <td className="py-3 px-3 text-right font-mono font-bold">
-                              {hasShortage ? (
-                                <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                  {fmt(m.shortage_qty, 2)} {m.uom}
-                                </span>
-                              ) : (
-                                <span className="text-emerald-600 font-medium">✓ 0</span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3 text-right font-mono text-slate-600">
-                              {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                            </td>
-
-                            <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                              {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
-                            </td>
-
-                            <td className="py-3 px-3 text-center">
-                              {hasShortage ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                  Procure
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  In Stock
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => setExpandedMaterialKey(isExpanded ? null : rowKey)}
-                                className="p-1 rounded hover:bg-slate-200 text-slate-500 transition"
-                                title="Toggle product-wise contribution"
-                              >
-                                {isExpanded ? <ChevronUp className="w-4 h-4 text-brand-600" /> : <ChevronDown className="w-4 h-4" />}
-                              </button>
-                            </td>
-                          </tr>
-
-                          {/* Expanded Product-wise Breakdown for this material */}
-                          {isExpanded && m.product_contributions && (
-                            <tr className="bg-slate-50/90">
-                              <td colSpan={10} className="p-3">
-                                <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-2xs">
-                                  <h5 className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
-                                    Product Contributions for &ldquo;{m.name}&rdquo;
-                                  </h5>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                    {m.product_contributions.map((c, i) => (
-                                      <div key={i} className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                                        <p className="font-bold text-slate-800">{c.product_name}</p>
-                                        <p className="text-[11px] text-slate-500">Color: {c.color || 'Default'}</p>
-                                        <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-200 pt-1 font-mono">
-                                          <span>{fmt(c.garment_qty)} pcs × {c.per_piece_qty} {m.uom} (+{c.wastage_percent}% w)</span>
-                                          <strong className="text-brand-700 font-bold">{fmt(c.required_qty, 2)} {m.uom}</strong>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                    {filteredMaterials.map((m, idx) => (
+                      <tr key={m.material_id ? `id_${m.material_id}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-800">
+                          <span className="font-bold text-slate-800 block">{m.name}</span>
+                          {m.material_code && (
+                            <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
                           )}
-                        </React.Fragment>
-                      );
-                    })}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                            {m.category}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                          {fmt(m.total_required_qty, 2)}
+                        </td>
+
+                        <td className="py-3 px-3 text-right font-mono text-slate-600">
+                          {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                          {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -534,69 +476,95 @@ export default function RequirementOrderDetail() {
 
         {/* TAB 2: PRODUCTS ORDERED BREAKDOWN */}
         {activeTab === 'products' && (
-          <div className="flex flex-col gap-3">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
-              <h3 className="font-bold text-sm text-slate-800 mb-3">Garment Line Items & Individual Components</h3>
-              <div className="flex flex-col gap-4">
-                {bomReport.products.map(p => (
-                  <div key={p.item_id} className="border border-slate-200 rounded-xl p-3.5 bg-slate-50/40">
-                    <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200">
-                      <div>
-                        <span className="font-bold text-slate-800 text-sm">{p.product_name}</span>
-                        {p.product_code && (
-                          <span className="font-mono text-xs text-slate-400 ml-2">({p.product_code})</span>
-                        )}
-                      </div>
+          <div className="flex flex-col gap-4">
+            {Object.entries(groupedProducts).length === 0 ? (
+              <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400 text-xs shadow-2xs">
+                No products ordered.
+              </div>
+            ) : (
+              Object.entries(groupedProducts).map(([category, prods]) => {
+                const catTotal = prods.reduce((sum, p) => sum + (p.total_quantity || 0), 0);
+
+                return (
+                  <div key={category} className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs">
+                    <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
                       <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-semibold text-slate-700">
-                          Color: {p.color}
-                        </span>
-                        {p.size && (
-                          <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-mono font-bold text-slate-700">
-                            Size: {p.size}
-                          </span>
-                        )}
-                        <span className="font-mono font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200 text-xs">
-                          {fmt(p.total_quantity)} pcs ordered
+                        <Layers className="w-4 h-4 text-brand-600" />
+                        <h3 className="font-bold text-xs uppercase tracking-wider text-slate-800">
+                          Category: {category}
+                        </h3>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          ({prods.length} {prods.length === 1 ? 'product line' : 'product lines'})
                         </span>
                       </div>
+                      <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                        {fmt(catTotal)} pcs total
+                      </span>
                     </div>
 
-                    {/* Component list */}
-                    {p.components && p.components.length > 0 ? (
-                      <div className="overflow-x-auto mt-2">
-                        <table className="w-full text-left text-xs bg-white rounded-lg border border-slate-200">
-                          <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
-                            <tr>
-                              <th className="py-2 px-2.5">Component Material</th>
-                              <th className="py-2 px-2">Category</th>
-                              <th className="py-2 px-2 text-right">Per Garment</th>
-                              <th className="py-2 px-2 text-right">Wastage %</th>
-                              <th className="py-2 px-2 text-right">Total for Line</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {p.components.map((c, idx) => (
-                              <tr key={idx}>
-                                <td className="py-2 px-2.5 font-medium text-slate-800">{c.name}</td>
-                                <td className="py-2 px-2 text-slate-600">{c.category}</td>
-                                <td className="py-2 px-2 text-right font-mono">{c.quantity_per_product} {c.uom}</td>
-                                <td className="py-2 px-2 text-right font-mono text-slate-500">{c.wastage_percent}%</td>
-                                <td className="py-2 px-2 text-right font-mono font-bold text-brand-700">
-                                  {fmt(c.required_quantity, 2)} {c.uom}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400 italic">No components configured for this product in Buyer Master.</p>
-                    )}
+                    <div className="flex flex-col gap-3">
+                      {prods.map(p => (
+                        <div key={p.item_id} className="border border-slate-200 rounded-xl p-3.5 bg-slate-50/40">
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-2 pb-2 border-b border-slate-200">
+                            <div>
+                              <span className="font-bold text-slate-800 text-sm">{p.product_name}</span>
+                              {p.product_code && (
+                                <span className="font-mono text-xs text-slate-400 ml-2">({p.product_code})</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-semibold text-slate-700">
+                                Color: {p.color}
+                              </span>
+                              {p.size && (
+                                <span className="px-2 py-0.5 rounded bg-slate-100 text-xs font-mono font-bold text-slate-700">
+                                  Size: {p.size}
+                                </span>
+                              )}
+                              <span className="font-mono font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200 text-xs">
+                                {fmt(p.total_quantity)} pcs ordered
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Component list */}
+                          {p.components && p.components.length > 0 ? (
+                            <div className="overflow-x-auto mt-2">
+                              <table className="w-full text-left text-xs bg-white rounded-lg border border-slate-200">
+                                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
+                                  <tr>
+                                    <th className="py-2 px-2.5">Component Material</th>
+                                    <th className="py-2 px-2">Category</th>
+                                    <th className="py-2 px-2 text-right">Per Garment</th>
+                                    <th className="py-2 px-2 text-right">Wastage %</th>
+                                    <th className="py-2 px-2 text-right">Total for Line</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {p.components.map((c, idx) => (
+                                    <tr key={idx}>
+                                      <td className="py-2 px-2.5 font-medium text-slate-800">{c.name}</td>
+                                      <td className="py-2 px-2 text-slate-600">{c.category}</td>
+                                      <td className="py-2 px-2 text-right font-mono">{c.quantity_per_product} {c.uom}</td>
+                                      <td className="py-2 px-2 text-right font-mono text-slate-500">{c.wastage_percent}%</td>
+                                      <td className="py-2 px-2 text-right font-mono font-bold text-brand-700">
+                                        {fmt(c.required_quantity, 2)} {c.uom}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic">No components configured for this product in Buyer Master.</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>
