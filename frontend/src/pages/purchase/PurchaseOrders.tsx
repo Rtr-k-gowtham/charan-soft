@@ -1,6 +1,6 @@
 // src/pages/purchase/PurchaseOrders.tsx
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import { PurchaseOrder, Supplier, Category, PurchaseOrderItem, Material } from '../../types';
@@ -97,6 +97,8 @@ function calcItem(item: any): any {
 export default function PurchaseOrders() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { id: routeId } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [pos, setPOs] = useState<PurchaseOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -899,13 +901,55 @@ export default function PurchaseOrders() {
       });
 
       await load();
-      setEditPO(null);
+      if (location.state?.from) {
+        navigate(location.state.from);
+      } else {
+        setEditPO(null);
+        navigate('/purchase/orders', { replace: true });
+      }
     } catch (e: unknown) {
       setEditError((e as Error).message || 'Failed to update Purchase Order');
     } finally {
       setEditSaving(false);
     }
   };
+
+  // Auto-open Edit or View based on URL route (/purchase/orders/:id/edit or :id) or query params (?edit=... / ?view=...)
+  useEffect(() => {
+    const isEditPath = location.pathname.endsWith('/edit') || location.pathname.includes('/edit');
+    const editId = searchParams.get('edit') || (isEditPath ? routeId : null) || location.state?.editPOId;
+    const viewId = searchParams.get('view') || (!isEditPath ? routeId : null) || location.state?.viewPOId;
+
+    if (editId) {
+      const numId = Number(editId);
+      if (numId && (!editPO || editPO.id !== numId)) {
+        api.getPurchaseOrder(numId)
+          .then((res: any) => {
+            const data = res?.data || res;
+            if (data && data.id) {
+              handleOpenEdit(data);
+            }
+          })
+          .catch((err) => {
+            console.warn('Failed to load PO for edit:', err);
+          });
+      }
+    } else if (viewId) {
+      const numId = Number(viewId);
+      if (numId && (!viewPO || viewPO.id !== numId)) {
+        api.getPurchaseOrder(numId)
+          .then((res: any) => {
+            const data = res?.data || res;
+            if (data && data.id) {
+              setViewPO(data);
+            }
+          })
+          .catch((err) => {
+            console.warn('Failed to load PO for view:', err);
+          });
+      }
+    }
+  }, [routeId, searchParams, location.pathname, location.state]);
 
   // PO List Columns with clear Status badges (Draft / Ordered) - balanced for zero horizontal scroll
   const columns = [
@@ -1580,11 +1624,18 @@ export default function PurchaseOrders() {
         <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-sm">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => setEditPO(null)}
+              onClick={() => {
+                if (location.state?.from) {
+                  navigate(location.state.from);
+                } else {
+                  setEditPO(null);
+                  navigate('/purchase/orders', { replace: true });
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              Cancel & Back to Orders
+              {location.state?.from ? 'Back to Order Stage' : 'Cancel & Back to Orders'}
             </button>
             <div className="h-5 w-px bg-slate-200" />
             <div>
@@ -1599,7 +1650,17 @@ export default function PurchaseOrders() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => setEditPO(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (location.state?.from) {
+                  navigate(location.state.from);
+                } else {
+                  setEditPO(null);
+                  navigate('/purchase/orders', { replace: true });
+                }
+              }}
+            >
               Cancel
             </Button>
             <Button loading={editSaving} onClick={handleSaveEdit} icon={<Save className="w-4 h-4" />}>
@@ -2125,7 +2186,17 @@ export default function PurchaseOrders() {
             </div>
 
             <div className="flex items-center gap-3">
-              <Button variant="secondary" onClick={() => setEditPO(null)}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  if (location.state?.from) {
+                    navigate(location.state.from);
+                  } else {
+                    setEditPO(null);
+                    navigate('/purchase/orders', { replace: true });
+                  }
+                }}
+              >
                 Cancel
               </Button>
               <Button loading={editSaving} onClick={handleSaveEdit} icon={<Save className="w-4 h-4" />}>
@@ -2150,11 +2221,20 @@ export default function PurchaseOrders() {
             {/* Left: Back button & Title */}
             <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
               <button
-                onClick={() => { setViewPO(null); setApprovalSuccess(''); setApprovalError(''); }}
+                onClick={() => {
+                  if (location.state?.from) {
+                    navigate(location.state.from);
+                  } else {
+                    setViewPO(null);
+                    setApprovalSuccess('');
+                    setApprovalError('');
+                    navigate('/purchase/orders', { replace: true });
+                  }
+                }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Back to Orders</span>
+                <span className="hidden sm:inline">{location.state?.from ? 'Back to Order Stage' : 'Back to Orders'}</span>
                 <span className="sm:hidden">Back</span>
               </button>
               <div className="h-5 w-px bg-slate-200 shrink-0" />

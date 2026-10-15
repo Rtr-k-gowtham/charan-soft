@@ -80,6 +80,8 @@ function AppRoutes() {
 
               {/* Purchase */}
               <Route path="/purchase/orders" element={<PurchaseOrders />} />
+              <Route path="/purchase/orders/:id" element={<PurchaseOrders />} />
+              <Route path="/purchase/orders/:id/edit" element={<PurchaseOrders />} />
               <Route path="/purchase/receipts" element={<MaterialReceipts />} />
               <Route path="/purchase/payments" element={<SupplierPayments />} />
               <Route path="/purchase/returns" element={<PurchaseReturns />} />

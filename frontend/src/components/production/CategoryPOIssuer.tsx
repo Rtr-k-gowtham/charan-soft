@@ -1,6 +1,7 @@
 // src/components/production/CategoryPOIssuer.tsx
 // Category-Based Product & Raw Material Procurement with Vendor Matching, PO Issuance & In-Stage PO Management
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { OrderMaterialRequirementItem, Supplier, Category, PurchaseOrder, PurchaseOrderItem } from '../../types';
 import Button from '../ui/Button';
@@ -60,6 +61,8 @@ export default function CategoryPOIssuer({
   materials,
   onPOCreated,
 }: Props) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [existingPOs, setExistingPOs] = useState<PurchaseOrder[]>([]);
@@ -578,9 +581,13 @@ export default function CategoryPOIssuer({
 
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenEditPO(po)}
-                                  className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition"
-                                  title="Edit PO items, rates & quantities"
+                                  onClick={() => {
+                                    navigate(`/purchase/orders/${po.id}/edit`, {
+                                      state: { from: location.pathname, poNumber: po.po_number }
+                                    });
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-2xs transition hover:text-indigo-600"
+                                  title="Open detailed PO edit page"
                                 >
                                   <Pencil className="w-3 h-3 text-indigo-600" />
                                   <span>Edit</span>
@@ -597,17 +604,19 @@ export default function CategoryPOIssuer({
                               </span>
                             )}
 
-                            <a
-                              href={`/purchase/orders`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                              title="View & Print PO"
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigate(`/purchase/orders/${po.id}`, {
+                                  state: { from: location.pathname, poNumber: po.po_number }
+                                });
+                              }}
+                              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                              title="View & Print PO Details"
                             >
                               <Printer className="w-3 h-3" />
                               <span>View</span>
-                              <ExternalLink className="w-2.5 h-2.5 text-brand-400" />
-                            </a>
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -745,15 +754,28 @@ export default function CategoryPOIssuer({
                             </span>
                           </div>
                         ) : hasDraftPO ? (
-                          // Draft PO exists — allow editing via the PO table above, not re-issuing
+                          // Draft PO exists — allow editing via detail PO page
                           <div className="flex flex-col items-end gap-1">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800 cursor-not-allowed">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-50 border border-amber-300 text-amber-800">
                               <Clock className="w-3.5 h-3.5 text-amber-600" />
                               <span>Draft PO Pending Issue</span>
                             </div>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {matchingPOs.map(p => p.po_number).join(', ')} — Edit above
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft') || matchingPOs[0];
+                                if (targetPO) {
+                                  navigate(`/purchase/orders/${targetPO.id}/edit`, {
+                                    state: { from: location.pathname, poNumber: targetPO.po_number }
+                                  });
+                                }
+                              }}
+                              className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline font-mono flex items-center gap-1"
+                              title="Click to open detailed edit page for this PO"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              Edit {matchingPOs.map(p => p.po_number).join(', ')}
+                            </button>
                           </div>
                         ) : (
                           // No PO yet — allow issuance
