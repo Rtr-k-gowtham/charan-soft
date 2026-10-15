@@ -560,6 +560,12 @@ class PurchaseOrderController {
 
         try {
             $pdo = Database::getConnection();
+
+            // Run any schema adjustments OUTSIDE transaction (DDL causes implicit commit in MySQL)
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN photo_url LONGTEXT NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN received_by VARCHAR(255) NULL"); } catch (Exception $e) {}
+            try { $pdo->exec("ALTER TABLE purchase_receipts ADD COLUMN condition_status VARCHAR(100) NULL"); } catch (Exception $e) {}
+
             $pdo->beginTransaction();
 
             $poStmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
@@ -567,27 +573,32 @@ class PurchaseOrderController {
             $po = $poStmt->fetch();
 
             if (!$po) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Purchase Order not found", 404);
                 return;
             }
 
             if (strtolower(trim((string)($po['status'] ?? ''))) === 'draft') {
+                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Cannot receive materials against a Draft Purchase Order. Please confirm and order the PO first.", 422);
                 return;
             }
 
             $receiptNo = 'GRN-' . str_pad((string)rand(100, 99999), 5, '0', STR_PAD_LEFT);
             $grnStmt = $pdo->prepare("
-                INSERT INTO purchase_receipts (receipt_no, purchase_order_id, receipt_date, delivery_challan_no, vehicle_no, remarks)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO purchase_receipts (receipt_no, purchase_order_id, receipt_date, delivery_challan_no, vehicle_no, remarks, photo_url, received_by, condition_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $grnStmt->execute([
                 $receiptNo,
                 $poId,
                 $data['receipt_date'] ?? date('Y-m-d'),
-                $data['challan_no'] ?? null,
+                $data['delivery_challan_no'] ?? $data['challan_no'] ?? null,
                 $data['vehicle_no'] ?? null,
-                $data['remarks'] ?? 'Received'
+                $data['remarks'] ?? 'Received',
+                $data['photo_url'] ?? null,
+                $data['received_by'] ?? null,
+                $data['condition'] ?? $data['condition_status'] ?? 'Good & Verified'
             ]);
             $receiptId = (int)$pdo->lastInsertId();
 
@@ -598,7 +609,7 @@ class PurchaseOrderController {
                 $qtyReceived = (float)($ritem['quantity_received'] ?? $ritem['received_quantity'] ?? 0);
 
                 if ($qtyReceived < 0) {
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) $pdo->rollBack();
                     Response::error("Receive quantity cannot be negative.", 422);
                     return;
                 }
@@ -611,7 +622,7 @@ class PurchaseOrderController {
                 $poi = $poiStmt->fetch();
 
                 if (!$poi) {
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) $pdo->rollBack();
                     Response::error("Line item #{$poItemId} not found on this Purchase Order", 404);
                     return;
                 }
@@ -623,7 +634,7 @@ class PurchaseOrderController {
                 if ($qtyReceived > ($remainingQty + 0.0001)) {
                     $itemDesc = !empty($poi['item_description']) ? $poi['item_description'] : "Item #{$poItemId}";
                     $uom = !empty($poi['uom']) ? $poi['uom'] : 'units';
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) $pdo->rollBack();
                     Response::error("Receive quantity for {$itemDesc} cannot exceed the remaining ordered quantity of {$remainingQty} {$uom}.", 422);
                     return;
                 }
@@ -725,7 +736,9 @@ class PurchaseOrderController {
             // Note: PO status remains strictly 'Ordered' per two-status requirement ('Draft' | 'Ordered')
             $pdo->prepare("UPDATE purchase_orders SET status = 'Ordered' WHERE id = ?")->execute([$poId]);
 
-            $pdo->commit();
+            if ($pdo && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
             AuditLogger::log('PurchaseReceipts', 'RECEIVE', $poId, null, ['grn' => $receiptNo, 'status' => 'Ordered']);
             Response::success([
                 'receipt_no' => $receiptNo,
