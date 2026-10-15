@@ -408,3 +408,60 @@ export interface POTemplateData {
   };
 }
 
+export interface OrderMaterialRequirementItem {
+  material_id?: number | null;
+  material_code?: string;
+  name: string;
+  category: string;
+  uom: string;
+  total_required_qty: number;
+  current_stock: number;
+  shortage_qty: number;
+  unit_cost: number;
+  total_estimated_cost: number;
+  status: 'In Stock' | 'Partial Stock' | 'Needs Procurement';
+  product_contributions?: {
+    product_id: number;
+    product_name: string;
+    product_code?: string;
+    color?: string;
+    garment_qty: number;
+    per_piece_qty: number;
+    wastage_percent: number;
+    required_qty: number;
+  }[];
+}
+
+export interface ProductionOrderBOMReport {
+  order: ProductionOrder;
+  products: {
+    item_id: number;
+    product_id: number;
+    product_name: string;
+    product_code?: string;
+    color: string;
+    size?: string | null;
+    total_quantity: number;
+    components: {
+      material_id?: number | null;
+      material_code?: string;
+      name: string;
+      category: string;
+      uom: string;
+      quantity_per_product: number;
+      wastage_percent: number;
+      required_quantity: number;
+    }[];
+  }[];
+  total_materials: OrderMaterialRequirementItem[];
+  summary: {
+    total_products_count: number;
+    total_order_garments: number;
+    total_distinct_materials: number;
+    in_stock_count: number;
+    shortage_count: number;
+    total_estimated_cost: number;
+  };
+  generated_at: string;
+}
+

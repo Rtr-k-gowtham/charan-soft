@@ -96,6 +96,7 @@ try {
         // ---------------- PRODUCTION ----------------
         $r0 === 'production-stages' && $method === 'GET' => (new ProductionController)->stages(),
         $r0 === 'production-orders' && $method === 'GET' && !$id => (new ProductionController)->index(),
+        $r0 === 'production-orders' && $id && ($r2 === 'material-requirements' || $r2 === 'bom') && $method === 'GET' => (new ProductionController)->materialRequirements($id),
         $r0 === 'production-orders' && $method === 'GET' && $id => (new ProductionController)->show($id),
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && $action === 'stage' && $method === 'POST' => (new ProductionController)->moveStage(),
