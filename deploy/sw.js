@@ -1,6 +1,8 @@
 // Service Worker for CHERAN SOFT GOODS PWA
-const CACHE_NAME = 'cheran-soft-v2';
+const CACHE_NAME = 'cheran-soft-v3';
 const STATIC_ASSETS = [
+  '/',
+  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -45,8 +47,16 @@ self.addEventListener('fetch', (event) => {
   // For navigation requests, ALWAYS fetch from network first so app updates are instant
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match('/index.html');
+      fetch(event.request).catch(async () => {
+        const cached = (await caches.match('/index.html')) || (await caches.match('/'));
+        if (cached) return cached;
+        return new Response(
+          '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cheran Soft Goods</title></head><body><div style="font-family:sans-serif;padding:2rem;text-align:center"><h2>Offline Mode</h2><p>Please check your internet connection and reload.</p><button onclick="location.reload()">Retry</button></div></body></html>',
+          {
+            status: 200,
+            headers: { 'Content-Type': 'text/html' }
+          }
+        );
       })
     );
     return;
@@ -64,8 +74,10 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => {
-        return caches.match(event.request);
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response('', { status: 408, statusText: 'Offline' });
       })
   );
 });

@@ -69,6 +69,20 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
   });
 }
 
+function parsePhotos(urls: any): string[] {
+  if (Array.isArray(urls)) return urls.filter(u => typeof u === 'string' && u.trim());
+  if (typeof urls === 'string' && urls.trim()) {
+    try {
+      const parsed = JSON.parse(urls);
+      if (Array.isArray(parsed)) return parsed.filter(u => typeof u === 'string' && u.trim());
+      return [urls];
+    } catch {
+      return [urls];
+    }
+  }
+  return [];
+}
+
 export default function CuttingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -565,22 +579,25 @@ export default function CuttingOrderDetail() {
                           <span className="text-[10px] text-slate-400">{b.machine_line || 'CNC Line 1'}</span>
                         </td>
                         <td className="py-3 px-3 text-center">
-                          {b.photo_urls && b.photo_urls.length > 0 ? (
-                            <div className="flex items-center justify-center gap-1">
-                              {b.photo_urls.map((url, pIdx) => (
-                                <button
-                                  key={pIdx}
-                                  type="button"
-                                  onClick={() => setPreviewImage(url)}
-                                  className="w-6 h-6 rounded border border-slate-200 overflow-hidden hover:scale-110 transition shadow-2xs"
-                                >
-                                  <img src={url} alt="Proof" className="w-full h-full object-cover" />
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 italic">No photos</span>
-                          )}
+                          {(() => {
+                            const photos = parsePhotos(b.photo_urls);
+                            return photos.length > 0 ? (
+                              <div className="flex items-center justify-center gap-1">
+                                {photos.map((url, pIdx) => (
+                                  <button
+                                    key={pIdx}
+                                    type="button"
+                                    onClick={() => setPreviewImage(url)}
+                                    className="w-6 h-6 rounded border border-slate-200 overflow-hidden hover:scale-110 transition shadow-2xs cursor-pointer"
+                                  >
+                                    <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">No photos</span>
+                            );
+                          })()}
                         </td>
                         <td className="py-3 px-4 text-right">
                           {avail > 0 ? (

@@ -70,6 +70,20 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
   });
 }
 
+function parsePhotos(urls: any): string[] {
+  if (Array.isArray(urls)) return urls.filter(u => typeof u === 'string' && u.trim());
+  if (typeof urls === 'string' && urls.trim()) {
+    try {
+      const parsed = JSON.parse(urls);
+      if (Array.isArray(parsed)) return parsed.filter(u => typeof u === 'string' && u.trim());
+      return [urls];
+    } catch {
+      return [urls];
+    }
+  }
+  return [];
+}
+
 export default function StitchingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -594,18 +608,21 @@ export default function StitchingOrderDetail() {
                               <div className="text-[10px] text-slate-400">{b.production_line}</div>
                             </td>
                             <td className="px-3.5 py-2.5 text-center">
-                              {b.photo_urls && b.photo_urls.length > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewImage(b.photo_urls![0])}
-                                  className="p-1 hover:bg-slate-200 rounded text-slate-600"
-                                  title="View photo proof"
-                                >
-                                  <Camera className="w-3.5 h-3.5" />
-                                </button>
-                              ) : (
-                                <span className="text-slate-300 font-sans text-[10px]">—</span>
-                              )}
+                              {(() => {
+                                const photos = parsePhotos(b.photo_urls);
+                                return photos.length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPreviewImage(photos[0])}
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-600 cursor-pointer"
+                                    title="View photo proof"
+                                  >
+                                    <Camera className="w-3.5 h-3.5" />
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-300 font-sans text-[10px]">—</span>
+                                );
+                              })()}
                             </td>
                           </tr>
                         ))}

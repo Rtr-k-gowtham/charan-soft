@@ -74,6 +74,20 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
   });
 }
 
+function parsePhotos(urls: any): string[] {
+  if (Array.isArray(urls)) return urls.filter(u => typeof u === 'string' && u.trim());
+  if (typeof urls === 'string' && urls.trim()) {
+    try {
+      const parsed = JSON.parse(urls);
+      if (Array.isArray(parsed)) return parsed.filter(u => typeof u === 'string' && u.trim());
+      return [urls];
+    } catch {
+      return [urls];
+    }
+  }
+  return [];
+}
+
 export default function DispatchOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -512,24 +526,27 @@ export default function DispatchOrderDetail() {
                       <Truck className="w-3.5 h-3.5 text-slate-400" />
                       <span>Truck & License Plate Evidence</span>
                     </div>
-                    {disp.truck_photo_urls && disp.truck_photo_urls.length > 0 ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {disp.truck_photo_urls.map((url, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => setPreviewImage(url)}
-                            className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200 cursor-pointer shadow-2xs hover:scale-105 transition"
-                          >
-                            <img src={url} alt="Truck" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                              <ZoomIn className="w-4 h-4 text-white" />
+                    {(() => {
+                      const photos = parsePhotos(disp.truck_photo_urls);
+                      return photos.length > 0 ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {photos.map((url, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setPreviewImage(url)}
+                              className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200 cursor-pointer shadow-2xs hover:scale-105 transition"
+                            >
+                              <img src={url} alt="Truck" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <ZoomIn className="w-4 h-4 text-white" />
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-slate-400 italic">No truck photos attached</div>
-                    )}
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-400 italic">No truck photos attached</div>
+                      );
+                    })()}
                   </div>
 
                   {/* Loaded Cartons Photos */}
@@ -538,24 +555,27 @@ export default function DispatchOrderDetail() {
                       <Boxes className="w-3.5 h-3.5 text-slate-400" />
                       <span>Loaded Cartons & Seal Evidence</span>
                     </div>
-                    {disp.loaded_cartons_photo_urls && disp.loaded_cartons_photo_urls.length > 0 ? (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {disp.loaded_cartons_photo_urls.map((url, idx) => (
-                          <div
-                            key={idx}
-                            onClick={() => setPreviewImage(url)}
-                            className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200 cursor-pointer shadow-2xs hover:scale-105 transition"
-                          >
-                            <img src={url} alt="Cartons loaded" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                              <ZoomIn className="w-4 h-4 text-white" />
+                    {(() => {
+                      const photos = parsePhotos(disp.loaded_cartons_photo_urls);
+                      return photos.length > 0 ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {photos.map((url, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setPreviewImage(url)}
+                              className="relative group w-16 h-16 rounded-lg overflow-hidden border border-slate-200 cursor-pointer shadow-2xs hover:scale-105 transition"
+                            >
+                              <img src={url} alt="Cartons loaded" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <ZoomIn className="w-4 h-4 text-white" />
+                              </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-slate-400 italic">No carton load photos attached</div>
-                    )}
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-400 italic">No carton load photos attached</div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

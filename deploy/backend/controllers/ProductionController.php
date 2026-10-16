@@ -1408,6 +1408,12 @@ class ProductionController {
             $bStmt = $pdo->prepare("SELECT cb.*, poi.product_id, COALESCE(bp.product_name, p.name) as product_name, poi.color FROM cutting_batches cb JOIN production_order_items poi ON cb.production_order_item_id = poi.id LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE cb.production_order_id = ? ORDER BY cb.id DESC");
             $bStmt->execute([$orderId]);
             $batches = $bStmt->fetchAll();
+            foreach ($batches as &$b) {
+                if (isset($b['photo_urls']) && is_string($b['photo_urls'])) {
+                    $b['photo_urls'] = json_decode($b['photo_urls'], true) ?: [];
+                }
+            }
+            unset($b);
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, COALESCE(bp.product_code, p.code) as product_code FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
             $iStmt->execute([$orderId]);
@@ -1473,6 +1479,15 @@ class ProductionController {
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $jobs = $pdo->query("SELECT * FROM embroidery_job_orders WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
             $receipts = $pdo->query("SELECT * FROM embroidery_receipts WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            foreach ($receipts as &$rcpt) {
+                if (isset($rcpt['photo_urls']) && is_string($rcpt['photo_urls'])) {
+                    $rcpt['photo_urls'] = json_decode($rcpt['photo_urls'], true) ?: [];
+                }
+                if (isset($rcpt['items_data']) && is_string($rcpt['items_data'])) {
+                    $rcpt['items_data'] = json_decode($rcpt['items_data'], true) ?: [];
+                }
+            }
+            unset($rcpt);
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
             $iStmt->execute([$orderId]);
@@ -1553,6 +1568,12 @@ class ProductionController {
 
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $batches = $pdo->query("SELECT * FROM stitching_batches WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            foreach ($batches as &$b) {
+                if (isset($b['photo_urls']) && is_string($b['photo_urls'])) {
+                    $b['photo_urls'] = json_decode($b['photo_urls'], true) ?: [];
+                }
+            }
+            unset($b);
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
             $iStmt->execute([$orderId]);
@@ -1615,6 +1636,12 @@ class ProductionController {
 
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $inspections = $pdo->query("SELECT * FROM quality_inspections WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            foreach ($inspections as &$ins) {
+                if (isset($ins['photo_urls']) && is_string($ins['photo_urls'])) {
+                    $ins['photo_urls'] = json_decode($ins['photo_urls'], true) ?: [];
+                }
+            }
+            unset($ins);
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
             $iStmt->execute([$orderId]);
@@ -1667,6 +1694,13 @@ class ProductionController {
 
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $batches = $pdo->query("SELECT * FROM packing_batches WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            foreach ($batches as &$b) {
+                if (isset($b['photo_urls']) && is_string($b['photo_urls'])) {
+                    $b['photo_urls'] = json_decode($b['photo_urls'], true) ?: [];
+                }
+            }
+            unset($b);
+
             $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, bp.dimensions_json FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
@@ -1747,6 +1781,14 @@ class ProductionController {
 
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $dispatches = $pdo->query("SELECT * FROM dispatch_records WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            foreach ($dispatches as &$dsp) {
+                foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
+                    if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
+                        $dsp[$fld] = json_decode($dsp[$fld], true) ?: [];
+                    }
+                }
+            }
+            unset($dsp);
             $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
 
             Response::success(['order' => $ord, 'dispatches' => $dispatches, 'cartons' => $cartons]);

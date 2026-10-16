@@ -72,6 +72,20 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
   });
 }
 
+function parsePhotos(urls: any): string[] {
+  if (Array.isArray(urls)) return urls.filter(u => typeof u === 'string' && u.trim());
+  if (typeof urls === 'string' && urls.trim()) {
+    try {
+      const parsed = JSON.parse(urls);
+      if (Array.isArray(parsed)) return parsed.filter(u => typeof u === 'string' && u.trim());
+      return [urls];
+    } catch {
+      return [urls];
+    }
+  }
+  return [];
+}
+
 export default function EmbroideryOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -824,19 +838,22 @@ export default function EmbroideryOrderDetail() {
                               <div className="text-[11px] text-slate-600 italic">Notes: {rcpt.remarks}</div>
                             )}
 
-                            {rcpt.photo_urls && rcpt.photo_urls.length > 0 && (
-                              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                {rcpt.photo_urls.map((photo, pIdx) => (
-                                  <div
-                                    key={pIdx}
-                                    onClick={() => setPreviewImage(photo)}
-                                    className="w-12 h-12 rounded-lg overflow-hidden border border-emerald-200 cursor-pointer hover:scale-105 transition"
-                                  >
-                                    <img src={photo} alt="Inward proof" className="w-full h-full object-cover" />
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                            {(() => {
+                              const photos = parsePhotos(rcpt.photo_urls);
+                              return photos.length > 0 ? (
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                  {photos.map((photo, pIdx) => (
+                                    <div
+                                      key={pIdx}
+                                      onClick={() => setPreviewImage(photo)}
+                                      className="w-12 h-12 rounded-lg overflow-hidden border border-emerald-200 cursor-pointer hover:scale-105 transition"
+                                    >
+                                      <img src={photo} alt="Inward proof" className="w-full h-full object-cover" />
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
                         ))}
                       </div>
