@@ -133,7 +133,7 @@ export default function ProductionOrderDetail() {
                 };
               }
             }
-          } catch (e) {}
+          } catch (e) { }
           setBomReport(bData);
         }
       })
@@ -234,7 +234,7 @@ export default function ProductionOrderDetail() {
 
     try {
       localStorage.setItem(`cheran_order_bom_${id}`, JSON.stringify(cleaned));
-    } catch (e) {}
+    } catch (e) { }
 
     setBomReport(prev => {
       if (!prev) return null;
@@ -257,7 +257,7 @@ export default function ProductionOrderDetail() {
     if (!id) return;
     try {
       localStorage.removeItem(`cheran_order_bom_${id}`);
-    } catch (e) {}
+    } catch (e) { }
     await handleGenerateBOM();
     setToastMessage('BOM reset to default Buyer Master components!');
   };
@@ -588,59 +588,13 @@ export default function ProductionOrderDetail() {
         </div>
 
         {/* 10-STAGE PRODUCTION LIFECYCLE WORKSPACE TIMELINE */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-600" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                10-Stage Production Lifecycle & Stage Workspaces
-              </h3>
-            </div>
-            <span className="text-[11px] text-slate-500 font-medium">
-              Click any stage below to enter its dedicated quantity & proof workspace
-            </span>
-          </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2">
-            {[
-              { code: 'REQ', name: 'Requirement', path: `/production/requirement/${order.id}`, color: 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100', icon: Sparkles },
-              { code: 'PO', name: 'Purchase Order', path: `/production/po/${order.id}`, color: 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100', icon: ShoppingCart },
-              { code: 'INW', name: 'Inward & Proof', path: `/production/inward/${order.id}`, color: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100', icon: PackageOpen },
-              { code: 'DYE', name: 'Dyeing', path: `/production/dyeing/${order.id}`, color: 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100', icon: Droplets },
-              { code: 'CUT', name: 'Cutting', path: `/production/cutting/${order.id}`, color: 'bg-violet-50 text-violet-800 border-violet-200 hover:bg-violet-100', icon: Scissors },
-              { code: 'EMB', name: 'Embroidery', path: `/production/embroidery/${order.id}`, color: 'bg-pink-50 text-pink-800 border-pink-200 hover:bg-pink-100', icon: Sparkles },
-              { code: 'STI', name: 'Stitching', path: `/production/stitching/${order.id}`, color: 'bg-teal-50 text-teal-800 border-teal-200 hover:bg-teal-100', icon: Activity },
-              { code: 'CHK', name: 'Checking', path: `/production/checking/${order.id}`, color: 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100', icon: CheckCircle },
-              { code: 'PCK', name: 'Packing', path: `/production/packing/${order.id}`, color: 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100', icon: Boxes },
-              { code: 'COMP', name: 'Dispatch', path: `/production/completed/${order.id}`, color: 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100', icon: Truck },
-            ].map((stg, sIdx) => {
-              const IconComp = stg.icon;
-              return (
-                <button
-                  key={stg.code}
-                  type="button"
-                  onClick={() => navigate(stg.path)}
-                  className={`p-2 rounded-xl border text-left transition shadow-2xs flex flex-col justify-between h-20 ${stg.color}`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="font-mono font-bold text-[10px] opacity-70">0{sIdx + 1}</span>
-                    <IconComp className="w-3.5 h-3.5 opacity-80" />
-                  </div>
-                  <div>
-                    <div className="font-mono font-extrabold text-[11px] tracking-tight">{stg.code}</div>
-                    <div className="text-[10px] font-medium truncate">{stg.name}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
         {/* SECTION 1: Material Requirements Table (Editable BOM) */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
+
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
                 Material Requirements (BOM)
               </h3>
@@ -990,7 +944,7 @@ export default function ProductionOrderDetail() {
         <div className="space-y-4 pt-2">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
-              <Package className="w-4 h-4 text-brand-600" />
+
               Products Ordered ({items.length})
             </h3>
             <span className="text-xs text-slate-500 font-mono">

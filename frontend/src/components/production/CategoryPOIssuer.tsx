@@ -78,7 +78,7 @@ export default function CategoryPOIssuer({
   // Changing status of existing PO (e.g. Draft -> Ordered)
   const [updatingPOStatus, setUpdatingPOStatus] = useState<Record<number, boolean>>({});
 
-  
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
@@ -448,7 +448,7 @@ export default function CategoryPOIssuer({
                   to_stage_id: 3, // Stage 03: Inward
                   quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
                   remarks: `PO ${po.po_number} issued — all category POs verified, advanced to Inward stage`,
-                }).catch(() => {})
+                }).catch(() => { })
               )
             );
           }
@@ -588,7 +588,7 @@ export default function CategoryPOIssuer({
       <div className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <Layers className="w-4 h-4 text-indigo-600" />
+
             Issue Category Purchase Orders ({categoriesList.length} Categories)
           </h4>
         </div>
@@ -608,8 +608,8 @@ export default function CategoryPOIssuer({
                     <th className="py-2.5 px-2.5 w-[160px]">Material Category</th>
                     <th className="py-2.5 px-2 text-center w-[80px]">Item Count</th>
                     <th className="py-2.5 px-3 min-w-[180px]">Required Materials</th>
-                    <th className="py-2.5 px-2.5 text-right w-[100px]">Total Est. Cost</th>
-                    <th className="py-2.5 px-2.5 w-[200px]">Vendor / Supplier</th>
+
+                    <th className="py-2.5 px-2.5 w-[200px]">Supplier</th>
                     <th className="py-2.5 px-2 text-center w-[95px]">PO Status</th>
                     <th className="py-2.5 px-2.5 text-right w-[100px]">Action</th>
                   </tr>
@@ -725,9 +725,7 @@ export default function CategoryPOIssuer({
                         </td>
 
                         {/* 6. Total Estimated Cost */}
-                        <td className="py-2.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap align-middle">
-                          {totalCatCost > 0 ? fmtCurrency(totalCatCost) : '—'}
-                        </td>
+
 
                         {/* 7. Vendor / Supplier */}
                         <td className="py-2.5 px-2.5 align-middle">

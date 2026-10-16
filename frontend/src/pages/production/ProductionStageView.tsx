@@ -40,7 +40,11 @@ import {
   Box
 } from 'lucide-react';
 
-const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
+const fmt = (n: number, decimals = 0) =>
+  new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(n || 0);
 
 interface Props {
   stageName: string;
@@ -145,6 +149,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [allItems, setAllItems] = useState<StageItem[]>([]);
   const [stagePOs, setStagePOs] = useState<PurchaseOrder[]>([]);
+  const [stageDyeingOrders, setStageDyeingOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // View mode: 'orders' shows order cards with expandable products; 'items' shows flat item rows
@@ -176,10 +181,12 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       api.getProductionStages().catch(() => []),
       api.getProductionOrders().catch(() => []),
       api.getPurchaseOrders().catch(() => []),
+      api.getDyeingOrders().catch(() => []),
     ])
-      .then(([stgList, ordList, poList]) => {
+      .then(([stgList, ordList, poList, dyeList]) => {
         setStages((stgList || []) as ProductionStage[]);
         setStagePOs((poList || []) as PurchaseOrder[]);
+        setStageDyeingOrders((dyeList || []) as any[]);
         const flat: StageItem[] = [];
         ((ordList || []) as ProductionOrder[]).forEach(ord => {
           (ord.items || []).forEach(it => {
@@ -376,7 +383,65 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     });
   }, [orderGroups, searchTerm, priorityFilter]);
 
+  // Fabric Balance & Outward Summary for Stage 04: Dyeing
+  const stageDyeingSummary = useMemo(() => {
+    let totalInwarded = 0;
+    const stageOrderIds = new Set(orderGroups.map(g => String(g.order_id)));
+    const stageOrderNumbers = new Set(orderGroups.map(g => g.order_number));
 
+    stagePOs.forEach(po => {
+      const isThisOrder = (po.production_order_id && stageOrderIds.has(String(po.production_order_id))) ||
+                          (po.production_order_number && stageOrderNumbers.has(po.production_order_number)) ||
+                          (po.remarks && Array.from(stageOrderNumbers).some(num => num && po.remarks?.includes(num)));
+      if (isThisOrder && Array.isArray(po.items)) {
+        const isFabricCat = (po.category_name || '').toUpperCase().includes('FABRIC') ||
+                            (po.remarks || '').toUpperCase().includes('FABRIC');
+        po.items.forEach((it: any) => {
+          const isFabric = isFabricCat ||
+                           (it.item_description || '').toUpperCase().includes('FABRIC') ||
+                           (it.item_description || '').toUpperCase().includes('COTTON') ||
+                           (it.item_description || '').toUpperCase().includes('MAT-FAB');
+          if (isFabric) {
+            totalInwarded += Number(it.received_quantity || 0);
+          }
+        });
+      }
+    });
+
+    let totalOutward = 0;
+    let totalReceived = 0;
+    stageDyeingOrders.forEach((d: any) => {
+      const isThisOrder = (d.production_order_id && stageOrderIds.has(String(d.production_order_id))) ||
+                          (d.order_number && stageOrderNumbers.has(d.order_number));
+      if (isThisOrder && d.status !== 'Cancelled') {
+        totalOutward += Number(d.total_fabric_quantity || 0);
+        totalReceived += Number(d.total_received_quantity || 0);
+      }
+    });
+
+    // If order-specific outward is 0 but there are stage dyeing orders, aggregate all
+    if (totalOutward === 0 && stageDyeingOrders.length > 0) {
+      stageDyeingOrders.forEach((d: any) => {
+        if (d.status !== 'Cancelled') {
+          totalOutward += Number(d.total_fabric_quantity || 0);
+          totalReceived += Number(d.total_received_quantity || 0);
+        }
+      });
+    }
+
+    if (totalInwarded === 0 && totalOutward > 0) {
+      totalInwarded = totalOutward;
+    }
+
+    const availableToSend = Math.max(0, Number((totalInwarded - totalOutward).toFixed(1)));
+
+    return {
+      totalInwarded,
+      totalOutward,
+      availableToSend,
+      totalReceived,
+    };
+  }, [orderGroups, stagePOs, stageDyeingOrders]);
 
   const currentStage = stages.find(s => s.code === activeCode || s.name === stageName);
   const nextStages = stages.filter(s => s.sequence_order > (currentStage?.sequence_order || 0));
@@ -648,6 +713,22 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 <span>Create PO</span>
               </Button>
             )}
+            {activeCode === 'DYE' && (
+              <Button
+                icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+                onClick={() => {
+                  const targetOrd = filteredOrderGroups[0] || orderGroups[0];
+                  if (targetOrd) {
+                    navigate(`/production/dyeing/${targetOrd.order_id}?create=true`);
+                  } else {
+                    alert('Please select or create an order with fabric inwarded in Stage 03 first.');
+                  }
+                }}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs"
+              >
+                <span>Create Dyeing Order</span>
+              </Button>
+            )}
             <button
               onClick={() => navigate('/production/board')}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-xs"
@@ -715,6 +796,100 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           </div>
         </div>
       </div>
+
+      {/* Stage 04: Fabric Balance & Outward Pipeline Summary */}
+      {activeCode === 'DYE' && (
+        <div className="mx-3 sm:mx-4 mt-1 mb-2 bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <Droplets className="w-4 h-4 text-brand-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Fabric Balance & Outward Summary
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Inwarded fabric from Stage 03 Inward vs sent to dyeing mills & received back
+              </p>
+            </div>
+            <Button
+              onClick={() => {
+                const target = filteredOrderGroups[0] || orderGroups[0];
+                if (target) {
+                  navigate(`/production/dyeing/${target.order_id}?create=true`);
+                } else {
+                  alert('Please select or create an order with fabric inwarded in Stage 03 first.');
+                }
+              }}
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              <span>Create Dyeing Order</span>
+            </Button>
+          </div>
+
+          {/* 4 Summary Metrics */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            {/* 1. Inward Fabric */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Inward Fabric</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-slate-900">{fmt(stageDyeingSummary.totalInwarded, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Received from Stage 03 Fabric POs</p>
+            </div>
+
+            {/* 2. Sent to Dyeing (Out) */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Sent to Dyeing (Out)</span>
+                <Truck className="w-4 h-4 text-brand-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-brand-700">{fmt(stageDyeingSummary.totalOutward, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Total outward delivery challans</p>
+            </div>
+
+            {/* 3. Available to Send */}
+            <div className={`rounded-xl p-3.5 border flex flex-col justify-between ${
+              stageDyeingSummary.availableToSend > 0 ? 'bg-amber-50/60 border-amber-200' : 'bg-slate-50/70 border-slate-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-700">Available to Send</span>
+                <Boxes className={`w-4 h-4 ${stageDyeingSummary.availableToSend > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className={`text-xl sm:text-2xl font-bold font-mono ${stageDyeingSummary.availableToSend > 0 ? 'text-amber-800' : 'text-slate-700'}`}>
+                  {fmt(stageDyeingSummary.availableToSend, 1)}
+                </span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                {stageDyeingSummary.availableToSend > 0 ? 'Ready for outward delivery' : 'All inward fabric allocated'}
+              </p>
+            </div>
+
+            {/* 4. Dyed Fabric Received */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Dyed Fabric Received</span>
+                <Sparkles className="w-4 h-4 text-purple-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-purple-700">{fmt(stageDyeingSummary.totalReceived, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Inwarded from dyeing mills</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search & Control Filter Bar */}
       <div className="px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
@@ -1081,14 +1256,25 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 )}
 
                                 {activeCode === 'DYE' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => navigate(targetUrl)}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
-                                  >
-                                    <Droplets className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                                    <span>Dyeing Process</span>
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(`/production/dyeing/${group.order_id}?create=true`)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-md shadow-2xs transition"
+                                      title="Create Dyeing Order in full page"
+                                    >
+                                      <Plus className="w-3 h-3 stroke-[2.5]" />
+                                      <span>Create Dyeing Order</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(targetUrl)}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
+                                    >
+                                      <Droplets className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                                      <span>Dyeing Stage</span>
+                                    </button>
+                                  </div>
                                 )}
 
                                 {activeCode === 'CUT' && (

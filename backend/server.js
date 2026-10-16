@@ -1775,13 +1775,14 @@ const server = http.createServer(async (req, res) => {
       });
 
       const balanceAvailable = Math.max(0, Number((totalInwarded - totalOutward).toFixed(2)));
+      const allowAdditional = !!(body.allow_overdraft || body.is_additional_lot || body.force_create || body.is_redyeing);
 
-      if (balanceAvailable <= 0) {
-        return sendError(res, 'Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted)', 422);
+      if (balanceAvailable <= 0 && !allowAdditional) {
+        return sendError(res, 'Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted). Enable "Additional Lot / Re-dyeing" to issue additional outward fabric.', 422);
       }
 
-      if (totalFabricQty > balanceAvailable) {
-        return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'})`, 422);
+      if (balanceAvailable > 0 && totalFabricQty > balanceAvailable && !allowAdditional) {
+        return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'}). Enable "Additional Lot / Re-dyeing" to authorize.`, 422);
       }
 
       const newDye = {

@@ -3,7 +3,7 @@
 // Redesigned to strict Cheran Soft Goods ERP design system: Table-based layout, ERP palette,
 // dynamic fabric material dropdown, and Total Outward Fabric field removed from Create form.
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { 
   ProductionOrder, 
@@ -50,7 +50,8 @@ import {
   ArrowRight,
   Boxes,
   CheckCheck,
-  Search
+  Search,
+  Building2
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -136,8 +137,11 @@ export default function DyeingOrderDetail() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(new Set());
 
-  // Create Dyeing Order Modal
+  // Create Dyeing Order Modal & Full Page State
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showCreatePage, setShowCreatePage] = useState<boolean>(() => searchParams.get('create') === 'true');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isAdditionalLot, setIsAdditionalLot] = useState<boolean>(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
@@ -205,9 +209,9 @@ export default function DyeingOrderDetail() {
           name.includes('POLYBAG') || 
           name.includes('DYE') || 
           name.includes('CARTON');
-        // Only include if available quantity is positive
-        const hasAvailable = Number(f.available_quantity) > 0;
-        return hasAvailable && !isExcluded;
+        // Include any fabric that was inwarded or has stock
+        const hasFabric = Number(f.inward_quantity || 0) > 0 || Number(f.available_quantity || 0) > 0;
+        return hasFabric && !isExcluded;
       })
       .map((f: any) => ({
         material_id: Number(f.material_id),
@@ -414,23 +418,12 @@ export default function DyeingOrderDetail() {
     }
   }, [successToast]);
 
-  const toggleExpandOrder = (orderId: number) => {
-    setExpandedOrderIds(prev => {
-      const next = new Set(prev);
-      if (next.has(orderId)) {
-        next.delete(orderId);
-      } else {
-        next.add(orderId);
-      }
-      return next;
-    });
-  };
-
-  // Open Create Dyeing Order Modal with auto-populated colors
+  // Open Create Dyeing Order Full Page with auto-populated colors
   const handleOpenCreateModal = () => {
     setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
     setCreateError('');
     setFabricSearchQuery('');
+    setIsAdditionalLot(false);
 
     // Pre-select first eligible fabric if not yet selected
     if (!fabricMaterialId && eligibleFabrics.length > 0) {
@@ -444,7 +437,26 @@ export default function DyeingOrderDetail() {
         setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
       }
     }
-    setShowCreateModal(true);
+    setShowCreatePage(true);
+    setShowCreateModal(false);
+  };
+
+  useEffect(() => {
+    if (searchParams.get('create') === 'true' && order) {
+      handleOpenCreateModal();
+    }
+  }, [searchParams, order]);
+
+  const toggleExpandOrder = (orderId: number) => {
+    setExpandedOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
   };
 
   // Handle Photo selection
@@ -575,9 +587,16 @@ export default function DyeingOrderDetail() {
       return;
     }
 
-    if (availableFabricBalance > 0 && totalPlannedInModal > availableFabricBalance) {
+    if (availableFabricBalance > 0 && totalPlannedInModal > availableFabricBalance && !isAdditionalLot) {
       setCreateError(
-        `Total planned quantity (${fmt(totalPlannedInModal, 1)} ${uom}) exceeds available fabric balance (${fmt(availableFabricBalance, 1)} ${uom}). Please adjust quantities.`
+        `Total planned quantity (${fmt(totalPlannedInModal, 1)} ${uom}) exceeds available fabric balance (${fmt(availableFabricBalance, 1)} ${uom}). Check "Authorize Additional Lot / Re-dyeing" to continue.`
+      );
+      return;
+    }
+
+    if (availableFabricBalance <= 0 && !isAdditionalLot) {
+      setCreateError(
+        `Available fabric balance is 0.0 ${uom} (all inwarded fabric has been allocated). Check "Authorize Additional Lot / Re-dyeing" to authorize additional outward fabric.`
       );
       return;
     }
@@ -601,6 +620,9 @@ export default function DyeingOrderDetail() {
         expected_delivery_date: expectedDate,
         process_type: processType,
         remarks,
+        is_additional_lot: isAdditionalLot,
+        allow_overdraft: isAdditionalLot,
+        force_create: isAdditionalLot,
         items: colorRows.map(r => ({
           color_name: r.color_name.trim(),
           pantone_code: r.pantone_code.trim(),
@@ -612,7 +634,13 @@ export default function DyeingOrderDetail() {
       };
 
       await api.createDyeingOrder(payload);
+      setShowCreatePage(false);
       setShowCreateModal(false);
+      if (searchParams.get('create')) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('create');
+        setSearchParams(next);
+      }
       setSuccessToast(`Dyeing Order created and DC generated successfully!`);
       await loadData();
     } catch (err: any) {
@@ -858,6 +886,632 @@ export default function DyeingOrderDetail() {
   const totalFabricOutward = Number(fabricStockData?.total_fabric_outward || 0);
   const totalFabricReceived = Number(fabricStockData?.total_fabric_received_from_dyeing || 0);
   const balanceToOutward = Number(fabricStockData?.balance_available_for_dyeing || 0);
+
+  // =========================================================================
+  // FULL PAGE: CREATE DYEING ORDER & DELIVERY CHALLAN (STAGE 04)
+  // =========================================================================
+  if (showCreatePage && order) {
+    return (
+      <div className="flex flex-col h-full bg-slate-50/70 overflow-y-auto">
+        {/* Sticky Top Bar */}
+        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 sticky top-0 z-30 shadow-2xs">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreatePage(false);
+                if (searchParams.get('create')) {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('create');
+                  setSearchParams(next);
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Back to Dyeing Stage</span>
+              <span className="sm:hidden">Back</span>
+            </button>
+            <div className="h-5 w-px bg-slate-200 shrink-0 hidden sm:block" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate flex items-center gap-2">
+                <Droplets className="w-4 h-4 text-brand-600 shrink-0" />
+                <span>Create Dyeing Order & Delivery Challan</span>
+              </h1>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 hidden sm:block">
+                Full-page outward order creation to dyeing mill with Pantone color breakdown & live fabric balance • Order #{order.order_number}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              className="sm:text-xs"
+              onClick={() => {
+                setShowCreatePage(false);
+                if (searchParams.get('create')) {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('create');
+                  setSearchParams(next);
+                }
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              loading={creating}
+              size="sm"
+              onClick={handleCreateDyeingOrder}
+              icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs"
+            >
+              <span>Create Dyeing Order</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Full Page Body */}
+        <div className="max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+          {createError && (
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 shadow-2xs">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1 font-medium">{createError}</div>
+            </div>
+          )}
+
+          {/* SECTION 1: Fabric Balance & Outward Summary (Live ERP Pipeline) */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Droplets className="w-4 h-4 text-brand-600" />
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Fabric Balance & Outward Summary
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Inwarded fabric from Stage 03 Inward vs sent to dyeing mills & received back
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                  Order: <strong className="text-slate-900">{order.order_number}</strong>
+                </span>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border ${
+                  availableFabricBalance > 0
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                }`}>
+                  {availableFabricBalance > 0 ? '✓ Ready to Outward' : '● All Inward Fabric Allocated'}
+                </span>
+              </div>
+            </div>
+
+            {/* 4 Summary Metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4">
+              {/* 1. Inward Fabric */}
+              <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Inward Fabric</span>
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-slate-900">{fmt(totalFabricInwarded, 1)}</span>
+                  <span className="text-xs text-slate-500 font-semibold">{uom}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Received from Stage 03 Fabric POs</p>
+              </div>
+
+              {/* 2. Sent to Dyeing (Out) */}
+              <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Sent to Dyeing (Out)</span>
+                  <Truck className="w-4 h-4 text-brand-600" />
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-brand-700">{fmt(totalFabricOutward, 1)}</span>
+                  <span className="text-xs text-slate-500 font-semibold">{uom}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Total outward delivery challans</p>
+              </div>
+
+              {/* 3. Available to Send */}
+              <div className={`rounded-xl p-3.5 border flex flex-col justify-between ${
+                availableFabricBalance > 0 ? 'bg-amber-50/60 border-amber-200' : 'bg-slate-50/70 border-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-700">Available to Send</span>
+                  <Boxes className={`w-4 h-4 ${availableFabricBalance > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className={`text-xl sm:text-2xl font-bold font-mono ${availableFabricBalance > 0 ? 'text-amber-800' : 'text-slate-700'}`}>
+                    {fmt(availableFabricBalance, 1)}
+                  </span>
+                  <span className="text-xs text-slate-500 font-semibold">{uom}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {availableFabricBalance > 0 ? 'Ready for outward delivery' : 'All inward fabric allocated'}
+                </p>
+              </div>
+
+              {/* 4. Dyed Fabric Received */}
+              <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Dyed Fabric Received</span>
+                  <Sparkles className="w-4 h-4 text-purple-600" />
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-purple-700">{fmt(totalFabricReceived, 1)}</span>
+                  <span className="text-xs text-slate-500 font-semibold">{uom}</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Inwarded from dyeing mills</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: Dyeing Mill & Challan Details */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-brand-600" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  Dyeing Mill & Outward Delivery Challan
+                </h2>
+              </div>
+              <div className="text-xs text-slate-500">
+                Buyer: <strong className="text-slate-800">{order.customer_name || 'Direct Buyer'}</strong>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <FormField label="Dyeing Processor / Mill" required>
+                <select
+                  value={selectedSupplierId}
+                  onChange={e => setSelectedSupplierId(e.target.value)}
+                  className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white font-medium"
+                  required
+                >
+                  <option value="">— Select Dyeing Mill / Supplier —</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.code || 'VEND'}) {s.phone ? `• ${s.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Outward Delivery Challan (DC No)" required>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={challanNo}
+                    onChange={e => setChallanNo(e.target.value)}
+                    className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 font-mono font-bold text-slate-900 bg-white pr-9"
+                    placeholder="e.g. DC-DYE-001"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`)}
+                    className="absolute right-2 p-1 text-slate-400 hover:text-brand-600 transition"
+                    title="Generate new DC number"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </FormField>
+
+              <FormField label="Process / Finishing Type">
+                <input
+                  type="text"
+                  value={processType}
+                  onChange={e => setProcessType(e.target.value)}
+                  className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 font-medium bg-white"
+                  placeholder="e.g. Reactive Soft Flow, Bio-Wash, Enzyme"
+                />
+              </FormField>
+
+              <FormField label="Outward Order Date" required>
+                <input
+                  type="date"
+                  value={orderDate}
+                  onChange={e => setOrderDate(e.target.value)}
+                  className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 font-medium bg-white"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Expected Delivery Date">
+                <input
+                  type="date"
+                  value={expectedDate}
+                  onChange={e => setExpectedDate(e.target.value)}
+                  className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 font-medium bg-white"
+                />
+              </FormField>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-center">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Target Production Order</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="font-mono font-bold text-xs text-brand-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    {order.order_number}
+                  </span>
+                  <span className="text-xs font-medium text-slate-800 truncate">
+                    {order.title}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 3: Raw Material Fabric Selection */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-brand-600" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                  Raw Material Fabric Selection
+                </h2>
+              </div>
+              {selectedFabric && (
+                <span className="text-xs font-mono font-semibold text-slate-600">
+                  Inwarded: {fmt(selectedFabric.inward_quantity, 1)} {selectedFabric.uom} • Outwarded: {fmt(selectedFabric.outward_quantity, 1)} {selectedFabric.uom}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Eligible Fabric Material" required>
+                {eligibleFabrics.length === 0 ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>No inwarded fabric record found. Stage 03 inwarding will link automatically.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {eligibleFabrics.length > 3 && (
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={fabricSearchQuery}
+                          onChange={e => setFabricSearchQuery(e.target.value)}
+                          placeholder="Search fabric name or code..."
+                          className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        />
+                      </div>
+                    )}
+                    <select
+                      value={fabricMaterialId || ''}
+                      onChange={e => {
+                        const selId = Number(e.target.value);
+                        const chosen = eligibleFabrics.find(f => f.material_id === selId);
+                        if (chosen) {
+                          setFabricMaterialId(chosen.material_id);
+                          setFabricName(chosen.material_name);
+                          setUom(chosen.uom);
+                          setColorRows(buildOrderColors(order, fabricStockData, chosen.available_quantity));
+                        }
+                      }}
+                      className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white font-medium"
+                      required
+                    >
+                      <option value="">— Select Fabric Material from Inward Stock —</option>
+                      {searchedFabrics.map(f => (
+                        <option key={f.material_id} value={f.material_id}>
+                          {f.material_name} ({f.material_code || `MAT-${f.material_id}`}) • Inwarded: {fmt(f.inward_quantity, 1)} {f.uom} • Avail: {fmt(f.available_quantity, 1)} {f.uom}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </FormField>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Available Fabric Balance for Selection</span>
+                  <span className="font-mono text-xs font-bold text-slate-800">
+                    {fmt(availableFabricBalance, 1)} {uom}
+                  </span>
+                </div>
+                {availableFabricBalance <= 0 ? (
+                  <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-amber-800 font-medium">
+                      Balance is 0.0 {uom}. All inward fabric has been outwarded in previous batches.
+                    </span>
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-amber-900 cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={isAdditionalLot}
+                        onChange={e => setIsAdditionalLot(e.target.checked)}
+                        className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
+                      />
+                      <span>Authorize Additional Lot / Re-dyeing</span>
+                    </label>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Fabric inwarded from Stage 03 is ready to be divided into color batches.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: Color Breakdown & Pantone Matching Table (Styled like PO table) */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-brand-600" />
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                    Color Breakdown & Pantone TCX Specifications
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Assign outward fabric quantity and target Pantone shades per garment color.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAutofillColors}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Reset to Order Colors</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddColorRow}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Color Line</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-xs text-left border-collapse table-auto">
+                <thead>
+                  <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase text-[10px] tracking-wider">
+                    <th className="py-2.5 px-2.5 w-10 text-center text-slate-500">#</th>
+                    <th className="py-2.5 px-3 min-w-[180px]">Color Swatch & Name *</th>
+                    <th className="py-2.5 px-3 min-w-[170px]">Pantone TCX Code</th>
+                    <th className="py-2.5 px-3 min-w-[130px] text-right">Planned Outward Qty *</th>
+                    <th className="py-2.5 px-3 min-w-[110px] text-right">Rate / {uom} (₹)</th>
+                    <th className="py-2.5 px-3 min-w-[110px] text-right">Subtotal (₹)</th>
+                    <th className="py-2.5 px-3 min-w-[170px]">Shade / Lab Dip Notes</th>
+                    <th className="py-2.5 px-2 w-10 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {colorRows.map((row, idx) => {
+                    const rowQty = Number(row.planned_quantity) || 0;
+                    const rowRate = Number(row.rate_per_unit) || 0;
+                    const rowSubtotal = rowQty * rowRate;
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                        {/* S.No */}
+                        <td className="py-2 px-2.5 text-center font-mono text-slate-400 font-bold">
+                          {idx + 1}
+                        </td>
+
+                        {/* Color Swatch & Name */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={row.hex_code || '#3b82f6'}
+                              onChange={e => handleColorRowChange(idx, 'hex_code', e.target.value)}
+                              className="w-8 h-8 rounded-lg cursor-pointer border border-slate-300 p-0.5 shrink-0"
+                              title="Pick Color Swatch"
+                            />
+                            <input
+                              type="text"
+                              list="pantone-colors-datalist"
+                              value={row.color_name}
+                              onChange={e => handleColorRowChange(idx, 'color_name', e.target.value)}
+                              placeholder="e.g. Navy Blue"
+                              className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 bg-white"
+                              required
+                            />
+                          </div>
+                        </td>
+
+                        {/* Pantone TCX Code */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            list="pantone-codes-datalist"
+                            value={row.pantone_code}
+                            onChange={e => handleColorRowChange(idx, 'pantone_code', e.target.value)}
+                            placeholder="e.g. 19-4052 TCX"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-mono text-slate-800 bg-white font-medium"
+                          />
+                        </td>
+
+                        {/* Planned Qty */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={row.planned_quantity}
+                              onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
+                              placeholder="0.00"
+                              className="w-24 text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono font-bold text-slate-900 bg-white"
+                              required
+                            />
+                            <span className="text-xs text-slate-500 font-semibold">{uom}</span>
+                          </div>
+                        </td>
+
+                        {/* Rate / UOM */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={row.rate_per_unit}
+                            onChange={e => handleColorRowChange(idx, 'rate_per_unit', e.target.value)}
+                            placeholder="0.00"
+                            className="w-24 text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono text-slate-700 bg-white ml-auto block"
+                          />
+                        </td>
+
+                        {/* Subtotal */}
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          {rowSubtotal > 0 ? fmt(rowSubtotal, 2) : '—'}
+                        </td>
+
+                        {/* Notes */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            value={row.notes || ''}
+                            onChange={e => handleColorRowChange(idx, 'notes', e.target.value)}
+                            placeholder="e.g. Approved Lab Dip #2"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 text-slate-600 bg-white"
+                          />
+                        </td>
+
+                        {/* Action */}
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveColorRow(idx)}
+                            disabled={colorRows.length <= 1}
+                            className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg disabled:opacity-30 transition"
+                            title="Remove color row"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+
+                {/* Table Footer */}
+                <tfoot>
+                  <tr className="bg-slate-100/90 font-bold border-t border-slate-200">
+                    <td colSpan={3} className="py-2.5 px-3 text-right uppercase text-[10px] tracking-wider text-slate-600">
+                      Total Planned Outward:
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-sm text-brand-700">
+                      {fmt(totalPlannedInModal, 1)} {uom}
+                    </td>
+                    <td className="py-2.5 px-3 text-right uppercase text-[10px] tracking-wider text-slate-600">
+                      Est. Dyeing Cost:
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-sm text-slate-900">
+                      {fmt(colorRows.reduce((sum, r) => sum + ((Number(r.planned_quantity) || 0) * (Number(r.rate_per_unit) || 0)), 0), 2)}
+                    </td>
+                    <td colSpan={2} className="py-2.5 px-3 text-right">
+                      {totalPlannedInModal > availableFabricBalance && availableFabricBalance > 0 && !isAdditionalLot && (
+                        <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2.5 py-1 rounded-md">
+                          Exceeds Available Fabric ({fmt(availableFabricBalance, 1)} {uom})
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Datalists for native browser autocomplete */}
+            <datalist id="pantone-colors-datalist">
+              {VERIFIED_PANTONE_LIBRARY.map((p) => (
+                <option key={p.code} value={p.name}>
+                  {p.name} ({p.code})
+                </option>
+              ))}
+            </datalist>
+            <datalist id="pantone-codes-datalist">
+              {VERIFIED_PANTONE_LIBRARY.map((p) => (
+                <option key={p.code} value={p.code}>
+                  {p.code} — {p.name}
+                </option>
+              ))}
+            </datalist>
+          </div>
+
+          {/* SECTION 5: Remarks / Process Instructions */}
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs p-5 space-y-3">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+              <FileText className="w-4 h-4 text-brand-600" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Mill Instructions & Quality Specifications
+              </h2>
+            </div>
+
+            <FormField label="Remarks / Processing Notes">
+              <textarea
+                rows={3}
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+                className="w-full text-xs rounded-xl border-slate-300 py-2.5 px-3 font-medium bg-white"
+                placeholder="e.g. Ensure strict Pantone TCX shade matching under D65 light source. Maximum allowable shrinkage: 3% warp, 3% weft. Soft flow finish with bio-polish."
+              />
+            </FormField>
+          </div>
+
+          {/* Bottom Action Footer */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 sticky bottom-4 z-20">
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <span>Total Planned Quantity:</span>
+              <strong className="font-mono text-brand-700 font-bold text-sm">
+                {fmt(totalPlannedInModal, 1)} {uom}
+              </strong>
+              <span className="text-slate-300 mx-1">|</span>
+              <span>Available Balance:</span>
+              <strong className="font-mono text-slate-800">
+                {fmt(availableFabricBalance, 1)} {uom}
+              </strong>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowCreatePage(false);
+                  if (searchParams.get('create')) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('create');
+                    setSearchParams(next);
+                  }
+                }}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                loading={creating}
+                onClick={handleCreateDyeingOrder}
+                icon={<Plus className="w-4 h-4 stroke-[2.5]" />}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-5 py-2"
+              >
+                <span>Create Dyeing Order & Delivery Challan</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-slate-50/60 overflow-y-auto">
@@ -1487,325 +2141,7 @@ export default function DyeingOrderDetail() {
         )}
       </div>
 
-      {/* CREATE DYEING ORDER MODAL */}
-      <Modal
-        open={showCreateModal}
-        onClose={() => !creating && setShowCreateModal(false)}
-        title="Create Dyeing Order & Delivery Challan"
-        subtitle={`Stage 04 Outward to Dyeing Mill for Production Order ${order.order_number}`}
-        size="xl"
-      >
-        <form onSubmit={handleCreateDyeingOrder} className="space-y-4">
-          {createError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <span>{createError}</span>
-            </div>
-          )}
 
-          {/* Fabric Balance Alert */}
-          <div className="bg-brand-50 border border-brand-200 rounded-xl p-3.5 text-xs text-brand-900 flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <span className="font-bold text-brand-950">Inward Fabric Received:</span> {fmt(totalFabricInwarded, 1)} {uom}
-              <span className="mx-2">•</span>
-              <span className="font-bold text-brand-950">Available for Dyeing:</span> {fmt(availableFabricBalance, 1)} {uom}
-            </div>
-            <div className="font-semibold text-brand-700">
-              Order: {order.order_number}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Dyeing Processor / Mill" required>
-              <select
-                value={selectedSupplierId}
-                onChange={e => setSelectedSupplierId(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white"
-                required
-              >
-                <option value="">Select Dyeing Mill / Supplier</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} ({s.code || 'VEND'})
-                  </option>
-                ))}
-              </select>
-            </FormField>
-
-            {/* Fabric Material Dropdown populated from actual eligible fabric materials */}
-            <FormField label="Fabric Material (Eligible for Dyeing)" required>
-              {eligibleFabrics.length === 0 ? (
-                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>No inwarded fabric available for dyeing. Please inward fabric in Stage 03 first.</span>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {eligibleFabrics.length > 3 && (
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={fabricSearchQuery}
-                        onChange={e => setFabricSearchQuery(e.target.value)}
-                        placeholder="Search fabric name or code..."
-                        className="w-full pl-8 pr-3 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
-                      />
-                    </div>
-                  )}
-                  <select
-                    value={fabricMaterialId || ''}
-                    onChange={e => {
-                      const selId = Number(e.target.value);
-                      const chosen = eligibleFabrics.find(f => f.material_id === selId);
-                      if (chosen) {
-                        setFabricMaterialId(chosen.material_id);
-                        setFabricName(chosen.material_name);
-                        setUom(chosen.uom);
-                        setColorRows(buildOrderColors(order, fabricStockData, chosen.available_quantity));
-                      }
-                    }}
-                    className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white"
-                    required
-                  >
-                    <option value="">Select Eligible Fabric Material</option>
-                    {searchedFabrics.map(f => (
-                      <option key={f.material_id} value={f.material_id}>
-                        {f.material_name} ({f.material_code || `MAT-${f.material_id}`}) • Available: {fmt(f.available_quantity, 1)} {f.uom}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </FormField>
-
-            <FormField label="Outward Delivery Challan (DC No)" required>
-              <input
-                type="text"
-                value={challanNo}
-                onChange={e => setChallanNo(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 font-mono"
-                placeholder="e.g. DC-DYE-001"
-                required
-              />
-            </FormField>
-
-            <FormField label="Process Type">
-              <input
-                type="text"
-                value={processType}
-                onChange={e => setProcessType(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-                placeholder="e.g. Soft Flow Dyeing, Bio-Wash, Reactive"
-              />
-            </FormField>
-
-            <FormField label="Outward Order Date" required>
-              <input
-                type="date"
-                value={orderDate}
-                onChange={e => setOrderDate(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-                required
-              />
-            </FormField>
-
-            <FormField label="Expected Delivery Date">
-              <input
-                type="date"
-                value={expectedDate}
-                onChange={e => setExpectedDate(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-              />
-            </FormField>
-          </div>
-
-          {/* Color Breakdown Section */}
-          <div className="pt-3 border-t border-slate-200">
-            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-              <div>
-                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Palette className="w-3.5 h-3.5 text-brand-600" />
-                  Color Breakdown & Pantone Codes
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  Colors auto-populated from order items. Edit or change any color, Pantone code, or quantity.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAutofillColors}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition"
-                  title="Reload colors from production order"
-                >
-                  <Sparkles className="w-3 h-3 inline mr-1" />
-                  Reset to Order Colors
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddColorRow}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition"
-                >
-                  <Plus className="w-3 h-3 inline mr-1" />
-                  Add Color
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
-              {colorRows.map((row, idx) => (
-                <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-                  {/* Color Swatch */}
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <input
-                      type="color"
-                      value={row.hex_code || '#3b82f6'}
-                      onChange={e => handleColorRowChange(idx, 'hex_code', e.target.value)}
-                      className="w-8 h-8 rounded-lg cursor-pointer border border-slate-300 p-0.5 shrink-0"
-                      title="Pick Color Swatch"
-                    />
-                    <input
-                      type="text"
-                      list="pantone-colors-datalist"
-                      value={row.color_name}
-                      onChange={e => handleColorRowChange(idx, 'color_name', e.target.value)}
-                      placeholder="Color (e.g. Green)"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full sm:w-32 bg-white"
-                      required
-                    />
-                  </div>
-
-                  {/* Pantone Code */}
-                  <div className="w-full sm:w-44">
-                    <input
-                      type="text"
-                      list="pantone-codes-datalist"
-                      value={row.pantone_code}
-                      onChange={e => handleColorRowChange(idx, 'pantone_code', e.target.value)}
-                      placeholder="Pantone (e.g. 18-5642 TCX)"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-mono text-slate-800 w-full bg-white"
-                    />
-                  </div>
-
-                  {/* Planned Qty */}
-                  <div className="flex items-center gap-1.5 w-full sm:w-32">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={row.planned_quantity}
-                      onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
-                      placeholder="Qty"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full bg-white"
-                      required
-                    />
-                    <span className="text-xs text-slate-500 font-semibold">{uom}</span>
-                  </div>
-
-                  {/* Rate (Optional) */}
-                  <div className="w-full sm:w-28">
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={row.rate_per_unit}
-                      onChange={e => handleColorRowChange(idx, 'rate_per_unit', e.target.value)}
-                      placeholder="₹/MTR"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 text-slate-700 w-full bg-white"
-                    />
-                  </div>
-
-                  {/* Delete Row */}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveColorRow(idx)}
-                    disabled={colorRows.length <= 1}
-                    className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg disabled:opacity-30 transition self-end sm:self-auto"
-                    title="Remove color"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Datalists for native browser autocomplete */}
-            <datalist id="pantone-colors-datalist">
-              {VERIFIED_PANTONE_LIBRARY.map((p) => (
-                <option key={p.code} value={p.name}>
-                  {p.name} ({p.code})
-                </option>
-              ))}
-            </datalist>
-            <datalist id="pantone-codes-datalist">
-              {VERIFIED_PANTONE_LIBRARY.map((p) => (
-                <option key={p.code} value={p.code}>
-                  {p.code} — {p.name}
-                </option>
-              ))}
-            </datalist>
-
-            {/* Available quantity vs planned validation bar (Note: Total Outward Fabric field has been removed) */}
-            <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Available Fabric to Send:</span>
-                <span className="font-bold text-slate-800">{fmt(availableFabricBalance, 1)} {uom}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 font-medium">Total Planned Across Colors:</span>
-                <span className={`font-mono font-bold ${
-                  totalPlannedInModal > availableFabricBalance && availableFabricBalance > 0
-                    ? 'text-red-600'
-                    : 'text-brand-700'
-                }`}>
-                  {fmt(totalPlannedInModal, 1)} {uom}
-                </span>
-                {totalPlannedInModal > availableFabricBalance && availableFabricBalance > 0 && (
-                  <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded">
-                    Exceeds Available
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <FormField label="Remarks / Process Instructions">
-            <textarea
-              rows={2}
-              value={remarks}
-              onChange={e => setRemarks(e.target.value)}
-              className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-              placeholder="e.g. Target Pantone matching with minimum shrinkage, soft flow finish."
-            />
-          </FormField>
-
-          <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setShowCreateModal(false)}
-              disabled={creating}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={creating || totalPlannedInModal <= 0 || (availableFabricBalance > 0 && totalPlannedInModal > availableFabricBalance)}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
-            >
-              {creating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  <span>Creating Dyeing Order...</span>
-                </>
-              ) : (
-                <span>Issue Dyeing Order & DC</span>
-              )}
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* RECEIVE DYED FABRIC MODAL */}
       <Modal
