@@ -1769,11 +1769,12 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, newDye, 'Dyeing Order created successfully', 201);
     }
 
-    const dyeReceiveMatch = pathname.match(/^\/dyeing\/orders\/(\d+)\/receive$/);
+    const dyeReceiveMatch = pathname.match(/^\/dyeing\/orders\/([^/]+)\/receive$/);
     if (dyeReceiveMatch && method === 'POST') {
-      const dyeId = Number(dyeReceiveMatch[1]);
-      const dyeOrder = (db.dyeingOrders || []).find(d => d.id === dyeId);
+      const dyeKey = decodeURIComponent(dyeReceiveMatch[1]);
+      const dyeOrder = (db.dyeingOrders || []).find(d => String(d.id) === String(dyeKey) || String(d.dyeing_order_no) === String(dyeKey));
       if (!dyeOrder) return sendError(res, 'Dyeing order not found', 404);
+      const dyeId = dyeOrder.id;
 
       if (!dyeOrder.items) dyeOrder.items = [];
       const items = body.items || [];

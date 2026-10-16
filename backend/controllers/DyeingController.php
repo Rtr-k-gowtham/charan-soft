@@ -143,11 +143,12 @@ class DyeingController {
     /**
      * Get single Dyeing Order by ID
      */
-    public function show(int $id): void {
+    public function show($rawId): void {
         try {
             $pdo = Database::getConnection();
             $this->ensureTables($pdo);
 
+            $rawKey = trim((string)$rawId);
             $stmt = $pdo->prepare("
                 SELECT d.*, 
                        po.order_number as production_order_number, 
@@ -158,9 +159,9 @@ class DyeingController {
                 FROM dyeing_orders d
                 LEFT JOIN production_orders po ON d.production_order_id = po.id
                 LEFT JOIN suppliers s ON d.supplier_id = s.id
-                WHERE d.id = ? AND d.deleted_at IS NULL
+                WHERE (d.id = ? OR d.dyeing_order_no = ?) AND d.deleted_at IS NULL
             ");
-            $stmt->execute([$id]);
+            $stmt->execute([$rawKey, $rawKey]);
             $order = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$order) {
@@ -168,6 +169,7 @@ class DyeingController {
                 return;
             }
 
+            $id = (int)$order['id'];
             $itemStmt = $pdo->prepare("SELECT * FROM dyeing_order_items WHERE dyeing_order_id = ? ORDER BY id ASC");
             $itemStmt->execute([$id]);
             $order['items'] = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -690,7 +692,7 @@ class DyeingController {
     /**
      * Inward Receiving from Dyeing (Receive dyed fabric per color with Pantone verification & photo proof)
      */
-    public function receive(int $dyeingOrderId): void {
+    public function receive($rawDyeingOrderId): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $items = $data['items'] ?? [];
 
@@ -705,8 +707,9 @@ class DyeingController {
 
             $pdo->beginTransaction();
 
-            $dStmt = $pdo->prepare("SELECT * FROM dyeing_orders WHERE id = ? FOR UPDATE");
-            $dStmt->execute([$dyeingOrderId]);
+            $rawKey = trim((string)$rawDyeingOrderId);
+            $dStmt = $pdo->prepare("SELECT * FROM dyeing_orders WHERE (id = ? OR dyeing_order_no = ?) FOR UPDATE");
+            $dStmt->execute([$rawKey, $rawKey]);
             $dOrder = $dStmt->fetch(PDO::FETCH_ASSOC);
 
             if (!$dOrder) {
@@ -714,6 +717,8 @@ class DyeingController {
                 Response::error("Dyeing Order not found", 404);
                 return;
             }
+
+            $dyeingOrderId = (int)$dOrder['id'];
 
             $poId = (int)($dOrder['production_order_id'] ?? 0);
             if ($poId <= 0) {
