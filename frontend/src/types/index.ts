@@ -244,6 +244,47 @@ export interface Color {
   status?: string;
 }
 
+export interface DyeingMill {
+  id: number;
+  code: string;
+  name: string;
+  mill_type?: string;
+  contact_person?: string;
+  phone: string;
+  email?: string;
+  city?: string;
+  state?: string;
+  address?: string;
+  gstin?: string;
+  daily_capacity_kg?: number;
+  lead_time_days?: number;
+  specialization?: string;
+  payment_terms_days: number;
+  status: 'active' | 'inactive';
+  created_at?: string;
+}
+
+export interface EmbroideryWork {
+  id: number;
+  code: string;
+  name: string;
+  unit_type?: string;
+  contact_person?: string;
+  phone: string;
+  email?: string;
+  city?: string;
+  state?: string;
+  address?: string;
+  gstin?: string;
+  machine_heads?: string;
+  embroidery_types?: string;
+  rate_per_thousand_stitches?: number;
+  daily_capacity_pcs?: number;
+  payment_terms_days: number;
+  status: 'active' | 'inactive';
+  created_at?: string;
+}
+
 export interface DyeingOrderItem {
   id?: number;
   dyeing_order_id?: number;

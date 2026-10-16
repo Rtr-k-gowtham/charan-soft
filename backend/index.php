@@ -170,6 +170,20 @@ try {
         $r0 === 'suppliers' && $id && in_array($method, ['PUT', 'PATCH', 'POST']) => (new MastersController)->updateSupplier((int)$id),
         $r0 === 'suppliers' && $id && $method === 'DELETE' => (new MastersController)->deleteSupplier((int)$id),
 
+        // Dyeing Mills
+        $r0 === 'dyeing-mills' && $method === 'GET' && !$id => (new MastersController)->getDyeingMills(),
+        $r0 === 'dyeing-mills' && $method === 'GET' && $id => (new MastersController)->getDyeingMill((int)$id),
+        $r0 === 'dyeing-mills' && $method === 'POST' && !$id => (new MastersController)->createDyeingMill(),
+        $r0 === 'dyeing-mills' && $id && in_array($method, ['PUT', 'PATCH', 'POST']) => (new MastersController)->updateDyeingMill((int)$id),
+        $r0 === 'dyeing-mills' && $id && $method === 'DELETE' => (new MastersController)->deleteDyeingMill((int)$id),
+
+        // Embroidery Works
+        $r0 === 'embroidery-works' && $method === 'GET' && !$id => (new MastersController)->getEmbroideryWorks(),
+        $r0 === 'embroidery-works' && $method === 'GET' && $id => (new MastersController)->getEmbroideryWork((int)$id),
+        $r0 === 'embroidery-works' && $method === 'POST' && !$id => (new MastersController)->createEmbroideryWork(),
+        $r0 === 'embroidery-works' && $id && in_array($method, ['PUT', 'PATCH', 'POST']) => (new MastersController)->updateEmbroideryWork((int)$id),
+        $r0 === 'embroidery-works' && $id && $method === 'DELETE' => (new MastersController)->deleteEmbroideryWork((int)$id),
+
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'GET' => (new MastersController)->getBuyerProduct($id, (int)$segments[3]),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'GET' => (new MastersController)->getBuyerProducts($id),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'POST' => (new MastersController)->createBuyerProduct($id),

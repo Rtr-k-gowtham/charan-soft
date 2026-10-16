@@ -66,6 +66,8 @@ const navItems: NavItem[] = [
       { label: 'Materials', path: '/masters/materials' },
       { label: 'Categories', path: '/masters/categories' },
       { label: 'Suppliers', path: '/masters/suppliers' },
+      { label: 'Dyeing Mills', path: '/masters/dyeing-mills' },
+      { label: 'Embroidery Works', path: '/masters/embroidery-works' },
       { label: 'Buyer Master', path: '/masters/buyers' },
       { label: 'Pantone Colors', path: '/masters/colors' },
       { label: 'Sizes', path: '/masters/sizes' },

@@ -416,11 +416,12 @@ export default function DyeingOrderDetail() {
 
       const numericId = ord?.id ? Number(ord.id) : (Number.isFinite(Number(id)) ? Number(id) : 0);
 
-      const [stgData, stockRes, dyeListRes, suppRes] = await Promise.all([
+      const [stgData, stockRes, dyeListRes, suppRes, millsRes] = await Promise.all([
         api.getProductionStages().catch(() => []),
         numericId > 0 ? api.getDyeingFabricStock(numericId).catch(() => null) : Promise.resolve(null),
         numericId > 0 ? api.getDyeingOrders(numericId).catch(() => []) : Promise.resolve([]),
         api.getSuppliers().catch(() => []),
+        api.getDyeingMills().catch(() => []),
       ]);
       setStages((stgData || []) as ProductionStage[]);
 
@@ -432,10 +433,16 @@ export default function DyeingOrderDetail() {
         : (Array.isArray(dyeListRes) ? dyeListRes : []);
       setDyeingOrders(dyeList);
 
+      const millsList = Array.isArray((millsRes as any)?.data)
+        ? (millsRes as any).data
+        : (Array.isArray(millsRes) ? millsRes : []);
       const suppList = Array.isArray((suppRes as any)?.data)
         ? (suppRes as any).data
         : (Array.isArray(suppRes) ? suppRes : []);
-      setSuppliers(suppList);
+      const combinedMills = millsList.length > 0
+        ? [...millsList, ...suppList.filter((s: any) => !millsList.some((m: any) => (m.name || '').toLowerCase() === (s.name || '').toLowerCase()))]
+        : suppList;
+      setSuppliers(combinedMills);
 
       // Pre-select first eligible fabric material with available stock
       const rawMats: any[] = stock?.fabric_materials || [];

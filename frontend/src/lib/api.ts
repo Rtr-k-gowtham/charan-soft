@@ -89,6 +89,18 @@ export const api = {
   updateBuyerProduct: (buyerId: number | string, productId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'PUT', data),
   deleteBuyerProduct: (buyerId: number | string, productId: number | string) => request<unknown>(`/buyers/${buyerId}/products/${productId}`, 'DELETE'),
 
+  // Dyeing Mills Master
+  getDyeingMills: () => request<unknown[]>('/dyeing-mills'),
+  createDyeingMill: (data: unknown) => request<unknown>('/dyeing-mills', 'POST', data),
+  updateDyeingMill: (id: number | string, data: unknown) => request<unknown>(`/dyeing-mills/${id}`, 'PUT', data),
+  deleteDyeingMill: (id: number | string) => request<unknown>(`/dyeing-mills/${id}`, 'DELETE'),
+
+  // Embroidery Works Master
+  getEmbroideryWorks: () => request<unknown[]>('/embroidery-works'),
+  createEmbroideryWork: (data: unknown) => request<unknown>('/embroidery-works', 'POST', data),
+  updateEmbroideryWork: (id: number | string, data: unknown) => request<unknown>(`/embroidery-works/${id}`, 'PUT', data),
+  deleteEmbroideryWork: (id: number | string) => request<unknown>(`/embroidery-works/${id}`, 'DELETE'),
+
   // Inventory
   getInventory: () => request<unknown[]>('/inventory'),
   getLedger: (materialId?: number) =>

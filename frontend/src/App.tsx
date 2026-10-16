@@ -50,6 +50,8 @@ import ColorsPage from './pages/masters/ColorsPage';
 import SizesPage from './pages/masters/SizesPage';
 import UnitsPage from './pages/masters/UnitsPage';
 import DesignsPage from './pages/masters/DesignsPage';
+import DyeingMills from './pages/masters/DyeingMills';
+import EmbroideryWorks from './pages/masters/EmbroideryWorks';
 
 // Templates
 import MaterialTemplates, { ProductTemplates, OrderTemplates, POTemplates } from './pages/templates/Templates';
@@ -149,6 +151,8 @@ function AppRoutes() {
               <Route path="/masters/sizes" element={<SizesPage />} />
               <Route path="/masters/units" element={<UnitsPage />} />
               <Route path="/masters/designs" element={<DesignsPage />} />
+              <Route path="/masters/dyeing-mills" element={<DyeingMills />} />
+              <Route path="/masters/embroidery-works" element={<EmbroideryWorks />} />
 
               {/* Templates */}
               <Route path="/templates/material" element={<MaterialTemplates />} />

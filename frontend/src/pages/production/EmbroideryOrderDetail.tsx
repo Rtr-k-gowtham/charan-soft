@@ -137,16 +137,18 @@ export default function EmbroideryOrderDetail() {
   // Stage Transfer Modal
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferring, setTransferring] = useState(false);
+  const [embroideryUnits, setEmbroideryUnits] = useState<any[]>([]);
 
   const fetchOrderData = async () => {
     if (!id) return;
     try {
       setLoading(true);
       setError('');
-      const [orderRes, stagesRes, embRes] = await Promise.all([
+      const [orderRes, stagesRes, embRes, unitsRes] = await Promise.all([
         api.getProductionOrder(Number(id)),
         api.getProductionStages(),
-        api.getEmbroideryJobOrders(Number(id))
+        api.getEmbroideryJobOrders(Number(id)),
+        api.getEmbroideryWorks().catch(() => [])
       ]);
 
       const ord = (orderRes as any)?.data || orderRes;
@@ -158,6 +160,11 @@ export default function EmbroideryOrderDetail() {
 
       const jobs = (embRes as any)?.data || embRes;
       setJobOrders(Array.isArray(jobs) ? jobs : []);
+
+      const units = Array.isArray((unitsRes as any)?.data)
+        ? (unitsRes as any).data
+        : (Array.isArray(unitsRes) ? unitsRes : []);
+      setEmbroideryUnits(units);
     } catch (err: any) {
       console.error('Failed to load embroidery stage data:', err);
       setError(err?.message || 'Failed to load embroidery stage data.');
@@ -886,10 +893,19 @@ export default function EmbroideryOrderDetail() {
               <input
                 type="text"
                 required
+                list="embroidery-master-units"
+                placeholder="Select or type embroidery unit..."
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500"
                 value={outwardForm.vendor_name}
                 onChange={e => setOutwardForm({ ...outwardForm, vendor_name: e.target.value })}
               />
+              <datalist id="embroidery-master-units">
+                {embroideryUnits.map(unit => (
+                  <option key={unit.id} value={unit.name}>
+                    {unit.code ? `[${unit.code}] ` : ''}{unit.name}{unit.machine_heads ? ` • ${unit.machine_heads}` : ''}
+                  </option>
+                ))}
+              </datalist>
             </FormField>
 
             <FormField label="Delivery Challan No." required>

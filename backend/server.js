@@ -52,6 +52,16 @@ const initialData = {
     { id: 3, code: 'SUP-003', name: 'Apex Trims & Accessories', contact_person: 'G. Karthik', phone: '+91 97910 88990', email: 'support@apextrims.com', gstin: '33AABCA7711E1Z2', city: 'Karur', state: 'Tamil Nadu' },
     { id: 4, code: 'SUP-004', name: 'DyeChem Colours Pvt Ltd', contact_person: 'R. Srinivasan', phone: '+91 94422 33445', email: 'orders@dyechem.in', gstin: '33AABCD5533F1Z6', city: 'Erode', state: 'Tamil Nadu' },
   ],
+  dyeingMills: [
+    { id: 1, code: 'MILL-001', name: 'Aart Tex Dyeing & Processing', mill_type: 'Soft Flow / High Temp', contact_person: 'S. Shanmugam', phone: '+91 98430 11442', email: 'aarttex@tirupurdyeing.com', city: 'Tiruppur', state: 'Tamil Nadu', address: 'Sf No 142/2, Angeripalayam Main Road, Tiruppur - 641603', gstin: '33AABCA9841D1Z5', daily_capacity_kg: 8500, lead_time_days: 5, specialization: 'Reactive Dyeing, Cotton Single Jersey, Bio-Polish', payment_terms_days: 30, status: 'active' },
+    { id: 2, code: 'MILL-002', name: 'Sri Murugan Soft Flow Processing', mill_type: 'High Temp Soft Flow & Stenter', contact_person: 'M. Velusamy', phone: '+91 94432 78901', email: 'murugan@softflowdye.com', city: 'Perundurai SIPCOT', state: 'Tamil Nadu', address: 'Plot 55-58, SIPCOT Industrial Growth Estate, Perundurai - 638052', gstin: '33AABCS1284E1Z3', daily_capacity_kg: 12000, lead_time_days: 6, specialization: 'Poly-Cotton Blends, Terry Fleece, Open-Width Stentering', payment_terms_days: 45, status: 'active' },
+    { id: 3, code: 'MILL-003', name: 'Royal Eco Dyeing & Bleaching', mill_type: 'Cabinet & Jiggar Dyeing', contact_person: 'P. Arumugam', phone: '+91 98941 22334', email: 'royaldye@ecotextile.in', city: 'Erode', state: 'Tamil Nadu', address: 'B.P. Agraharam, Erode - 638005', gstin: '33AABCR5512F1Z8', daily_capacity_kg: 6000, lead_time_days: 4, specialization: 'GOTS Certified Organic Dyeing, Yarn Dyeing', payment_terms_days: 30, status: 'active' },
+  ],
+  embroideryWorks: [
+    { id: 1, code: 'EMB-001', name: 'Sri Krishna Embroidery Works', unit_type: 'Multi-Head High Speed Computerized', contact_person: 'R. Krishnakumar', phone: '+91 98421 99881', email: 'krishnaemb@gmail.com', city: 'Tiruppur', state: 'Tamil Nadu', address: '14, College Road, Near Odakkadu, Tiruppur - 641602', gstin: '33AABCK8812G1Z9', machine_heads: '20-Head Tajima High Speed (15 Needles)', embroidery_types: 'Multi-Color Flat, 3D Puff, Applique, Badges', rate_per_thousand_stitches: 2.80, daily_capacity_pcs: 3500, payment_terms_days: 15, status: 'active' },
+    { id: 2, code: 'EMB-002', name: 'Apex Precision Embroidery Unit', unit_type: 'Multi-Head Automatic & Sequin', contact_person: 'K. Balan', phone: '+91 97900 44556', email: 'apexemb@precisionemb.in', city: 'Tiruppur', state: 'Tamil Nadu', address: '88, Rayapuram Main Road, Tiruppur - 641601', gstin: '33AABCA6622H1Z1', machine_heads: '12-Head Barudan Automatic (12 Needles)', embroidery_types: 'Sequin, Cording, Chenille Towel Stitch, Metallic Thread', rate_per_thousand_stitches: 3.20, daily_capacity_pcs: 2400, payment_terms_days: 30, status: 'active' },
+    { id: 3, code: 'EMB-003', name: 'Vasantham Computer Embroidery', unit_type: 'Specialized Fashion Embroidery', contact_person: 'M. Vasanth', phone: '+91 94420 33112', email: 'vasantham.emb@yahoo.co.in', city: 'Coimbatore', state: 'Tamil Nadu', address: '102, Sathy Road, Ganapathy, Coimbatore - 641006', gstin: '33AABCV4411J1Z7', machine_heads: '16-Head SWF Embroidery Machines', embroidery_types: 'Logo Embroidery, Chest Placement, Sleeve Badges', rate_per_thousand_stitches: 2.50, daily_capacity_pcs: 4000, payment_terms_days: 15, status: 'active' },
+  ],
   customers: [
     { id: 1, code: 'CUST-001', name: 'Zudio Retail Fashion', contact_person: 'Rohan Sharma', phone: '+91 98200 44551', email: 'buying@zudio.com', gstin: '27AABCT1234A1Z9', city: 'Mumbai', state: 'Maharashtra', avatar_style: 'lorelei', avatar_seed: 'Zudio-Lorelei-1' },
     { id: 2, code: 'CUST-002', name: 'Max Lifestyle Garments', contact_person: 'Pooja Nair', phone: '+91 98450 77882', email: 'sourcing@maxlifestyle.in', gstin: '29AABCL5678B1Z1', city: 'Bengaluru', state: 'Karnataka', avatar_style: 'lorelei', avatar_seed: 'MaxLifestyle-Lorelei-2' },
@@ -653,6 +663,82 @@ const server = http.createServer(async (req, res) => {
       db.suppliers.splice(idx, 1);
       saveDB();
       return sendSuccess(res, null, 'Supplier deleted');
+    }
+
+    // Dyeing Mills Master
+    if (pathname === '/dyeing-mills' && method === 'GET') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      return sendSuccess(res, db.dyeingMills);
+    }
+    if (pathname === '/dyeing-mills' && method === 'POST') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const newMill = {
+        id: db.dyeingMills.length > 0 ? Math.max(...db.dyeingMills.map(m => m.id)) + 1 : 1,
+        code: body.code || `MILL-${String(db.dyeingMills.length + 1).padStart(3, '0')}`,
+        ...body,
+        status: body.status || 'active',
+        created_at: new Date().toISOString()
+      };
+      db.dyeingMills.push(newMill);
+      saveDB();
+      return sendSuccess(res, newMill, 'Dyeing Mill registered', 201);
+    }
+    const millMatch = pathname.match(/^\/dyeing-mills\/(\d+)$/);
+    if (millMatch && (method === 'PUT' || method === 'PATCH')) {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const mId = Number(millMatch[1]);
+      const idx = db.dyeingMills.findIndex(m => m.id === mId);
+      if (idx === -1) return sendError(res, 'Dyeing Mill not found', 404);
+      db.dyeingMills[idx] = { ...db.dyeingMills[idx], ...body, id: mId };
+      saveDB();
+      return sendSuccess(res, db.dyeingMills[idx], 'Dyeing Mill updated');
+    }
+    if (millMatch && method === 'DELETE') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const mId = Number(millMatch[1]);
+      const idx = db.dyeingMills.findIndex(m => m.id === mId);
+      if (idx === -1) return sendError(res, 'Dyeing Mill not found', 404);
+      db.dyeingMills.splice(idx, 1);
+      saveDB();
+      return sendSuccess(res, null, 'Dyeing Mill deleted');
+    }
+
+    // Embroidery Works Master
+    if (pathname === '/embroidery-works' && method === 'GET') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      return sendSuccess(res, db.embroideryWorks);
+    }
+    if (pathname === '/embroidery-works' && method === 'POST') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const newEmb = {
+        id: db.embroideryWorks.length > 0 ? Math.max(...db.embroideryWorks.map(e => e.id)) + 1 : 1,
+        code: body.code || `EMB-${String(db.embroideryWorks.length + 1).padStart(3, '0')}`,
+        ...body,
+        status: body.status || 'active',
+        created_at: new Date().toISOString()
+      };
+      db.embroideryWorks.push(newEmb);
+      saveDB();
+      return sendSuccess(res, newEmb, 'Embroidery Work unit registered', 201);
+    }
+    const embMatch = pathname.match(/^\/embroidery-works\/(\d+)$/);
+    if (embMatch && (method === 'PUT' || method === 'PATCH')) {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const eId = Number(embMatch[1]);
+      const idx = db.embroideryWorks.findIndex(e => e.id === eId);
+      if (idx === -1) return sendError(res, 'Embroidery Unit not found', 404);
+      db.embroideryWorks[idx] = { ...db.embroideryWorks[idx], ...body, id: eId };
+      saveDB();
+      return sendSuccess(res, db.embroideryWorks[idx], 'Embroidery Unit updated');
+    }
+    if (embMatch && method === 'DELETE') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const eId = Number(embMatch[1]);
+      const idx = db.embroideryWorks.findIndex(e => e.id === eId);
+      if (idx === -1) return sendError(res, 'Embroidery Unit not found', 404);
+      db.embroideryWorks.splice(idx, 1);
+      saveDB();
+      return sendSuccess(res, null, 'Embroidery Unit deleted');
     }
 
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
@@ -1994,7 +2080,7 @@ const server = http.createServer(async (req, res) => {
         total_fabric_received_from_dyeing: totalReceivedFromDyeing,
         fabric_materials: fabricMaterialsList,
         suggested_colors: suggestedColors,
-        dyeing_mills: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('DYE') || true),
+        dyeing_mills: (db.dyeingMills && db.dyeingMills.length > 0) ? db.dyeingMills : (db.suppliers || []),
       });
     }
 
@@ -2443,7 +2529,7 @@ const server = http.createServer(async (req, res) => {
         items,
         job_orders: jobOrders.reverse(),
         receipts: receipts.reverse(),
-        vendors: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('EMBROID') || true)
+        vendors: (db.embroideryWorks && db.embroideryWorks.length > 0) ? db.embroideryWorks : (db.suppliers || [])
       });
     }
 
