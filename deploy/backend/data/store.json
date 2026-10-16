@@ -319,6 +319,23 @@
       "billing_address": "45 Broadway",
       "avatar_style": "lorelei",
       "avatar_seed": "Global-Lorelei-5"
+    },
+    {
+      "id": 6,
+      "code": "BUY-006",
+      "name": "Vegetable Figures Organic Apparel",
+      "contact_person": "Kavitha Sundaram",
+      "phone": "+91 98422 77112",
+      "email": "sourcing@vegetablefigures.com",
+      "billing_address": "Plot No. 42, Green Earth Eco-Industrial Park, Angeripalayam Road, Tiruppur, Tamil Nadu - 641602",
+      "gstin": "33AABCV9812A1Z4",
+      "city": "Tiruppur",
+      "state": "Tamil Nadu",
+      "status": "Active",
+      "avatar_style": "lorelei",
+      "avatar_seed": "VegetableFigures-Lorelei-6",
+      "image_url": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2260%22%20r%3D%2258%22%20fill%3D%22%23ecfdf5%22%20stroke%3D%22%2310b981%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M45%2035%20C55%2020%2C%2065%2020%2C%2075%2035%20C85%2050%2C%2075%2085%2C%2060%2095%20C45%2085%2C%2035%2050%2C%2045%2035%20Z%22%20fill%3D%22%23f97316%22%2F%3E%3Cpath%20d%3D%22M60%2020%20C58%2010%2C%2062%208%2C%2060%205%20C64%2010%2C%2068%2012%2C%2060%2020%20Z%22%20fill%3D%22%2316a34a%22%2F%3E%3Ccircle%20cx%3D%2252%22%20cy%3D%2250%22%20r%3D%223.5%22%20fill%3D%22%23ffffff%22%2F%3E%3Ccircle%20cx%3D%2268%22%20cy%3D%2250%22%20r%3D%223.5%22%20fill%3D%22%23ffffff%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2250%22%20r%3D%221.8%22%20fill%3D%22%231e293b%22%2F%3E%3Ccircle%20cx%3D%2269%22%20cy%3D%2250%22%20r%3D%221.8%22%20fill%3D%22%231e293b%22%2F%3E%3Cpath%20d%3D%22M54%2064%20Q60%2070%2066%2064%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%2F%3E%3Ctext%20x%3D%2260%22%20y%3D%22112%22%20font-size%3D%2210%22%20font-weight%3D%22bold%22%20fill%3D%22%23047857%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%3EVEG%20FIGURES%3C%2Ftext%3E%3C%2Fsvg%3E",
+      "avatar_url": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2260%22%20r%3D%2258%22%20fill%3D%22%23ecfdf5%22%20stroke%3D%22%2310b981%22%20stroke-width%3D%224%22%2F%3E%3Cpath%20d%3D%22M45%2035%20C55%2020%2C%2065%2020%2C%2075%2035%20C85%2050%2C%2075%2085%2C%2060%2095%20C45%2085%2C%2035%2050%2C%2045%2035%20Z%22%20fill%3D%22%23f97316%22%2F%3E%3Cpath%20d%3D%22M60%2020%20C58%2010%2C%2062%208%2C%2060%205%20C64%2010%2C%2068%2012%2C%2060%2020%20Z%22%20fill%3D%22%2316a34a%22%2F%3E%3Ccircle%20cx%3D%2252%22%20cy%3D%2250%22%20r%3D%223.5%22%20fill%3D%22%23ffffff%22%2F%3E%3Ccircle%20cx%3D%2268%22%20cy%3D%2250%22%20r%3D%223.5%22%20fill%3D%22%23ffffff%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2250%22%20r%3D%221.8%22%20fill%3D%22%231e293b%22%2F%3E%3Ccircle%20cx%3D%2269%22%20cy%3D%2250%22%20r%3D%221.8%22%20fill%3D%22%231e293b%22%2F%3E%3Cpath%20d%3D%22M54%2064%20Q60%2070%2066%2064%22%20stroke%3D%22%23ffffff%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%2F%3E%3Ctext%20x%3D%2260%22%20y%3D%22112%22%20font-size%3D%2210%22%20font-weight%3D%22bold%22%20fill%3D%22%23047857%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%3EVEG%20FIGURES%3C%2Ftext%3E%3C%2Fsvg%3E"
     }
   ],
   "materials": [
@@ -1507,6 +1524,123 @@
         }
       ],
       "created_at": "2026-10-04 16:00:00"
+    },
+    {
+      "id": 5,
+      "buyer_id": 6,
+      "product_name": "Organic Kids Tee - Vegetable Figures Edition",
+      "product_code": "VF-KID-001",
+      "uom": "Pieces",
+      "notes": "100% GOTS Certified organic cotton kids tee featuring vibrant water-based vegetable character illustrations (Carrot, Broccoli, Tomato & Corn). Ultra-soft bio-polished feel with tagless neck label.",
+      "image_url": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20fill%3D%22none%22%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2260%22%20r%3D%2258%22%20fill%3D%22%23f0fdf4%22%20stroke%3D%22%2322c55e%22%20stroke-width%3D%223%22%2F%3E%3Cpath%20d%3D%22M35%2045%20L50%2035%20L70%2035%20L85%2045%20L95%2058%20L82%2068%20L76%2062%20L76%2095%20L44%2095%20L44%2062%20L38%2068%20L25%2058%20Z%22%20fill%3D%22%23fef08a%22%20stroke%3D%22%23ca8a04%22%20stroke-width%3D%222%22%2F%3E%3Ccircle%20cx%3D%2252%22%20cy%3D%2268%22%20r%3D%226%22%20fill%3D%22%23ea580c%22%2F%3E%3Ccircle%20cx%3D%2268%22%20cy%3D%2268%22%20r%3D%226%22%20fill%3D%22%2316a34a%22%2F%3E%3Ctext%20x%3D%2260%22%20y%3D%22110%22%20font-size%3D%229%22%20font-weight%3D%22bold%22%20fill%3D%22%2315803d%22%20text-anchor%3D%22middle%22%20font-family%3D%22sans-serif%22%3EKIDS%20TEE%3C%2Ftext%3E%3C%2Fsvg%3E",
+      "dimensions": {
+        "length": 28,
+        "width": 22,
+        "height": 1.5,
+        "unit": "cm",
+        "calculated_volume_cm3": 924,
+        "calculated_volume_m3": 0.000924,
+        "weight_grams": 110
+      },
+      "boxes": [
+        {
+          "id": "box-vf-1",
+          "box_name": "Heavy Duty Recycled Export Shipper (60 Pcs)",
+          "box_code": "BOX-VF60",
+          "length": 50,
+          "width": 35,
+          "height": 30,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 52500,
+          "calculated_volume_m3": 0.0525,
+          "items_per_box": 60,
+          "max_packing_qty": 60,
+          "notes": "Packed with 60 individually folded kids tees in compostable bags"
+        }
+      ],
+      "components": [
+        {
+          "id": "cvf-1",
+          "name": "100% GOTS Organic Cotton Single Jersey 180 GSM",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.18,
+          "wastage_percent": 4
+        },
+        {
+          "id": "cvf-2",
+          "name": "1x1 Organic Cotton Lycra Rib Neckband",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.025,
+          "wastage_percent": 3
+        },
+        {
+          "id": "cvf-3",
+          "name": "OEKO-TEX Certified Water-based Vegetable Pigment Inks",
+          "category": "Dyes & Chemicals",
+          "uom": "KG",
+          "quantity_per_product": 0.015,
+          "wastage_percent": 2
+        },
+        {
+          "id": "cvf-4",
+          "name": "100% Organic Cotton Spun Sewing Thread 40/2",
+          "category": "Thread",
+          "uom": "Meters",
+          "quantity_per_product": 95,
+          "wastage_percent": 2
+        },
+        {
+          "id": "cvf-5",
+          "name": "Heat Transfer Non-Toxic Organic Neck Brand Label",
+          "category": "Label",
+          "uom": "Pieces",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        },
+        {
+          "id": "cvf-6",
+          "name": "Recycled Seed Paper Hangtag with Raw Jute Cord",
+          "category": "Packaging",
+          "uom": "Pieces",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        },
+        {
+          "id": "cvf-7",
+          "name": "100% Compostable Cornstarch Garment Polybag",
+          "category": "Packaging",
+          "uom": "Pieces",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        },
+        {
+          "id": "cvf-8",
+          "name": "7-Ply Corrugated Heavy Duty Master Carton (60 Pcs)",
+          "category": "Packaging",
+          "uom": "Boxes",
+          "quantity_per_product": 0.017,
+          "wastage_percent": 1
+        },
+        {
+          "id": "cvf-9",
+          "name": "Organic Cotton Shoulder Reinforcement Stay Tape",
+          "category": "Trims",
+          "uom": "Meters",
+          "quantity_per_product": 0.65,
+          "wastage_percent": 2
+        },
+        {
+          "id": "cvf-10",
+          "name": "Anti-Microbial Herbal Neem Bio-Wash Extract",
+          "category": "Dyes & Chemicals",
+          "uom": "Liters",
+          "quantity_per_product": 0.01,
+          "wastage_percent": 1
+        }
+      ],
+      "created_at": "2026-10-16 10:00:00"
     }
   ],
   "productionOrders": [

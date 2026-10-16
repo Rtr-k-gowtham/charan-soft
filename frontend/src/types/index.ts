@@ -98,6 +98,8 @@ export interface Buyer {
   billing_address?: string;
   gstin?: string;
   status: string;
+  image_url?: string;
+  avatar_url?: string;
   avatar_style?: 'lorelei' | string;
   avatar_seed?: string;
   avatar_config?: string | Record<string, any>;

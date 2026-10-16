@@ -10,6 +10,8 @@ export interface BuyerAvatarProps {
     id?: number | string;
     code?: string;
     name?: string;
+    image_url?: string;
+    avatar_url?: string;
     avatar_style?: string;
     avatar_seed?: string;
     avatar_config?: string | Record<string, any>;
@@ -19,6 +21,7 @@ export interface BuyerAvatarProps {
     customer_code?: string;
     customer_name?: string;
   } | null;
+  imageUrl?: string;
   style?: AvatarStyle;
   seed?: string;
   config?: AvatarConfig;
@@ -43,6 +46,7 @@ const SIZE_MAP: Record<AvatarSize, { box: string; img: string }> = {
 
 export default function BuyerAvatar({
   buyer,
+  imageUrl,
   style,
   seed,
   config,
@@ -54,12 +58,24 @@ export default function BuyerAvatar({
   title,
   onClick,
 }: BuyerAvatarProps) {
+  const [imgError, setImgError] = React.useState(false);
+
+  const customImg = (imageUrl || (buyer as any)?.image_url || (buyer as any)?.avatar_url || '').trim();
+
+  // Reset imgError if the custom image source changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [customImg]);
+
   const dataUri = useMemo(() => {
+    if (customImg && !imgError) {
+      return customImg;
+    }
     if (style && seed) {
       return generateAvatarDataUri(style, seed, config);
     }
     return getBuyerAvatarDataUri(buyer);
-  }, [buyer, style, seed, config]);
+  }, [buyer, style, seed, config, customImg, imgError]);
 
   const buyerName = buyer?.name || (buyer as any)?.customer_name || 'Buyer';
   const label = alt || title || buyerName;
@@ -80,6 +96,11 @@ export default function BuyerAvatar({
         alt={label}
         className={`${shapeClasses} ${sizeClasses.img} object-cover w-full h-full pointer-events-none`}
         loading="lazy"
+        onError={() => {
+          if (customImg && !imgError) {
+            setImgError(true);
+          }
+        }}
       />
     </div>
   );
