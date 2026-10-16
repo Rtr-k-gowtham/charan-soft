@@ -1,5 +1,5 @@
 // src/pages/purchase/MaterialReceipts.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { PurchaseOrder } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -87,7 +87,7 @@ export default function MaterialReceipts() {
         const ordered = Number(it.quantity || 0);
         const prevRecv = Number(it.received_quantity || 0);
         const remaining = Math.max(0, ordered - prevRecv);
-        init[it.id] = String(remaining > 0 ? remaining : ordered);
+        init[it.id] = remaining > 0.0001 ? String(remaining) : '';
       }
     });
     setReceiveForm(init);
@@ -100,6 +100,18 @@ export default function MaterialReceipts() {
     setReceivePO(po);
     setReceiveOpen(true);
   };
+
+  // Filter items for the inward modal:
+  // Hide already fully received items, unless all items are fully received (for "Inward Additional")
+  const modalReceiveItems = useMemo(() => {
+    if (!receivePO || !receivePO.items) return [];
+    const pending = receivePO.items.filter(it => {
+      const ordered = Number(it.quantity || 0);
+      const prevRecv = Number(it.received_quantity || 0);
+      return (ordered - prevRecv) > 0.0001;
+    });
+    return pending.length > 0 ? pending : receivePO.items;
+  }, [receivePO]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -163,7 +175,7 @@ export default function MaterialReceipts() {
     let hasQuantityToReceive = false;
     const newErrors: Record<number, string> = {};
 
-    for (const it of receivePO.items || []) {
+    for (const it of modalReceiveItems) {
       const rawVal = receiveForm[it.id!];
       const val = Number(rawVal || 0);
       const ordered = Number(it.quantity || 0);
@@ -196,7 +208,7 @@ export default function MaterialReceipts() {
 
     setSaving(true);
     try {
-      const items = (receivePO.items || [])
+      const items = modalReceiveItems
         .map(it => {
           const q = Number(receiveForm[it.id!] || 0);
           return {
@@ -563,6 +575,20 @@ export default function MaterialReceipts() {
             </div>
           )}
 
+          {receivePO && receivePO.items && receivePO.items.length > modalReceiveItems.length && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs flex items-center justify-between text-emerald-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>{receivePO.items.length - modalReceiveItems.length}</strong> fully received material{receivePO.items.length - modalReceiveItems.length > 1 ? 's are' : ''} completed and hidden. Showing only materials with pending remaining quantity.
+                </span>
+              </span>
+              <span className="text-[11px] font-mono text-emerald-700 font-bold bg-white px-2 py-0.5 rounded border border-emerald-300">
+                {modalReceiveItems.length} pending to receive
+              </span>
+            </div>
+          )}
+
           <div className="rounded-lg border border-slate-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -578,7 +604,7 @@ export default function MaterialReceipts() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs bg-white">
-                  {(receivePO?.items || []).map((it, i) => {
+                  {modalReceiveItems.map((it, i) => {
                     const ordered = Number(it.quantity || 0);
                     const prevRecv = Number(it.received_quantity || 0);
                     const remaining = Math.max(0, ordered - prevRecv);

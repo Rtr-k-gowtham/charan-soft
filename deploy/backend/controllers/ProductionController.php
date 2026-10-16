@@ -1424,7 +1424,7 @@ class ProductionController {
                        poi.color,
                        COALESCE(cb.destination_stage_name, ps.name) as stage_target_name
                 FROM cutting_batches cb 
-                JOIN production_order_items poi ON cb.production_order_item_id = poi.id 
+                LEFT JOIN production_order_items poi ON cb.production_order_item_id = poi.id 
                 LEFT JOIN buyer_products bp ON poi.product_id = bp.id 
                 LEFT JOIN products p ON poi.product_id = p.id 
                 LEFT JOIN production_stages ps ON cb.destination_stage_id = ps.id
@@ -1504,13 +1504,24 @@ class ProductionController {
             $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ?");
             $iStmt->execute([$itemId]);
             $item = $iStmt->fetch();
-            if (!$item) {
-                // Try to find first item of production order
-                $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? LIMIT 1");
-                $fStmt->execute([$pId]);
-                $item = $fStmt->fetch();
-                if ($item) {
-                    $itemId = (int)$item['id'];
+            if (!$item || (int)$item['production_order_id'] !== $pId) {
+                $pIdReq = (int)($data['product_id'] ?? 0);
+                $colReq = trim((string)($data['color'] ?? ''));
+                if ($pIdReq > 0) {
+                    $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? LIMIT 1");
+                    $fStmt->execute([$pId, $pIdReq, $colReq]);
+                    $item = $fStmt->fetch();
+                    if ($item) {
+                        $itemId = (int)$item['id'];
+                    }
+                }
+                if (!$item) {
+                    $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? LIMIT 1");
+                    $fStmt->execute([$pId]);
+                    $item = $fStmt->fetch();
+                    if ($item) {
+                        $itemId = (int)$item['id'];
+                    }
                 }
             }
 

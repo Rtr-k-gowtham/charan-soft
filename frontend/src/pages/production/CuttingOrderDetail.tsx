@@ -157,9 +157,22 @@ export default function CuttingOrderDetail() {
     }
   }, [toastMessage]);
 
+  const getBatchesForItem = (it: any) => {
+    return batches.filter(b => {
+      if (b.production_order_item_id === it.id) return true;
+      if (b.product_id && it.product_id && Number(b.product_id) === Number(it.product_id)) {
+        if (it.color || b.color) {
+          return (b.color || '').trim().toLowerCase() === (it.color || '').trim().toLowerCase();
+        }
+        return true;
+      }
+      return false;
+    });
+  };
+
   const handleOpenBatchModal = (item: any) => {
     const itTotal = Number(item.total_quantity || 0);
-    const itemBatches = batches.filter(b => b.production_order_item_id === item.id || (b.product_id && b.product_id === item.product_id));
+    const itemBatches = getBatchesForItem(item);
     const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
     const pending = Math.max(0, itTotal - itCut);
 
@@ -223,6 +236,8 @@ export default function CuttingOrderDetail() {
       await api.createCuttingBatch({
         production_order_id: Number(id),
         production_order_item_id: selectedItem.id,
+        product_id: selectedItem.product_id,
+        color: selectedItem.color,
         assigned_quantity: assigned > 0 ? assigned : actual,
         actual_cut_quantity: actual,
         rejected_quantity: rej,
@@ -483,7 +498,7 @@ export default function CuttingOrderDetail() {
               <tbody className="divide-y divide-slate-100">
                 {items.map((it, idx) => {
                   const itTotal = Number(it.total_quantity || 0);
-                  const itemBatches = batches.filter(b => b.production_order_item_id === it.id || (b.product_id && b.product_id === it.product_id));
+                  const itemBatches = getBatchesForItem(it);
                   const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
                   const itAcc = itemBatches.reduce((s, b) => s + Number(b.accepted_output_quantity || 0), 0);
                   const itRej = itemBatches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);

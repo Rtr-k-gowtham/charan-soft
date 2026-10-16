@@ -1,6 +1,6 @@
 // src/pages/production/InwardOrderDetail.tsx
 // Stage 03: Material Inward & Receive Management Workspace with Proof Photo Capture
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, PurchaseOrder } from '../../types';
@@ -253,7 +253,7 @@ export default function InwardOrderDetail() {
         const ordered = Number(it.quantity || 0);
         const prevRecv = Number(it.received_quantity || 0);
         const remaining = Math.max(0, ordered - prevRecv);
-        initialQty[it.id] = String(remaining > 0 ? remaining : ordered);
+        initialQty[it.id] = remaining > 0.0001 ? String(remaining) : '';
       }
     });
     setReceiveQuantities(initialQty);
@@ -269,6 +269,18 @@ export default function InwardOrderDetail() {
     setReceiveError('');
     setReceiveModalOpen(true);
   };
+
+  // Filter items for the inward modal:
+  // Hide already fully received items, unless all items are fully received (for "Inward Additional")
+  const modalReceiveItems = useMemo(() => {
+    if (!selectedPO || !selectedPO.items) return [];
+    const pending = selectedPO.items.filter(it => {
+      const ordered = Number(it.quantity || 0);
+      const prevRecv = Number(it.received_quantity || 0);
+      return (ordered - prevRecv) > 0.0001;
+    });
+    return pending.length > 0 ? pending : selectedPO.items;
+  }, [selectedPO]);
 
   const handleQtyChange = (itemId: number, valStr: string, remaining: number, desc: string, uom: string) => {
     setReceiveQuantities(f => ({ ...f, [itemId]: valStr }));
@@ -334,7 +346,7 @@ export default function InwardOrderDetail() {
     let hasQuantityToReceive = false;
     const newErrors: Record<number, string> = {};
 
-    for (const it of selectedPO.items || []) {
+    for (const it of modalReceiveItems) {
       const rawVal = receiveQuantities[it.id!];
       const val = Number(rawVal || 0);
       const ordered = Number(it.quantity || 0);
@@ -367,7 +379,7 @@ export default function InwardOrderDetail() {
 
     setSavingReceive(true);
     try {
-      const itemsToReceive = (selectedPO.items || [])
+      const itemsToReceive = modalReceiveItems
         .map(it => {
           const q = Number(receiveQuantities[it.id!] || 0);
           return {
@@ -1132,6 +1144,21 @@ export default function InwardOrderDetail() {
             </div>
           </div>
 
+          {/* Completed Materials Notice if hidden */}
+          {selectedPO && selectedPO.items && selectedPO.items.length > modalReceiveItems.length && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs flex items-center justify-between text-emerald-800">
+              <span className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>{selectedPO.items.length - modalReceiveItems.length}</strong> fully received material{selectedPO.items.length - modalReceiveItems.length > 1 ? 's are' : ''} completed and hidden. Showing only materials with pending remaining quantity.
+                </span>
+              </span>
+              <span className="text-[11px] font-mono text-emerald-700 font-bold bg-white px-2 py-0.5 rounded border border-emerald-300">
+                {modalReceiveItems.length} pending to receive
+              </span>
+            </div>
+          )}
+
           {/* Section C: Material Items Table */}
           <div className="rounded-lg border border-slate-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
@@ -1148,7 +1175,7 @@ export default function InwardOrderDetail() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs bg-white">
-                  {(selectedPO?.items || []).map((it, i) => {
+                  {modalReceiveItems.map((it, i) => {
                     const ordered = Number(it.quantity || 0);
                     const prevRecv = Number(it.received_quantity || 0);
                     const remaining = Math.max(0, ordered - prevRecv);
