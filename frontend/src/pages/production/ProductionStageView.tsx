@@ -312,12 +312,12 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       if (iName === sName) return true;
 
       // Alias mapping for downstream stages
-      if (sCode === 'CUT' && (iName.includes('cut') || iCode === 'CUT')) return true;
-      if (sCode === 'EMB' && (iName.includes('embroid') || iCode === 'EMB')) return true;
-      if (sCode === 'STI' && (iName.includes('stitch') || iCode === 'STI')) return true;
-      if (sCode === 'CHK' && (iName.includes('check') || iName === 'qc' || iCode === 'QC')) return true;
-      if (sCode === 'PCK' && (iName.includes('pack') || iCode === 'PCK')) return true;
-      if (sCode === 'COMP' && (iName.includes('complete') || iCode === 'COMP')) return true;
+      if (sCode === 'CUT' && (iName.includes('cut') || iCode === 'CUT' || currentStageId === 5)) return true;
+      if (sCode === 'EMB' && (iName.includes('embroid') || iCode === 'EMB' || currentStageId === 6)) return true;
+      if (sCode === 'STI' && (iName.includes('stitch') || iCode === 'STI' || currentStageId === 7)) return true;
+      if (sCode === 'CHK' && (iName.includes('check') || iName === 'qc' || iCode === 'QC' || currentStageId === 8)) return true;
+      if (sCode === 'PCK' && (iName.includes('pack') || iCode === 'PCK' || currentStageId === 9)) return true;
+      if (sCode === 'COMP' && (iName.includes('complete') || iCode === 'COMP' || currentStageId === 10)) return true;
 
       return false;
     });

@@ -575,7 +575,10 @@ export interface CuttingBatch {
   remarks?: string;
   photo_urls?: string[];
   transferred_to_next_stage_quantity?: number;
-  status?: 'In Progress' | 'Completed' | 'Partial Transfer' | 'Fully Transferred';
+  destination_stage_id?: number;
+  destination_stage_name?: string;
+  stage_target_name?: string;
+  product_id?: number;
   product_name?: string;
   product_code?: string;
   color?: string;

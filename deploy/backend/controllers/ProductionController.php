@@ -1035,11 +1035,20 @@ class ProductionController {
                   `remarks` TEXT NULL,
                   `photo_urls` JSON NULL,
                   `transferred_to_next_stage_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `destination_stage_id` INT NULL,
+                  `destination_stage_name` VARCHAR(100) NULL,
                   `status` VARCHAR(50) DEFAULT 'In Progress',
                   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   INDEX `idx_cut_ord` (`production_order_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
+
+            try {
+                $pdo->exec("ALTER TABLE `cutting_batches` ADD COLUMN `destination_stage_id` INT NULL AFTER `transferred_to_next_stage_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `cutting_batches` ADD COLUMN `destination_stage_name` VARCHAR(100) NULL AFTER `destination_stage_id`");
+            } catch (Exception $e) {}
 
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `embroidery_job_orders` (
@@ -1408,7 +1417,20 @@ class ProductionController {
             $ord = $ordStmt->fetch();
             if (!$ord) { Response::error("Order not found", 404); return; }
 
-            $bStmt = $pdo->prepare("SELECT cb.*, poi.product_id, COALESCE(bp.product_name, p.name) as product_name, poi.color FROM cutting_batches cb JOIN production_order_items poi ON cb.production_order_item_id = poi.id LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE cb.production_order_id = ? ORDER BY cb.id DESC");
+            $bStmt = $pdo->prepare("
+                SELECT cb.*, 
+                       poi.product_id, 
+                       COALESCE(bp.product_name, p.name) as product_name, 
+                       poi.color,
+                       COALESCE(cb.destination_stage_name, ps.name) as stage_target_name
+                FROM cutting_batches cb 
+                JOIN production_order_items poi ON cb.production_order_item_id = poi.id 
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id 
+                LEFT JOIN products p ON poi.product_id = p.id 
+                LEFT JOIN production_stages ps ON cb.destination_stage_id = ps.id
+                WHERE cb.production_order_id = ? 
+                ORDER BY cb.id DESC
+            ");
             $bStmt->execute([$orderId]);
             $batches = $bStmt->fetchAll();
             foreach ($batches as &$b) {
@@ -1420,7 +1442,40 @@ class ProductionController {
 
             $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, COALESCE(bp.product_code, p.code) as product_code FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
             $iStmt->execute([$orderId]);
-            $items = $iStmt->fetchAll();
+            $rawItems = $iStmt->fetchAll();
+
+            // Aggregate items by product_id and color so order-level product line is coherent
+            $groupedItems = [];
+            foreach ($rawItems as $rawIt) {
+                $grpKey = $rawIt['product_id'] . '_' . ($rawIt['color'] ?? '');
+                if (!isset($groupedItems[$grpKey])) {
+                    $groupedItems[$grpKey] = $rawIt;
+                    $groupedItems[$grpKey]['total_quantity'] = (float)$rawIt['total_quantity'];
+                } else {
+                    $groupedItems[$grpKey]['total_quantity'] += (float)$rawIt['total_quantity'];
+                }
+            }
+            $items = array_values($groupedItems);
+
+            foreach ($items as &$it) {
+                $pId = (int)$it['product_id'];
+                $color = $it['color'] ?? '';
+                $itemBatches = array_filter($batches, fn($b) => (int)$b['product_id'] === $pId && ($b['color'] ?? '') === $color);
+
+                $itCut = array_reduce($itemBatches, fn($s, $b) => $s + (float)$b['actual_cut_quantity'], 0.0);
+                $itAcc = array_reduce($itemBatches, fn($s, $b) => $s + (float)$b['accepted_output_quantity'], 0.0);
+                $itRej = array_reduce($itemBatches, fn($s, $b) => $s + (float)$b['rejected_quantity'], 0.0);
+                $itRwk = array_reduce($itemBatches, fn($s, $b) => $s + (float)$b['rework_quantity'], 0.0);
+                $itTrf = array_reduce($itemBatches, fn($s, $b) => $s + (float)$b['transferred_to_next_stage_quantity'], 0.0);
+
+                $it['total_cut_quantity'] = $itCut;
+                $it['accepted_output_quantity'] = $itAcc;
+                $it['rejected_quantity'] = $itRej;
+                $it['rework_quantity'] = $itRwk;
+                $it['transferred_quantity'] = $itTrf;
+                $it['pending_cut_quantity'] = max(0.0, (float)$it['total_quantity'] - $itCut);
+            }
+            unset($it);
 
             Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
@@ -1437,15 +1492,58 @@ class ProductionController {
             $actual = (float)($data['actual_cut_quantity'] ?? 0);
             $rej = (float)($data['rejected_quantity'] ?? 0);
             $rwk = (float)($data['rework_quantity'] ?? 0);
+            $assigned = (float)($data['assigned_quantity'] ?? $actual);
             $acc = max(0.0, $actual - $rej - $rwk);
 
+            if ($pId <= 0 || $actual <= 0) {
+                Response::error("Production order and valid cut quantity are required", 422);
+                return;
+            }
+
+            // Verify order item exists
+            $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ?");
+            $iStmt->execute([$itemId]);
+            $item = $iStmt->fetch();
+            if (!$item) {
+                // Try to find first item of production order
+                $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? LIMIT 1");
+                $fStmt->execute([$pId]);
+                $item = $fStmt->fetch();
+                if ($item) {
+                    $itemId = (int)$item['id'];
+                }
+            }
+
             $batchNo = 'CUT-' . rand(1000, 9999);
-            $stmt = $pdo->prepare("INSERT INTO cutting_batches (production_order_id, production_order_item_id, batch_number, cutting_date, assigned_quantity, actual_cut_quantity, rejected_quantity, rework_quantity, accepted_output_quantity, pending_quantity, operator, supervisor, machine_line, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)");
-            $stmt->execute([$pId, $itemId, $batchNo, $data['cutting_date'] ?? date('Y-m-d'), $data['assigned_quantity'] ?? $actual, $actual, $rej, $rwk, $acc, $data['operator'] ?? null, $data['supervisor'] ?? null, $data['machine_line'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+            $stmt = $pdo->prepare("
+                INSERT INTO cutting_batches 
+                (production_order_id, production_order_item_id, batch_number, cutting_date, assigned_quantity, actual_cut_quantity, rejected_quantity, rework_quantity, accepted_output_quantity, pending_quantity, operator, supervisor, machine_line, remarks, photo_urls, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 'In Progress')
+            ");
+            $stmt->execute([
+                $pId, 
+                $itemId, 
+                $batchNo, 
+                $data['cutting_date'] ?? date('Y-m-d'), 
+                $assigned, 
+                $actual, 
+                $rej, 
+                $rwk, 
+                $acc, 
+                $data['operator'] ?? null, 
+                $data['supervisor'] ?? null, 
+                $data['machine_line'] ?? null, 
+                $data['remarks'] ?? ($data['notes'] ?? ''), 
+                json_encode($data['photo_urls'] ?? [])
+            ]);
 
             // Ledger
-            $lStmt = $pdo->prepare("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, remarks) VALUES (?, ?, 5, 'CUT', 'ACCEPTED', ?, ?, ?, ?, 'Cutting Batch', ?)");
-            $lStmt->execute([$pId, $itemId, $acc, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $data['remarks'] ?? '']);
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 5, 'CUT', 'ACCEPTED', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
+            ");
+            $lStmt->execute([$pId, $itemId, $acc, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $batchNo, $data['remarks'] ?? ($data['notes'] ?? '')]);
 
             Response::success(['batch_number' => $batchNo, 'accepted' => $acc], "Cutting batch recorded successfully", 201);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
@@ -1455,14 +1553,182 @@ class ProductionController {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         try {
             $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
             $bId = (int)($data['batch_id'] ?? 0);
             $qty = (float)($data['transfer_quantity'] ?? 0);
             $destStageId = (int)($data['destination_stage_id'] ?? 6);
+            $remarks = trim($data['remarks'] ?? ($data['notes'] ?? ''));
 
-            $stmt = $pdo->prepare("UPDATE cutting_batches SET transferred_to_next_stage_quantity = transferred_to_next_stage_quantity + ?, status = 'Transferred' WHERE id = ?");
-            $stmt->execute([$qty, $bId]);
-            Response::success(null, "Transferred {$qty} pcs to next stage successfully");
-        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+            if ($bId <= 0 || $qty <= 0) {
+                Response::error("Batch ID and positive transfer quantity are required", 422);
+                return;
+            }
+
+            // Fetch batch
+            $bStmt = $pdo->prepare("SELECT * FROM cutting_batches WHERE id = ?");
+            $bStmt->execute([$bId]);
+            $batch = $bStmt->fetch();
+            if (!$batch) {
+                Response::error("Cutting batch not found", 404);
+                return;
+            }
+
+            $avail = (float)$batch['accepted_output_quantity'] - (float)$batch['transferred_to_next_stage_quantity'];
+            if ($qty > $avail + 0.001) {
+                Response::error("Transfer quantity ({$qty}) exceeds available accepted output ({$avail})", 422);
+                return;
+            }
+
+            // Lookup destination stage info
+            $stgStmt = $pdo->prepare("SELECT id, name, code FROM production_stages WHERE id = ?");
+            $stgStmt->execute([$destStageId]);
+            $destStage = $stgStmt->fetch();
+            $destName = $destStage ? $destStage['name'] : ($destStageId === 7 ? 'Stitching — Color-wise Tracking' : 'Embroidery — Outward / Inward');
+            $destCode = $destStage ? $destStage['code'] : ($destStageId === 7 ? 'STI' : 'EMB');
+
+            $pdo->beginTransaction();
+
+            // 1. Update cutting batch
+            $newTrf = (float)$batch['transferred_to_next_stage_quantity'] + $qty;
+            $newStatus = ($newTrf >= (float)$batch['accepted_output_quantity'] - 0.001) ? 'Transferred' : 'Partial Transfer';
+
+            $updBatch = $pdo->prepare("
+                UPDATE cutting_batches 
+                SET transferred_to_next_stage_quantity = ?,
+                    destination_stage_id = ?,
+                    destination_stage_name = ?,
+                    status = ?
+                WHERE id = ?
+            ");
+            $updBatch->execute([$newTrf, $destStageId, $destName, $newStatus, $bId]);
+
+            // 2. Insert into production_quantity_ledger
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 5, 'CUT', 'TRANSFER_OUT', ?, ?, '', '', 'Cutting Stage Transfer', ?, ?)
+            ");
+            $lStmt->execute([$batch['production_order_id'], $batch['production_order_item_id'], $qty, $batch['batch_number'], (string)$destStageId, "Transferred to {$destName}"]);
+
+            $lInStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, ?, ?, 'TRANSFER_IN', ?, ?, '', '', 'Cutting Stage Transfer', ?, ?)
+            ");
+            $lInStmt->execute([$batch['production_order_id'], $batch['production_order_item_id'], $destStageId, $destCode, $qty, $batch['batch_number'], (string)$bId, "Transferred from Cutting Batch {$batch['batch_number']}"]);
+
+            // 3. Update production_order_items for stage routing
+            $pId = (int)$batch['production_order_id'];
+            $itemId = (int)$batch['production_order_item_id'];
+
+            // Get the item
+            $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? FOR UPDATE");
+            $iStmt->execute([$itemId]);
+            $item = $iStmt->fetch();
+
+            if ($item && ((int)$item['current_stage_id'] !== 5 || (float)$item['current_stage_quantity'] < $qty - 0.001)) {
+                $cStmt = $pdo->prepare("
+                    SELECT * FROM production_order_items 
+                    WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = 5 AND current_stage_quantity >= ?
+                    ORDER BY id ASC
+                    LIMIT 1
+                ");
+                $cStmt->execute([$pId, $item['product_id'], $item['color'], $qty]);
+                $altItem = $cStmt->fetch();
+                if ($altItem) {
+                    $item = $altItem;
+                    $itemId = (int)$item['id'];
+                }
+            }
+
+            if ($item) {
+                // Check if an item already exists at this destination stage for the same order, product, and color
+                $matchStmt = $pdo->prepare("
+                    SELECT id FROM production_order_items 
+                    WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = ?
+                    LIMIT 1
+                ");
+                $matchStmt->execute([$pId, $item['product_id'], $item['color'], $destStageId]);
+                $existingDestItemId = $matchStmt->fetchColumn();
+
+                if ($existingDestItemId) {
+                    // Add quantity to existing item in destination stage
+                    $addStmt = $pdo->prepare("
+                        UPDATE production_order_items 
+                        SET current_stage_quantity = current_stage_quantity + ?,
+                            total_quantity = total_quantity + ?
+                        WHERE id = ?
+                    ");
+                    $addStmt->execute([$qty, $qty, $existingDestItemId]);
+
+                    // Deduct from current item
+                    $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
+                    $remTotal = max(0.0, (float)$item['total_quantity'] - $qty);
+                    if ($remQty <= 0.001) {
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = 0, total_quantity = 0 WHERE id = ?")->execute([$itemId]);
+                    } else {
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")->execute([$remQty, $remTotal, $itemId]);
+                    }
+                } else {
+                    $curStageQty = (float)$item['current_stage_quantity'];
+                    if ($curStageQty <= $qty + 0.001) {
+                        // Whole item advances to destination stage!
+                        $updItem = $pdo->prepare("
+                            UPDATE production_order_items 
+                            SET current_stage_id = ?,
+                                current_stage_quantity = ?,
+                                status = 'In Progress'
+                            WHERE id = ?
+                        ");
+                        $updItem->execute([$destStageId, $qty, $itemId]);
+                    } else {
+                        // Split item: reduce current item in cutting, create new item in destination stage
+                        $remStageQty = $curStageQty - $qty;
+                        $remTotalQty = max($remStageQty, (float)$item['total_quantity'] - $qty);
+
+                        $pdo->prepare("
+                            UPDATE production_order_items 
+                            SET current_stage_quantity = ?,
+                                total_quantity = ?
+                            WHERE id = ?
+                        ")->execute([$remStageQty, $remTotalQty, $itemId]);
+
+                        $insNewItem = $pdo->prepare("
+                            INSERT INTO production_order_items 
+                            (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                            VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 'In Progress')
+                        ");
+                        $insNewItem->execute([
+                            $pId,
+                            $item['product_id'],
+                            $item['color'],
+                            $qty,
+                            $destStageId,
+                            $qty
+                        ]);
+                    }
+                }
+            }
+
+            // Log stage transaction
+            $tStmt = $pdo->prepare("
+                INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
+                VALUES (?, 5, ?, ?, ?)
+            ");
+            $tStmt->execute([$itemId, $destStageId, $qty, "Transferred from Cutting Batch {$batch['batch_number']} to {$destName}"]);
+
+            $pdo->commit();
+            Response::success([
+                'batch_id' => $bId,
+                'transferred_quantity' => $qty,
+                'destination_stage_id' => $destStageId,
+                'destination_stage_name' => $destName,
+            ], "Successfully transferred {$qty} pcs to {$destName}");
+        } catch (Exception $e) {
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            Response::error($e->getMessage(), 500);
+        }
     }
 
     public function embroideryJobOrders(): void {
@@ -1492,9 +1758,14 @@ class ProductionController {
             }
             unset($rcpt);
 
-            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ? AND (poi.current_stage_id = 6 OR poi.current_stage_id IN (SELECT id FROM production_stages WHERE code = 'EMB'))");
             $iStmt->execute([$orderId]);
             $items = $iStmt->fetchAll();
+            if (empty($items)) {
+                $fallbackStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, 0 as current_stage_quantity FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+                $fallbackStmt->execute([$orderId]);
+                $items = $fallbackStmt->fetchAll();
+            }
 
             Response::success(['order' => $ord, 'items' => $items, 'job_orders' => $jobs, 'receipts' => $receipts]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
@@ -1578,9 +1849,14 @@ class ProductionController {
             }
             unset($b);
 
-            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ? AND (poi.current_stage_id = 7 OR poi.current_stage_id IN (SELECT id FROM production_stages WHERE code = 'STI'))");
             $iStmt->execute([$orderId]);
             $items = $iStmt->fetchAll();
+            if (empty($items)) {
+                $fallbackStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, 0 as current_stage_quantity FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+                $fallbackStmt->execute([$orderId]);
+                $items = $fallbackStmt->fetchAll();
+            }
 
             Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
