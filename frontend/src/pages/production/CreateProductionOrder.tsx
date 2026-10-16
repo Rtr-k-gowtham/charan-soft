@@ -768,49 +768,6 @@ export default function CreateProductionOrder() {
                 />
               </div>
 
-              {/* Selected Buyer Profile Card */}
-              {selectedCustomer && (
-                <div className="lg:col-span-4 bg-gradient-to-r from-brand-50/70 via-indigo-50/40 to-slate-50 border border-brand-200/90 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                  <div className="flex items-center gap-3.5">
-                    <BuyerAvatar
-                      buyer={selectedCustomer}
-                      size="xl"
-                      shape="circle"
-                      className="ring-2 ring-white shadow-sm"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">{selectedCustomer.name}</span>
-                        <span className="font-mono text-xs font-bold text-brand-700 bg-brand-100/80 px-2 py-0.5 rounded border border-brand-200">
-                          {selectedCustomer.code || `BUY-${selectedCustomer.id}`}
-                        </span>
-                        <span className="text-[10px] uppercase font-semibold text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                          {selectedCustomer.avatar_style || 'lorelei'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Company: <span className="font-medium text-slate-800">{selectedCustomer.name}</span>
-                        {selectedCustomer.contact_person && (
-                          <span className="ml-2 text-slate-500">• Attn: {selectedCustomer.contact_person}</span>
-                        )}
-                      </p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {[selectedCustomer.phone, selectedCustomer.email].filter(Boolean).join(' • ')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <Button
-                      variant="secondary"
-                      size="xs"
-                      onClick={() => setForm((f) => ({ ...f, customer_id: '' }))}
-                    >
-                      Clear / Change
-                    </Button>
-                  </div>
-                </div>
-              )}
-
               <div>
                 <SearchableSelect
                   label="Priority"

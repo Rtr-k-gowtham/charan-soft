@@ -1269,8 +1269,35 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/production-orders' && method === 'GET') {
       const enriched = (db.productionOrders || []).map(po => {
         const cust = (db.customers || []).find(c => c.id === Number(po.customer_id));
+        let stageName = po.current_stage_name;
+        let stageId = po.current_stage_id;
+        if (!stageName && po.items && po.items.length > 0) {
+          const allCompleted = po.items.every(it => it.status === 'Completed' || it.current_stage_id === 10 || (it.current_stage_name || '').toLowerCase() === 'completed');
+          if (allCompleted) {
+            stageName = 'Completed';
+            stageId = 10;
+          } else {
+            const incompleteItems = po.items.filter(it => it.status !== 'Completed' && it.current_stage_id !== 10 && (it.current_stage_name || '').toLowerCase() !== 'completed');
+            const itemsToSort = incompleteItems.length > 0 ? incompleteItems : po.items;
+            const sorted = [...itemsToSort].sort((a, b) => {
+              const seqA = (db.productionStages || []).find(s => s.id === a.current_stage_id)?.sequence_order ?? (a.current_stage_id || 1);
+              const seqB = (db.productionStages || []).find(s => s.id === b.current_stage_id)?.sequence_order ?? (b.current_stage_id || 1);
+              return seqA - seqB;
+            });
+            const activeItem = sorted[0];
+            stageName = activeItem.current_stage_name || (db.productionStages || []).find(s => s.id === activeItem.current_stage_id)?.name || 'Requirement Gathering';
+            stageId = activeItem.current_stage_id || 1;
+          }
+        }
+        if (!stageName) {
+          stageName = (po.status === 'Completed' || po.status === 'COMPLETED') ? 'Completed' : 'Requirement Gathering';
+          stageId = stageName === 'Completed' ? 10 : 1;
+        }
+
         return {
           ...po,
+          current_stage_name: stageName,
+          current_stage_id: stageId,
           customer_code: cust?.code || '',
           customer_name: cust?.name || po.customer_name || 'Buyer',
           customer_avatar_style: cust?.avatar_style || 'lorelei',
@@ -1282,6 +1309,21 @@ const server = http.createServer(async (req, res) => {
     }
 
     const prodOrdMatMatch = pathname.match(/^\/production-orders\/(\d+)\/(material-requirements|bom)$/);
+    if (prodOrdMatMatch && method === 'POST') {
+      const ordId = Number(prodOrdMatMatch[1]);
+      const ord = (db.productionOrders || []).find(o => o.id === ordId);
+      if (!ord) return sendError(res, 'Production order not found', 404);
+
+      ord.generated_bom = {
+        total_materials: body.total_materials || body.materials || [],
+        summary: body.summary || {},
+        products: body.products || [],
+        updated_at: new Date().toISOString()
+      };
+      saveDB();
+      return sendSuccess(res, ord.generated_bom, 'Material requirements (BOM) persisted successfully');
+    }
+
     if (prodOrdMatMatch && method === 'GET') {
       const ordId = Number(prodOrdMatMatch[1]);
       const ord = (db.productionOrders || []).find(o => o.id === ordId);
@@ -1295,6 +1337,24 @@ const server = http.createServer(async (req, res) => {
         customer_avatar_style: cust?.avatar_style || 'lorelei',
         customer_avatar_seed: cust?.avatar_seed || cust?.code || `buyer-${ord.customer_id || 1}`,
       };
+
+      const isForced = parsedUrl.searchParams.get('force') === '1' || parsedUrl.searchParams.get('force') === 'true';
+
+      // Return persisted BOM if already generated and not forced
+      if (!isForced && ord.generated_bom && Array.isArray(ord.generated_bom.total_materials) && ord.generated_bom.total_materials.length > 0) {
+        return sendSuccess(res, {
+          order: enrichedOrder,
+          products: ord.generated_bom.products || [],
+          total_materials: ord.generated_bom.total_materials,
+          summary: ord.generated_bom.summary || {
+            total_products_count: (ord.generated_bom.products || []).length,
+            total_order_garments: ord.total_quantity,
+            total_distinct_materials: ord.generated_bom.total_materials.length,
+            total_estimated_cost: ord.generated_bom.total_materials.reduce((s, m) => s + (m.total_estimated_cost || 0), 0)
+          },
+          generated_at: ord.generated_bom.updated_at || new Date().toISOString()
+        });
+      }
 
       const materialsMap = {};
       const productsBreakdown = [];
@@ -1413,19 +1473,30 @@ const server = http.createServer(async (req, res) => {
 
       totalMaterialsList.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 
+      const generatedSummary = {
+        total_products_count: productsBreakdown.length,
+        total_order_garments: totalGarments,
+        total_distinct_materials: totalMaterialsList.length,
+        in_stock_count: inStockCount,
+        shortage_count: shortageCount,
+        total_estimated_cost: Number(totalEstCost.toFixed(2))
+      };
+
+      // Persist newly generated BOM to ord (prevents duplicate BOMs upon repeated generations)
+      ord.generated_bom = {
+        total_materials: totalMaterialsList,
+        summary: generatedSummary,
+        products: productsBreakdown,
+        updated_at: new Date().toISOString()
+      };
+      saveDB();
+
       return sendSuccess(res, {
         order: enrichedOrder,
         products: productsBreakdown,
         total_materials: totalMaterialsList,
-        summary: {
-          total_products_count: productsBreakdown.length,
-          total_order_garments: totalGarments,
-          total_distinct_materials: totalMaterialsList.length,
-          in_stock_count: inStockCount,
-          shortage_count: shortageCount,
-          total_estimated_cost: Number(totalEstCost.toFixed(2))
-        },
-        generated_at: new Date().toISOString()
+        summary: generatedSummary,
+        generated_at: ord.generated_bom.updated_at
       });
     }
 
@@ -1504,6 +1575,8 @@ const server = http.createServer(async (req, res) => {
         total_quantity: totalQty,
         completed_quantity: 0,
         status: 'IN PRODUCTION',
+        current_stage_id: 1,
+        current_stage_name: 'Requirement Gathering',
         notes: body.notes || '',
         items,
       };
@@ -1514,22 +1587,38 @@ const server = http.createServer(async (req, res) => {
 
     // Move Stage
     if (pathname.includes('/stage') && method === 'POST') {
-      const { item_id, to_stage_id } = body;
-      const targetStage = db.productionStages.find(s => s.id === Number(to_stage_id)) || db.productionStages[0];
-      for (const ord of db.productionOrders) {
-        const item = (ord.items || []).find(i => i.id === Number(item_id));
-        if (item) {
-          item.current_stage_id = targetStage.id;
-          item.current_stage_name = targetStage.name;
-          item.stage_code = targetStage.code;
-          if (targetStage.code === 'COMP') {
-            item.status = 'Completed';
-            item.completed_quantity = item.total_quantity;
-            ord.completed_quantity = (ord.completed_quantity || 0) + item.completed_quantity;
-          }
-          saveDB();
-          return sendSuccess(res, item, `Stage moved to ${targetStage.name}`);
+      const targetItemId = Number(body.order_item_id || body.item_id || 0);
+      const targetOrderId = Number(body.production_order_id || body.order_id || 0);
+      const toStageId = Number(body.to_stage_id || body.next_stage_id || 2);
+      const targetStage = (db.productionStages || []).find(s => s.id === toStageId) || db.productionStages[1] || { id: 2, name: 'Purchase Order (PO)', code: 'PO' };
+
+      let moved = false;
+      for (const ord of (db.productionOrders || [])) {
+        const isTargetOrder = targetOrderId && ord.id === targetOrderId;
+        const containsTargetItem = targetItemId && (ord.items || []).some(i => i.id === targetItemId);
+
+        if (isTargetOrder || containsTargetItem) {
+          ord.current_stage_id = targetStage.id;
+          ord.current_stage_name = targetStage.name;
+          (ord.items || []).forEach(item => {
+            if (!targetItemId || isTargetOrder || item.id === targetItemId) {
+              item.current_stage_id = targetStage.id;
+              item.current_stage_name = targetStage.name;
+              item.stage_code = targetStage.code;
+              if (targetStage.code === 'COMP') {
+                item.status = 'Completed';
+                item.completed_quantity = item.total_quantity;
+              }
+            }
+          });
+          moved = true;
+          break;
         }
+      }
+
+      if (moved) {
+        saveDB();
+        return sendSuccess(res, { moved: true, stage_id: targetStage.id, stage_name: targetStage.name }, `Stage moved to ${targetStage.name}`);
       }
       return sendSuccess(res, null, 'Stage updated');
     }
@@ -1588,10 +1677,81 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/dyeing/orders' && method === 'POST') {
+      const pId = Number(body.production_order_id || 0);
+      const prodOrder = (db.productionOrders || []).find(o => o.id === pId);
+      if (!prodOrder) return sendError(res, 'Production order not found', 404);
+
+      const items = body.items || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        return sendError(res, 'At least one color item is required for Dyeing Order', 422);
+      }
+
+      // Calculate total outward fabric quantity across color breakdowns
+      let totalFabricQty = 0;
+      for (const it of items) {
+        const q = Number(it.planned_quantity || it.quantity || 0);
+        if (q <= 0) {
+          return sendError(res, 'Each color must have a positive quantity (e.g. Green: 20, Red: 20)', 422);
+        }
+        totalFabricQty += q;
+      }
+      totalFabricQty = Number(totalFabricQty.toFixed(2));
+
+      // Validate fabric material
+      const matId = Number(body.fabric_material_id || 0);
+      const mat = (db.materials || []).find(m => m.id === matId);
+      if (mat) {
+        const catName = (mat.category_name || '').toUpperCase();
+        if (catName.includes('TRIM') || catName.includes('PACK') || catName.includes('THREAD') || catName.includes('DYE')) {
+          return sendError(res, 'Selected material is not a valid fabric material for dyeing', 422);
+        }
+      }
+
+      // Calculate total inwarded fabric for this order
+      let totalInwarded = 0;
+      (db.purchaseOrders || []).forEach(po => {
+        if (po.production_order_id === pId || (po.remarks || '').includes(prodOrder.order_number)) {
+          (po.items || []).forEach(it => {
+            const isFabric = (po.category_name || '').toUpperCase().includes('FABRIC') ||
+                             (it.item_description || '').toUpperCase().includes('FABRIC') ||
+                             (it.category || '').toUpperCase().includes('FABRIC');
+            if (isFabric) {
+              if (!matId || it.material_id === matId || !it.material_id) {
+                totalInwarded += Number(it.received_quantity || 0);
+              }
+            }
+          });
+        }
+      });
+      if (totalInwarded === 0) {
+        totalInwarded = Number(prodOrder.total_quantity || 100);
+      }
+
+      // Calculate existing outward fabric for this order
+      let totalOutward = 0;
+      (db.dyeingOrders || []).forEach(d => {
+        if (d.production_order_id === pId && d.status !== 'Cancelled') {
+          if (!matId || d.fabric_material_id === matId || !d.fabric_material_id) {
+            totalOutward += Number(d.total_fabric_quantity || 0);
+          }
+        }
+      });
+
+      const balanceAvailable = Math.max(0, Number((totalInwarded - totalOutward).toFixed(2)));
+
+      if (balanceAvailable <= 0) {
+        return sendError(res, 'Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted)', 422);
+      }
+
+      if (totalFabricQty > balanceAvailable) {
+        return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'})`, 422);
+      }
+
       const newDye = {
         id: (db.dyeingOrders || []).length + 1,
         dyeing_order_no: `DYE-${Math.floor(1000 + Math.random() * 9000)}`,
         status: 'Sent to Dyeing',
+        total_fabric_quantity: totalFabricQty,
         total_received_quantity: 0,
         created_at: new Date().toISOString(),
         ...body,
@@ -1650,27 +1810,106 @@ const server = http.createServer(async (req, res) => {
       const prodOrder = (db.productionOrders || []).find(o => o.id === pId);
       if (!prodOrder) return sendError(res, 'Production order not found', 404);
 
-      let totalInwarded = 0;
-      let totalOrdered = 0;
-      const fabricMats = [];
+      // Track inwarded fabric materials by material ID
+      const fabricMap = {}; // key: string(material_id)
+
       (db.purchaseOrders || []).forEach(po => {
         if (po.production_order_id === pId || (po.remarks || '').includes(prodOrder.order_number)) {
           (po.items || []).forEach(it => {
-            if ((po.category_name || '').toUpperCase().includes('FABRIC') || (it.item_description || '').toUpperCase().includes('FABRIC')) {
-              totalInwarded += Number(it.received_quantity || 0);
-              totalOrdered += Number(it.quantity || 0);
-              fabricMats.push(it);
+            const isFabric = (po.category_name || '').toUpperCase().includes('FABRIC') ||
+                             (it.item_description || '').toUpperCase().includes('FABRIC') ||
+                             (it.item_description || '').toUpperCase().includes('COTTON') ||
+                             (it.item_description || '').toUpperCase().includes('JERSEY') ||
+                             (it.category || '').toUpperCase().includes('FABRIC');
+            if (isFabric) {
+              const matId = it.material_id || 1;
+              const mat = (db.materials || []).find(m => m.id === matId) || {};
+              const key = String(matId);
+              if (!fabricMap[key]) {
+                fabricMap[key] = {
+                  material_id: matId,
+                  material_code: mat.code || it.material_code || `MAT-${matId}`,
+                  material_name: mat.name || it.item_description || 'Fabric Material',
+                  uom: it.uom || mat.uom || 'MTR',
+                  inward_quantity: 0,
+                  outward_quantity: 0,
+                  available_quantity: 0,
+                };
+              }
+              fabricMap[key].inward_quantity += Number(it.received_quantity || 0);
             }
           });
         }
       });
 
+      // If no PO items found, populate from generated BOM materials (Fabric category only)
+      if (Object.keys(fabricMap).length === 0 && prodOrder.generated_bom?.total_materials) {
+        prodOrder.generated_bom.total_materials.forEach(m => {
+          if ((m.category || '').toUpperCase().includes('FABRIC') || (m.name || '').toUpperCase().includes('FABRIC')) {
+            const matId = m.material_id || 1;
+            const mat = (db.materials || []).find(mat => mat.id === matId) || {};
+            const key = String(matId);
+            if (!fabricMap[key]) {
+              fabricMap[key] = {
+                material_id: matId,
+                material_code: mat.code || m.material_code || `MAT-${matId}`,
+                material_name: mat.name || m.name || 'Fabric Material',
+                uom: m.uom || 'MTR',
+                inward_quantity: Number(prodOrder.total_quantity || 100),
+                outward_quantity: 0,
+                available_quantity: 0,
+              };
+            }
+          }
+        });
+      }
+
+      // If still empty, supply the standard fabric materials from Material Master
+      if (Object.keys(fabricMap).length === 0) {
+        (db.materials || [])
+          .filter(m => (m.category_name || '').toUpperCase().includes('FABRIC') || (m.name || '').toUpperCase().includes('COTTON') || (m.name || '').toUpperCase().includes('FABRIC'))
+          .forEach(mat => {
+            const key = String(mat.id);
+            if (!fabricMap[key]) {
+              fabricMap[key] = {
+                material_id: mat.id,
+                material_code: mat.code,
+                material_name: mat.name,
+                uom: mat.uom || 'MTR',
+                inward_quantity: Number(prodOrder.total_quantity || 200),
+                outward_quantity: 0,
+                available_quantity: 0,
+              };
+            }
+          });
+      }
+
+      // Calculate outward quantities from existing dyeing orders
       let totalOutward = 0;
+      let totalReceivedFromDyeing = 0;
       (db.dyeingOrders || []).forEach(d => {
         if (d.production_order_id === pId && d.status !== 'Cancelled') {
-          totalOutward += Number(d.total_fabric_quantity || 0);
+          const qty = Number(d.total_fabric_quantity || 0);
+          totalOutward += qty;
+          totalReceivedFromDyeing += Number(d.total_received_quantity || 0);
+
+          const key = d.fabric_material_id ? String(d.fabric_material_id) : Object.keys(fabricMap)[0];
+          if (fabricMap[key]) {
+            fabricMap[key].outward_quantity += qty;
+          }
         }
       });
+
+      let totalInwarded = 0;
+      let totalOrdered = 0;
+      Object.values(fabricMap).forEach(f => {
+        f.available_quantity = Math.max(0, Number((f.inward_quantity - f.outward_quantity).toFixed(2)));
+        totalInwarded += f.inward_quantity;
+        totalOrdered += f.inward_quantity;
+      });
+
+      const fabricMaterialsList = Object.values(fabricMap);
+      const balanceAvailable = Math.max(0, Number((totalInwarded - totalOutward).toFixed(2)));
 
       const suggestedColors = [];
       (prodOrder.items || []).forEach(it => {
@@ -1684,8 +1923,9 @@ const server = http.createServer(async (req, res) => {
         total_fabric_ordered: totalOrdered,
         total_fabric_inwarded: totalInwarded,
         total_fabric_outward: totalOutward,
-        balance_available_for_dyeing: Math.max(0, totalInwarded - totalOutward),
-        fabric_materials: fabricMats,
+        balance_available_for_dyeing: balanceAvailable,
+        total_fabric_received_from_dyeing: totalReceivedFromDyeing,
+        fabric_materials: fabricMaterialsList,
         suggested_colors: suggestedColors,
         dyeing_mills: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('DYE') || true),
       });

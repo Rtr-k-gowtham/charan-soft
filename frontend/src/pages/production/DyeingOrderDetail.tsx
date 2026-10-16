@@ -1,6 +1,8 @@
 // src/pages/production/DyeingOrderDetail.tsx
 // Stage 04: Fabric Dyeing Orders & Inward Receiving with Pantone Colors & Photo Proof
-import React, { useEffect, useState, useRef } from 'react';
+// Redesigned to strict Cheran Soft Goods ERP design system: Table-based layout, ERP palette,
+// dynamic fabric material dropdown, and Total Outward Fabric field removed from Create form.
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { 
@@ -37,20 +39,18 @@ import {
   Truck,
   FileText,
   Camera,
-  Image as ImageIcon,
   Upload,
   Eye,
   Trash2,
   X,
-  ZoomIn,
-  Download,
   ShieldCheck,
   Plus,
   Palette,
   Sparkles,
   ArrowRight,
   Boxes,
-  CheckCheck
+  CheckCheck,
+  Search
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -58,6 +58,25 @@ const fmt = (n: number, decimals = 0) =>
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(n || 0);
+
+interface EligibleFabricMaterial {
+  material_id: number;
+  material_code?: string;
+  material_name: string;
+  uom: string;
+  inward_quantity: number;
+  outward_quantity: number;
+  available_quantity: number;
+}
+
+interface NewColorRow {
+  color_name: string;
+  pantone_code: string;
+  hex_code: string;
+  planned_quantity: number | '';
+  rate_per_unit: number | '';
+  notes: string;
+}
 
 // Helper to compress and convert image file to lightweight Base64 data URL
 function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Promise<string> {
@@ -97,15 +116,6 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
   });
 }
 
-interface NewColorRow {
-  color_name: string;
-  pantone_code: string;
-  hex_code: string;
-  planned_quantity: number | '';
-  rate_per_unit: number | '';
-  notes: string;
-}
-
 export default function DyeingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -118,15 +128,22 @@ export default function DyeingOrderDetail() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  // Tabs: 'orders' | 'history'
   const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(new Set());
 
   // Create Dyeing Order Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
-  const [fabricName, setFabricName] = useState<string>('Cotton Fabric');
   const [fabricMaterialId, setFabricMaterialId] = useState<number | undefined>(undefined);
+  const [fabricName, setFabricName] = useState<string>('');
+  const [fabricSearchQuery, setFabricSearchQuery] = useState('');
   const [uom, setUom] = useState<string>('MTR');
   const [challanNo, setChallanNo] = useState<string>('');
   const [orderDate, setOrderDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -138,7 +155,7 @@ export default function DyeingOrderDetail() {
   const [processType, setProcessType] = useState<string>('Reactive Dyeing & Soft Flow');
   const [remarks, setRemarks] = useState<string>('Outward sent for color dyeing process');
 
-  // Color breakdown rows (auto-populated from Production Order)
+  // Color breakdown rows
   const [colorRows, setColorRows] = useState<NewColorRow[]>([]);
 
   // Receive Dyed Fabric Modal
@@ -172,11 +189,65 @@ export default function DyeingOrderDetail() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [zoomedPhoto, setZoomedPhoto] = useState<string | null>(null);
 
+  // Filtered eligible fabric materials from backend stock data
+  const eligibleFabrics = useMemo<EligibleFabricMaterial[]>(() => {
+    const rawList: any[] = fabricStockData?.fabric_materials || [];
+    return rawList
+      .filter((f: any) => {
+        const name = (f.material_name || f.item_description || '').toUpperCase();
+        // Exclude non-fabric categories & accessories
+        const isExcluded = 
+          name.includes('THREAD') || 
+          name.includes('TRIM') || 
+          name.includes('ZIPPER') || 
+          name.includes('BUTTON') || 
+          name.includes('LABEL') || 
+          name.includes('POLYBAG') || 
+          name.includes('DYE') || 
+          name.includes('CARTON');
+        // Only include if available quantity is positive
+        const hasAvailable = Number(f.available_quantity) > 0;
+        return hasAvailable && !isExcluded;
+      })
+      .map((f: any) => ({
+        material_id: Number(f.material_id),
+        material_code: f.material_code,
+        material_name: f.material_name || f.item_description || 'Fabric Material',
+        uom: f.uom || 'MTR',
+        inward_quantity: Number(f.inward_quantity || 0),
+        outward_quantity: Number(f.outward_quantity || 0),
+        available_quantity: Number(f.available_quantity || 0),
+      }));
+  }, [fabricStockData]);
+
+  // Filtered dropdown options with search query
+  const searchedFabrics = useMemo(() => {
+    if (!fabricSearchQuery.trim()) return eligibleFabrics;
+    const q = fabricSearchQuery.toLowerCase();
+    return eligibleFabrics.filter(f => 
+      f.material_name.toLowerCase().includes(q) || 
+      (f.material_code || '').toLowerCase().includes(q)
+    );
+  }, [eligibleFabrics, fabricSearchQuery]);
+
+  // Selected fabric material details
+  const selectedFabric = useMemo(() => {
+    return eligibleFabrics.find(f => f.material_id === fabricMaterialId);
+  }, [eligibleFabrics, fabricMaterialId]);
+
+  // Available fabric balance for current selection or overall
+  const availableFabricBalance = useMemo(() => {
+    if (selectedFabric) return selectedFabric.available_quantity;
+    return Number(fabricStockData?.balance_available_for_dyeing || 0);
+  }, [selectedFabric, fabricStockData]);
+
   // Helper: Automatically build color rows from production order & available fabric balance
-  const buildOrderColors = (ord: any, stock: any): NewColorRow[] => {
-    const avail = Number(stock?.balance_available_for_dyeing) > 0 
-      ? Number(stock.balance_available_for_dyeing) 
-      : (Number(stock?.total_fabric_inwarded) > 0 ? Number(stock.total_fabric_inwarded) : 100);
+  const buildOrderColors = (ord: any, stock: any, customAvail?: number): NewColorRow[] => {
+    const avail = customAvail !== undefined
+      ? customAvail
+      : (Number(stock?.balance_available_for_dyeing) > 0 
+          ? Number(stock.balance_available_for_dyeing) 
+          : (Number(stock?.total_fabric_inwarded) > 0 ? Number(stock.total_fabric_inwarded) : 100));
 
     let candidateList: { color_name: string; pantone_code: string; hex_code: string; garment_qty: number }[] = [];
 
@@ -295,12 +366,17 @@ export default function DyeingOrderDetail() {
         : (Array.isArray(suppRes) ? suppRes : []);
       setSuppliers(suppList);
 
-      // Pre-select fabric material if found in inward
-      if (stock?.fabric_materials && stock.fabric_materials.length > 0) {
-        const firstFab = stock.fabric_materials[0];
-        setFabricName(firstFab.item_description || 'Cotton Fabric');
-        setFabricMaterialId(firstFab.material_id);
-        setUom(firstFab.uom || 'MTR');
+      // Pre-select first eligible fabric material with available stock
+      const rawMats: any[] = stock?.fabric_materials || [];
+      const firstEligible = rawMats.find((f: any) => Number(f.available_quantity) > 0);
+      if (firstEligible) {
+        setFabricMaterialId(firstEligible.material_id);
+        setFabricName(firstEligible.material_name || firstEligible.item_description || 'Cotton Fabric');
+        setUom(firstEligible.uom || 'MTR');
+      } else if (rawMats.length > 0) {
+        setFabricMaterialId(rawMats[0].material_id);
+        setFabricName(rawMats[0].material_name || rawMats[0].item_description || 'Cotton Fabric');
+        setUom(rawMats[0].uom || 'MTR');
       }
 
       // Pre-select dyeing supplier if available
@@ -329,12 +405,42 @@ export default function DyeingOrderDetail() {
     loadData();
   }, [id]);
 
+  useEffect(() => {
+    if (successToast) {
+      const timer = setTimeout(() => setSuccessToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [successToast]);
+
+  const toggleExpandOrder = (orderId: number) => {
+    setExpandedOrderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  };
+
   // Open Create Dyeing Order Modal with auto-populated colors
   const handleOpenCreateModal = () => {
     setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
     setCreateError('');
-    if (colorRows.length === 0) {
-      setColorRows(buildOrderColors(order, fabricStockData));
+    setFabricSearchQuery('');
+
+    // Pre-select first eligible fabric if not yet selected
+    if (!fabricMaterialId && eligibleFabrics.length > 0) {
+      const first = eligibleFabrics[0];
+      setFabricMaterialId(first.material_id);
+      setFabricName(first.material_name);
+      setUom(first.uom);
+      setColorRows(buildOrderColors(order, fabricStockData, first.available_quantity));
+    } else {
+      if (colorRows.length === 0) {
+        setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
+      }
     }
     setShowCreateModal(true);
   };
@@ -360,7 +466,7 @@ export default function DyeingOrderDetail() {
   const handleAddColorRow = () => {
     setColorRows([
       ...colorRows,
-      { color_name: '', pantone_code: '', hex_code: '#6366f1', planned_quantity: '', rate_per_unit: '', notes: '' }
+      { color_name: '', pantone_code: '', hex_code: '#3b82f6', planned_quantity: '', rate_per_unit: '', notes: '' }
     ]);
   };
 
@@ -429,18 +535,27 @@ export default function DyeingOrderDetail() {
 
   // Re-sync/Reset colors directly from production order
   const handleAutofillColors = () => {
-    const autoColors = buildOrderColors(order, fabricStockData);
+    const autoColors = buildOrderColors(order, fabricStockData, availableFabricBalance);
     setColorRows(autoColors);
   };
 
-  // Total planned in modal
+  // Total planned across color rows
   const totalPlannedInModal = colorRows.reduce((sum, r) => sum + (Number(r.planned_quantity) || 0), 0);
-  const availableFabricBalance = fabricStockData?.balance_available_for_dyeing ?? 0;
 
   // Submit Create Dyeing Order
   const handleCreateDyeingOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError('');
+
+    if (!selectedSupplierId) {
+      setCreateError('Please select a Dyeing Processor / Mill.');
+      return;
+    }
+
+    if (!fabricMaterialId && !fabricName.trim()) {
+      setCreateError('Please select an eligible Fabric Material from the dropdown.');
+      return;
+    }
 
     if (colorRows.length === 0) {
       setCreateError('Please specify at least one color item.');
@@ -449,20 +564,34 @@ export default function DyeingOrderDetail() {
 
     const invalidRow = colorRows.find(r => !r.color_name.trim() || Number(r.planned_quantity) <= 0);
     if (invalidRow) {
-      setCreateError('Please provide a valid color name and positive quantity for all rows.');
+      setCreateError('Each color line must have a valid Color Name and quantity greater than 0.');
+      return;
+    }
+
+    if (totalPlannedInModal <= 0) {
+      setCreateError('Total dyeing outward quantity must be greater than 0.');
+      return;
+    }
+
+    if (availableFabricBalance > 0 && totalPlannedInModal > availableFabricBalance) {
+      setCreateError(
+        `Total planned quantity (${fmt(totalPlannedInModal, 1)} ${uom}) exceeds available fabric balance (${fmt(availableFabricBalance, 1)} ${uom}). Please adjust quantities.`
+      );
       return;
     }
 
     setCreating(true);
     try {
-      const selectedMill = suppliers.find(s => String(s.id) === String(selectedSupplierId));
+      const selectedMill = suppliers.find(s => String(s.id) === selectedSupplierId);
+
       const payload = {
         production_order_id: Number(id),
+        supplier_id: Number(selectedSupplierId),
+        dyeing_mill_name: selectedMill?.name || 'Processing Mill',
         fabric_material_id: fabricMaterialId,
-        fabric_name: fabricName,
+        fabric_name: fabricName || selectedFabric?.material_name || 'Fabric Material',
+        fabric_code: selectedFabric?.material_code || undefined,
         uom,
-        supplier_id: selectedSupplierId ? Number(selectedSupplierId) : null,
-        dyeing_mill_name: selectedMill?.name || '',
         challan_no: challanNo,
         order_date: orderDate,
         expected_delivery_date: expectedDate,
@@ -471,32 +600,31 @@ export default function DyeingOrderDetail() {
         items: colorRows.map(r => ({
           color_name: r.color_name.trim(),
           pantone_code: r.pantone_code.trim(),
-          hex_code: r.hex_code || '#6366f1',
+          hex_code: r.hex_code,
           planned_quantity: Number(r.planned_quantity),
-          rate_per_unit: Number(r.rate_per_unit || 0),
-          notes: r.notes.trim()
+          rate_per_unit: Number(r.rate_per_unit) || 0,
+          notes: r.notes
         }))
       };
 
       await api.createDyeingOrder(payload);
       setShowCreateModal(false);
+      setSuccessToast(`Dyeing Order created and DC generated successfully!`);
       await loadData();
     } catch (err: any) {
       console.error('Failed to create dyeing order:', err);
-      setCreateError(err?.message || 'Failed to create Dyeing Order');
+      setCreateError(err?.message || 'Failed to create Dyeing Order. Please check inputs.');
     } finally {
       setCreating(false);
     }
   };
 
-  // Open Receive Modal
+  // Open Receive Dyed Fabric Modal
   const handleOpenReceive = (dOrder: DyeingOrder) => {
     setSelectedDyeingOrder(dOrder);
-    setReceiptChallanNo(`DC-INW-${Math.floor(1000 + Math.random() * 9000)}`);
+    setReceiptChallanNo(`INW-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
     setReceiptDate(new Date().toISOString().split('T')[0]);
     setPhotoUrl(null);
-    setShadeCondition('Approved - Pantone Matched');
-    setReceiptRemarks(`Received dyed fabric for ${dOrder.dyeing_order_no}`);
     setReceiveError('');
 
     const items = (dOrder.items || []).map(it => {
@@ -507,7 +635,7 @@ export default function DyeingOrderDetail() {
         item_id: it.id || 0,
         color_name: it.color_name,
         pantone_code: it.pantone_code || '',
-        hex_code: it.hex_code || '#6366f1',
+        hex_code: it.hex_code || '#3b82f6',
         planned_quantity: planned,
         already_received: rec,
         received_quantity: remaining,
@@ -572,6 +700,7 @@ export default function DyeingOrderDetail() {
       await api.receiveDyeingOrder(selectedDyeingOrder.id, payload);
       setShowReceiveModal(false);
       setSelectedDyeingOrder(null);
+      setSuccessToast(`Dyed fabric inward receipt recorded successfully!`);
       await loadData();
     } catch (err: any) {
       console.error('Failed to receive dyed fabric:', err);
@@ -581,25 +710,77 @@ export default function DyeingOrderDetail() {
     }
   };
 
+  // All receipts across dyeing orders
+  const allDyeingReceipts: any[] = useMemo(() => {
+    const list: any[] = [];
+    dyeingOrders.forEach(d => {
+      (d.receipts || []).forEach(r => {
+        list.push({
+          ...r,
+          dyeing_order_no: d.dyeing_order_no,
+          dyeing_mill_name: d.dyeing_mill_name || d.supplier_name,
+          fabric_name: d.fabric_name,
+          uom: d.uom
+        });
+      });
+    });
+    return list;
+  }, [dyeingOrders]);
+
+  // Filtered Dyeing Orders by Search and Status
+  const filteredDyeingOrders = useMemo(() => {
+    return dyeingOrders.filter(d => {
+      if (statusFilter !== 'ALL' && d.status !== statusFilter) {
+        return false;
+      }
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const matchNo = d.dyeing_order_no.toLowerCase().includes(q);
+      const matchMill = (d.dyeing_mill_name || d.supplier_name || '').toLowerCase().includes(q);
+      const matchFab = d.fabric_name.toLowerCase().includes(q);
+      const matchDC = (d.challan_no || '').toLowerCase().includes(q);
+      const matchColors = (d.items || []).some(it => 
+        it.color_name.toLowerCase().includes(q) || (it.pantone_code || '').toLowerCase().includes(q)
+      );
+      return matchNo || matchMill || matchFab || matchDC || matchColors;
+    });
+  }, [dyeingOrders, statusFilter, searchQuery]);
+
+  // Filtered Receipts by Search
+  const filteredReceipts = useMemo(() => {
+    if (!searchQuery.trim()) return allDyeingReceipts;
+    const q = searchQuery.toLowerCase();
+    return allDyeingReceipts.filter(r => 
+      (r.receipt_no || '').toLowerCase().includes(q) ||
+      (r.dyeing_order_no || '').toLowerCase().includes(q) ||
+      (r.dyeing_mill_name || '').toLowerCase().includes(q) ||
+      (r.delivery_challan_no || '').toLowerCase().includes(q) ||
+      (r.shade_condition || '').toLowerCase().includes(q)
+    );
+  }, [allDyeingReceipts, searchQuery]);
+
   if (loading) {
     return (
-      <div className="p-8 max-w-7xl mx-auto flex flex-col items-center justify-center min-h-[60vh]">
-        <RefreshCw className="w-10 h-10 text-purple-600 animate-spin mb-4" />
-        <p className="text-slate-600 font-medium">Loading Stage 04: Dyeing Workspace...</p>
+      <div className="flex flex-col items-center justify-center h-full p-12 text-slate-400">
+        <RefreshCw className="w-8 h-8 animate-spin text-brand-600 mb-3" />
+        <p className="text-sm font-semibold text-slate-700">Loading Stage 04: Dyeing Workspace...</p>
+        <p className="text-xs text-slate-400 mt-1">Cross-referencing fabric inward balance, dyeing orders, and Pantone shades</p>
       </div>
     );
   }
 
   if (error || !order) {
     return (
-      <div className="p-6 max-w-7xl mx-auto">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
-          <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-red-800">Error Loading Dyeing Workspace</h2>
-          <p className="text-sm text-red-600 mt-1">{error || 'Order not found'}</p>
-          <Button onClick={() => navigate('/production/dyeing')} className="mt-4" variant="secondary">
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Dyeing Stage
-          </Button>
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div>
+            <h4 className="font-bold text-sm">Failed to Load Dyeing Workspace</h4>
+            <p className="text-xs mt-1">{error || 'Order not found'}</p>
+            <Button onClick={() => navigate('/production/dyeing')} className="mt-3 text-xs" variant="secondary">
+              Back to Dyeing Stage
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -610,72 +791,75 @@ export default function DyeingOrderDetail() {
   const totalFabricReceived = Number(fabricStockData?.total_fabric_received_from_dyeing || 0);
   const balanceToOutward = Number(fabricStockData?.balance_available_for_dyeing || 0);
 
-  // All receipts across dyeing orders
-  const allDyeingReceipts: any[] = [];
-  dyeingOrders.forEach(d => {
-    (d.receipts || []).forEach(r => {
-      allDyeingReceipts.push({
-        ...r,
-        dyeing_order_no: d.dyeing_order_no,
-        dyeing_mill_name: d.dyeing_mill_name,
-        fabric_name: d.fabric_name,
-        uom: d.uom
-      });
-    });
-  });
-
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-20">
-      {/* Top Banner Navigation */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+    <div className="flex flex-col h-full bg-slate-50/60 overflow-y-auto">
+      {/* Toast Notification */}
+      {successToast && (
+        <div className="fixed top-4 right-4 z-50 bg-emerald-700 text-white px-4 py-2.5 rounded-lg shadow-lg text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 className="w-4 h-4" />
+          {successToast}
+        </div>
+      )}
+
+      {/* Page Header conforming to ERP design system */}
+      <PageHeader
+        title={`04. Dyeing: ${order.order_number}`}
+        subtitle={`Fabric outward challans, Pantone color management & inward receiving for ${order.title}`}
+        breadcrumb={[
+          { label: 'Production', href: '/production/orders' },
+          { label: '04. Dyeing', href: '/production/dyeing' },
+          { label: order.order_number },
+        ]}
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => navigate('/production/dyeing')}
-              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
-              title="Back to Stage 04: Dyeing Stage View"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back</span>
             </button>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-100 text-purple-700 tracking-wide uppercase">
-                  Stage 04 • Dyeing
-                </span>
-                <span className="text-xs text-slate-400">|</span>
-                <span className="font-mono text-xs font-semibold text-slate-700">{order.order_number}</span>
-              </div>
-              <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                Fabric Dyeing & Pantone Color Orders
-              </h1>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`/production/inward/${order.id}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+            >
+              <Package className="w-3.5 h-3.5 text-slate-500" />
+              <span>Stage 03 Inward</span>
+            </button>
+
+            <button
+              onClick={() => navigate('/production/cutting')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+            >
+              <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+              <span>Next: Stage 05 Cutting</span>
+            </button>
+
             <button
               onClick={loadData}
-              className="p-2 text-slate-600 hover:text-slate-900 border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-              title="Refresh Dyeing Data"
+              className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              title="Refresh Data"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
+
             <Button
               onClick={handleOpenCreateModal}
-              className="bg-purple-600 hover:bg-purple-700 text-white shadow-xs"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-3 py-1.5"
             >
-              <Plus className="w-4 h-4 mr-1.5" />
+              <Plus className="w-3.5 h-3.5 mr-1" />
               <span>Create Dyeing Order</span>
             </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-
-        {/* 1. Order Summary Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+      <div className="p-3 sm:p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
+        {/* Order Profile Banner Card */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5 min-w-0">
               <BuyerAvatar
                 buyer={{
                   id: order.customer_id,
@@ -683,434 +867,583 @@ export default function DyeingOrderDetail() {
                   name: order.customer_name,
                   avatar_style: order.customer_avatar_style,
                   avatar_seed: order.customer_avatar_seed,
+                  avatar_config: order.customer_avatar_config,
                 }}
                 size="lg"
+                shape="circle"
+                className="shrink-0"
               />
-              <div>
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  <h2 className="text-lg font-bold text-slate-900">{order.title}</h2>
-                  <StatusBadge status={order.status} />
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-mono font-bold text-base text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded-lg border border-brand-200">
+                    {order.order_number}
+                  </span>
+                  <h2 className="text-base font-bold text-slate-800">{order.customer_name || 'Direct Buyer'}</h2>
+                  {order.customer_code && (
+                    <span className="text-xs font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">
+                      {order.customer_code}
+                    </span>
+                  )}
+                  <StatusBadge status={order.status || 'In Progress'} />
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Buyer: <span className="font-semibold text-slate-700">{order.customer_name || 'Direct Order'}</span>
-                  {order.customer_code && <span className="text-slate-400 ml-1">({order.customer_code})</span>}
-                  <span className="mx-2">•</span>
-                  Delivery Target: <span className="font-semibold text-slate-700">{order.target_delivery_date}</span>
-                </p>
+
+                <p className="text-xs font-medium text-slate-600 mt-1">{order.title}</p>
+
+                <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 flex-wrap">
+                  {order.target_delivery_date && (
+                    <span className="flex items-center gap-1 font-medium text-slate-700">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      Delivery: <strong>{order.target_delivery_date}</strong>
+                    </span>
+                  )}
+                  <span>
+                    Total Order Quantity: <strong className="font-mono text-slate-800">{fmt(order.total_quantity)} garments</strong>
+                  </span>
+                  <span>
+                    Dyeing Orders: <strong className="text-slate-800">{dyeingOrders.length} batches</strong>
+                  </span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/production/inward/${order.id}`)}
-                className="text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-              >
-                <Package className="w-3.5 h-3.5 mr-1.5" />
-                <span>View Stage 03 Inward</span>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/production/cutting`)}
-                className="text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-              >
-                <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
-                <span>Next: Stage 05 Cutting</span>
-              </Button>
+            <div className="flex items-center gap-2 shrink-0 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100">
+              <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                Stage 04: Dyeing
+              </span>
             </div>
           </div>
         </div>
 
-        {/* 2. Core Fabric Balance & Outward Tracker Card */}
-        <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-5 sm:p-6 text-white shadow-md relative overflow-hidden">
-          <div className="absolute right-0 top-0 -mt-6 -mr-6 w-56 h-56 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-purple-300 text-xs font-bold uppercase tracking-wider">
-                <Droplets className="w-4 h-4 text-purple-400" />
-                <span>Stage 04 Fabric Processing Pipeline</span>
+        {/* Fabric Balance & Outward Pipeline Summary (Standard ERP Theme) */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <Droplets className="w-4 h-4 text-brand-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Fabric Balance & Outward Summary
+                </h3>
               </div>
-              <h3 className="text-xl sm:text-2xl font-black text-white">
-                Fabric Outward & Pantone Dyeing Balance
-              </h3>
-              <p className="text-xs sm:text-sm text-purple-200/80 max-w-xl">
-                Only inwarded fabric is routed to dyeing. Track exact quantities sent outward to mills with Pantone shade codes, and receive dyed yardage back.
+              <p className="text-xs text-slate-500 mt-0.5">
+                Inwarded fabric from Stage 03 Inward vs sent to dyeing mills & received back
               </p>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleOpenCreateModal}
-                className="px-4 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-purple-500 hover:bg-purple-400 text-white shadow-lg shadow-purple-600/30 transition flex items-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Issue Dyeing Order</span>
-              </button>
-            </div>
+            <Button
+              onClick={handleOpenCreateModal}
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs self-start sm:self-auto"
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              <span>Create Dyeing Order</span>
+            </Button>
           </div>
 
-          {/* 4 Metrics Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-6 pt-6 border-t border-purple-800/60">
-            <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3.5 border border-white/10">
+          {/* 4 Summary Metrics */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-4">
+            {/* 1. Inward Fabric */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-purple-200">Inward Fabric</span>
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-semibold text-slate-600">Inward Fabric</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
               </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-white">{fmt(totalFabricInwarded, 1)}</span>
-                <span className="text-xs text-purple-200 font-medium">MTR</span>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-slate-900">{fmt(totalFabricInwarded, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
               </div>
-              <p className="text-[10px] text-purple-300/80 mt-1">Received from Fabric POs</p>
+              <p className="text-[10px] text-slate-400 mt-1">Received from Stage 03 Fabric POs</p>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3.5 border border-white/10">
+            {/* 2. Sent to Dyeing (Out) */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-purple-200">Sent to Dyeing (Out)</span>
-                <Truck className="w-3.5 h-3.5 text-purple-300" />
+                <span className="text-xs font-semibold text-slate-600">Sent to Dyeing (Out)</span>
+                <Truck className="w-4 h-4 text-brand-600" />
               </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-purple-300">{fmt(totalFabricOutward, 1)}</span>
-                <span className="text-xs text-purple-200 font-medium">MTR</span>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-brand-700">{fmt(totalFabricOutward, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
               </div>
-              <p className="text-[10px] text-purple-300/80 mt-1">Outward Delivery Challans</p>
+              <p className="text-[10px] text-slate-400 mt-1">Total outward delivery challans</p>
             </div>
 
-            <div className={`backdrop-blur-xs rounded-xl p-3.5 border ${
-              balanceToOutward > 0 
-                ? 'bg-amber-500/20 border-amber-400/40' 
-                : 'bg-emerald-500/20 border-emerald-400/40'
+            {/* 3. Available to Send */}
+            <div className={`rounded-xl p-3.5 border flex flex-col justify-between ${
+              balanceToOutward > 0 ? 'bg-amber-50/60 border-amber-200' : 'bg-slate-50/70 border-slate-200'
             }`}>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-white">Available to Send</span>
-                <Boxes className="w-3.5 h-3.5 text-amber-300" />
+                <span className="text-xs font-semibold text-slate-700">Available to Send</span>
+                <Boxes className={`w-4 h-4 ${balanceToOutward > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
               </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-white">{fmt(balanceToOutward, 1)}</span>
-                <span className="text-xs text-white/80 font-medium">MTR</span>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className={`text-xl sm:text-2xl font-bold font-mono ${balanceToOutward > 0 ? 'text-amber-800' : 'text-slate-700'}`}>
+                  {fmt(balanceToOutward, 1)}
+                </span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
               </div>
-              <p className="text-[10px] text-white/80 mt-1">
+              <p className="text-[10px] text-slate-500 mt-1">
                 {balanceToOutward > 0 ? 'Ready for new dyeing order' : 'All inward fabric allocated'}
               </p>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-xs rounded-xl p-3.5 border border-white/10">
+            {/* 4. Dyed Fabric Received */}
+            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-purple-200">Dyed Fabric Received</span>
-                <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-semibold text-slate-600">Dyed Fabric Received</span>
+                <CheckCheck className="w-4 h-4 text-emerald-600" />
               </div>
-              <div className="mt-1 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-black text-emerald-300">{fmt(totalFabricReceived, 1)}</span>
-                <span className="text-xs text-purple-200 font-medium">MTR</span>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="text-xl sm:text-2xl font-bold font-mono text-emerald-700">{fmt(totalFabricReceived, 1)}</span>
+                <span className="text-xs text-slate-500 font-semibold">MTR</span>
               </div>
-              <p className="text-[10px] text-purple-300/80 mt-1">Inwarded from Dyeing Mills</p>
+              <p className="text-[10px] text-slate-400 mt-1">Inwarded from dyeing mills</p>
             </div>
           </div>
         </div>
 
-        {/* Tab navigation */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-              activeTab === 'orders'
-                ? 'bg-purple-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Droplets className="w-4 h-4" />
-            <span>Dyeing Orders ({dyeingOrders.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-              activeTab === 'history'
-                ? 'bg-purple-600 text-white shadow-2xs'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Dyed Fabric Inward Receipts ({allDyeingReceipts.length})</span>
-          </button>
+        {/* Tab Navigation */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === 'orders'
+                  ? 'bg-brand-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <Droplets className="w-3.5 h-3.5" />
+              <span>Dyeing Orders</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 ml-1">
+                {dyeingOrders.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === 'history'
+                  ? 'bg-brand-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Dyed Fabric Inward Receipts</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 ml-1">
+                {allDyeingReceipts.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search orders, mills, fabric..."
+                className="pl-8 pr-3 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 w-44 sm:w-60 shadow-2xs"
+              />
+            </div>
+
+            {activeTab === 'orders' && (
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Sent to Dyeing">Sent to Dyeing</option>
+                <option value="Partially Received">Partially Received</option>
+                <option value="Received">Received</option>
+              </select>
+            )}
+          </div>
         </div>
 
-        {/* Tab Content: Dyeing Orders */}
+        {/* TAB 1: DYEING ORDERS TABLE */}
         {activeTab === 'orders' && (
-          <div className="space-y-4">
-            {dyeingOrders.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-2xs">
-                <div className="w-16 h-16 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mx-auto mb-4">
-                  <Droplets className="w-8 h-8" />
-                </div>
-                <h3 className="text-base font-bold text-slate-800">No Dyeing Orders Issued Yet</h3>
-                <p className="text-sm text-slate-500 max-w-md mx-auto mt-1 mb-5">
-                  You have <span className="font-bold text-slate-700">{fmt(totalFabricInwarded, 1)} MTR</span> of fabric inwarded from Stage 03. Create your first dyeing order to split quantities by color and Pantone codes (e.g. Green 20, Red 20, Orange 20, White 20, Black 20).
-                </p>
-                <Button
-                  onClick={handleOpenCreateModal}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  <Plus className="w-4 h-4 mr-1.5" />
-                  <span>Create First Dyeing Order</span>
-                </Button>
-              </div>
-            ) : (
-              dyeingOrders.map((dOrder) => {
-                const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
-                const totalRec = Number(dOrder.total_received_quantity || 0);
-                const pct = totalPlanned > 0 ? Math.min(100, Math.round((totalRec / totalPlanned) * 100)) : 0;
-                const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
-
-                return (
-                  <div
-                    key={dOrder.id}
-                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs hover:shadow-xs transition"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-sm font-black text-purple-900 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200">
-                            {dOrder.dyeing_order_no}
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                            isFullyReceived 
-                              ? 'bg-emerald-100 text-emerald-800' 
-                              : dOrder.status === 'Partially Received'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-purple-100 text-purple-800'
-                          }`}>
-                            {dOrder.status}
-                          </span>
-                          {dOrder.process_type && (
-                            <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                              {dOrder.process_type}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1.5 flex items-center gap-2 flex-wrap">
-                          <span>Dyeing Mill: <strong className="text-slate-800">{dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}</strong></span>
-                          <span>•</span>
-                          <span>DC No: <strong className="font-mono text-slate-800">{dOrder.challan_no || 'N/A'}</strong></span>
-                          <span>•</span>
-                          <span>Date: <strong className="text-slate-800">{dOrder.order_date}</strong></span>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-3 w-10 text-center">#</th>
+                    <th className="py-3 px-3 min-w-[130px]">Dyeing Order #</th>
+                    <th className="py-3 px-3 min-w-[180px]">Dyeing Processor / Mill</th>
+                    <th className="py-3 px-3 min-w-[170px]">Fabric Material</th>
+                    <th className="py-3 px-3 min-w-[140px]">Process Type</th>
+                    <th className="py-3 px-3 text-right min-w-[110px]">Outward Qty</th>
+                    <th className="py-3 px-3 min-w-[220px]">Pantone / Color Information</th>
+                    <th className="py-3 px-3 min-w-[110px]">Outward Date</th>
+                    <th className="py-3 px-3 min-w-[110px]">Expected Date</th>
+                    <th className="py-3 px-3 text-center min-w-[120px]">Status</th>
+                    <th className="py-3 px-3 text-right min-w-[130px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredDyeingOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="py-12 text-center text-slate-400">
+                        <Droplets className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="font-semibold text-xs text-slate-700">No Dyeing Orders Found</p>
+                        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                          {searchQuery || statusFilter !== 'ALL'
+                            ? 'No dyeing orders match your search or filter. Try resetting filters.'
+                            : 'Create a dyeing order to split inwarded fabric by color and Pantone code for processing.'}
                         </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 self-start sm:self-auto">
-                        {!isFullyReceived && (
+                        {!searchQuery && statusFilter === 'ALL' && (
                           <Button
-                            onClick={() => handleOpenReceive(dOrder)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs"
+                            onClick={handleOpenCreateModal}
+                            className="mt-3 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold"
                           >
-                            <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
-                            <span>Receive Dyed Fabric</span>
+                            <Plus className="w-3.5 h-3.5 mr-1" />
+                            <span>Create First Dyeing Order</span>
                           </Button>
                         )}
-                        {isFullyReceived && (
-                          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span>Dyeing Completed</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredDyeingOrders.map((dOrder, idx) => {
+                      const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
+                      const totalRec = Number(dOrder.total_received_quantity || 0);
+                      const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
+                      const isExpanded = expandedOrderIds.has(dOrder.id);
 
-                    {/* Progress Bar */}
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-xs text-slate-600 font-medium mb-1">
-                        <span>Dyed Fabric Received Progress</span>
-                        <span>{fmt(totalRec, 1)} / {fmt(totalPlanned, 1)} {dOrder.uom} ({pct}%)</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-500 ${
-                            isFullyReceived ? 'bg-emerald-500' : 'bg-purple-600'
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
+                      return (
+                        <React.Fragment key={dOrder.id}>
+                          <tr className={`hover:bg-slate-50/80 transition ${isExpanded ? 'bg-slate-50/50' : ''}`}>
+                            <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
+                              {idx + 1}
+                            </td>
 
-                    {/* Color Items Breakdown Table with Pantone Codes */}
-                    <div className="mt-5 overflow-x-auto">
-                      <table className="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
-                        <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                          <tr>
-                            <th className="py-2.5 px-3">Color & Pantone Standard</th>
-                            <th className="py-2.5 px-3">Planned (Outward)</th>
-                            <th className="py-2.5 px-3">Received (Inward)</th>
-                            <th className="py-2.5 px-3">Shrinkage %</th>
-                            <th className="py-2.5 px-3">Shade Match Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {(dOrder.items || []).map((it, idx) => (
-                            <tr key={it.id || idx} className="hover:bg-slate-50/60">
-                              <td className="py-2.5 px-3">
-                                <div className="flex items-center gap-2">
+                            <td className="py-3 px-3">
+                              <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                                {dOrder.dyeing_order_no}
+                              </span>
+                              {dOrder.challan_no && (
+                                <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
+                                  DC: {dOrder.challan_no}
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="font-semibold text-slate-800 block text-xs">
+                                {dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="font-medium text-slate-800 block text-xs">
+                                {dOrder.fabric_name}
+                              </span>
+                              {dOrder.fabric_code && (
+                                <span className="font-mono text-[10px] text-slate-400 block">
+                                  {dOrder.fabric_code}
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                {dOrder.process_type || 'Fabric Dyeing'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3 text-right">
+                              <span className="font-mono font-bold text-slate-900 text-xs">
+                                {fmt(totalPlanned, 1)} {dOrder.uom}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {(dOrder.items || []).slice(0, 3).map((it, cIdx) => (
                                   <span
-                                    className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0"
-                                    style={{ backgroundColor: it.hex_code || '#6366f1' }}
-                                  />
-                                  <div>
-                                    <span className="font-bold text-slate-900">{it.color_name}</span>
-                                    {it.pantone_code && (
-                                      <span className="ml-2 font-mono text-[11px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                                        {it.pantone_code}
-                                      </span>
-                                    )}
+                                    key={cIdx}
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-slate-100 border border-slate-200"
+                                    title={`${it.color_name}: ${it.planned_quantity} ${dOrder.uom}${it.pantone_code ? ` (Pantone: ${it.pantone_code})` : ''}`}
+                                  >
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                                      style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                                    />
+                                    <span className="font-medium text-slate-700">{it.color_name}</span>
+                                    <span className="font-mono text-slate-500 font-semibold">{fmt(it.planned_quantity, 0)}</span>
+                                  </span>
+                                ))}
+                                {(dOrder.items || []).length > 3 && (
+                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    +{(dOrder.items || []).length - 3} more
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            <td className="py-3 px-3 text-slate-700 font-medium">
+                              {dOrder.order_date}
+                            </td>
+
+                            <td className="py-3 px-3 text-slate-600">
+                              {dOrder.expected_delivery_date || '—'}
+                            </td>
+
+                            <td className="py-3 px-3 text-center">
+                              <StatusBadge status={dOrder.status} />
+                              <span className="block text-[10px] font-mono text-slate-400 mt-0.5">
+                                Recv: {fmt(totalRec, 1)} / {fmt(totalPlanned, 1)}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3 text-right">
+                              <div className="flex items-center gap-1.5 justify-end">
+                                {!isFullyReceived ? (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleOpenReceive(dOrder)}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-1 px-2.5 shadow-2xs"
+                                  >
+                                    <CheckCheck className="w-3 h-3 mr-1" />
+                                    <span>Receive</span>
+                                  </Button>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    <span>Completed</span>
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpandOrder(dOrder.id)}
+                                  className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+                                  title={isExpanded ? 'Hide color details' : 'View color details'}
+                                >
+                                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* Expandable Color Breakdown Details */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/60">
+                              <td colSpan={11} className="py-3 px-4 border-t border-b border-slate-200/80">
+                                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                      <Palette className="w-3.5 h-3.5 text-brand-600" />
+                                      Color Breakdown for {dOrder.dyeing_order_no}
+                                    </h4>
+                                    <span className="text-xs text-slate-500 font-medium">
+                                      Total Outward: <strong className="text-slate-900 font-mono">{fmt(totalPlanned, 1)} {dOrder.uom}</strong>
+                                    </span>
+                                  </div>
+
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border border-slate-200 rounded-lg">
+                                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
+                                        <tr>
+                                          <th className="py-2 px-3">Color & Pantone Standard</th>
+                                          <th className="py-2 px-3 text-right">Planned Outward</th>
+                                          <th className="py-2 px-3 text-right">Received Inward</th>
+                                          <th className="py-2 px-3 text-right">Shrinkage %</th>
+                                          <th className="py-2 px-3">Shade Match Status</th>
+                                          <th className="py-2 px-3">Notes</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {(dOrder.items || []).map((it, idx2) => (
+                                          <tr key={it.id || idx2} className="hover:bg-slate-50/50">
+                                            <td className="py-2 px-3">
+                                              <div className="flex items-center gap-2">
+                                                <span
+                                                  className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0"
+                                                  style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                                                />
+                                                <span className="font-bold text-slate-800">{it.color_name}</span>
+                                                {it.pantone_code && (
+                                                  <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                                                    {it.pantone_code}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
+                                              {fmt(it.planned_quantity, 1)} {dOrder.uom}
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-700">
+                                              {fmt(Number(it.received_quantity || 0), 1)} {dOrder.uom}
+                                            </td>
+                                            <td className="py-2 px-3 text-right font-mono text-slate-600">
+                                              {it.shrinkage_loss_percent ? `${fmt(it.shrinkage_loss_percent, 1)}%` : '0%'}
+                                            </td>
+                                            <td className="py-2 px-3">
+                                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                                it.shade_match_status?.includes('Approved') || it.shade_match_status?.includes('Matched')
+                                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                              }`}>
+                                                {it.shade_match_status || 'Pending Verification'}
+                                              </span>
+                                            </td>
+                                            <td className="py-2 px-3 text-slate-500 text-[11px]">
+                                              {it.notes || '—'}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
                                   </div>
                                 </div>
                               </td>
-                              <td className="py-2.5 px-3 font-semibold text-slate-800">
-                                {fmt(it.planned_quantity, 1)} {dOrder.uom}
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <span className={`font-bold ${
-                                  Number(it.received_quantity || 0) >= Number(it.planned_quantity || 0)
-                                    ? 'text-emerald-700'
-                                    : 'text-slate-700'
-                                }`}>
-                                  {fmt(Number(it.received_quantity || 0), 1)} {dOrder.uom}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3 text-slate-600">
-                                {it.shrinkage_loss_percent ? `${fmt(it.shrinkage_loss_percent, 1)}%` : '0%'}
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
-                                  it.shade_match_status?.includes('Approved') || it.shade_match_status?.includes('Matched')
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                    : it.shade_match_status === 'Pending'
-                                    ? 'bg-slate-100 text-slate-600'
-                                    : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                }`}>
-                                  {it.shade_match_status || 'Pending Verification'}
-                                </span>
-                              </td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        {/* Tab Content: Inward Receipts History */}
+        {/* TAB 2: DYED FABRIC INWARD RECEIPTS TABLE */}
         {activeTab === 'history' && (
-          <div className="space-y-4">
-            {allDyeingReceipts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-2xs">
-                <ShieldCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                <h3 className="text-base font-bold text-slate-700">No Dyeing Inward Receipts Recorded Yet</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Once dyed fabric arrives from processing mills, click "Receive Dyed Fabric" to record incoming quantities and photo proof.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {allDyeingReceipts.map((rec, idx) => (
-                  <div key={rec.id || idx} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {rec.receipt_no}
-                      </span>
-                      <span className="text-xs text-slate-500 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5" />
-                        {rec.receipt_date}
-                      </span>
-                    </div>
-
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900">
-                        {fmt(rec.total_received_quantity, 1)} {rec.uom || 'MTR'} Dyed Fabric Received
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Order: <strong>{rec.dyeing_order_no}</strong> • Mill: <strong>{rec.dyeing_mill_name || 'Mill'}</strong>
-                      </p>
-                      {rec.delivery_challan_no && (
-                        <p className="text-xs text-slate-500">
-                          Inward DC: <strong className="font-mono">{rec.delivery_challan_no}</strong>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-3 w-10 text-center">#</th>
+                    <th className="py-3 px-3 min-w-[140px]">Receipt Number</th>
+                    <th className="py-3 px-3 min-w-[130px]">Related Dyeing Order</th>
+                    <th className="py-3 px-3 min-w-[170px]">Fabric Material</th>
+                    <th className="py-3 px-3 text-right min-w-[120px]">Received Quantity</th>
+                    <th className="py-3 px-3 min-w-[120px]">Receipt Date</th>
+                    <th className="py-3 px-3 min-w-[180px]">Status / Shade Condition</th>
+                    <th className="py-3 px-3 min-w-[120px]">Received By</th>
+                    <th className="py-3 px-3 text-right min-w-[120px]">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredReceipts.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
+                        <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="font-semibold text-xs text-slate-700">No Inward Receipts Recorded</p>
+                        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                          Once processed fabric is delivered by dyeing mills, click "Receive" on any active dyeing order to log received yardage and photo proof.
                         </p>
-                      )}
-                    </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredReceipts.map((rec, idx) => (
+                      <tr key={rec.id || idx} className="hover:bg-slate-50/80 transition">
+                        <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
 
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
-                        {rec.shade_condition || 'Approved - Pantone Matched'}
-                      </span>
-                      {rec.received_by && (
-                        <span className="text-[11px] text-slate-500">
-                          By: {rec.received_by}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Photo Proof */}
-                    {rec.photo_url && (
-                      <div className="pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={rec.photo_url}
-                            alt="Dyed fabric proof"
-                            onClick={() => setZoomedPhoto(rec.photo_url)}
-                            className="w-16 h-16 rounded-xl object-cover border border-slate-200 cursor-pointer hover:opacity-90 shadow-2xs"
-                          />
-                          <div>
-                            <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                              <ImageIcon className="w-3.5 h-3.5 text-purple-600" />
-                              Dyed Fabric Proof Photo
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            {rec.receipt_no}
+                          </span>
+                          {rec.delivery_challan_no && (
+                            <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
+                              DC: {rec.delivery_challan_no}
                             </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-xs font-semibold text-slate-700">
+                            {rec.dyeing_order_no}
+                          </span>
+                          {rec.dyeing_mill_name && (
+                            <span className="block text-[11px] text-slate-500 mt-0.5">
+                              {rec.dyeing_mill_name}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="font-medium text-slate-800 block text-xs">
+                            {rec.fabric_name || 'Fabric Material'}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-right">
+                          <span className="font-mono font-bold text-emerald-700 text-xs">
+                            {fmt(rec.total_received_quantity, 1)} {rec.uom || 'MTR'}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-slate-700 font-medium">
+                          {rec.receipt_date}
+                        </td>
+
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
+                            {rec.shade_condition || 'Approved - Pantone Matched'}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-3 text-slate-600 text-xs">
+                          {rec.received_by || 'Stores & QC Inward'}
+                        </td>
+
+                        <td className="py-3 px-3 text-right">
+                          {rec.photo_url ? (
                             <button
                               type="button"
                               onClick={() => setZoomedPhoto(rec.photo_url)}
-                              className="text-[11px] text-purple-600 hover:text-purple-800 font-semibold underline mt-0.5 block"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition shadow-2xs"
+                              title="Click to view full photo proof"
                             >
-                              Click to zoom photo
+                              <Camera className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View Photo</span>
                             </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">No Photo</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
-
       </div>
 
-      {/* MODAL 1: Create Dyeing Order (Outward to Dyeing) */}
+      {/* CREATE DYEING ORDER MODAL */}
       <Modal
         open={showCreateModal}
         onClose={() => !creating && setShowCreateModal(false)}
-        title="Create Dyeing Order (Outward to Dyeing)"
+        title="Create Dyeing Order & Delivery Challan"
+        subtitle={`Stage 04 Outward to Dyeing Mill for Production Order ${order.order_number}`}
         size="xl"
       >
-        <form onSubmit={handleCreateDyeingOrder} className="space-y-5">
+        <form onSubmit={handleCreateDyeingOrder} className="space-y-4">
           {createError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span>{createError}</span>
             </div>
           )}
 
           {/* Fabric Balance Alert */}
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3.5 text-xs text-purple-900 flex items-center justify-between flex-wrap gap-2">
+          <div className="bg-brand-50 border border-brand-200 rounded-xl p-3.5 text-xs text-brand-900 flex items-center justify-between flex-wrap gap-2">
             <div>
-              <span className="font-bold text-purple-950">Inward Fabric Received:</span> {fmt(totalFabricInwarded, 1)} {uom}
+              <span className="font-bold text-brand-950">Inward Fabric Received:</span> {fmt(totalFabricInwarded, 1)} {uom}
               <span className="mx-2">•</span>
-              <span className="font-bold text-purple-950">Available for Dyeing:</span> {fmt(availableFabricBalance, 1)} {uom}
+              <span className="font-bold text-brand-950">Available for Dyeing:</span> {fmt(availableFabricBalance, 1)} {uom}
             </div>
-            <div className="font-semibold text-purple-700">
-              Total Order: {order.order_number}
+            <div className="font-semibold text-brand-700">
+              Order: {order.order_number}
             </div>
           </div>
 
@@ -1119,7 +1452,7 @@ export default function DyeingOrderDetail() {
               <select
                 value={selectedSupplierId}
                 onChange={e => setSelectedSupplierId(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 focus:ring-purple-500 focus:border-purple-500"
+                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white"
                 required
               >
                 <option value="">Select Dyeing Mill / Supplier</option>
@@ -1131,15 +1464,51 @@ export default function DyeingOrderDetail() {
               </select>
             </FormField>
 
-            <FormField label="Fabric Material" required>
-              <input
-                type="text"
-                value={fabricName}
-                onChange={e => setFabricName(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-                placeholder="e.g. 100% Combed Cotton 30s Fabric"
-                required
-              />
+            {/* Fabric Material Dropdown populated from actual eligible fabric materials */}
+            <FormField label="Fabric Material (Eligible for Dyeing)" required>
+              {eligibleFabrics.length === 0 ? (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>No inwarded fabric available for dyeing. Please inward fabric in Stage 03 first.</span>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {eligibleFabrics.length > 3 && (
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={fabricSearchQuery}
+                        onChange={e => setFabricSearchQuery(e.target.value)}
+                        placeholder="Search fabric name or code..."
+                        className="w-full pl-8 pr-3 py-1 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-500"
+                      />
+                    </div>
+                  )}
+                  <select
+                    value={fabricMaterialId || ''}
+                    onChange={e => {
+                      const selId = Number(e.target.value);
+                      const chosen = eligibleFabrics.find(f => f.material_id === selId);
+                      if (chosen) {
+                        setFabricMaterialId(chosen.material_id);
+                        setFabricName(chosen.material_name);
+                        setUom(chosen.uom);
+                        setColorRows(buildOrderColors(order, fabricStockData, chosen.available_quantity));
+                      }
+                    }}
+                    className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 focus:ring-brand-500 focus:border-brand-500 bg-white"
+                    required
+                  >
+                    <option value="">Select Eligible Fabric Material</option>
+                    {searchedFabrics.map(f => (
+                      <option key={f.material_id} value={f.material_id}>
+                        {f.material_name} ({f.material_code || `MAT-${f.material_id}`}) • Available: {fmt(f.available_quantity, 1)} {f.uom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </FormField>
 
             <FormField label="Outward Delivery Challan (DC No)" required>
@@ -1188,7 +1557,7 @@ export default function DyeingOrderDetail() {
             <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <div>
                 <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <Palette className="w-3.5 h-3.5 text-purple-600" />
+                  <Palette className="w-3.5 h-3.5 text-brand-600" />
                   Color Breakdown & Pantone Codes
                 </h4>
                 <p className="text-[11px] text-slate-500">
@@ -1200,7 +1569,7 @@ export default function DyeingOrderDetail() {
                 <button
                   type="button"
                   onClick={handleAutofillColors}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition"
+                  className="px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition"
                   title="Reload colors from production order"
                 >
                   <Sparkles className="w-3 h-3 inline mr-1" />
@@ -1209,7 +1578,7 @@ export default function DyeingOrderDetail() {
                 <button
                   type="button"
                   onClick={handleAddColorRow}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition"
+                  className="px-2.5 py-1 text-[11px] font-semibold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition"
                 >
                   <Plus className="w-3 h-3 inline mr-1" />
                   Add Color
@@ -1217,31 +1586,14 @@ export default function DyeingOrderDetail() {
               </div>
             </div>
 
-            {/* Auto-populated notice badge */}
-            <div className="mb-3 px-3 py-2 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between text-xs text-purple-900">
-              <span className="flex items-center gap-1.5">
-                <CheckCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                <span>
-                  <strong>Colors auto-loaded from Order {order.order_number}:</strong> You can freely change color names, adjust yardage, or modify Pantone shades.
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={handleAutofillColors}
-                className="text-[11px] font-bold text-purple-700 hover:text-purple-900 underline ml-2 shrink-0 cursor-pointer"
-              >
-                Reset to Order
-              </button>
-            </div>
-
-            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
               {colorRows.map((row, idx) => (
                 <div key={idx} className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
                   {/* Color Swatch */}
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <input
                       type="color"
-                      value={row.hex_code || '#6366f1'}
+                      value={row.hex_code || '#3b82f6'}
                       onChange={e => handleColorRowChange(idx, 'hex_code', e.target.value)}
                       className="w-8 h-8 rounded-lg cursor-pointer border border-slate-300 p-0.5 shrink-0"
                       title="Pick Color Swatch"
@@ -1252,7 +1604,7 @@ export default function DyeingOrderDetail() {
                       value={row.color_name}
                       onChange={e => handleColorRowChange(idx, 'color_name', e.target.value)}
                       placeholder="Color (e.g. Green)"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full sm:w-32"
+                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full sm:w-32 bg-white"
                       required
                     />
                   </div>
@@ -1265,7 +1617,7 @@ export default function DyeingOrderDetail() {
                       value={row.pantone_code}
                       onChange={e => handleColorRowChange(idx, 'pantone_code', e.target.value)}
                       placeholder="Pantone (e.g. 18-5642 TCX)"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-mono text-purple-900 w-full"
+                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-mono text-slate-800 w-full bg-white"
                     />
                   </div>
 
@@ -1278,7 +1630,7 @@ export default function DyeingOrderDetail() {
                       value={row.planned_quantity}
                       onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
                       placeholder="Qty"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full"
+                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-900 w-full bg-white"
                       required
                     />
                     <span className="text-xs text-slate-500 font-semibold">{uom}</span>
@@ -1292,7 +1644,7 @@ export default function DyeingOrderDetail() {
                       value={row.rate_per_unit}
                       onChange={e => handleColorRowChange(idx, 'rate_per_unit', e.target.value)}
                       placeholder="₹/MTR"
-                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 text-slate-700 w-full"
+                      className="text-xs rounded-lg border-slate-300 py-1.5 px-2.5 text-slate-700 w-full bg-white"
                     />
                   </div>
 
@@ -1326,16 +1678,24 @@ export default function DyeingOrderDetail() {
               ))}
             </datalist>
 
-            {/* Total planned summary */}
-            <div className="mt-3 p-3 rounded-xl bg-slate-100 flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-700">Total Outward Fabric:</span>
+            {/* Available quantity vs planned validation bar (Note: Total Outward Fabric field has been removed) */}
+            <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-black text-purple-900">
+                <span className="text-slate-500 font-medium">Available Fabric to Send:</span>
+                <span className="font-bold text-slate-800">{fmt(availableFabricBalance, 1)} {uom}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-medium">Total Planned Across Colors:</span>
+                <span className={`font-mono font-bold ${
+                  totalPlannedInModal > availableFabricBalance && availableFabricBalance > 0
+                    ? 'text-red-600'
+                    : 'text-brand-700'
+                }`}>
                   {fmt(totalPlannedInModal, 1)} {uom}
                 </span>
-                {totalPlannedInModal > availableFabricBalance && (
-                  <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
-                    Exceeds inward fabric ({fmt(availableFabricBalance, 1)} {uom})
+                {totalPlannedInModal > availableFabricBalance && availableFabricBalance > 0 && (
+                  <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                    Exceeds Available
                   </span>
                 )}
               </div>
@@ -1348,7 +1708,7 @@ export default function DyeingOrderDetail() {
               value={remarks}
               onChange={e => setRemarks(e.target.value)}
               className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-              placeholder="e.g. Standard soft-flow reactive dyeing, lab dip approval confirmed"
+              placeholder="e.g. Target Pantone matching with minimum shrinkage, soft flow finish."
             />
           </FormField>
 
@@ -1363,45 +1723,46 @@ export default function DyeingOrderDetail() {
             </Button>
             <Button
               type="submit"
-              disabled={creating || colorRows.length === 0}
-              className="bg-purple-600 hover:bg-purple-700 text-white"
+              disabled={creating || totalPlannedInModal <= 0 || (availableFabricBalance > 0 && totalPlannedInModal > availableFabricBalance)}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
             >
               {creating ? (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                  <span>Issuing Dyeing Order...</span>
+                  <span>Creating Dyeing Order...</span>
                 </>
               ) : (
-                <span>Confirm & Issue Dyeing Order</span>
+                <span>Issue Dyeing Order & DC</span>
               )}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* MODAL 2: Receive Dyed Fabric (Inward from Dyeing with Photo Proof & Pantone verification) */}
+      {/* RECEIVE DYED FABRIC MODAL */}
       <Modal
         open={showReceiveModal}
         onClose={() => !savingReceive && setShowReceiveModal(false)}
-        title={`Receive Dyed Fabric — ${selectedDyeingOrder?.dyeing_order_no || ''}`}
-        size="xl"
+        title={`Inward Receive Dyed Fabric — ${selectedDyeingOrder?.dyeing_order_no}`}
+        subtitle={`Record received yardage, shrinkage loss %, shade verification and photo proof`}
+        size="lg"
       >
-        <form onSubmit={handleSubmitReceive} className="space-y-5">
+        <form onSubmit={handleSubmitReceive} className="space-y-4">
           {receiveError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span>{receiveError}</span>
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <FormField label="Inward Mill DC No" required>
+            <FormField label="Inward Delivery Challan (DC No)" required>
               <input
                 type="text"
                 value={receiptChallanNo}
                 onChange={e => setReceiptChallanNo(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3 font-mono"
-                placeholder="e.g. DC-INW-8871"
+                className="w-full text-xs font-mono rounded-xl border-slate-300 py-2 px-3"
+                placeholder="e.g. INW-DYE-402"
                 required
               />
             </FormField>
@@ -1416,36 +1777,34 @@ export default function DyeingOrderDetail() {
               />
             </FormField>
 
-            <FormField label="Received By">
+            <FormField label="Received & Inspected By">
               <input
                 type="text"
                 value={receivedBy}
                 onChange={e => setReceivedBy(e.target.value)}
                 className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
-                placeholder="e.g. Stores & QC Inward"
               />
             </FormField>
           </div>
 
-          {/* Color Items Received Quantity Inputs */}
+          {/* Color breakdown receiving table */}
           <div>
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <Palette className="w-3.5 h-3.5 text-purple-600" />
-              Dyed Yardage Verification per Color
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">
+              Received Fabric Yardage per Color Item
             </h4>
 
-            <div className="space-y-3">
+            <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
               {receivingItems.map((it, idx) => (
-                <div key={it.item_id || idx} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <span
-                        className="w-4 h-4 rounded-full border border-slate-300 shrink-0"
-                        style={{ backgroundColor: it.hex_code }}
+                        className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0"
+                        style={{ backgroundColor: it.hex_code || '#3b82f6' }}
                       />
-                      <span className="font-bold text-slate-900 text-xs">{it.color_name}</span>
+                      <span className="font-bold text-xs text-slate-900">{it.color_name}</span>
                       {it.pantone_code && (
-                        <span className="font-mono text-[11px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                        <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
                           {it.pantone_code}
                         </span>
                       )}
@@ -1472,7 +1831,7 @@ export default function DyeingOrderDetail() {
                         min="0"
                         value={it.received_quantity}
                         onChange={e => handleReceiveItemChange(idx, 'received_quantity', e.target.value)}
-                        className="w-full text-xs font-bold rounded-lg border-slate-300 py-1.5 px-2.5"
+                        className="w-full text-xs font-bold rounded-lg border-slate-300 py-1.5 px-2.5 bg-white"
                         required
                       />
                     </div>
@@ -1486,7 +1845,7 @@ export default function DyeingOrderDetail() {
                         step="0.01"
                         value={it.shrinkage_loss_percent}
                         onChange={e => handleReceiveItemChange(idx, 'shrinkage_loss_percent', e.target.value)}
-                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5"
+                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 bg-white"
                         placeholder="e.g. 2.0"
                       />
                     </div>
@@ -1498,7 +1857,7 @@ export default function DyeingOrderDetail() {
                       <select
                         value={it.shade_match_status}
                         onChange={e => handleReceiveItemChange(idx, 'shade_match_status', e.target.value)}
-                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800"
+                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800 bg-white"
                       >
                         <option value="Approved - Pantone Matched">Approved - Pantone Matched</option>
                         <option value="Approved with Minor Variation">Approved with Minor Variation</option>
@@ -1517,7 +1876,7 @@ export default function DyeingOrderDetail() {
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-purple-600" />
+                  <Camera className="w-3.5 h-3.5 text-brand-600" />
                   Dyed Fabric Photo Proof
                 </h4>
                 <p className="text-[11px] text-slate-500">
@@ -1560,9 +1919,9 @@ export default function DyeingOrderDetail() {
                   type="button"
                   onClick={() => cameraInputRef.current?.click()}
                   disabled={isProcessingPhoto}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-purple-300 bg-purple-50/50 hover:bg-purple-100/50 text-purple-700 text-xs font-bold transition cursor-pointer"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-brand-300 bg-brand-50/50 hover:bg-brand-100/50 text-brand-700 text-xs font-bold transition cursor-pointer"
                 >
-                  <Camera className="w-4 h-4 text-purple-600" />
+                  <Camera className="w-4 h-4 text-brand-600" />
                   <span>Take Live Photo (Camera)</span>
                 </button>
 
@@ -1592,7 +1951,7 @@ export default function DyeingOrderDetail() {
                   <button
                     type="button"
                     onClick={() => setZoomedPhoto(photoUrl)}
-                    className="text-xs text-purple-600 hover:text-purple-800 font-semibold underline mt-1 block"
+                    className="text-xs text-brand-600 hover:text-brand-800 font-semibold underline mt-1 block"
                   >
                     View full size preview
                   </button>
@@ -1602,15 +1961,15 @@ export default function DyeingOrderDetail() {
           </div>
 
           {/* Advance to Cutting Checkbox */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-50/80 border border-purple-200">
+          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-100 border border-slate-200">
             <input
               type="checkbox"
               id="advanceCutting"
               checked={advanceToCutting}
               onChange={e => setAdvanceToCutting(e.target.checked)}
-              className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500"
+              className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
             />
-            <label htmlFor="advanceCutting" className="text-xs font-bold text-purple-900 cursor-pointer">
+            <label htmlFor="advanceCutting" className="text-xs font-bold text-slate-800 cursor-pointer">
               Advance Production Items to Stage 05 (Cutting — Product-wise) once dyed fabric is verified
             </label>
           </div>
@@ -1637,7 +1996,7 @@ export default function DyeingOrderDetail() {
             <Button
               type="submit"
               disabled={savingReceive}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
             >
               {savingReceive ? (
                 <>
@@ -1673,7 +2032,6 @@ export default function DyeingOrderDetail() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

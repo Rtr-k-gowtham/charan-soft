@@ -18,6 +18,28 @@ import {
   Layers,
 } from 'lucide-react';
 
+export const getProductionOrderStage = (ord: ProductionOrder): string => {
+  if (ord.current_stage_name) return ord.current_stage_name;
+  if (ord.items && ord.items.length > 0) {
+    const allCompleted = ord.items.every(
+      (it) => it.status === 'Completed' || it.current_stage_id === 10 || (it.current_stage_name || '').toLowerCase() === 'completed'
+    );
+    if (allCompleted) return 'Completed';
+    const incomplete = ord.items.filter(
+      (it) => it.status !== 'Completed' && it.current_stage_id !== 10 && (it.current_stage_name || '').toLowerCase() !== 'completed'
+    );
+    const activeList = incomplete.length > 0 ? incomplete : ord.items;
+    const sorted = [...activeList].sort((a, b) => {
+      const seqA = a.stage_sequence ?? a.current_stage_id ?? 1;
+      const seqB = b.stage_sequence ?? b.current_stage_id ?? 1;
+      return seqA - seqB;
+    });
+    return sorted[0]?.current_stage_name || 'Requirement Gathering';
+  }
+  if (ord.status === 'Completed' || ord.status === 'COMPLETED') return 'Completed';
+  return 'Requirement Gathering';
+};
+
 export default function ProductionOrders() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
@@ -45,9 +67,16 @@ export default function ProductionOrders() {
   // Filtered orders list
   const filteredOrders = useMemo(() => {
     return orders.filter((ord) => {
-      // Status filter
-      if (statusFilter !== 'ALL' && ord.status?.toUpperCase() !== statusFilter.toUpperCase()) {
-        return false;
+      const stage = getProductionOrderStage(ord);
+      // Status / Stage filter
+      if (statusFilter !== 'ALL') {
+        if (statusFilter === 'Completed') {
+          if (stage !== 'Completed' && ord.status?.toUpperCase() !== 'COMPLETED') return false;
+        } else if (statusFilter === 'In Production') {
+          if (stage === 'Completed' || ord.status?.toUpperCase() === 'COMPLETED') return false;
+        } else if (stage.toLowerCase() !== statusFilter.toLowerCase()) {
+          return false;
+        }
       }
       // Priority filter
       if (priorityFilter !== 'ALL' && ord.priority?.toUpperCase() !== priorityFilter.toUpperCase()) {
@@ -60,7 +89,8 @@ export default function ProductionOrders() {
         const titleMatch = ord.title?.toLowerCase().includes(q);
         const custMatch = ord.customer_name?.toLowerCase().includes(q);
         const catMatch = (ord.category_name || '').toLowerCase().includes(q);
-        return numMatch || titleMatch || custMatch || catMatch;
+        const stageMatch = stage.toLowerCase().includes(q);
+        return numMatch || titleMatch || custMatch || catMatch || stageMatch;
       }
       return true;
     });
@@ -70,8 +100,8 @@ export default function ProductionOrders() {
   const statusCounts = useMemo(() => {
     return {
       all: orders.length,
-      inProduction: orders.filter((o) => o.status === 'In Production' || o.status === 'IN PRODUCTION').length,
-      completed: orders.filter((o) => o.status === 'Completed' || o.status === 'COMPLETED').length,
+      inProduction: orders.filter((o) => getProductionOrderStage(o) !== 'Completed' && o.status?.toUpperCase() !== 'COMPLETED').length,
+      completed: orders.filter((o) => getProductionOrderStage(o) === 'Completed' || o.status?.toUpperCase() === 'COMPLETED').length,
     };
   }, [orders]);
 
@@ -196,7 +226,7 @@ export default function ProductionOrders() {
                   <th className="px-2 py-2.5 text-right whitespace-nowrap">Pending</th>
                   <th className="px-2.5 py-2.5 whitespace-nowrap">Target Delivery</th>
                   <th className="px-2 py-2.5 text-center whitespace-nowrap">Priority</th>
-                  <th className="px-2 py-2.5 text-center whitespace-nowrap">Status</th>
+                  <th className="px-2 py-2.5 text-center whitespace-nowrap">Production Stage</th>
                   <th className="px-3 py-2.5 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
@@ -295,7 +325,7 @@ export default function ProductionOrders() {
                         </td>
 
                         <td className="px-2 py-2.5 text-center whitespace-nowrap">
-                          <StatusBadge status={ord.status} />
+                          <StatusBadge status={getProductionOrderStage(ord)} />
                         </td>
 
                         <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>

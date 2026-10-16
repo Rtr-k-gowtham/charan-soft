@@ -30,7 +30,8 @@ import {
   Send,
   FileText,
   DollarSign,
-  PackageCheck
+  PackageCheck,
+  Eye
 } from 'lucide-react';
 
 interface Props {
@@ -76,6 +77,7 @@ export default function CategoryPOIssuer({
   const [issuingPO, setIssuingPO] = useState<Record<string, boolean>>({});
   // Changing status of existing PO (e.g. Draft -> Ordered)
   const [updatingPOStatus, setUpdatingPOStatus] = useState<Record<number, boolean>>({});
+
   
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -161,13 +163,18 @@ export default function CategoryPOIssuer({
       }
     }
 
+    const unmatched = suppliers.filter(s => !matched.some(m => m.id === s.id));
+    const allRanked = [...matched, ...unmatched];
     const hasExact = matched.length > 0;
     const available = hasExact ? matched : suppliers;
 
     return {
       suppliers: available,
+      matchedSuppliers: matched,
+      allSuppliers: allRanked,
       isExactMatch: hasExact,
-      totalAvailable: available.length,
+      matchedCount: matched.length,
+      totalAvailable: suppliers.length,
     };
   };
 
@@ -204,11 +211,16 @@ export default function CategoryPOIssuer({
     }
   }, [suppliers, categories, categorizedMaterials, existingPOs]);
 
-  // Create / Issue new PO for a category
+  // Create & Issue PO for a category
   const handleIssuePOForCategory = async (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
     const vendorId = selectedVendors[categoryName];
     if (!vendorId) {
       setActionError(`Please select a supplier/vendor for ${categoryName}`);
+      return;
+    }
+
+    if (!catMaterials || catMaterials.length === 0) {
+      setActionError(`No valid material lines found for category "${categoryName}"`);
       return;
     }
 
@@ -259,7 +271,12 @@ export default function CategoryPOIssuer({
       const createdPO = (res as any)?.data || res;
       const poNum = createdPO?.po_number || 'New PO';
 
-      // Auto-advance order items from Stage 01 (REQ) to Stage 02 (PO)
+      // Immediately mark the newly created PO as Ordered (Issued & Locked)
+      if (createdPO?.id) {
+        await api.updatePurchaseOrderStatus(createdPO.id, 'Ordered').catch(() => null);
+      }
+
+      // Ensure order items are at least moved from Stage 01 (REQ) to Stage 02 (PO)
       try {
         const prodOrderRes = await api.getProductionOrder(Number(orderId));
         const fullOrder = (prodOrderRes as any)?.data || prodOrderRes;
@@ -288,10 +305,7 @@ export default function CategoryPOIssuer({
         console.warn('Auto-stage advance handled by backend', stageErr);
       }
 
-      setActionSuccess(`Purchase Order ${poNum} successfully created for ${categoryName}!`);
-      if (onPOCreated) onPOCreated(poNum);
-
-      // Refresh existing POs
+      // Refresh existing POs from backend
       const updatedPOs = await api.getPurchaseOrders().catch(() => []);
       const rel = (updatedPOs as PurchaseOrder[]).filter(po => {
         if (po.production_order_id && String(po.production_order_id) === String(orderId)) return true;
@@ -301,6 +315,46 @@ export default function CategoryPOIssuer({
         return false;
       });
       setExistingPOs(rel);
+
+      // Check if ALL required categories for this production order are now issued
+      const allCatNames = Object.keys(categorizedMaterials);
+      const allCategoriesIssued = allCatNames.every(catName => {
+        const cLower = catName.toLowerCase();
+        return rel.some(p => {
+          const isIssued = (p.status || '').toLowerCase() !== 'draft';
+          if (!isIssued) return false;
+          if ((p.category_name || '').toLowerCase() === cLower) return true;
+          if (p.remarks && p.remarks.toLowerCase().includes(cLower)) return true;
+          return false;
+        });
+      });
+
+      if (allCategoriesIssued) {
+        // Advance production order items to Stage 03: Inward
+        try {
+          const prodOrderRes = await api.getProductionOrder(Number(orderId));
+          const fullOrder = (prodOrderRes as any)?.data || prodOrderRes;
+          if (fullOrder && Array.isArray(fullOrder.items)) {
+            await Promise.all(
+              fullOrder.items.map((it: any) =>
+                api.moveStage({
+                  order_item_id: it.id,
+                  to_stage_id: 3, // Inward
+                  quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
+                  remarks: `All ${allCatNames.length} category POs issued — order advanced to Inward stage`,
+                }).catch(() => null)
+              )
+            );
+          }
+        } catch (stageErr) {
+          console.warn('Inward stage movement warning:', stageErr);
+        }
+        setActionSuccess(`Purchase Order ${poNum} successfully issued! All categories are issued — Order has advanced to Stage 03: Inward.`);
+      } else {
+        setActionSuccess(`Purchase Order ${poNum} successfully issued & locked for ${categoryName}! (Remaining categories pending in Stage 02).`);
+      }
+
+      if (onPOCreated) onPOCreated(poNum);
     } catch (err: unknown) {
       setActionError((err as Error).message || `Failed to create PO for ${categoryName}`);
     } finally {
@@ -315,29 +369,6 @@ export default function CategoryPOIssuer({
     try {
       await api.updatePurchaseOrderStatus(po.id, 'Ordered');
 
-      // Auto-advance linked production order items to Stage 03: Inward
-      try {
-        if (orderId) {
-          const ordRes = await api.getProductionOrder(Number(orderId));
-          const ord = (ordRes as any)?.data || ordRes;
-          if (ord && Array.isArray(ord.items)) {
-            await Promise.all(
-              ord.items.map((it: any) =>
-                api.moveStage({
-                  order_item_id: it.id,
-                  to_stage_id: 3, // Stage 03: Inward
-                  quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
-                  remarks: `PO ${po.po_number} issued to ${po.supplier_name || 'supplier'} — advanced to Inward stage`,
-                }).catch(() => {})
-              )
-            );
-          }
-        }
-      } catch (stageErr) {
-        console.warn('Could not auto-advance stage on client:', stageErr);
-      }
-
-      setActionSuccess(`Purchase Order ${po.po_number} is officially Issued! Order has moved to Stage 03: Inward.`);
       // Refresh POs
       const updatedPOs = await api.getPurchaseOrders().catch(() => []);
       const rel = (updatedPOs as PurchaseOrder[]).filter(p => {
@@ -348,6 +379,41 @@ export default function CategoryPOIssuer({
         return false;
       });
       setExistingPOs(rel);
+
+      // Check if ALL required categories are now issued
+      const allCatNames = Object.keys(categorizedMaterials);
+      const allCategoriesIssued = allCatNames.every(catName => {
+        const cLower = catName.toLowerCase();
+        return rel.some(p => {
+          const isIssued = (p.status || '').toLowerCase() !== 'draft';
+          if (!isIssued) return false;
+          if ((p.category_name || '').toLowerCase() === cLower) return true;
+          if (p.remarks && p.remarks.toLowerCase().includes(cLower)) return true;
+          return false;
+        });
+      });
+
+      if (allCategoriesIssued) {
+        if (orderId) {
+          const ordRes = await api.getProductionOrder(Number(orderId));
+          const ord = (ordRes as any)?.data || ordRes;
+          if (ord && Array.isArray(ord.items)) {
+            await Promise.all(
+              ord.items.map((it: any) =>
+                api.moveStage({
+                  order_item_id: it.id,
+                  to_stage_id: 3, // Stage 03: Inward
+                  quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
+                  remarks: `PO ${po.po_number} issued — all category POs verified, advanced to Inward stage`,
+                }).catch(() => {})
+              )
+            );
+          }
+        }
+        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued! All categories are issued — Order has moved to Stage 03: Inward.`);
+      } else {
+        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued & Locked! (Remaining categories pending in Stage 02).`);
+      }
     } catch (err: unknown) {
       setActionError((err as Error).message || `Failed to issue PO ${po.po_number}`);
     } finally {
@@ -460,40 +526,11 @@ export default function CategoryPOIssuer({
 
   return (
     <div className="bg-white rounded-xl border border-indigo-200/90 shadow-2xs overflow-hidden space-y-4">
-      {/* Action Notification with Direct Inward Route */}
+      {/* Action Notification */}
       {actionSuccess && (
-        <div className="mx-4 mt-4 p-3.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-300 rounded-xl text-xs font-semibold text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span>{actionSuccess}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate(`/production/inward/${orderId}`)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold shadow-2xs text-xs self-start sm:self-auto transition shrink-0"
-          >
-            <PackageCheck className="w-4 h-4" />
-            <span>Go to Stage 03: Inward Receive →</span>
-          </button>
-        </div>
-      )}
-
-      {/* Persistent Inward Stage Notice when POs are issued */}
-      {existingPOs.some(p => (p.status || '').toLowerCase() !== 'draft') && (
-        <div className="mx-4 mt-3 p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
-          <div className="flex items-center gap-2.5">
-            <PackageCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span className="text-indigo-950 font-medium">
-              Purchase Orders are officially issued! This project has advanced to <strong>Stage 03: Inward</strong> where raw materials can be received against PO items with photo proof.
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate(`/production/inward/${orderId}`)}
-            className="flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs shadow-2xs shrink-0 transition self-start sm:self-auto"
-          >
-            <span>Inward Workspace →</span>
-          </button>
+        <div className="mx-4 mt-4 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-semibold text-emerald-950 flex items-center gap-2 shadow-2xs animate-in fade-in">
+          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>{actionSuccess}</span>
         </div>
       )}
 
@@ -504,330 +541,9 @@ export default function CategoryPOIssuer({
         </div>
       )}
 
-      {/* Main Header */}
-      <div className="px-5 py-4 bg-gradient-to-r from-indigo-50/90 via-sky-50/60 to-white border-b border-indigo-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-2xs shrink-0">
-            <ShoppingCart className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-slate-800 tracking-tight">
-                Stage 02: Purchase Order (PO) Workspace
-              </h3>
-              <span className="bg-indigo-100 text-indigo-800 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-200">
-                {existingPOs.length} {existingPOs.length === 1 ? 'PO Issued' : 'POs Issued'}
-              </span>
-              <span className="bg-slate-100 text-slate-700 font-mono text-[10px] font-medium px-2 py-0.5 rounded-full border border-slate-200">
-                {categoriesList.length} Categories
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Review all Purchase Orders for this order, edit draft items/rates, issue POs to vendors, or generate category POs.
-            </p>
-          </div>
-        </div>
-
-        <button
-          onClick={loadDependencies}
-          title="Refresh POs & Vendors"
-          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg border border-slate-200 transition shadow-2xs bg-white/80"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
-
-      {/* SECTION A: ALL PURCHASE ORDERS FOR THIS ORDER */}
-      <div className="px-4 sm:px-5">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <FileText className="w-4 h-4 text-brand-600" />
-            Purchase Orders Linked to Order {orderNumber} ({existingPOs.length})
-          </h4>
-        </div>
-
-        {existingPOs.length === 0 ? (
-          <div className="bg-slate-50/70 border border-dashed border-slate-200 rounded-xl p-5 text-center text-xs text-slate-500">
-            No Purchase Orders issued for this order yet. Use the category generator below to issue POs directly to category vendors.
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            {/* Mobile PO Cards */}
-            <div className="block sm:hidden divide-y divide-slate-100">
-              {existingPOs.map((po, idx) => {
-                const isDraft = (po.status || '').toLowerCase() === 'draft';
-                const isUpdating = !!updatingPOStatus[po.id];
-
-                // Category visual matching
-                const catObj = categories.find(c => 
-                  (po.category_id && String(c.id) === String(po.category_id)) ||
-                  (po.category_name && c.name.toLowerCase() === po.category_name.toLowerCase())
-                );
-                const visual = getCategoryVisual(catObj || { name: po.category_name });
-                const CatIcon = visual.Icon;
-
-                return (
-                  <div key={po.id} className="p-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
-                          {po.po_number}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
-                      </div>
-                      <span
-                        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                          isDraft
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        }`}
-                      >
-                        {po.status || 'Draft'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs">
-                      <div>
-                        <span className="font-bold text-slate-800 block text-[11px]">{po.supplier_name || 'Vendor'}</span>
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border mt-1 ${visual.bg} ${visual.border} ${visual.color}`}>
-                          <CatIcon className="w-2.5 h-2.5 shrink-0" />
-                          <span>{po.category_name || 'General'}</span>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-mono font-bold text-xs text-slate-900 block">{fmtCurrency(po.net_amount || 0)}</span>
-                        <span className="text-[9px] text-slate-400 font-mono">{po.po_date || '—'}</span>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 flex-wrap pt-1.5 border-t border-slate-100">
-                      {isDraft ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleMarkPOAsIssued(po)}
-                            disabled={isUpdating}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-60 h-7"
-                          >
-                            <Send className="w-2.5 h-2.5" />
-                            <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigate(`/purchase/orders/${po.id}/edit`, {
-                                state: { from: location.pathname, poNumber: po.po_number }
-                              });
-                            }}
-                            className="px-2 py-1 text-[10px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-indigo-600 h-7 flex items-center gap-1"
-                          >
-                            <Pencil className="w-2.5 h-2.5 text-indigo-600" />
-                            <span>Edit</span>
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0 h-7 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                            Issued & Locked
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/production/inward/${orderId}`)}
-                            className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition h-7"
-                          >
-                            <PackageCheck className="w-2.5 h-2.5" />
-                            <span>Inward →</span>
-                          </button>
-                        </>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigate(`/purchase/orders/${po.id}`, {
-                            state: { from: location.pathname, poNumber: po.po_number }
-                          });
-                        }}
-                        className="px-2 py-1 text-[10px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition h-7 flex items-center justify-center"
-                        title="View PO"
-                      >
-                        <Printer className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Desktop Table View */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-2 px-2.5 w-10 text-center">#</th>
-                    <th className="py-2 px-2.5 min-w-[130px]">PO Number</th>
-                    <th className="py-2 px-2.5 min-w-[150px]">Category</th>
-                    <th className="py-2 px-2.5 min-w-[160px]">Vendor / Supplier</th>
-                    <th className="py-2 px-2.5 min-w-[110px]">PO Date</th>
-                    <th className="py-2 px-2.5 text-right w-24">Net Amount</th>
-                    <th className="py-2 px-2.5 w-24 text-center">Status</th>
-                    <th className="py-2 px-2.5 text-right min-w-[170px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {existingPOs.map((po, idx) => {
-                    const isDraft = (po.status || '').toLowerCase() === 'draft';
-                    const isUpdating = !!updatingPOStatus[po.id];
-
-                    // Category visual matching with icon
-                    const catObj = categories.find(c => 
-                      (po.category_id && String(c.id) === String(po.category_id)) ||
-                      (po.category_name && c.name.toLowerCase() === po.category_name.toLowerCase())
-                    );
-                    const visual = getCategoryVisual(catObj || { name: po.category_name });
-                    const CatIcon = visual.Icon;
-
-                    return (
-                      <tr key={po.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-2 px-2.5 text-center font-mono text-slate-400 text-[10px]">
-                          {idx + 1}
-                        </td>
-
-                        <td className="py-2 px-2.5">
-                          <span className="font-mono font-bold text-[11px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200 block w-fit shadow-2xs">
-                            {po.po_number}
-                          </span>
-                          {po.items && po.items.length > 0 && (
-                            <span className="text-[9px] text-slate-400 block mt-0.5 font-mono">
-                              {po.items.length} {po.items.length === 1 ? 'item line' : 'item lines'}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-2 px-2.5">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs whitespace-nowrap`}>
-                            <CatIcon className="w-3 h-3 shrink-0" />
-                            <span>{po.category_name || 'General'}</span>
-                          </span>
-                        </td>
-
-                        <td className="py-2 px-2.5">
-                          <span className="font-semibold text-slate-800 block text-[11px] truncate max-w-[170px]" title={po.supplier_name || 'Vendor'}>
-                            {po.supplier_name || 'Vendor'}
-                          </span>
-                          {po.supplier_phone && (
-                            <span className="text-[9px] font-mono text-slate-400 block mt-0.5">
-                              {po.supplier_phone}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-2 px-2.5 font-mono text-slate-600 text-[10px]">
-                          {po.po_date || '—'}
-                          {po.delivery_due_date && (
-                            <span className="text-[9px] text-slate-400 block mt-0.5">
-                              Due: {po.delivery_due_date}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900 text-[11px]">
-                          {fmtCurrency(po.net_amount || 0)}
-                        </td>
-
-                        <td className="py-2 px-2.5 text-center">
-                          <span
-                            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                              isDraft
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            }`}
-                          >
-                            {po.status || 'Draft'}
-                          </span>
-                        </td>
-
-                        <td className="py-2 px-2.5 text-right">
-                          <div className="flex items-center justify-end gap-1 flex-wrap">
-                            {isDraft ? (
-                              <>
-                                {/* Draft PO: allow Edit + Issue to Vendor */}
-                                <button
-                                  type="button"
-                                  onClick={() => handleMarkPOAsIssued(po)}
-                                  disabled={isUpdating}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-60 whitespace-nowrap"
-                                  title="Issue PO to Supplier (marks as Ordered — cannot be undone)"
-                                >
-                                  <Send className="w-2.5 h-2.5" />
-                                  <span>{isUpdating ? 'Issuing...' : 'Issue PO'}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    navigate(`/purchase/orders/${po.id}/edit`, {
-                                      state: { from: location.pathname, poNumber: po.po_number }
-                                    });
-                                  }}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-indigo-600 whitespace-nowrap"
-                                  title="Open detailed PO edit page"
-                                >
-                                  <Pencil className="w-2.5 h-2.5 text-indigo-600" />
-                                  <span>Edit</span>
-                                </button>
-                              </>
-                            ) : (
-                              /* Ordered PO: immutable — show locked badge & direct Inward Receive action */
-                              <>
-                                <span
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 cursor-not-allowed whitespace-nowrap"
-                                  title="This PO has been officially issued to the vendor and is locked for editing"
-                                >
-                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                  <span>Issued & Locked</span>
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/production/inward/${orderId}`)}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="Receive ordered items from this PO in Stage 03 Inward"
-                                >
-                                  <PackageCheck className="w-2.5 h-2.5" />
-                                  <span>Inward →</span>
-                                </button>
-                              </>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigate(`/purchase/orders/${po.id}`, {
-                                  state: { from: location.pathname, poNumber: po.po_number }
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 h-6 text-[10px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title="View & Print PO Details"
-                            >
-                              <Printer className="w-2.5 h-2.5" />
-                              <span>View</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* SECTION B: CATEGORY-BASED MATERIAL PROCUREMENT & PO GENERATION */}
-      <div className="px-4 sm:px-5 pb-5">
-        <div className="flex items-center justify-between mb-2">
+      {/* CATEGORY-BASED MATERIAL PROCUREMENT & PO GENERATION (STRUCTURED TABLE VIEW) */}
+      <div className="p-4 sm:p-5">
+        <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-indigo-600" />
             Issue Category Purchase Orders ({categoriesList.length} Categories)
@@ -839,235 +555,265 @@ export default function CategoryPOIssuer({
             No raw material requirements found for this order. Please verify BOM master configuration.
           </div>
         ) : (
-          <div className="space-y-3">
-            {categoriesList.map(([categoryName, catMaterials]) => {
-              const { suppliers: catSups, isExactMatch } = getCategorySuppliers(categoryName);
-              const totalCatCost = catMaterials.reduce(
-                (sum, m) => sum + (Number(m.total_required_qty || 0) * Number(m.unit_cost || 0)),
-                0
-              );
-              const isSaving = !!issuingPO[categoryName];
-              const selectedSupId = selectedVendors[categoryName] || '';
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center">#</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">PO Number</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Material Category</th>
+                    <th className="py-2.5 px-3 text-center whitespace-nowrap">Item Count</th>
+                    <th className="py-2.5 px-3">Required Materials</th>
+                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Total Est. Cost</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Vendor / Supplier</th>
+                    <th className="py-2.5 px-3 text-center whitespace-nowrap">PO Status</th>
+                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {categoriesList.map(([categoryName, catMaterials], idx) => {
+                    const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(categoryName);
+                    const totalCatCost = catMaterials.reduce(
+                      (sum, m) => sum + (Number(m.total_required_qty || 0) * Number(m.unit_cost || 0)),
+                      0
+                    );
+                    const isSaving = !!issuingPO[categoryName];
+                    const selectedSupId = selectedVendors[categoryName] || '';
 
-              // Check if any PO is already created for this category (by name, remarks, or items)
-              const matchingPOs = existingPOs.filter(p => {
-                const catLower = categoryName.toLowerCase();
-                if ((p.category_name || '').toLowerCase() === catLower) return true;
-                // Match via remarks containing category name
-                if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
-                return false;
-              });
-              // PO is locked if any matching PO exists (Draft = revisable, Ordered = fully locked)
-              const hasAnyPO = matchingPOs.length > 0;
-              const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
-              const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
+                    // Category visual matching with icon
+                    const catObj = categories.find(
+                      c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+                    );
+                    const visual = getCategoryVisual(catObj || { name: categoryName });
+                    const CatIcon = visual.Icon;
 
-              // Ensure selected supplier is available in dropdown even if not category-matched
-              const availableSups = [...catSups];
-              if (selectedSupId) {
-                const curSup = suppliers.find(s => String(s.id) === String(selectedSupId));
-                if (curSup && !availableSups.some(s => String(s.id) === String(curSup.id))) {
-                  availableSups.unshift(curSup);
-                }
-              }
+                    // Check if any PO is already created for this category
+                    const catLower = categoryName.toLowerCase();
+                    const matchingPOs = existingPOs.filter(p => {
+                      if ((p.category_name || '').toLowerCase() === catLower) return true;
+                      if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
+                      return false;
+                    });
+                    const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
+                    const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
+                    const draftPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft');
 
-              const vendorOptions: SelectOption[] = availableSups.map(sup => ({
-                value: String(sup.id),
-                label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
-                sublabel: [
-                  sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
-                  sup.category_name ? sup.category_name : null,
-                  sup.contact_person ? sup.contact_person : null,
-                ].filter(Boolean).join(' • '),
-              }));
+                    // Material names for clean display
+                    const materialNames = catMaterials.map(m => m.name).filter(Boolean);
+                    const materialsText = materialNames.length > 0 ? materialNames.join(', ') : '—';
 
-              return (
-                <div
-                  key={categoryName}
-                  className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 hover:border-indigo-300 transition-all shadow-2xs"
-                >
-                  {/* Category Bar */}
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                    {/* Left: Category Title, Items Count, Cost & PO Status */}
-                    <div className="flex flex-col flex-1 min-w-0">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1.5 h-4">
-                        <Layers className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                        <span>Material Category</span>
-                      </div>
+                    // Ensure selected supplier is available in dropdown even if not category-matched
+                    const availableSups = [...allSuppliers];
+                    if (selectedSupId) {
+                      const curSup = suppliers.find(s => String(s.id) === String(selectedSupId));
+                      if (curSup && !availableSups.some(s => String(s.id) === String(curSup.id))) {
+                        availableSups.unshift(curSup);
+                      }
+                    }
 
-                      <div className="h-[34px] flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                        <h4 className="font-bold text-sm text-slate-800 uppercase tracking-wide truncate">
-                          {categoryName}
-                        </h4>
-                        <span className="text-[11px] font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs shrink-0">
-                          {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
-                        </span>
-                        {matchingPOs.length > 0 && (
-                          <span
-                            className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1 shadow-2xs shrink-0"
-                            title={matchingPOs.map(p => p.po_number).join(', ')}
-                          >
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                            <span>
-                              {matchingPOs.length === 1 ? matchingPOs[0].po_number : `${matchingPOs.length} POs Created`}
-                            </span>
-                          </span>
-                        )}
-                        <span className="text-slate-300 hidden sm:inline">•</span>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-1 shrink-0">
-                          <span>Total:</span>
-                          <strong className="text-slate-900 font-mono font-bold">
-                            {totalCatCost > 0 ? fmtCurrency(totalCatCost) : '—'}
-                          </strong>
-                        </div>
-                      </div>
-                    </div>
+                    const vendorOptions: SelectOption[] = availableSups.map(sup => {
+                      const isMatched = matchedSuppliers.some(m => m.id === sup.id);
+                      return {
+                        value: String(sup.id),
+                        label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
+                        sublabel: [
+                          isMatched ? 'Category Matched' : (sup.category_name || null),
+                          sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
+                          sup.contact_person ? sup.contact_person : null,
+                        ].filter(Boolean).join(' • '),
+                      };
+                    });
 
-                    {/* Right: Vendor Selection & Action / Status */}
-                    <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
-                      {/* Vendor Dropdown Column */}
-                      <div className="flex flex-col w-full sm:w-72 md:w-80">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center justify-between h-4">
-                          <span className="flex items-center gap-1 truncate">
-                            <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span>Vendor / Supplier</span>
-                          </span>
-                          {isExactMatch ? (
-                            <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 whitespace-nowrap">
-                              Category Matched ({catSups.length})
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 whitespace-nowrap">
-                              All Vendors ({catSups.length})
-                            </span>
-                          )}
-                        </div>
+                    return (
+                      <tr key={categoryName} className="hover:bg-slate-50/70 transition">
+                        {/* 1. # */}
+                        <td className="py-2.5 px-3 text-center font-mono text-slate-400 text-[11px] w-10">
+                          {idx + 1}
+                        </td>
 
-                        <SearchableSelect
-                          value={selectedSupId}
-                          onChange={val =>
-                            setSelectedVendors(prev => ({
-                              ...prev,
-                              [categoryName]: val,
-                            }))
-                          }
-                          options={vendorOptions}
-                          placeholder="-- Select Vendor / Supplier --"
-                          searchPlaceholder="Search vendor by name, code..."
-                          disabled={hasOrderedPO}
-                          clearable={!hasOrderedPO}
-                        />
-                      </div>
-
-                      {/* Action / Status Column */}
-                      <div className="flex flex-col shrink-0">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-end h-4">
+                        {/* 2. PO Number (Dedicated column with prominent badge & clickable link) */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
                           {matchingPOs.length > 0 ? (
+                            <div className="flex flex-col gap-1 items-start">
+                              {matchingPOs.map(p => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${p.id}`)}
+                                  className="font-mono font-bold text-xs text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 px-2.5 py-0.5 rounded border border-brand-200 shadow-2xs transition inline-flex items-center gap-1 text-left"
+                                  title={`Click to view PO ${p.po_number}`}
+                                >
+                                  <span>{p.po_number}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 font-mono text-[11px]">—</span>
+                          )}
+                        </td>
+
+                        {/* 3. Material Category (Full readable name without truncation) */}
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs`}
+                            title={categoryName}
+                          >
+                            <CatIcon className="w-3.5 h-3.5 shrink-0" />
+                            <span>{categoryName}</span>
+                          </span>
+                        </td>
+
+                        {/* 4. Item Count (Single-line) */}
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
+                            {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
+                          </span>
+                        </td>
+
+                        {/* 5. Required Materials / Summary */}
+                        <td className="py-2.5 px-3">
+                          <span
+                            className="text-slate-700 text-[11px] font-medium block truncate max-w-[280px]"
+                            title={materialsText}
+                          >
+                            {materialsText}
+                          </span>
+                        </td>
+
+                        {/* 6. Total Estimated Cost */}
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                          {totalCatCost > 0 ? fmtCurrency(totalCatCost) : '—'}
+                        </td>
+
+                        {/* 7. Vendor / Supplier */}
+                        <td className="py-2.5 px-3 min-w-[180px]">
+                          {hasOrderedPO ? (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
+                              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="font-medium truncate" title={matchingPOs[0]?.supplier_name || 'Assigned Supplier'}>
+                                {matchingPOs[0]?.supplier_name || 'Assigned Supplier'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="w-full">
+                              <SearchableSelect
+                                value={selectedSupId}
+                                onChange={val =>
+                                  setSelectedVendors(prev => ({
+                                    ...prev,
+                                    [categoryName]: val,
+                                  }))
+                                }
+                                options={vendorOptions}
+                                placeholder="-- Select Supplier --"
+                                searchPlaceholder="Search vendor..."
+                                disabled={hasOrderedPO}
+                                clearable={!hasOrderedPO}
+                              />
+                              {isExactMatch && !hasOrderedPO && (
+                                <span className="text-[9px] font-medium text-emerald-700 block mt-0.5 truncate">
+                                  ✓ {matchedCount} {matchedCount === 1 ? 'matched supplier' : 'matched suppliers'}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+
+                        {/* 8. PO Status */}
+                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                          {isSaving ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
+                            </span>
+                          ) : hasOrderedPO ? (
                             <span
-                              className="font-mono text-[10px] text-slate-500 font-bold"
-                              title={matchingPOs.map(p => p.po_number).join(', ')}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              title="Purchase Order issued & ordered"
                             >
-                              {matchingPOs.length === 1 ? matchingPOs[0].po_number : `${matchingPOs.length} POs Linked`}
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
+                            </span>
+                          ) : hasDraftPO ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              Draft
+                            </span>
+                          ) : selectedSupId ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              Ready to Issue
                             </span>
                           ) : (
-                            <span>Action</span>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              Not Issued
+                            </span>
                           )}
-                        </div>
+                        </td>
 
-                        <div className="h-[34px] flex items-center">
+                        {/* 9. Action (PO Stage: Issue PO, Edit, View PO ONLY — Inward belongs in Inward stage) */}
+                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
                           {hasOrderedPO ? (
-                            <div
-                              className="h-[34px] inline-flex items-center gap-1.5 px-3 rounded-md text-xs font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 shadow-2xs whitespace-nowrap cursor-not-allowed"
-                              title="Purchase Order has been officially issued and locked"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span>PO Issued & Locked</span>
-                            </div>
-                          ) : hasDraftPO ? (
                             <button
                               type="button"
-                              onClick={() => {
-                                const targetPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft') || matchingPOs[0];
-                                if (targetPO) {
-                                  navigate(`/purchase/orders/${targetPO.id}/edit`, {
-                                    state: { from: location.pathname, poNumber: targetPO.po_number }
-                                  });
-                                }
-                              }}
-                              className="h-[34px] inline-flex items-center gap-1.5 px-3 rounded-md text-xs font-bold bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 shadow-2xs whitespace-nowrap transition cursor-pointer"
-                              title="Click to open detailed edit page for this draft PO"
+                              onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
+                              title="View & Print PO Details"
                             >
-                              <Pencil className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span>Edit Draft PO →</span>
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View PO</span>
                             </button>
+                          ) : hasDraftPO && draftPO ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                disabled={!!updatingPOStatus[draftPO.id]}
+                                onClick={() => handleMarkPOAsIssued(draftPO)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-50"
+                                title="Issue draft PO to vendor"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Issue PO</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditPO(draftPO)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md shadow-2xs transition"
+                                title="Edit draft PO items & rates"
+                              >
+                                <Pencil className="w-3 h-3 text-slate-600" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/purchase/orders/${draftPO.id}`)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
+                                title="View draft PO"
+                              >
+                                <Eye className="w-3 h-3 text-brand-600" />
+                                <span>View</span>
+                              </button>
+                            </div>
                           ) : (
-                            <Button
-                              size="sm"
+                            <button
+                              type="button"
                               disabled={isSaving || !selectedSupId}
                               onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
-                              className="h-[34px] bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 shadow-xs shrink-0 whitespace-nowrap"
-                              icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={
+                                !selectedSupId
+                                  ? 'Select a supplier first to issue PO'
+                                  : `Generate & Issue official PO for ${categoryName}`
+                              }
                             >
-                              {isSaving ? 'Creating PO...' : `Issue PO (${catMaterials.length})`}
-                            </Button>
+                              <Send className="w-3.5 h-3.5" />
+                              <span>{isSaving ? 'Issuing...' : 'Issue PO'}</span>
+                            </button>
                           )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Items in Category Table */}
-                  <div className="mt-3 overflow-x-auto bg-white rounded-lg border border-slate-200">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-100/70 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
-                        <tr>
-                          <th className="py-2 px-3 w-10 text-center">#</th>
-                          <th className="py-2 px-3 min-w-[180px]">Material Name & Code</th>
-                          <th className="py-2 px-3 text-center w-20">UOM</th>
-                          <th className="py-2 px-3 text-right w-28">Required Qty</th>
-                          <th className="py-2 px-3 text-right w-28">Est. Rate</th>
-                          <th className="py-2 px-3 text-right w-32">Total Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {catMaterials.map((m, idx) => {
-                          const lineCost =
-                            Number(m.total_required_qty || 0) * Number(m.unit_cost || 0);
-
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50/60 transition">
-                              <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
-                                {idx + 1}
-                              </td>
-                              <td className="py-2 px-3">
-                                <span className="font-semibold text-slate-800 block">{m.name}</span>
-                                {m.material_code && (
-                                  <span className="font-mono text-[10px] text-slate-400 block">
-                                    {m.material_code}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-center font-mono font-bold text-slate-600">
-                                {m.uom}
-                              </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                                {fmt(m.total_required_qty, 2)}
-                              </td>
-                              <td className="py-2 px-3 text-right font-mono text-slate-600">
-                                {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                              </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
-                                {lineCost > 0 ? fmtCurrency(lineCost) : '—'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

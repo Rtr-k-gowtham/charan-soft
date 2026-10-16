@@ -59,6 +59,34 @@ class ProductionController {
                 ");
                 $iStmt->execute([$ord['id']]);
                 $ord['items'] = $iStmt->fetchAll();
+
+                $items = $ord['items'];
+                $orderStageName = 'Requirement Gathering';
+                $orderStageId = 1;
+                if (!empty($items)) {
+                    $allCompleted = true;
+                    $incompleteItems = [];
+                    foreach ($items as $it) {
+                        $isComp = ($it['status'] === 'Completed' || (int)$it['current_stage_id'] === 10 || strtolower((string)($it['current_stage_name'] ?? '')) === 'completed');
+                        if (!$isComp) {
+                            $allCompleted = false;
+                            $incompleteItems[] = $it;
+                        }
+                    }
+                    if ($allCompleted) {
+                        $orderStageName = 'Completed';
+                        $orderStageId = 10;
+                    } else {
+                        usort($incompleteItems, fn($a, $b) => ((int)($a['stage_sequence'] ?? 1)) <=> ((int)($b['stage_sequence'] ?? 1)));
+                        $orderStageName = $incompleteItems[0]['current_stage_name'] ?? 'Requirement Gathering';
+                        $orderStageId = (int)($incompleteItems[0]['current_stage_id'] ?? 1);
+                    }
+                } elseif (strtoupper((string)($ord['status'] ?? '')) === 'COMPLETED') {
+                    $orderStageName = 'Completed';
+                    $orderStageId = 10;
+                }
+                $ord['current_stage_name'] = $orderStageName;
+                $ord['current_stage_id'] = $orderStageId;
             }
 
             Response::success($orders);
@@ -116,6 +144,34 @@ class ProductionController {
             ");
             $iStmt->execute([$id]);
             $order['items'] = $iStmt->fetchAll();
+
+            $items = $order['items'];
+            $orderStageName = 'Requirement Gathering';
+            $orderStageId = 1;
+            if (!empty($items)) {
+                $allCompleted = true;
+                $incompleteItems = [];
+                foreach ($items as $it) {
+                    $isComp = ($it['status'] === 'Completed' || (int)$it['current_stage_id'] === 10 || strtolower((string)($it['current_stage_name'] ?? '')) === 'completed');
+                    if (!$isComp) {
+                        $allCompleted = false;
+                        $incompleteItems[] = $it;
+                    }
+                }
+                if ($allCompleted) {
+                    $orderStageName = 'Completed';
+                    $orderStageId = 10;
+                } else {
+                    usort($incompleteItems, fn($a, $b) => ((int)($a['stage_sequence'] ?? 1)) <=> ((int)($b['stage_sequence'] ?? 1)));
+                    $orderStageName = $incompleteItems[0]['current_stage_name'] ?? 'Requirement Gathering';
+                    $orderStageId = (int)($incompleteItems[0]['current_stage_id'] ?? 1);
+                }
+            } elseif (strtoupper((string)($order['status'] ?? '')) === 'COMPLETED') {
+                $orderStageName = 'Completed';
+                $orderStageId = 10;
+            }
+            $order['current_stage_name'] = $orderStageName;
+            $order['current_stage_id'] = $orderStageId;
 
             Response::success($order);
         } catch (Exception $e) {
@@ -306,11 +362,17 @@ class ProductionController {
     public function moveStage(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $orderItemId = (int)($data['order_item_id'] ?? $data['item_id'] ?? 0);
+        $prodOrderId = (int)($data['production_order_id'] ?? $data['order_id'] ?? 0);
         $toStageId = (int)($data['to_stage_id'] ?? $data['next_stage_id'] ?? 0);
         $moveQty = (int)($data['quantity_moved'] ?? $data['quantity'] ?? 0);
         $remarks = trim($data['remarks'] ?? $data['notes'] ?? '');
 
-        if (!$orderItemId || !$toStageId || $moveQty <= 0) {
+        if (!$toStageId) {
+            Response::error("Destination stage is required", 422);
+            return;
+        }
+
+        if (!$orderItemId && !$prodOrderId) {
             Response::error("Order item, destination stage, and positive move quantity are required", 422);
             return;
         }
@@ -319,11 +381,73 @@ class ProductionController {
             $pdo = Database::getConnection();
             $pdo->beginTransaction();
 
+            $destStageStmt = $pdo->prepare("SELECT is_final_stage FROM production_stages WHERE id = ?");
+            $destStageStmt->execute([$toStageId]);
+            $isFinal = (bool)$destStageStmt->fetchColumn();
+
+            // Support order-level stage movement if no specific item id was passed
+            if (!$orderItemId && $prodOrderId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? FOR UPDATE");
+                $stmt->execute([$prodOrderId]);
+                $items = $stmt->fetchAll();
+
+                if (empty($items)) {
+                    $pdo->rollBack();
+                    Response::error("No items found for production order #{$prodOrderId}", 404);
+                    return;
+                }
+
+                $totalMoved = 0;
+                $tStmt = $pdo->prepare("
+                    INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
+                    VALUES (?, ?, ?, ?, ?)
+                ");
+                $upd = $pdo->prepare("
+                    UPDATE production_order_items 
+                    SET current_stage_id = ?, current_stage_quantity = ?, completed_quantity = ?, status = ?
+                    WHERE id = ?
+                ");
+
+                foreach ($items as $item) {
+                    $curStage = (int)$item['current_stage_id'];
+                    $curQty = (int)$item['current_stage_quantity'];
+                    $qToMove = $curQty > 0 ? $curQty : (int)$item['total_quantity'];
+                    $newCompleted = (int)$item['completed_quantity'] + ($isFinal ? $qToMove : 0);
+                    $status = $isFinal ? 'Completed' : 'In Progress';
+
+                    $tStmt->execute([$item['id'], $curStage, $toStageId, $qToMove, $remarks]);
+                    $upd->execute([$toStageId, $qToMove, $newCompleted, $status, $item['id']]);
+                    $totalMoved += $qToMove;
+                }
+
+                if ($isFinal) {
+                    $pordStmt = $pdo->prepare("UPDATE production_orders SET completed_quantity = completed_quantity + ? WHERE id = ?");
+                    $pordStmt->execute([$totalMoved, $prodOrderId]);
+                }
+
+                $pdo->commit();
+                AuditLogger::log('ProductionStages', 'MOVE_ALL', $prodOrderId, [], ['to_stage_id' => $toStageId, 'total_moved' => $totalMoved]);
+                Response::success([
+                    'moved_items_count' => count($items),
+                    'total_moved_quantity' => $totalMoved,
+                    'is_completed' => $isFinal,
+                    'to_stage_id' => $toStageId
+                ], "All order items moved to destination stage successfully");
+                return;
+            }
+
+            if ($moveQty <= 0) {
+                $pdo->rollBack();
+                Response::error("Positive move quantity is required", 422);
+                return;
+            }
+
             $stmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? FOR UPDATE");
             $stmt->execute([$orderItemId]);
             $item = $stmt->fetch();
 
             if (!$item) {
+                $pdo->rollBack();
                 Response::error("Production order item not found", 404);
                 return;
             }
@@ -332,6 +456,7 @@ class ProductionController {
             $currentQty = (int)$item['current_stage_quantity'];
 
             if ($moveQty > $currentQty) {
+                $pdo->rollBack();
                 Response::error("Move quantity ({$moveQty}) cannot exceed current stage quantity ({$currentQty})", 422);
                 return;
             }
@@ -342,11 +467,6 @@ class ProductionController {
                 VALUES (?, ?, ?, ?, ?)
             ");
             $tStmt->execute([$orderItemId, $currentStageId, $toStageId, $moveQty, $remarks]);
-
-            // Check if toStage is final "Completed"
-            $destStageStmt = $pdo->prepare("SELECT is_final_stage FROM production_stages WHERE id = ?");
-            $destStageStmt->execute([$toStageId]);
-            $isFinal = (bool)$destStageStmt->fetchColumn();
 
             $remainingAtCurrent = $currentQty - $moveQty;
             $newCompleted = (int)$item['completed_quantity'] + ($isFinal ? $moveQty : 0);
@@ -594,6 +714,34 @@ class ProductionController {
             ");
             $iStmt->execute([$orderId]);
             $items = $iStmt->fetchAll();
+            $order['items'] = $items;
+
+            $orderStageName = 'Requirement Gathering';
+            $orderStageId = 1;
+            if (!empty($items)) {
+                $allCompleted = true;
+                $incompleteItems = [];
+                foreach ($items as $it) {
+                    $isComp = ($it['status'] === 'Completed' || (int)$it['current_stage_id'] === 10 || strtolower((string)($it['current_stage_name'] ?? '')) === 'completed');
+                    if (!$isComp) {
+                        $allCompleted = false;
+                        $incompleteItems[] = $it;
+                    }
+                }
+                if ($allCompleted) {
+                    $orderStageName = 'Completed';
+                    $orderStageId = 10;
+                } else {
+                    usort($incompleteItems, fn($a, $b) => ((int)($a['stage_sequence'] ?? 1)) <=> ((int)($b['stage_sequence'] ?? 1)));
+                    $orderStageName = $incompleteItems[0]['current_stage_name'] ?? 'Requirement Gathering';
+                    $orderStageId = (int)($incompleteItems[0]['current_stage_id'] ?? 1);
+                }
+            } elseif (strtoupper((string)($order['status'] ?? '')) === 'COMPLETED') {
+                $orderStageName = 'Completed';
+                $orderStageId = 10;
+            }
+            $order['current_stage_name'] = $orderStageName;
+            $order['current_stage_id'] = $orderStageId;
 
             $materialsMap = [];
             $productsBreakdown = [];
@@ -701,6 +849,55 @@ class ProductionController {
                 ];
             }
 
+            // Check if customized/saved BOM exists in production_orders and force recalculation is not requested
+            $savedBom = !empty($order['generated_bom']) ? json_decode($order['generated_bom'], true) : null;
+            if ($savedBom && !empty($savedBom['total_materials']) && empty($_GET['force']) && empty($_GET['recalculate'])) {
+                $totalMaterialsList = $savedBom['total_materials'];
+                $matIds = array_filter(array_column($totalMaterialsList, 'material_id'));
+                if (!empty($matIds)) {
+                    $inPlaceholders = implode(',', array_fill(0, count($matIds), '?'));
+                    $mStmt = $pdo->prepare("SELECT id, current_stock, purchase_rate FROM materials WHERE id IN ($inPlaceholders)");
+                    $mStmt->execute(array_values($matIds));
+                    $liveStockMap = [];
+                    foreach ($mStmt->fetchAll() as $row) {
+                        $liveStockMap[$row['id']] = $row;
+                    }
+                    foreach ($totalMaterialsList as &$sm) {
+                        if (!empty($sm['material_id']) && isset($liveStockMap[$sm['material_id']])) {
+                            $sm['current_stock'] = (float)$liveStockMap[$sm['material_id']]['current_stock'];
+                            $req = (float)($sm['total_required_qty'] ?? 0);
+                            $stk = (float)$sm['current_stock'];
+                            $sm['shortage_qty'] = max(0.0, round($req - $stk, 3));
+                            if ($sm['shortage_qty'] > 0) {
+                                $sm['status'] = ($stk > 0) ? 'Partial Stock' : 'Needs Procurement';
+                            } else {
+                                $sm['status'] = 'In Stock';
+                            }
+                        }
+                    }
+                    unset($sm);
+                }
+
+                $summary = $savedBom['summary'] ?? [
+                    'total_products_count' => count($productsBreakdown),
+                    'total_order_garments' => $totalGarments,
+                    'total_distinct_materials' => count($totalMaterialsList),
+                    'in_stock_count' => count(array_filter($totalMaterialsList, fn($x) => ($x['status'] ?? '') === 'In Stock')),
+                    'shortage_count' => count(array_filter($totalMaterialsList, fn($x) => ($x['status'] ?? '') !== 'In Stock')),
+                    'total_estimated_cost' => array_sum(array_column($totalMaterialsList, 'total_estimated_cost')),
+                ];
+
+                Response::success([
+                    'order' => $order,
+                    'products' => !empty($savedBom['products']) ? $savedBom['products'] : $productsBreakdown,
+                    'total_materials' => $totalMaterialsList,
+                    'summary' => $summary,
+                    'generated_at' => $savedBom['updated_at'] ?? date('Y-m-d H:i:s'),
+                    'is_persisted' => true,
+                ]);
+                return;
+            }
+
             // Calculate Stock, Shortage, and Status for each aggregated material
             $totalMaterialsList = [];
             $totalEstimatedCost = 0.0;
@@ -758,6 +955,35 @@ class ProductionController {
                 ],
                 'generated_at' => date('Y-m-d H:i:s'),
             ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function saveMaterialRequirements(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+            $stmt = $pdo->prepare("SELECT id FROM production_orders WHERE id = ? AND deleted_at IS NULL");
+            $stmt->execute([$orderId]);
+            $ord = $stmt->fetch();
+            if (!$ord) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            $bomPayload = [
+                'total_materials' => $data['total_materials'] ?? $data['materials'] ?? [],
+                'summary' => $data['summary'] ?? [],
+                'products' => $data['products'] ?? [],
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            $upd = $pdo->prepare("UPDATE production_orders SET generated_bom = ? WHERE id = ?");
+            $upd->execute([json_encode($bomPayload), $orderId]);
+
+            Response::success($bomPayload, "Material requirements (BOM) persisted successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

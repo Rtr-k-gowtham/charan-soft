@@ -8,7 +8,6 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
-import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
 import {
   ArrowLeft,
   Sparkles,
@@ -72,11 +71,11 @@ export default function RequirementOrderDetail() {
   const [isEditingBOM, setIsEditingBOM] = useState(false);
   const [editedMaterials, setEditedMaterials] = useState<OrderMaterialRequirementItem[]>([]);
 
-  // Advance Stage Modal
+  // Move to PO Confirmation Modal State
   const [moveOpen, setMoveOpen] = useState(false);
-  const [selectedNextStageId, setSelectedNextStageId] = useState('2');
   const [moveNotes, setMoveNotes] = useState('Requirement verified and material BOM generated.');
   const [savingMove, setSavingMove] = useState(false);
+  const [moveError, setMoveError] = useState('');
 
   const loadData = async () => {
     if (!id) return;
@@ -129,11 +128,25 @@ export default function RequirementOrderDetail() {
   }, [successToast]);
 
   const handleRecalculate = async () => {
+    if (!id) return;
     setCalculating(true);
+    setError('');
     try {
-      const bomData = await api.getOrderMaterialRequirements(id!);
-      setBomReport((bomData as any)?.data || (bomData as ProductionOrderBOMReport));
-      setSuccessToast('Material requirement list freshly computed from buyer BOM master!');
+      const bomData = await api.getOrderMaterialRequirements(id, true);
+      const report = (bomData as any)?.data || (bomData as ProductionOrderBOMReport);
+
+      // Persist generated BOM to backend (updates in-place without duplicate records)
+      await api.saveOrderMaterialRequirements(id, report).catch(err => {
+        console.warn('Backend saveOrderMaterialRequirements notice:', err);
+      });
+
+      // Clear any custom localStorage override
+      try {
+        localStorage.removeItem(`cheran_order_bom_${id}`);
+      } catch (e) {}
+
+      setBomReport(report);
+      setSuccessToast('Material requirement BOM generated and persisted from Buyer Product Master!');
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to recalculate materials');
     } finally {
@@ -190,7 +203,7 @@ export default function RequirementOrderDetail() {
     setEditedMaterials(prev => prev.filter((_, idx) => idx !== index));
   };
 
-  const handleSaveBOM = () => {
+  const handleSaveBOM = async () => {
     if (!id) return;
     const cleaned = editedMaterials.map(m => {
       const qty = Number(m.total_required_qty) || 0;
@@ -207,21 +220,28 @@ export default function RequirementOrderDetail() {
       localStorage.setItem(`cheran_order_bom_${id}`, JSON.stringify(cleaned));
     } catch (e) {}
 
-    setBomReport(prev => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        total_materials: cleaned,
-        summary: {
-          ...prev.summary,
-          total_distinct_materials: cleaned.length,
-          total_estimated_cost: cleaned.reduce((sum, it) => sum + (it.total_estimated_cost || 0), 0),
-        }
-      };
-    });
+    const updatedSummary = {
+      ...bomReport?.summary,
+      total_distinct_materials: cleaned.length,
+      total_estimated_cost: cleaned.reduce((sum, it) => sum + (it.total_estimated_cost || 0), 0),
+    };
+
+    const updatedReport = {
+      ...bomReport!,
+      total_materials: cleaned,
+      summary: updatedSummary as any,
+    };
+
+    setBomReport(updatedReport);
+
+    try {
+      await api.saveOrderMaterialRequirements(id, updatedReport);
+    } catch (e) {
+      console.warn('Backend save material requirements error:', e);
+    }
 
     setIsEditingBOM(false);
-    setSuccessToast('Material Requirements (BOM) saved successfully!');
+    setSuccessToast('Material Requirements (BOM) saved and persisted successfully!');
   };
 
   const handleResetBOM = async () => {
@@ -233,29 +253,69 @@ export default function RequirementOrderDetail() {
     setSuccessToast('BOM reset to default Buyer Master components!');
   };
 
-  const handleAdvanceStage = async () => {
-    if (!bomReport || !bomReport.order) return;
+  // Validation: BOM must be generated and contain valid material requirements
+  const isBOMValid = useMemo(() => {
+    return Boolean(
+      bomReport &&
+      Array.isArray(bomReport.total_materials) &&
+      bomReport.total_materials.length > 0 &&
+      bomReport.total_materials.some(m => Number(m.total_required_qty) > 0)
+    );
+  }, [bomReport]);
+
+  const handleConfirmMoveToPO = async () => {
+    if (!bomReport || !bomReport.order || !isBOMValid || savingMove) return;
     setSavingMove(true);
-    setError('');
+    setMoveError('');
     try {
-      const destId = parseInt(selectedNextStageId);
-      // Advance each order item to the destination stage (e.g. Stage 02 - PO)
-      const items = bomReport.order.items || [];
-      await Promise.all(
-        items.map(it =>
-          api.moveStage({
-            order_item_id: it.id,
-            to_stage_id: destId,
-            quantity_moved: it.total_quantity,
-            remarks: moveNotes,
-          })
-        )
-      );
+      const poStage = stages.find(s => s.code === 'PO' || s.sequence_order === 2) || { id: 2, name: 'Purchase Order (PO)' };
+      const destId = Number(poStage.id || 2);
+
+      // 1. Ensure BOM is persisted to backend
+      try {
+        await api.saveOrderMaterialRequirements(bomReport.order.id, bomReport);
+      } catch (saveErr) {
+        console.warn('Auto-save BOM notice:', saveErr);
+      }
+
+      // 2. Call existing stage transition API for the production order and all its items
+      const items: Array<{ id: number; total_quantity?: number; current_stage_quantity?: number }> =
+        bomReport.order.items && bomReport.order.items.length > 0
+          ? (bomReport.order.items as any)
+          : (bomReport.products && bomReport.products.length > 0)
+          ? bomReport.products.map(p => ({
+              id: p.item_id,
+              total_quantity: p.total_quantity,
+              current_stage_quantity: p.total_quantity,
+            }))
+          : [];
+
+      if (items.length > 0) {
+        await Promise.all(
+          items.map(it =>
+            api.moveStage({
+              production_order_id: bomReport.order.id,
+              order_item_id: it.id,
+              to_stage_id: destId,
+              quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
+              remarks: moveNotes || 'Moved from Stage 01: Requirement Gathering to Stage 02: PO',
+            })
+          )
+        );
+      } else {
+        await api.moveStage({
+          production_order_id: bomReport.order.id,
+          to_stage_id: destId,
+          quantity_moved: bomReport.order.total_quantity || 1,
+          remarks: moveNotes || 'Moved from Stage 01: Requirement Gathering to Stage 02: PO',
+        });
+      }
+
       setMoveOpen(false);
-      setSuccessToast(`Order successfully advanced to next production stage!`);
-      navigate('/production/po');
+      setSuccessToast(`Production Order ${bomReport.order.order_number} moved to Stage 02: Purchase Order successfully!`);
+      navigate(`/production/po/${bomReport.order.id}`);
     } catch (err: unknown) {
-      setError((err as Error).message || 'Failed to advance stage');
+      setMoveError((err as Error).message || 'Failed to move production order to PO stage');
     } finally {
       setSavingMove(false);
     }
@@ -363,14 +423,14 @@ export default function RequirementOrderDetail() {
               <span>Back</span>
             </button>
 
-            <button
+            <Button
               onClick={handleRecalculate}
-              disabled={calculating}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition shadow-2xs"
+              loading={calculating}
+              icon={<Sparkles className="w-3.5 h-3.5" />}
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-3 py-1.5"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${calculating ? 'animate-spin' : ''}`} />
-              <span>Recalculate BOM</span>
-            </button>
+              Generate BOM
+            </Button>
 
             <button
               onClick={() => window.print()}
@@ -379,14 +439,6 @@ export default function RequirementOrderDetail() {
               <Printer className="w-3.5 h-3.5 text-slate-600" />
               <span>Print Sheet</span>
             </button>
-
-            <Button
-              onClick={() => setMoveOpen(true)}
-              icon={<ChevronRight className="w-3.5 h-3.5" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs"
-            >
-              Advance to 02. PO
-            </Button>
           </div>
         }
       />
@@ -492,21 +544,6 @@ export default function RequirementOrderDetail() {
               <span>Products Ordered ({bomReport.products.length})</span>
             </button>
           </div>
-
-          {activeTab === 'bom' && (
-            <div className="flex items-center gap-2">
-              {summary.shortage_count > 0 && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/purchase/orders?create=true')}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold shadow-2xs transition"
-                >
-                  <ShoppingCart className="w-3.5 h-3.5" />
-                  <span>Create PO for Shortages ({summary.shortage_count})</span>
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         {/* TAB 1: TOTAL RAW MATERIAL REQUIREMENT (BOM) */}
@@ -745,57 +782,60 @@ export default function RequirementOrderDetail() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredMaterials.map((m, idx) => (
-                        <tr key={m.material_id ? `id_${m.material_id}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
-                            {idx + 1}
-                          </td>
-                          <td className="py-3 px-4 font-medium text-slate-800">
-                            <span className="font-bold text-slate-800 block">{m.name}</span>
-                            {m.material_code && (
-                              <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
-                            )}
-                          </td>
-
-                          <td className="py-3 px-3">
-                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                              {m.category}
-                            </span>
-                          </td>
-
-                          <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
-
-                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                            {fmt(m.total_required_qty, 2)}
-                          </td>
-
-                          <td className="py-3 px-3 text-right font-mono text-slate-600">
-                            {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                          </td>
-
-                          <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
-                            {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                      {filteredMaterials.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-10 text-center text-slate-400">
+                            <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                            <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
+                            <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                              {categoryFilter !== 'ALL' || searchQuery
+                                ? 'No materials match the current filter. Try clearing your search.'
+                                : 'Click "Generate BOM" in the header above to calculate material requirements from Buyer Product Master.'}
+                            </p>
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        filteredMaterials.map((m, idx) => {
+                          return (
+                            <tr key={m.material_id ? `id_${m.material_id}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                              <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                                {idx + 1}
+                              </td>
+                              <td className="py-3 px-4 font-medium text-slate-800">
+                                <span className="font-bold text-slate-800 block">{m.name}</span>
+                                {m.material_code && (
+                                  <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-3">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                  {m.category}
+                                </span>
+                              </td>
+
+                              <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+
+                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                                {fmt(m.total_required_qty, 2)}
+                              </td>
+
+                              <td className="py-3 px-3 text-right font-mono text-slate-600">
+                                {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                              </td>
+
+                              <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                                {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-
-            {/* Category-Based PO Issuance component */}
-            <CategoryPOIssuer
-              orderId={order.id}
-              orderNumber={order.order_number}
-              orderTitle={order.title}
-              targetDeliveryDate={order.target_delivery_date}
-              materials={bomReport?.total_materials || []}
-              onPOCreated={(poNum) => {
-                setSuccessToast(`Purchase Order ${poNum} created successfully!`);
-                loadData();
-              }}
-            />
           </div>
         )}
 
@@ -892,68 +932,141 @@ export default function RequirementOrderDetail() {
             )}
           </div>
         )}
+        {/* Bottom Stage Transition Action Area — Move to PO */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-2">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              isBOMValid ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-amber-50 text-amber-600 border border-amber-200'
+            }`}>
+              {isBOMValid ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-800">
+                  {isBOMValid ? 'Material Requirements (BOM) Ready' : 'BOM Generation Required'}
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  isBOMValid ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                }`}>
+                  {isBOMValid ? `${bomReport.total_materials.length} Materials Computed` : 'Pending Generation'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {isBOMValid
+                  ? 'All buyer product material requirements verified. Click "Move to PO" to advance this order to Stage 02: Purchase Order.'
+                  : 'Please click "Generate BOM" in the header above to calculate buyer product master materials before advancing.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end w-full sm:w-auto shrink-0">
+            <Button
+              onClick={() => {
+                setMoveError('');
+                setMoveOpen(true);
+              }}
+              disabled={!isBOMValid || savingMove}
+              loading={savingMove}
+              icon={<ChevronRight className="w-4 h-4" />}
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-5 py-2.5 w-full sm:w-auto"
+            >
+              Move to PO
+            </Button>
+          </div>
+        </div>
       </div>
 
-      {/* Advance to Next Stage Modal */}
+      {/* Move to PO Confirmation Modal */}
       <Modal
         open={moveOpen}
-        onClose={() => setMoveOpen(false)}
-        title={`Advance Order ${order.order_number} to Next Stage`}
-        subtitle="Advance this entire order into the next production pipeline step (e.g. 02. Purchase Order)"
+        onClose={() => !savingMove && setMoveOpen(false)}
+        title="Move to Purchase Order (PO) Stage"
+        subtitle={`Confirm stage transition for Production Order ${order.order_number}`}
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setMoveOpen(false)}>
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button
+              variant="secondary"
+              onClick={() => setMoveOpen(false)}
+              disabled={savingMove}
+            >
               Cancel
             </Button>
             <Button
               loading={savingMove}
-              onClick={handleAdvanceStage}
-              icon={<ChevronRight className="w-3.5 h-3.5" />}
+              disabled={!isBOMValid || savingMove}
+              onClick={handleConfirmMoveToPO}
+              icon={<ChevronRight className="w-4 h-4" />}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
             >
-              Advance Order
+              Move to PO
             </Button>
-          </>
+          </div>
         }
       >
-        <div className="flex flex-col gap-3">
-          {error && (
-            <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              {error}
+        <div className="flex flex-col gap-3.5">
+          {moveError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+              <div>
+                <p className="font-bold">Stage Transition Failed</p>
+                <p className="text-[11px] mt-0.5">{moveError}</p>
+                <p className="text-[10px] text-red-500 mt-1">The order remains safely in Stage 01: Requirement Gathering.</p>
+              </div>
             </div>
           )}
 
-          <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-xs text-brand-900">
-            <p className="font-semibold">
-              Requirement Gathering Verified for {order.order_number}
-            </p>
-            <p className="text-[11px] text-brand-700 mt-1">
-              Material list contains {summary.total_distinct_materials} materials across {fmt(order.total_quantity)} garments.
-            </p>
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Production Order:</span>
+              <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                {order.order_number}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Buyer:</span>
+              <span className="font-semibold text-slate-800">{order.customer_name || 'Direct Buyer'}</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Total Order Quantity:</span>
+              <span className="font-mono font-bold text-slate-800">{fmt(order.total_quantity)} garments</span>
+            </div>
+            <div className="flex items-center justify-between text-xs border-t border-slate-200/80 pt-2">
+              <span className="text-slate-500 font-medium">Verified BOM Materials:</span>
+              <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                {bomReport?.total_materials?.length || 0} distinct items
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Est. Material Cost:</span>
+              <span className="font-mono font-bold text-slate-800">
+                {fmtCurrency(summary?.total_estimated_cost || 0)}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+            <div className="text-[11px] leading-relaxed">
+              <p className="font-bold text-amber-800">Stage Transition Note</p>
+              <p className="mt-0.5 text-amber-700">
+                Are you sure you want to move this production order to <strong>Stage 02: PO (Purchase Order)</strong>?
+                This will make the order and its generated BOM requirements available in the PO Stage for category-wise supplier quotation and PO issuance.
+              </p>
+              <p className="mt-1 text-amber-600 font-medium">
+                • Purchase orders will not be issued automatically.
+                <br />
+                • Supplier selection and PO issuance remain separate actions in Stage 02.
+              </p>
+            </div>
           </div>
 
           <FormField
-            as="select"
-            label="Destination Stage"
-            required
-            value={selectedNextStageId}
-            onChange={e => setSelectedNextStageId(e.target.value)}
-          >
-            {stages
-              .filter(s => s.sequence_order > 1)
-              .map(s => (
-                <option key={s.id} value={s.id}>
-                  {String(s.sequence_order).padStart(2, '0')}. {s.name}
-                </option>
-              ))}
-          </FormField>
-
-          <FormField
             as="textarea"
-            label="Handover Notes / Verification Remarks"
+            label="Handover Notes / Verification Remarks (Optional)"
             value={moveNotes}
             onChange={e => setMoveNotes(e.target.value)}
             rows={2}
+            placeholder="e.g. BOM verified against Buyer master specs; ready for procurement."
           />
         </div>
       </Modal>

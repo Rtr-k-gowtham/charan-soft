@@ -119,7 +119,10 @@ export const api = {
   getProductionStages: () => request<unknown[]>('/production-stages'),
   getProductionOrders: () => request<unknown[]>('/production-orders'),
   getProductionOrder: (id: number | string) => request<unknown>(`/production-orders/${id}`),
-  getOrderMaterialRequirements: (id: number | string) => request<any>(`/production-orders/${id}/material-requirements`),
+  getOrderMaterialRequirements: (id: number | string, force = false) =>
+    request<any>(`/production-orders/${id}/material-requirements${force ? '?force=1' : ''}`),
+  saveOrderMaterialRequirements: (id: number | string, data: unknown) =>
+    request<unknown>(`/production-orders/${id}/material-requirements`, 'POST', data),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
   moveStage: (data: unknown) =>

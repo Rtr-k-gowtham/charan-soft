@@ -16,13 +16,12 @@ import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
 import {
   RefreshCw,
   ChevronRight,
-  ChevronDown,
-  ChevronUp,
   CheckCircle2,
   AlertCircle,
   Boxes,
   Plus,
   Search,
+  Eye,
   Layers,
   ArrowRight,
   ExternalLink,
@@ -43,19 +42,6 @@ interface Props {
   stageCode?: string;
   breadcrumb: string[];
 }
-
-const STAGE_ROUTE_MAP: Record<string, string> = {
-  REQ: '/production/requirement',
-  PO: '/production/po',
-  INW: '/production/inward',
-  DYE: '/production/dyeing',
-  CUT: '/production/cutting',
-  EMB: '/production/embroidery',
-  STI: '/production/stitching',
-  CHK: '/production/checking',
-  PCK: '/production/packing',
-  COMP: '/production/completed',
-};
 
 type StageItem = ProductionOrderItem & {
   order_id?: number;
@@ -161,7 +147,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
   const [viewMode, setViewMode] = useState<'orders' | 'items'>(activeCode === 'REQ' ? 'orders' : 'orders');
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState('ALL');
-  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
 
   // Modals
   const [moveOpen, setMoveOpen] = useState(false);
@@ -320,22 +305,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
     });
   }, [orderGroups, searchTerm, priorityFilter]);
 
-  const toggleExpandOrder = (orderNum: string) => {
-    setExpandedOrders(prev => ({
-      ...prev,
-      [orderNum]: !prev[orderNum]
-    }));
-  };
 
-  const expandAllOrders = () => {
-    const next: Record<string, boolean> = {};
-    filteredOrderGroups.forEach(g => { next[g.order_number] = true; });
-    setExpandedOrders(next);
-  };
-
-  const collapseAllOrders = () => {
-    setExpandedOrders({});
-  };
 
   const currentStage = stages.find(s => s.code === activeCode || s.name === stageName);
   const nextStages = stages.filter(s => s.sequence_order > (currentStage?.sequence_order || 0));
@@ -625,38 +595,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         }
       />
 
-      {/* 10-Stage Pipeline Stepper */}
-      <div className="px-3 sm:px-4 pt-2 pb-2 bg-white border-b border-slate-200">
-        <div className="flex items-center gap-1.5 overflow-x-auto touch-scroll scrollbar-none pb-1">
-          {stages.map((s, idx) => {
-            const isCurrent = s.code === activeCode || s.name === stageName;
-            const targetRoute = STAGE_ROUTE_MAP[s.code] || `/production/${s.code.toLowerCase()}`;
-            return (
-              <React.Fragment key={s.id || s.code}>
-                <button
-                  type="button"
-                  onClick={() => navigate(targetRoute)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all cursor-pointer border min-h-[32px] ${
-                    isCurrent
-                      ? 'text-white shadow-sm border-transparent'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                  style={isCurrent ? { backgroundColor: s.color_badge || '#6366f1' } : {}}
-                >
-                  <span className={`text-[10px] font-bold ${isCurrent ? 'text-white/80' : 'text-slate-400'}`}>
-                    {String(s.sequence_order).padStart(2, '0')}.
-                  </span>
-                  <span>{s.name}</span>
-                </button>
-                {idx < stages.length - 1 && (
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </div>
-
       {/* Stage Summary Statistics Cards */}
       <div className="px-3 sm:px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
         <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
@@ -700,7 +638,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           </div>
           <div
             className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-2xs"
-            style={{ backgroundColor: currentStage?.color_badge || '#6366f1' }}
+            style={{ backgroundColor: activeCode === 'DYE' ? '#2563eb' : (currentStage?.color_badge || '#2563eb') }}
           >
             {activeCode}
           </div>
@@ -734,52 +672,35 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           </select>
         </div>
 
-        {/* View Switcher: Orders View (Default) vs Flat Items */}
-        <div className="flex items-center gap-2">
-          {viewMode === 'orders' && filteredOrderGroups.length > 0 && (
-            <div className="flex items-center gap-1 text-[11px]">
+        {/* View Switcher: Orders View (Default) vs Flat Items (Only for stages after REQ) */}
+        {activeCode !== 'REQ' && (
+          <div className="flex items-center gap-2">
+            <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-200">
               <button
                 type="button"
-                onClick={expandAllOrders}
-                className="px-2 py-1 text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition font-medium shadow-2xs"
+                onClick={() => setViewMode('orders')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                  viewMode === 'orders'
+                    ? 'bg-white text-slate-800 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                Expand All
+                Orders View ({filteredOrderGroups.length})
               </button>
               <button
                 type="button"
-                onClick={collapseAllOrders}
-                className="px-2 py-1 text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-50 transition font-medium shadow-2xs"
+                onClick={() => setViewMode('items')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
+                  viewMode === 'items'
+                    ? 'bg-white text-slate-800 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                Collapse All
+                Flat Items ({items.length})
               </button>
             </div>
-          )}
-
-          <div className="flex bg-slate-200/80 p-0.5 rounded-lg border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setViewMode('orders')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
-                viewMode === 'orders'
-                  ? 'bg-white text-slate-800 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Orders View ({filteredOrderGroups.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('items')}
-              className={`px-3 py-1 rounded-md text-xs font-semibold transition ${
-                viewMode === 'items'
-                  ? 'bg-white text-slate-800 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Flat Items ({items.length})
-            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -791,7 +712,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
           </div>
         ) : viewMode === 'orders' ? (
           /* ========================================================================= */
-          /* ORDER-CENTRIC VIEW: Only see the Order & Expand to see list of products */
+          /* PRODUCTION STAGE STRUCTURED TABLE VIEW                                    */
           /* ========================================================================= */
           filteredOrderGroups.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 p-10 text-center shadow-2xs">
@@ -812,356 +733,314 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               )}
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
-              {filteredOrderGroups.map(group => {
-                const isExpanded = !!expandedOrders[group.order_number];
-                return (
-                  <div
-                    key={group.order_number}
-                    className={`bg-white rounded-xl border transition-all duration-200 overflow-hidden shadow-2xs ${
-                      isExpanded ? 'border-brand-300 ring-1 ring-brand-100' : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    {/* Order Master Header Row */}
-                    <div
-                      onClick={() => toggleExpandOrder(group.order_number)}
-                      className="p-3.5 sm:p-4 cursor-pointer select-none hover:bg-slate-50/70 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                    >
-                      {/* Left: Order Info & Buyer with Lorelei Avatar */}
-                      <div className="flex items-start sm:items-center gap-3 min-w-0">
-                        <BuyerAvatar
-                          buyer={{
-                            id: group.customer_id,
-                            code: group.customer_code,
-                            name: group.customer_name,
-                            avatar_style: group.customer_avatar_style,
-                            avatar_seed: group.customer_avatar_seed,
-                            avatar_config: group.customer_avatar_config,
-                          }}
-                          size="md"
-                          shape="circle"
-                          className="shrink-0"
-                        />
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left border-collapse table-auto">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="px-2.5 py-2.5 w-8 text-center text-slate-400">#</th>
+                      <th className="px-2.5 py-2.5 whitespace-nowrap">Order #</th>
+                      <th className="px-2.5 py-2.5">Order Title</th>
+                      <th className="px-2.5 py-2.5">Buyer / Customer</th>
+                      <th className="px-2.5 py-2.5 whitespace-nowrap">Target Delivery</th>
+                      {activeCode === 'REQ' && (
+                        <>
+                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Total Order Qty</th>
+                          <th className="px-2 py-2.5 whitespace-nowrap">Products / Line Items</th>
+                          <th className="px-2 py-2.5 text-center whitespace-nowrap">BOM Status</th>
+                        </>
+                      )}
+                      {activeCode === 'PO' && (
+                        <>
+                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Stage Quantity</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">POs Issued</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
+                        </>
+                      )}
+                      {activeCode === 'INW' && (
+                        <>
+                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Inward Quantity</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Inward Status</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
+                        </>
+                      )}
+                      {activeCode === 'DYE' && (
+                        <>
+                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Dyeing Quantity</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Dyeing Status</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
+                        </>
+                      )}
+                      {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
+                        <>
+                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Stage Quantity</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Status</th>
+                          <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
+                        </>
+                      )}
+                      <th className="px-3 py-2.5 text-right whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredOrderGroups.map((group, idx) => {
+                      const lineItemsCount = group.items.length;
+                      const uniqueProducts = group.unique_products_count || lineItemsCount;
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-sm text-brand-700 bg-brand-50/80 px-2 py-0.5 rounded border border-brand-200">
-                              {group.order_number}
-                            </span>
-                            <span className="text-xs font-bold text-slate-800">
-                              {group.customer_name || 'Direct Buyer'}
-                            </span>
-                            {group.customer_code && (
-                              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                {group.customer_code}
+                      // Stage workspace routing
+                      let targetUrl = `/production/orders/${group.order_id}`;
+                      if (activeCode === 'REQ') targetUrl = `/production/requirement/${group.order_id}`;
+                      if (activeCode === 'PO') targetUrl = `/production/po/${group.order_id}`;
+                      if (activeCode === 'INW') targetUrl = `/production/inward/${group.order_id}`;
+                      if (activeCode === 'DYE') targetUrl = `/production/dyeing/${group.order_id}`;
+
+                      // PO count for PO stage
+                      const ordNum = group.order_number;
+                      const poCount = stagePOs.filter(po => {
+                        if (po.production_order_id && String(po.production_order_id) === String(group.order_id)) return true;
+                        if (po.production_order_number && po.production_order_number === ordNum) return true;
+                        if (po.remarks && ordNum && po.remarks.includes(ordNum)) return true;
+                        if (Array.isArray(po.items) && ordNum && po.items.some((it: any) => it.order_no === ordNum)) return true;
+                        return false;
+                      }).length;
+
+                      return (
+                        <tr
+                          key={group.order_number}
+                          onClick={() => navigate(targetUrl)}
+                          className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                        >
+                            <td className="px-2.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
+                              {idx + 1}
+                            </td>
+
+                            <td className="px-2.5 py-2.5 whitespace-nowrap">
+                              <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                                {group.order_number}
                               </span>
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <span
+                                className="font-semibold text-slate-800 block text-xs hover:text-brand-600 transition-colors truncate max-w-[200px]"
+                                title={group.order_title}
+                              >
+                                {group.order_title || 'Garment Production Order'}
+                              </span>
+                            </td>
+
+                            <td className="px-2.5 py-2.5">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <BuyerAvatar
+                                  buyer={{
+                                    id: group.customer_id,
+                                    code: group.customer_code,
+                                    name: group.customer_name,
+                                    avatar_style: group.customer_avatar_style,
+                                    avatar_seed: group.customer_avatar_seed,
+                                    avatar_config: group.customer_avatar_config,
+                                  }}
+                                  size="xs"
+                                  shape="circle"
+                                  className="shrink-0"
+                                />
+                                <div className="min-w-0">
+                                  <span
+                                    className="font-medium text-slate-800 text-xs block truncate max-w-[150px]"
+                                    title={group.customer_name || 'Direct Order'}
+                                  >
+                                    {group.customer_name || 'Direct Order'}
+                                  </span>
+                                  {group.customer_code && (
+                                    <span className="text-[10px] font-mono text-slate-400 block truncate">
+                                      {group.customer_code}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="px-2.5 py-2.5 whitespace-nowrap">
+                              <div className="flex items-center gap-1.5 text-slate-600 font-mono text-[11px]">
+                                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{group.target_delivery_date || '—'}</span>
+                              </div>
+                            </td>
+
+                            {/* REQ specific columns */}
+                            {activeCode === 'REQ' && (
+                              <>
+                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {fmt(group.total_order_quantity || group.total_stage_quantity)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                </td>
+                                <td className="px-2 py-2.5 whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                    <Layers className="w-3 h-3 text-slate-400 shrink-0" />
+                                    <span>{uniqueProducts} {uniqueProducts === 1 ? 'Product' : 'Products'} ({lineItemsCount} lines)</span>
+                                  </span>
+                                </td>
+                                <td className="px-2 py-2.5 text-center whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wide">
+                                    <Sparkles className="w-3 h-3 text-emerald-600" />
+                                    <span>Generated</span>
+                                  </span>
+                                </td>
+                              </>
                             )}
-                            <StatusBadge status={group.priority || 'Medium'} />
-                            {activeCode === 'PO' && (() => {
-                              const ordNum = group.order_number;
-                              const count = stagePOs.filter(po => {
-                                if (po.production_order_id && String(po.production_order_id) === String(group.order_id)) return true;
-                                if (po.production_order_number && po.production_order_number === ordNum) return true;
-                                if (po.remarks && ordNum && po.remarks.includes(ordNum)) return true;
-                                if (Array.isArray(po.items) && ordNum && po.items.some((it: any) => it.order_no === ordNum)) return true;
-                                return false;
-                              }).length;
-                              return (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                  {count} {count === 1 ? 'PO Issued' : 'POs Issued'}
-                                </span>
-                              );
-                            })()}
-                          </div>
 
-                          <p className="text-xs font-medium text-slate-600 truncate mt-1">
-                            {group.order_title || 'Garment Production Requirement'}
-                          </p>
-                        </div>
-                      </div>
+                            {/* PO specific columns */}
+                            {activeCode === 'PO' && (
+                              <>
+                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {fmt(group.total_stage_quantity)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  {poCount > 0 ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                      <ShoppingCart className="w-2.5 h-2.5 text-indigo-600" />
+                                      <span>{poCount} {poCount === 1 ? 'PO Issued' : 'POs Issued'}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                                      0 POs Issued
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <StatusBadge status={group.priority || 'Medium'} />
+                                </td>
+                              </>
+                            )}
 
-                      {/* Right: Quantity, Date, & Expand Button */}
-                      <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-                        {/* Target Delivery Date */}
-                        {group.target_delivery_date && (
-                          <div className="text-left sm:text-right">
-                            <span className="text-[10px] text-slate-400 block font-medium">Target Delivery</span>
-                            <span className="text-xs font-semibold text-slate-700 flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-slate-400" />
-                              {group.target_delivery_date}
-                            </span>
-                          </div>
-                        )}
+                            {/* INW specific columns */}
+                            {activeCode === 'INW' && (
+                              <>
+                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {fmt(group.total_stage_quantity)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <PackageOpen className="w-3 h-3 text-emerald-600" />
+                                    <span>{group.status || 'Ready for Inward'}</span>
+                                  </span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <StatusBadge status={group.priority || 'Medium'} />
+                                </td>
+                              </>
+                            )}
 
-                        {/* Quantity Badge */}
-                        <div className="text-left sm:text-right">
-                          <span className="text-[10px] text-slate-400 block font-medium">Stage Quantity</span>
-                          <span className="font-mono font-bold text-sm text-brand-700">
-                            {fmt(group.total_stage_quantity)} <span className="text-xs font-normal text-slate-500">pcs</span>
-                          </span>
-                        </div>
+                            {/* DYE specific columns */}
+                            {activeCode === 'DYE' && (
+                              <>
+                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {fmt(group.total_stage_quantity)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    <Droplets className="w-3 h-3 text-blue-600" />
+                                    <span>{group.status || 'In Dyeing'}</span>
+                                  </span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <StatusBadge status={group.priority || 'Medium'} />
+                                </td>
+                              </>
+                            )}
 
-                        {/* Action buttons: Material List (BOM), Enter Order & Accordion Chevron */}
-                        <div className="flex items-center gap-1.5">
-                          {activeCode === 'REQ' && group.order_id && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                navigate(`/production/requirement/${group.order_id}`);
-                              }}
-                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 shadow-2xs transition"
-                              title="Generate material requirement list (BOM) for this order"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>Material List (BOM)</span>
-                            </button>
-                          )}
+                            {/* Generic production stages columns */}
+                            {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
+                              <>
+                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
+                                  {fmt(group.total_stage_quantity)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <StatusBadge status={group.status || 'In Progress'} />
+                                </td>
+                                <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                                  <StatusBadge status={group.priority || 'Medium'} />
+                                </td>
+                              </>
+                            )}
 
-                          {activeCode === 'PO' && group.order_id && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                navigate(`/production/po/${group.order_id}`);
-                              }}
-                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 shadow-2xs transition"
-                              title="Open Stage 02: Purchase Order Workspace for this order"
-                            >
-                              <ShoppingCart className="w-3.5 h-3.5" />
-                              <span>Enter POs & Issue</span>
-                            </button>
-                          )}
+                            {/* Actions Column */}
+                            <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {activeCode === 'REQ' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md shadow-2xs transition hover:text-brand-700"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                                    <span>View</span>
+                                  </button>
+                                )}
 
-                          {activeCode === 'INW' && group.order_id && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                navigate(`/production/inward/${group.order_id}`);
-                              }}
-                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition"
-                              title="Open Stage 03: Material Inward & Proof Workspace for this order"
-                            >
-                              <PackageOpen className="w-3.5 h-3.5" />
-                              <span>Inward & Proof</span>
-                            </button>
-                          )}
+                                {activeCode === 'PO' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition hover:text-indigo-900"
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    <span>View / Issue POs</span>
+                                  </button>
+                                )}
 
-                          {activeCode === 'DYE' && group.order_id && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                navigate(`/production/dyeing/${group.order_id}`);
-                              }}
-                              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-2xs transition"
-                              title="Open Stage 04: Fabric Dyeing & Pantone Color Orders Workspace"
-                            >
-                              <Droplets className="w-3.5 h-3.5" />
-                              <span>Dyeing & Inward</span>
-                            </button>
-                          )}
+                                {activeCode === 'INW' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition hover:text-emerald-900"
+                                  >
+                                    <PackageOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Inward & Proof</span>
+                                  </button>
+                                )}
 
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              toggleExpandOrder(group.order_number);
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                              isExpanded
-                                ? 'bg-brand-600 text-white shadow-xs'
-                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                            }`}
-                          >
-                            <span>
-                              {isExpanded
-                                ? (activeCode === 'PO' ? 'Close Quick View' : 'Hide Products')
-                                : (activeCode === 'PO' ? `Quick View (${group.items.length})` : `Enter Order (${group.items.length})`)}
-                            </span>
-                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
+                                {activeCode === 'DYE' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
+                                  >
+                                    <Droplets className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                                    <span>Dyeing Process</span>
+                                  </button>
+                                )}
 
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              if (group.order_id) {
-                                navigate(`/production/orders/${group.order_id}`);
-                              }
-                            }}
-                            title="Open full order details"
-                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 rounded-lg transition"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                                {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-brand-700"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                    <span>View Details</span>
+                                  </button>
+                                )}
 
-                    {/* Expandable Product List inside this Order */}
-                    {isExpanded && (
-                      <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4 animate-in fade-in slide-in-from-top-1">
-                        {/* Requirement Stage Material List Callout Banner */}
-                        {activeCode === 'REQ' && group.order_id && (
-                          <div className="mb-3 p-3 bg-gradient-to-r from-indigo-50 via-brand-50 to-indigo-50 border border-indigo-200/80 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                                <Sparkles className="w-4 h-4" />
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/production/orders/${group.order_id}`)}
+                                  title="Open full production order"
+                                  className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 rounded-lg transition"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
                               </div>
-                              <div>
-                                <h4 className="text-xs font-bold text-slate-800">
-                                  Auto-Generated Material Requirements & BOM
-                                </h4>
-                                <p className="text-[11px] text-slate-500">
-                                  Computed automatically from product raw materials configured in Buyer Master ({fmt(group.total_stage_quantity)} pcs).
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/production/requirement/${group.order_id}`)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs shrink-0 transition"
-                            >
-                              <span>View Full Material List</span>
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Purchase Order (PO) Stage: Category-Based Material Procurement & PO Issuance */}
-                        {activeCode === 'PO' && group.order_id && (
-                          <OrderPOIssuerWrapper
-                            orderId={group.order_id}
-                            orderNumber={group.order_number}
-                            orderTitle={group.order_title}
-                            targetDeliveryDate={group.target_delivery_date}
-                          />
-                        )}
-
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                              Products in Order ({group.items.length} line items)
-                            </span>
-                            <span className="text-[11px] text-slate-500">
-                              • Total {fmt(group.total_stage_quantity)} pcs at {stageName}
-                            </span>
-                          </div>
-
-                          {/* Quick Batch Advance for Entire Order */}
-                          {!isCompleted && nextStages.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => openBatchMoveModal(group)}
-                              className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-brand-50 text-brand-700 border border-brand-200 rounded-md hover:bg-brand-100 transition font-bold"
-                            >
-                              <ArrowRight className="w-3.5 h-3.5" />
-                              <span>Advance All Products in Order</span>
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Product Items Table / Cards */}
-                        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-left text-xs">
-                              <thead className="bg-slate-50/90 text-slate-500 font-semibold border-b border-slate-200 text-[11px]">
-                                <tr>
-                                  <th className="py-2.5 px-3">Product Name & Code</th>
-                                  <th className="py-2.5 px-3">Color</th>
-                                  <th className="py-2.5 px-3">Size</th>
-                                  <th className="py-2.5 px-3 text-right">Order Qty</th>
-                                  <th className="py-2.5 px-3 text-right">At This Stage</th>
-                                  <th className="py-2.5 px-3">Status</th>
-                                  <th className="py-2.5 px-3 text-right">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {group.items.map(it => (
-                                  <tr key={it.id} className="hover:bg-slate-50/60 transition">
-                                    <td className="py-2.5 px-3">
-                                      <span className="font-semibold text-slate-800 block">
-                                        {it.product_name || 'Garment Product'}
-                                      </span>
-                                      {it.product_code && (
-                                        <span className="font-mono text-[10px] text-slate-400 block">
-                                          {it.product_code}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-2.5 px-3">
-                                      <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-medium text-slate-700 border border-slate-200">
-                                        {it.color}
-                                      </span>
-                                    </td>
-                                    <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
-                                      {it.size ? (
-                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px]">
-                                          {it.size}
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-400 font-normal">—</span>
-                                      )}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-600">
-                                      {fmt(it.total_quantity)}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-right">
-                                      <span className="font-mono font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                                        {fmt(it.current_stage_quantity || it.total_quantity)} pcs
-                                      </span>
-                                    </td>
-                                    <td className="py-2.5 px-3">
-                                      <StatusBadge status={it.status || 'In Progress'} />
-                                    </td>
-                                    <td className="py-2.5 px-3 text-right">
-                                      {isQC ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedItem(it);
-                                            setQcForm({
-                                              passed: String(it.current_stage_quantity || it.total_quantity || 0),
-                                              rejected: '0',
-                                              rework: '0',
-                                              defect_reason: '',
-                                              remarks: '',
-                                              rework_stage_id: '7',
-                                            });
-                                            setQcOpen(true);
-                                          }}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 transition font-semibold"
-                                        >
-                                          <CheckCircle2 className="w-3.5 h-3.5" /> QC Check
-                                        </button>
-                                      ) : !isCompleted ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => openMoveModal(it)}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md hover:bg-emerald-100 transition font-bold"
-                                        >
-                                          <span>Move</span>
-                                          <ChevronRight className="w-3.5 h-3.5" />
-                                        </button>
-                                      ) : (
-                                        <span className="text-[11px] text-emerald-700 font-bold px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
-                                          ✓ Done
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                </table>
+              </div>
             </div>
           )
         ) : (

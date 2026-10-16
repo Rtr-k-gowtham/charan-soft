@@ -58,9 +58,6 @@ export default function POOrderDetail() {
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
-  // Accordion for viewing product lines and BOM
-  const [showProducts, setShowProducts] = useState(false);
-  const [showBOM, setShowBOM] = useState(false);
 
   // Advance to Inward Stage Modal
   const [moveOpen, setMoveOpen] = useState(false);
@@ -241,36 +238,6 @@ export default function POOrderDetail() {
         }
       />
 
-      {/* 10-Stage Pipeline Stepper */}
-      <div className="px-4 py-2 bg-white border-b border-slate-200">
-        <div className="flex items-center gap-1.5 overflow-x-auto touch-scroll scrollbar-none pb-1">
-          {stages.map((s, idx) => {
-            const isCurrent = s.code === 'PO' || s.name.toLowerCase().includes('purchase order');
-            return (
-              <React.Fragment key={s.id || s.code}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/production/${s.code.toLowerCase()}`)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition cursor-pointer border min-h-[30px] ${
-                    isCurrent
-                      ? 'bg-indigo-600 text-white border-transparent shadow-xs'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className={`text-[10px] font-bold ${isCurrent ? 'text-white/80' : 'text-slate-400'}`}>
-                    {String(s.sequence_order).padStart(2, '0')}.
-                  </span>
-                  <span>{s.name}</span>
-                </button>
-                {idx < stages.length - 1 && (
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </div>
-
       <div className="p-4 sm:p-5 max-w-7xl mx-auto w-full space-y-4">
         {/* Project Master Info Banner */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -396,73 +363,6 @@ export default function POOrderDetail() {
             loadData();
           }}
         />
-
-        {/* Collapsible Section: Products Ordered & Master BOM Reference */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-          <div
-            onClick={() => setShowProducts(!showProducts)}
-            className="p-3.5 px-4 bg-slate-50/80 hover:bg-slate-100/80 cursor-pointer flex items-center justify-between transition"
-          >
-            <div className="flex items-center gap-2">
-              <Package className="w-4 h-4 text-brand-600" />
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Products in this Project ({order.items?.length || 0} line items)
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-slate-500 text-xs font-medium">
-              <span>{showProducts ? 'Hide Details' : 'View Products'}</span>
-              {showProducts ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </div>
-          </div>
-
-          {showProducts && (
-            <div className="p-4 border-t border-slate-100 overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
-                  <tr>
-                    <th className="py-2.5 px-3">Product Name & Code</th>
-                    <th className="py-2.5 px-3">Color</th>
-                    <th className="py-2.5 px-3">Size</th>
-                    <th className="py-2.5 px-3 text-right">Order Qty</th>
-                    <th className="py-2.5 px-3 text-right">At This Stage</th>
-                    <th className="py-2.5 px-3 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(order.items || []).map(it => (
-                    <tr key={it.id} className="hover:bg-slate-50/60">
-                      <td className="py-2.5 px-3 font-semibold text-slate-800">
-                        {it.product_name || 'Garment Product'}
-                        {it.product_code && (
-                          <span className="text-[10px] font-mono text-slate-400 block">
-                            {it.product_code}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[11px] font-medium text-slate-700 border border-slate-200">
-                          {it.color}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-700">
-                        {it.size || '—'}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-700">
-                        {fmt(it.total_quantity)}
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-brand-700">
-                        {fmt(it.current_stage_quantity || it.total_quantity)} pcs
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <StatusBadge status={it.status || 'In Progress'} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Advance to Inward Modal */}

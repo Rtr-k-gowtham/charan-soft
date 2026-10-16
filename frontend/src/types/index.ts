@@ -352,6 +352,8 @@ export interface ProductionOrder {
   total_quantity: number;
   completed_quantity: number;
   status: string;
+  current_stage_name?: string;
+  current_stage_id?: number;
   notes?: string;
   items?: ProductionOrderItem[];
 }

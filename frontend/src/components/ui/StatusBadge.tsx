@@ -23,7 +23,25 @@ const statusMap: Record<string, string> = {
   'PARTIALLY COMPLETED': 'bg-orange-50 text-orange-700 border-orange-200',
   'QC': 'bg-purple-50 text-purple-700 border-purple-200',
   'REWORK': 'bg-rose-50 text-rose-700 border-rose-200',
-  'COMPLETED': 'bg-green-50 text-green-700 border-green-200',
+  'COMPLETED': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  'Completed': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+
+  // 10 Core Production Stages
+  'Requirement Gathering': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  'PO (Purchase Order)': 'bg-sky-50 text-sky-700 border-sky-200',
+  'Purchase Order (PO)': 'bg-sky-50 text-sky-700 border-sky-200',
+  'PO': 'bg-sky-50 text-sky-700 border-sky-200',
+  'Inward': 'bg-teal-50 text-teal-700 border-teal-200',
+  'Dyeing': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Cutting — Product-wise': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Cutting': 'bg-amber-50 text-amber-700 border-amber-200',
+  'Embroidery — Outward / Inward': 'bg-pink-50 text-pink-700 border-pink-200',
+  'Embroidery': 'bg-pink-50 text-pink-700 border-pink-200',
+  'Stitching — Color-wise Tracking': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Stitching — Color-wise': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Stitching': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Checking': 'bg-rose-50 text-rose-700 border-rose-200',
+  'Packing': 'bg-emerald-50 text-emerald-700 border-emerald-200',
 
   // Payment
   'Not Paid': 'bg-red-50 text-red-700 border-red-200',
