@@ -33,7 +33,8 @@ import {
   AlertCircle,
   Pencil,
   Lock,
-  Save
+  Save,
+  Send
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
@@ -580,21 +581,52 @@ export default function PurchaseOrders() {
   };
 
   const handleOpenCreate = () => {
-    setForm(prev => ({
-      ...prev,
-      supplier_id: prev.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : ''),
-      category_id: prev.category_id || (categories.length > 0 ? String(categories[0].id) : ''),
-    }));
+    const state = location.state as any;
+    if (state && (state.materials || state.production_order_id)) {
+      setForm(prev => ({
+        ...prev,
+        supplier_id: state.supplier_id ? String(state.supplier_id) : (prev.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : '')),
+        category_id: state.category_id ? String(state.category_id) : (prev.category_id || (categories.length > 0 ? String(categories[0].id) : '')),
+        production_order_id: state.production_order_id ? String(state.production_order_id) : prev.production_order_id,
+        delivery_due_date: state.target_delivery_date || prev.delivery_due_date || '',
+        remarks: state.remarks || prev.remarks || '',
+      }));
+
+      if (Array.isArray(state.materials) && state.materials.length > 0) {
+        const prefilled = state.materials.map((m: any, idx: number) =>
+          calcItem({
+            order_no: m.order_no || state.production_order_number || `ORD-${String(idx + 1).padStart(3, '0')}`,
+            material_id: m.material_id,
+            material_code: m.material_code,
+            item_code: m.material_code,
+            item_description: m.item_description || m.name || m.description || '',
+            description: m.description || m.name || m.item_description || '',
+            quantity: Number(m.quantity || m.total_required_qty) || 1,
+            qty: Number(m.quantity || m.total_required_qty) || 1,
+            uom: m.uom || 'KG',
+            rate: Number(m.rate || m.unit_cost) || 0,
+            tax_percent: Number(m.tax_percent) || 5,
+          })
+        );
+        setItems(prefilled);
+      }
+    } else {
+      setForm(prev => ({
+        ...prev,
+        supplier_id: prev.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : ''),
+        category_id: prev.category_id || (categories.length > 0 ? String(categories[0].id) : ''),
+      }));
+    }
     setError('');
     setCreateOpen(true);
   };
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get('create') === 'true' || params.get('action') === 'create') {
+    if (params.get('create') === 'true' || params.get('action') === 'create' || location.state?.materials) {
       handleOpenCreate();
     }
-  }, [location.search, suppliers, categories]);
+  }, [location.search, location.state, suppliers, categories]);
 
   const handleCreate = async (_status?: string) => {
     // Graceful resolution: if user didn't pick, auto-fallback to first available supplier / category
@@ -620,14 +652,21 @@ export default function PurchaseOrders() {
         ...it,
         order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
       }));
-      await api.createPurchaseOrder({
+      const poStatus = _status || 'Draft';
+      const res = await api.createPurchaseOrder({
         ...form,
         supplier_id: finalSupplierId,
         category_id: finalCategoryId,
         production_order_id: form.production_order_id || null,
-        status: 'Draft',
+        status: poStatus,
         items: preparedItems
       });
+      const createdPO = (res as any)?.data || res;
+
+      if (poStatus === 'Ordered' && createdPO?.id) {
+        await api.updatePurchaseOrderStatus(createdPO.id, 'Ordered').catch(() => null);
+      }
+
       setCreateOpen(false);
       setForm({ 
         supplier_id: suppliers.length > 0 ? String(suppliers[0].id) : '', 
@@ -638,7 +677,16 @@ export default function PurchaseOrders() {
         remarks: '' 
       });
       setItems([{ order_no: 'ORD-001', item_description: '', quantity: 0, uom: 'KG', rate: 0, tax_percent: 5, taxable_amount: 0, tax_amount: 0, net_amount: 0 }]);
-      load();
+      await load();
+
+      if (location.state?.from) {
+        navigate(location.state.from, {
+          state: {
+            successMessage: `Purchase Order ${createdPO?.po_number || ''} ${poStatus === 'Ordered' ? 'issued & locked' : 'saved as draft'} successfully!`
+          }
+        });
+        return;
+      }
     } catch (e: unknown) {
       setError((e as Error).message || 'Failed to create PO');
     } finally {
@@ -1597,7 +1645,13 @@ export default function PurchaseOrders() {
             </div>
 
             <div className="flex items-center gap-3">
-              <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+              <Button variant="secondary" onClick={() => {
+                if (location.state?.from) {
+                  navigate(location.state.from);
+                } else {
+                  setCreateOpen(false);
+                }
+              }}>
                 Cancel
               </Button>
               <button
@@ -1609,8 +1663,13 @@ export default function PurchaseOrders() {
                 <FileSpreadsheet className="w-3.5 h-3.5 text-amber-700" />
                 Save as Draft
               </button>
-              <Button loading={saving} onClick={() => handleCreate('Draft')} icon={<Plus className="w-4 h-4" />}>
-                Create PO (Draft) ({fmtCur(totals.net)})
+              <Button
+                loading={saving}
+                onClick={() => handleCreate('Ordered')}
+                icon={<Send className="w-4 h-4" />}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+              >
+                Issue Purchase Order ({fmtCur(totals.net)})
               </Button>
             </div>
           </div>

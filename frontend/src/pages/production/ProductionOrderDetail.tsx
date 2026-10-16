@@ -500,7 +500,16 @@ export default function ProductionOrderDetail() {
               Back
             </Button>
 
-            {!isAtPOStage && (
+            {isAtPOStage ? (
+              <Button
+                variant="primary"
+                icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                onClick={() => navigate(`/production/po/${order.id}`)}
+                className="bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-xs"
+              >
+                Open PO Stage (Stage 02) &rarr;
+              </Button>
+            ) : (
               <Button
                 variant="primary"
                 disabled={sendingToPO}
@@ -574,12 +583,7 @@ export default function ProductionOrderDetail() {
             )}
             <StatusBadge status={order.priority} />
             <StatusBadge status={order.status} />
-            {isAtPOStage && (
-              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                <Check className="w-3 h-3 text-emerald-600" />
-                Stage 02: PO Active
-              </span>
-            )}
+            <StatusBadge status={order.current_stage_name || (isAtPOStage ? 'Purchase Order (PO)' : 'Requirement Gathering')} />
           </div>
         </div>
 
