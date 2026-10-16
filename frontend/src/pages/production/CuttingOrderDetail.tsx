@@ -104,9 +104,6 @@ export default function CuttingOrderDetail() {
     actual_cut_quantity: 0,
     rejected_quantity: 0,
     rework_quantity: 0,
-    operator: 'Master S. Murugesan',
-    supervisor: 'K. Balan (Cutting Head)',
-    machine_line: 'Eastman CNC Auto-Cutter Line #1',
     remarks: '',
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
@@ -161,18 +158,23 @@ export default function CuttingOrderDetail() {
   }, [toastMessage]);
 
   const handleOpenBatchModal = (item: any) => {
+    const itTotal = Number(item.total_quantity || 0);
+    const itemBatches = batches.filter(b => b.production_order_item_id === item.id || (b.product_id && b.product_id === item.product_id));
+    const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
+    const pending = Math.max(0, itTotal - itCut);
+
+    if (pending <= 0) {
+      return;
+    }
+
     setSelectedItem(item);
-    const pending = item.pending_cut_quantity != null ? item.pending_cut_quantity : (item.total_quantity || 0);
     setBatchForm({
       cutting_date: new Date().toISOString().split('T')[0],
-      assigned_quantity: pending > 0 ? pending : item.total_quantity,
-      actual_cut_quantity: pending > 0 ? pending : item.total_quantity,
+      assigned_quantity: pending,
+      actual_cut_quantity: pending,
       rejected_quantity: 0,
       rework_quantity: 0,
-      operator: 'Master S. Murugesan',
-      supervisor: 'K. Balan (Cutting Head)',
-      machine_line: 'Eastman CNC Auto-Cutter Line #1',
-      remarks: 'Clean ply lay inspected, zero edge frays recorded',
+      remarks: '',
     });
     setPhotoUrls([]);
     setBatchError('');
@@ -200,9 +202,14 @@ export default function CuttingOrderDetail() {
     const actual = Number(batchForm.actual_cut_quantity || 0);
     const rej = Number(batchForm.rejected_quantity || 0);
     const rwk = Number(batchForm.rework_quantity || 0);
+    const assigned = Number(batchForm.assigned_quantity || 0);
 
     if (actual <= 0) {
-      setBatchError('Actual cut quantity must be greater than zero');
+      setBatchError('Actual Cut Qty must be greater than zero');
+      return;
+    }
+    if (assigned > 0 && actual > assigned) {
+      setBatchError(`Actual Cut Qty (${actual}) cannot exceed remaining assigned quantity (${assigned})`);
       return;
     }
     if (rej + rwk > actual) {
@@ -216,14 +223,11 @@ export default function CuttingOrderDetail() {
       await api.createCuttingBatch({
         production_order_id: Number(id),
         production_order_item_id: selectedItem.id,
-        assigned_quantity: Number(batchForm.assigned_quantity || actual),
+        assigned_quantity: assigned > 0 ? assigned : actual,
         actual_cut_quantity: actual,
         rejected_quantity: rej,
         rework_quantity: rwk,
         cutting_date: batchForm.cutting_date,
-        operator: batchForm.operator,
-        supervisor: batchForm.supervisor,
-        machine_line: batchForm.machine_line,
         remarks: batchForm.remarks,
         photo_urls: photoUrls,
       });
@@ -275,7 +279,8 @@ export default function CuttingOrderDetail() {
       });
 
       setTransferModalOpen(false);
-      setToastMessage(`Successfully transferred ${qty} pieces to next production stage!`);
+      const stageName = Number(transferForm.destination_stage_id) === 7 ? '07. Stitching' : '06. Embroidery';
+      setToastMessage(`Successfully transferred ${qty} pieces to ${stageName}!`);
       loadData();
     } catch (err: any) {
       setTransferError(err.message || 'Failed to transfer batch output');
@@ -478,11 +483,12 @@ export default function CuttingOrderDetail() {
               <tbody className="divide-y divide-slate-100">
                 {items.map((it, idx) => {
                   const itTotal = Number(it.total_quantity || 0);
-                  const itCut = Number(it.total_cut_quantity || 0);
-                  const itAcc = Number(it.accepted_output_quantity || 0);
-                  const itRej = Number(it.rejected_quantity || 0);
-                  const itTrf = Number(it.transferred_quantity || 0);
-                  const itPending = Math.max(0, itTotal - itAcc);
+                  const itemBatches = batches.filter(b => b.production_order_item_id === it.id || (b.product_id && b.product_id === it.product_id));
+                  const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
+                  const itAcc = itemBatches.reduce((s, b) => s + Number(b.accepted_output_quantity || 0), 0);
+                  const itRej = itemBatches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
+                  const itTrf = itemBatches.reduce((s, b) => s + Number(b.transferred_to_next_stage_quantity || 0), 0);
+                  const itPending = Math.max(0, itTotal - itCut);
 
                   return (
                     <tr key={it.id} className="hover:bg-slate-50/60 transition">
@@ -506,15 +512,22 @@ export default function CuttingOrderDetail() {
                         {itPending > 0 ? fmt(itPending) : <span className="text-emerald-600">Complete</span>}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <Button
-                          size="xs"
-                          variant="primary"
-                          icon={<Plus className="w-3 h-3" />}
-                          onClick={() => handleOpenBatchModal(it)}
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px]"
-                        >
-                          Record Cut Batch
-                        </Button>
+                        {itPending <= 0 ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            Completed
+                          </span>
+                        ) : (
+                          <Button
+                            size="xs"
+                            variant="primary"
+                            icon={<Plus className="w-3 h-3" />}
+                            onClick={() => handleOpenBatchModal(it)}
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px]"
+                          >
+                            Record Cut Batch
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -554,7 +567,7 @@ export default function CuttingOrderDetail() {
                     <th className="py-3 px-3 text-right">Accepted</th>
                     <th className="py-3 px-3 text-right">Rejected</th>
                     <th className="py-3 px-3 text-right">Transferred</th>
-                    <th className="py-3 px-3">Operator / Machine</th>
+                    <th className="py-3 px-3">Transferred To</th>
                     <th className="py-3 px-3 text-center">Proof Photos</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
@@ -568,15 +581,28 @@ export default function CuttingOrderDetail() {
                         <td className="py-3 px-3 text-slate-600 font-mono">{b.cutting_date}</td>
                         <td className="py-3 px-3">
                           <span className="font-semibold text-slate-800 block">{b.product_name}</span>
-                          <span className="text-[10px] text-slate-400">{b.color} • Size {b.size}</span>
+                          <span className="text-[10px] text-slate-400">{b.color} • Size {b.size || 'M'}</span>
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">{fmt(b.actual_cut_quantity)}</td>
                         <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700">{fmt(b.accepted_output_quantity)}</td>
                         <td className="py-3 px-3 text-right font-mono text-red-600 font-semibold">{fmt(b.rejected_quantity)}</td>
                         <td className="py-3 px-3 text-right font-mono text-purple-700 font-semibold">{fmt(b.transferred_to_next_stage_quantity || 0)}</td>
-                        <td className="py-3 px-3 text-slate-600">
-                          <span className="font-medium text-slate-800 block">{b.operator || 'Cutting Team'}</span>
-                          <span className="text-[10px] text-slate-400">{b.machine_line || 'CNC Line 1'}</span>
+                        <td className="py-3 px-3">
+                          {b.destination_stage_name ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 text-[11px]">
+                              <ArrowRight className="w-3 h-3 text-purple-600" />
+                              {b.destination_stage_name}
+                            </span>
+                          ) : b.destination_stage_id ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 text-[11px]">
+                              <ArrowRight className="w-3 h-3 text-purple-600" />
+                              {Number(b.destination_stage_id) === 6 ? 'Stage 06: Embroidery' : 'Stage 07: Stitching'}
+                            </span>
+                          ) : Number(b.transferred_to_next_stage_quantity || 0) > 0 ? (
+                            <span className="text-purple-600 font-semibold text-[11px]">Transferred</span>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">Pending Transfer</span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           {(() => {
@@ -613,7 +639,7 @@ export default function CuttingOrderDetail() {
                           ) : (
                             <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
                               <CheckCheck className="w-3 h-3 text-emerald-600" />
-                              Transferred
+                              Transferred ({fmt(b.transferred_to_next_stage_quantity || b.accepted_output_quantity)})
                             </span>
                           )}
                         </td>
@@ -667,34 +693,39 @@ export default function CuttingOrderDetail() {
               <input
                 type="number"
                 value={batchForm.assigned_quantity}
-                onChange={(e) => setBatchForm({ ...batchForm, assigned_quantity: Number(e.target.value) })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono"
+                readOnly
+                disabled
+                className="w-full px-3 py-1.5 border border-slate-200 bg-slate-100 text-slate-700 rounded-lg text-xs font-mono font-bold cursor-not-allowed"
               />
             </FormField>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <FormField label="Actual Cut Quantity" required>
+            <FormField label="Actual Cut Qty" required>
               <input
                 type="number"
+                min={1}
+                max={batchForm.assigned_quantity || undefined}
                 value={batchForm.actual_cut_quantity}
                 onChange={(e) => setBatchForm({ ...batchForm, actual_cut_quantity: Number(e.target.value) })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold text-indigo-700"
               />
             </FormField>
 
-            <FormField label="Rejected / Scrap Qty">
+            <FormField label="Rejected Qty">
               <input
                 type="number"
+                min={0}
                 value={batchForm.rejected_quantity}
                 onChange={(e) => setBatchForm({ ...batchForm, rejected_quantity: Number(e.target.value) })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono text-red-600"
               />
             </FormField>
 
-            <FormField label="Rework Quantity">
+            <FormField label="Rework Qty">
               <input
                 type="number"
+                min={0}
                 value={batchForm.rework_quantity}
                 onChange={(e) => setBatchForm({ ...batchForm, rework_quantity: Number(e.target.value) })}
                 className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono text-amber-600"
@@ -710,33 +741,13 @@ export default function CuttingOrderDetail() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Operator / Cutting Master">
-              <input
-                type="text"
-                value={batchForm.operator}
-                onChange={(e) => setBatchForm({ ...batchForm, operator: e.target.value })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
-              />
-            </FormField>
-
-            <FormField label="Machine / Production Line">
-              <input
-                type="text"
-                value={batchForm.machine_line}
-                onChange={(e) => setBatchForm({ ...batchForm, machine_line: e.target.value })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
-              />
-            </FormField>
-          </div>
-
-          <FormField label="Cutting Remarks & Yield Notes">
+          <FormField label="Notes">
             <textarea
               rows={2}
               value={batchForm.remarks}
               onChange={(e) => setBatchForm({ ...batchForm, remarks: e.target.value })}
               className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
-              placeholder="e.g. Marker efficiency 88.5%, grain alignment verified"
+              placeholder="Enter notes..."
             />
           </FormField>
 
