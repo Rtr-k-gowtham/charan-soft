@@ -59,6 +59,7 @@ export default function DynamicPOTemplate({
           s_no: 1,
           serial_no: 1,
           item_code: 'ACC-BTN-18L',
+          accessory_name: 'Poly 4-Hole Horn Buttons 18L (Dyed to Match)',
           item_description: 'Poly 4-Hole Horn Buttons 18L (Dyed to Match)',
           description: 'Poly 4-Hole Horn Buttons 18L (Dyed to Match)',
           color: 'Midnight Navy',
@@ -76,6 +77,7 @@ export default function DynamicPOTemplate({
           s_no: 2,
           serial_no: 2,
           item_code: 'ACC-ZIP-YKK',
+          accessory_name: 'YKK Nylon Coil Invisible Zipper',
           item_description: 'YKK Nylon Coil Invisible Zipper',
           description: 'YKK Nylon Coil Invisible Zipper',
           color: 'Black 580',
@@ -270,7 +272,7 @@ export default function DynamicPOTemplate({
           width = '35px'; alignment = 'center';
         } else if (key === 'order_no' || key === 'item_code') {
           width = '90px'; alignment = 'left';
-        } else if (key === 'item_description' || key === 'description') {
+        } else if (key === 'item_description' || key === 'description' || key === 'accessory_name' || key === 'accessory' || key === 'material_name') {
           width = '200px'; alignment = 'left';
         } else if (key === 'design' || key === 'color' || key === 'size') {
           width = '80px'; alignment = 'left';
@@ -556,22 +558,51 @@ export default function DynamicPOTemplate({
                 style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
               >
                 {activeColumns.map(col => {
+                  let dyn: any = {};
+                  if (typeof row.dynamic_data === 'string') {
+                    try { dyn = JSON.parse(row.dynamic_data); } catch (e) { dyn = {}; }
+                  } else if (typeof row.dynamic_data === 'object' && row.dynamic_data !== null) {
+                    dyn = row.dynamic_data;
+                  }
+
                   let val = (row as any)[col.column_key];
+                  if (val === undefined || val === null || val === '') {
+                    val = dyn[col.column_key];
+                  }
 
                   // Resolve aliases across different category field naming
                   if (val === undefined || val === null || val === '') {
-                    if (col.column_key === 's_no' || col.column_key === 'serial_no') val = rIdx + 1;
-                    else if (col.column_key === 'item_description') val = row.description || row.item_name || row.name;
-                    else if (col.column_key === 'description') val = row.item_description || row.item_name || row.name;
-                    else if (col.column_key === 'qty') val = row.quantity;
-                    else if (col.column_key === 'quantity') val = row.qty;
-                    else if (col.column_key === 'kgs') val = row.weight_kgs || row.weight_kg;
-                    else if (col.column_key === 'weight_kgs') val = row.kgs || row.weight_kg;
-                    else if (col.column_key === 'item_code') val = row.code || row.material_code;
-                    else if (col.column_key === 'tax_percent') val = row.tax_percent ?? row.tax_rate ?? 5;
-                    else if (col.column_key === 'taxable_amount') val = row.taxable_amount || (Number(row.quantity || row.qty || 0) * Number(row.rate || 0));
-                    else if (col.column_key === 'tax_amount') val = row.tax_amount || (Number(row.taxable_amount || 0) * (Number(row.tax_percent || 5) / 100));
-                    else if (col.column_key === 'net_amount') val = row.net_amount || (Number(row.taxable_amount || 0) + Number(row.tax_amount || 0));
+                    if (col.column_key === 's_no' || col.column_key === 'serial_no') {
+                      val = rIdx + 1;
+                    } else if (col.column_key === 'accessory_name' || col.column_key === 'accessory') {
+                      val = row.accessory_name || row.accessory || dyn.accessory_name || dyn.accessory ||
+                            row.item_description || dyn.item_description || row.description || dyn.description ||
+                            row.material_name || dyn.material_name || row.material?.name ||
+                            row.item_name || dyn.item_name || row.name || dyn.name || row.spec;
+                    } else if (col.column_key === 'item_description' || col.column_key === 'description' || col.column_key === 'material_name') {
+                      val = row.item_description || dyn.item_description || row.description || dyn.description ||
+                            row.accessory_name || dyn.accessory_name || row.accessory || dyn.accessory ||
+                            row.material_name || dyn.material_name || row.material?.name ||
+                            row.item_name || dyn.item_name || row.name || dyn.name;
+                    } else if (col.column_key === 'qty') {
+                      val = row.quantity ?? dyn.qty ?? dyn.quantity;
+                    } else if (col.column_key === 'quantity') {
+                      val = row.qty ?? dyn.quantity ?? dyn.qty;
+                    } else if (col.column_key === 'kgs') {
+                      val = row.weight_kgs || row.weight_kg || dyn.kgs || dyn.weight_kgs;
+                    } else if (col.column_key === 'weight_kgs') {
+                      val = row.kgs || row.weight_kg || dyn.weight_kgs || dyn.kgs;
+                    } else if (col.column_key === 'item_code') {
+                      val = row.code || row.material_code || dyn.item_code || dyn.code;
+                    } else if (col.column_key === 'tax_percent') {
+                      val = row.tax_percent ?? row.tax_rate ?? dyn.tax_percent ?? 5;
+                    } else if (col.column_key === 'taxable_amount') {
+                      val = row.taxable_amount || dyn.taxable_amount || (Number(row.quantity || row.qty || dyn.quantity || dyn.qty || 0) * Number(row.rate || dyn.rate || 0));
+                    } else if (col.column_key === 'tax_amount') {
+                      val = row.tax_amount || dyn.tax_amount || (Number(row.taxable_amount || 0) * (Number(row.tax_percent || dyn.tax_percent || 5) / 100));
+                    } else if (col.column_key === 'net_amount') {
+                      val = row.net_amount || dyn.net_amount || (Number(row.taxable_amount || 0) + Number(row.tax_amount || 0));
+                    }
                   }
 
                   // Custom render formatting
@@ -587,6 +618,8 @@ export default function DynamicPOTemplate({
                     val = `${Number(val || 0)}%`;
                   }
 
+                  const isMajorText = col.column_key === 'item_description' || col.column_key === 'accessory_name' || col.column_key === 'description' || col.column_key === 'material_name' || col.column_key === 'net_amount';
+
                   return (
                     <td
                       key={col.column_key}
@@ -594,7 +627,7 @@ export default function DynamicPOTemplate({
                         textAlign: col.alignment,
                         padding: '4px 6px',
                         border: '1px solid #e2e8f0',
-                        fontWeight: col.column_key === 'net_amount' || col.column_key === 'item_description' ? 600 : 400,
+                        fontWeight: isMajorText ? 600 : 400,
                       }}
                     >
                       {val ?? '—'}

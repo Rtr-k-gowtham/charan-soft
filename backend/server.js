@@ -861,11 +861,13 @@ const server = http.createServer(async (req, res) => {
         const net = Math.round((taxable + taxAmt) * 100) / 100;
         subtotal += taxable;
         totalTax += taxAmt;
+        const desc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
         return {
           id: idx + 1,
           order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
           material_id: it.material_id,
-          item_description: it.item_description || it.description || 'Fabric Material',
+          item_description: desc,
+          accessory_name: desc,
           quantity: qty,
           rate,
           taxable_amount: taxable,
@@ -873,6 +875,9 @@ const server = http.createServer(async (req, res) => {
           tax_amount: taxAmt,
           net_amount: net,
           received_quantity: 0,
+          ...it,
+          item_description: desc,
+          accessory_name: desc,
         };
       });
 
@@ -988,11 +993,13 @@ const server = http.createServer(async (req, res) => {
         const net = Math.round((taxable + taxAmt) * 100) / 100;
         subtotal += taxable;
         totalTax += taxAmt;
+        const desc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
         return {
           id: idx + 1,
           order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
           material_id: it.material_id,
-          item_description: it.item_description || it.description || 'Fabric Material',
+          item_description: desc,
+          accessory_name: desc,
           quantity: qty,
           rate,
           taxable_amount: taxable,
@@ -1000,7 +1007,9 @@ const server = http.createServer(async (req, res) => {
           tax_amount: taxAmt,
           net_amount: net,
           received_quantity: Number(it.received_quantity || 0),
-          ...it
+          ...it,
+          item_description: desc,
+          accessory_name: desc,
         };
       });
 

@@ -68,6 +68,12 @@ class PurchaseOrderController {
                                 $poi = array_merge($dyn, $poi);
                             }
                         }
+                        if (empty($poi['accessory_name']) && !empty($poi['item_description'])) {
+                            $poi['accessory_name'] = $poi['item_description'];
+                        }
+                        if (empty($poi['item_description']) && !empty($poi['accessory_name'])) {
+                            $poi['item_description'] = $poi['accessory_name'];
+                        }
                     }
                     $po['items'] = $items;
                 } catch (Exception $ie) {
@@ -258,6 +264,12 @@ class PurchaseOrderController {
                     $it['order_no'] = 'ORD-' . str_pad((string)($idx + 1), 3, '0', STR_PAD_LEFT);
                 }
                 $desc = $it['item_description'] ?? $it['description'] ?? $it['accessory_name'] ?? 'Textile Material';
+                if (empty($it['accessory_name']) && !empty($desc)) {
+                    $it['accessory_name'] = $desc;
+                }
+                if (empty($it['item_description']) && !empty($desc)) {
+                    $it['item_description'] = $desc;
+                }
                 $rowCandidates = [
                     'purchase_order_id' => $poId,
                     'material_id' => !empty($it['material_id']) ? (int)$it['material_id'] : null,
@@ -420,6 +432,12 @@ class PurchaseOrderController {
                     $it['order_no'] = 'ORD-' . str_pad((string)($idx + 1), 3, '0', STR_PAD_LEFT);
                 }
                 $desc = $it['item_description'] ?? $it['description'] ?? $it['accessory_name'] ?? 'Textile Material';
+                if (empty($it['accessory_name']) && !empty($desc)) {
+                    $it['accessory_name'] = $desc;
+                }
+                if (empty($it['item_description']) && !empty($desc)) {
+                    $it['item_description'] = $desc;
+                }
                 $rowCandidates = [
                     'purchase_order_id' => $poId,
                     'material_id' => !empty($it['material_id']) ? (int)$it['material_id'] : null,
@@ -894,6 +912,12 @@ class PurchaseOrderController {
                         if (is_array($dyn)) {
                             $poi = array_merge($dyn, $poi);
                         }
+                    }
+                    if (empty($poi['accessory_name']) && !empty($poi['item_description'])) {
+                        $poi['accessory_name'] = $poi['item_description'];
+                    }
+                    if (empty($poi['item_description']) && !empty($poi['accessory_name'])) {
+                        $poi['item_description'] = $poi['accessory_name'];
                     }
                 }
                 $po['items'] = $items;

@@ -79,7 +79,7 @@ function calcItem(item: any): any {
   const taxable = Math.round(qty * rate * 100) / 100;
   const taxAmt = Math.round(taxable * (taxPct / 100) * 100) / 100;
   const net = Math.round((taxable + taxAmt) * 100) / 100;
-  const desc = item.item_description || item.description || item.accessory_name || '';
+  const desc = item.item_description || item.description || item.accessory_name || item.name || '';
   return {
     ...item,
     quantity: qty,
@@ -91,6 +91,7 @@ function calcItem(item: any): any {
     net_amount: net,
     item_description: desc,
     description: desc,
+    accessory_name: item.accessory_name || desc,
   };
 }
 
@@ -570,6 +571,8 @@ export default function PurchaseOrders() {
       }
       if (field === 'description' || field === 'accessory_name') {
         updated.item_description = String(val);
+        updated.accessory_name = String(val);
+        updated.description = String(val);
       }
       next[idx] = calcItem(updated);
       return next;
@@ -709,6 +712,8 @@ export default function PurchaseOrders() {
       }
       if (field === 'description' || field === 'accessory_name') {
         updated.item_description = String(val);
+        updated.accessory_name = String(val);
+        updated.description = String(val);
       }
       next[idx] = calcItem(updated);
       return next;
@@ -2622,9 +2627,17 @@ export default function PurchaseOrders() {
 
                           // 4. Description / Item Description / Accessory Name
                           if (key === 'description' || key === 'item_description' || key === 'accessory_name' || key === 'item' || key === 'item_name') {
+                            let dynVal = '';
+                            if (it.dynamic_data) {
+                              try {
+                                const parsed = typeof it.dynamic_data === 'string' ? JSON.parse(it.dynamic_data) : it.dynamic_data;
+                                dynVal = parsed[key] || parsed.accessory_name || parsed.item_description || parsed.description || '';
+                              } catch (e) {}
+                            }
+                            const valDesc = it.accessory_name || it.item_description || it.description || it[key] || dynVal || it.item_name || '—';
                             return (
                               <td key={key} style={{ width: colDim.width, minWidth: colDim.minWidth }} className="py-2 px-1.5 font-medium text-slate-800 text-xs">
-                                {it.item_description || it.description || it.accessory_name || it[key] || '—'}
+                                {valDesc}
                               </td>
                             );
                           }
