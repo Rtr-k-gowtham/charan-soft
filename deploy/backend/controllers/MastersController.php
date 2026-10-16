@@ -1603,4 +1603,352 @@ class MastersController {
             Response::error($e->getMessage(), 500);
         }
     }
+
+    // -------------------------------------------------------------
+    // DYEING MILLS MASTER
+    // -------------------------------------------------------------
+    private function ensureDyeingMillsTable(PDO $pdo): void {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS dyeing_mills (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                code VARCHAR(50) NOT NULL UNIQUE,
+                name VARCHAR(255) NOT NULL,
+                mill_type VARCHAR(150) NULL,
+                contact_person VARCHAR(150) NULL,
+                phone VARCHAR(50) NOT NULL,
+                email VARCHAR(150) NULL,
+                city VARCHAR(100) NULL,
+                state VARCHAR(100) NULL,
+                address TEXT NULL,
+                gstin VARCHAR(50) NULL,
+                daily_capacity_kg DECIMAL(10, 2) DEFAULT 0,
+                lead_time_days INT DEFAULT 5,
+                specialization TEXT NULL,
+                payment_terms_days INT DEFAULT 30,
+                status ENUM('active', 'inactive') DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        $count = (int)$pdo->query("SELECT COUNT(*) FROM dyeing_mills")->fetchColumn();
+        if ($count === 0) {
+            $stmt = $pdo->prepare("
+                INSERT INTO dyeing_mills (code, name, mill_type, contact_person, phone, email, city, state, address, gstin, daily_capacity_kg, lead_time_days, specialization, payment_terms_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute(['VEND-DYE-001', 'Allied Textiles', 'Fabric Dyeing', '', '9843054566', '', 'Karur', 'Tamil Nadu', 'No.5, Kamadenunagar, Pugalur Road, karur-639001', '', 8500, 5, 'Woven & Knitted Fabric Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-002', 'Maxima Tex process Mill', 'Soft Flow Processing', '', '7397752199', '', 'Karur', 'Tamil Nadu', 'S.F No. 228/2,232/1, Thaneerpandal Pudur, Punnamchatram (Po), Erode Mani Road, Karur 639163', '', 10000, 5, 'Soft Flow Fabric Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-003', 'Wintex Processing Mills', 'Continuous Dyeing', '', '04288-240219', '', 'Namakkal', 'Tamil Nadu', '165,R.S. Road Pallipalayam Kumarapalayam, Namakkal DT', '', 12000, 6, 'Continuous Bleaching & Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-004', 'Sri Vedha Mill', 'Yarn & Fabric Dyeing', '', '9047025261', '', 'Erode', 'Tamil Nadu', 'Near Eleiyathaal Kovil Nasiyanur Road, vallarasampatti (po), Erode', '', 6000, 4, 'Yarn Cone & Fabric Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-005', 'M.R.C. Mills Pvt. Ltd.', 'Fabric Processing', '', '98426 42799', '', 'Karur', 'Tamil Nadu', '9/1, Chinnandan kovil Road Near Water Pumping Station, Karur – 639 001', '', 7500, 5, 'Jiggar & Soft Flow', 30, 'active']);
+            $stmt->execute(['VEND-DYE-006', 'Sri Jothi Colours', 'Dyeing Mill', '', '9659059449', '', 'Karur', 'Tamil Nadu', 'New Bye Pass Road Sukkaliur South, Karur - 639003', '', 5000, 4, 'Fabric Colors & Bleaching', 30, 'active']);
+            $stmt->execute(['VEND-DYE-007', 'Sri Vinayaga Mills', 'Cabinet & Dyeing', '', '98435 07766', '', 'Erode', 'Tamil Nadu', 'R.S.NO 63,45/1,45/3, Kovilkadu, Sadayamplayam,Gandhipuram Village, Chitode-638102. erode', '', 6500, 5, 'Cabinet Bleaching & Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-008', 'Sri Sivaperumal Dyeing', 'Dyeing & Bleaching', '', '9751769482', '', 'Karur', 'Tamil Nadu', '1/176/A, S.n.Nagar, Near Primary Health Centre, Karupanpalayam, Karur – 639003', '', 5500, 4, 'Fabric Dyeing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-009', 'Arasi Colors', 'Cotton Dyeing', '', '9843055188', '', 'Karur', 'Tamil Nadu', 'Othaiyur Road, T.sellandipalayam, Karur - 3', '', 4500, 4, 'Cotton Dyeing Unit', 30, 'active']);
+            $stmt->execute(['VEND-DYE-010', 'Anantha screen printer', 'Screen Printing & Dyeing', '', '9894182486', '', 'Erode', 'Tamil Nadu', '63, Devarankandu, Sathyamoorthy Nagar Veerappanchatram, Erode – 638 004', '', 4000, 4, 'Screen Print & Washing', 30, 'active']);
+            $stmt->execute(['VEND-DYE-011', 'Balaji Print', 'Printing & Processing', '', '9994666199', '', 'Tirupur', 'Tamil Nadu', '2E/ 136, Main Street, Tirumurugan Poondi Avinashi, Tirupur – 641 652', '', 5000, 4, 'Textile Printing & Soft Flow', 30, 'active']);
+        }
+    }
+
+    public function getDyeingMills(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureDyeingMillsTable($pdo);
+            $stmt = $pdo->query("SELECT * FROM dyeing_mills ORDER BY name ASC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function getDyeingMill(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureDyeingMillsTable($pdo);
+            $stmt = $pdo->prepare("SELECT * FROM dyeing_mills WHERE id = ?");
+            $stmt->execute([$id]);
+            $item = $stmt->fetch();
+            if (!$item) {
+                Response::error("Dyeing Mill not found", 404);
+                return;
+            }
+            Response::success($item);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function createDyeingMill(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $code = trim($data['code'] ?? 'MILL-' . rand(100, 999));
+        $phone = trim($data['phone'] ?? '');
+
+        if (empty($name)) {
+            Response::error("Mill name is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureDyeingMillsTable($pdo);
+            $stmt = $pdo->prepare("
+                INSERT INTO dyeing_mills (code, name, mill_type, contact_person, phone, email, city, state, address, gstin, daily_capacity_kg, lead_time_days, specialization, payment_terms_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $code,
+                $name,
+                $data['mill_type'] ?? 'Soft Flow',
+                $data['contact_person'] ?? '',
+                $phone,
+                $data['email'] ?? '',
+                $data['city'] ?? 'Tiruppur',
+                $data['state'] ?? 'Tamil Nadu',
+                $data['address'] ?? '',
+                $data['gstin'] ?? '',
+                (float)($data['daily_capacity_kg'] ?? 0),
+                (int)($data['lead_time_days'] ?? 5),
+                $data['specialization'] ?? '',
+                (int)($data['payment_terms_days'] ?? 30),
+                $data['status'] ?? 'active'
+            ]);
+            $newId = (int)$pdo->lastInsertId();
+            Response::success(['id' => $newId, 'code' => $code], "Dyeing mill registered", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateDyeingMill(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureDyeingMillsTable($pdo);
+            $stmt = $pdo->prepare("
+                UPDATE dyeing_mills
+                SET name = COALESCE(?, name),
+                    mill_type = COALESCE(?, mill_type),
+                    contact_person = COALESCE(?, contact_person),
+                    phone = COALESCE(?, phone),
+                    email = COALESCE(?, email),
+                    city = COALESCE(?, city),
+                    state = COALESCE(?, state),
+                    address = COALESCE(?, address),
+                    gstin = COALESCE(?, gstin),
+                    daily_capacity_kg = COALESCE(?, daily_capacity_kg),
+                    lead_time_days = COALESCE(?, lead_time_days),
+                    specialization = COALESCE(?, specialization),
+                    payment_terms_days = COALESCE(?, payment_terms_days),
+                    status = COALESCE(?, status)
+                WHERE id = ?
+            ");
+            $stmt->execute([
+                $data['name'] ?? null,
+                $data['mill_type'] ?? null,
+                $data['contact_person'] ?? null,
+                $data['phone'] ?? null,
+                $data['email'] ?? null,
+                $data['city'] ?? null,
+                $data['state'] ?? null,
+                $data['address'] ?? null,
+                $data['gstin'] ?? null,
+                isset($data['daily_capacity_kg']) ? (float)$data['daily_capacity_kg'] : null,
+                isset($data['lead_time_days']) ? (int)$data['lead_time_days'] : null,
+                $data['specialization'] ?? null,
+                isset($data['payment_terms_days']) ? (int)$data['payment_terms_days'] : null,
+                $data['status'] ?? null,
+                $id
+            ]);
+            Response::success(['id' => $id], "Dyeing mill updated");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteDyeingMill(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureDyeingMillsTable($pdo);
+            $stmt = $pdo->prepare("DELETE FROM dyeing_mills WHERE id = ?");
+            $stmt->execute([$id]);
+            Response::success(null, "Dyeing mill deleted");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    // -------------------------------------------------------------
+    // EMBROIDERY WORKS MASTER
+    // -------------------------------------------------------------
+    private function ensureEmbroideryWorksTable(PDO $pdo): void {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS embroidery_works (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                code VARCHAR(50) NOT NULL UNIQUE,
+                name VARCHAR(255) NOT NULL,
+                unit_type VARCHAR(150) NULL,
+                contact_person VARCHAR(150) NULL,
+                phone VARCHAR(50) NOT NULL,
+                email VARCHAR(150) NULL,
+                city VARCHAR(100) NULL,
+                state VARCHAR(100) NULL,
+                address TEXT NULL,
+                gstin VARCHAR(50) NULL,
+                machine_heads VARCHAR(150) NULL,
+                embroidery_types TEXT NULL,
+                rate_per_thousand_stitches DECIMAL(10, 2) DEFAULT 0,
+                daily_capacity_pcs INT DEFAULT 0,
+                payment_terms_days INT DEFAULT 15,
+                status ENUM('active', 'inactive') DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
+
+        $count = (int)$pdo->query("SELECT COUNT(*) FROM embroidery_works")->fetchColumn();
+        if ($count === 0) {
+            $stmt = $pdo->prepare("
+                INSERT INTO embroidery_works (code, name, unit_type, contact_person, phone, email, city, state, address, gstin, machine_heads, embroidery_types, rate_per_thousand_stitches, daily_capacity_pcs, payment_terms_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute(['VEND-EMB-001', 'Sri Krishna Embroidery Works', 'Multi-Head Computerized', 'R. Krishnakumar', '9842199881', '', 'Tiruppur', 'Tamil Nadu', '14, College Road, Near Odakkadu, Tiruppur - 641602', '', '20-Head Tajima High Speed (15 Needles)', 'Multi-Color Flat, 3D Puff, Applique', 2.80, 3500, 30, 'active']);
+            $stmt->execute(['VEND-EMB-002', 'Apex Precision Embroidery Unit', 'Multi-Head Automatic & Sequin', 'K. Balan', '9790044556', '', 'Tiruppur', 'Tamil Nadu', '88, Rayapuram Main Road, Tiruppur - 641601', '', '12-Head Barudan Automatic (12 Needles)', 'Sequin, Cording, Badges', 3.20, 2400, 30, 'active']);
+            $stmt->execute(['VEND-EMB-003', 'Vasantham Computer Embroidery', 'Specialized Fashion Embroidery', 'M. Vasanth', '9442033112', '', 'Coimbatore', 'Tamil Nadu', '102, Sathy Road, Ganapathy, Coimbatore - 641006', '', '16-Head SWF Embroidery Machines', 'Logo Embroidery, Chest Placement', 2.50, 4000, 30, 'active']);
+            $stmt->execute(['VEND-EMB-004', 'Classic Multi Head Embroidery', 'Multi-Head Computerized', '', '9843022119', '', 'Tiruppur', 'Tamil Nadu', 'Near New Bus Stand, Tiruppur', '', '20-Head High Speed', 'Flat, 3D Puff', 2.50, 3000, 30, 'active']);
+            $stmt->execute(['VEND-EMB-005', 'Universal Embroidery Works', 'Cording & Chain Stitch', '', '9894455123', '', 'Karur', 'Tamil Nadu', 'Sengunthapuram, Karur', '', '12-Head Cording Unit', 'Cording, Chain Stitch, Applique', 3.00, 2000, 30, 'active']);
+        }
+    }
+
+    public function getEmbroideryWorks(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureEmbroideryWorksTable($pdo);
+            $stmt = $pdo->query("SELECT * FROM embroidery_works ORDER BY name ASC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function getEmbroideryWork(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureEmbroideryWorksTable($pdo);
+            $stmt = $pdo->prepare("SELECT * FROM embroidery_works WHERE id = ?");
+            $stmt->execute([$id]);
+            $item = $stmt->fetch();
+            if (!$item) {
+                Response::error("Embroidery unit not found", 404);
+                return;
+            }
+            Response::success($item);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function createEmbroideryWork(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $name = trim($data['name'] ?? '');
+        $code = trim($data['code'] ?? 'EMB-' . rand(100, 999));
+        $phone = trim($data['phone'] ?? '');
+
+        if (empty($name)) {
+            Response::error("Embroidery unit name is required", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureEmbroideryWorksTable($pdo);
+            $stmt = $pdo->prepare("
+                INSERT INTO embroidery_works (code, name, unit_type, contact_person, phone, email, city, state, address, gstin, machine_heads, embroidery_types, rate_per_thousand_stitches, daily_capacity_pcs, payment_terms_days, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $code,
+                $name,
+                $data['unit_type'] ?? 'Multi-Head Automatic',
+                $data['contact_person'] ?? '',
+                $phone,
+                $data['email'] ?? '',
+                $data['city'] ?? 'Tiruppur',
+                $data['state'] ?? 'Tamil Nadu',
+                $data['address'] ?? '',
+                $data['gstin'] ?? '',
+                $data['machine_heads'] ?? '12-Head Multi-Needle',
+                $data['embroidery_types'] ?? 'Flat, 3D Puff, Applique',
+                (float)($data['rate_per_thousand_stitches'] ?? 0),
+                (int)($data['daily_capacity_pcs'] ?? 0),
+                (int)($data['payment_terms_days'] ?? 15),
+                $data['status'] ?? 'active'
+            ]);
+            $newId = (int)$pdo->lastInsertId();
+            Response::success(['id' => $newId, 'code' => $code], "Embroidery unit registered", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateEmbroideryWork(int $id): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureEmbroideryWorksTable($pdo);
+            $stmt = $pdo->prepare("
+                UPDATE embroidery_works
+                SET name = COALESCE(?, name),
+                    unit_type = COALESCE(?, unit_type),
+                    contact_person = COALESCE(?, contact_person),
+                    phone = COALESCE(?, phone),
+                    email = COALESCE(?, email),
+                    city = COALESCE(?, city),
+                    state = COALESCE(?, state),
+                    address = COALESCE(?, address),
+                    gstin = COALESCE(?, gstin),
+                    machine_heads = COALESCE(?, machine_heads),
+                    embroidery_types = COALESCE(?, embroidery_types),
+                    rate_per_thousand_stitches = COALESCE(?, rate_per_thousand_stitches),
+                    daily_capacity_pcs = COALESCE(?, daily_capacity_pcs),
+                    payment_terms_days = COALESCE(?, payment_terms_days),
+                    status = COALESCE(?, status)
+                WHERE id = ?
+            ");
+            $stmt->execute([
+                $data['name'] ?? null,
+                $data['unit_type'] ?? null,
+                $data['contact_person'] ?? null,
+                $data['phone'] ?? null,
+                $data['email'] ?? null,
+                $data['city'] ?? null,
+                $data['state'] ?? null,
+                $data['address'] ?? null,
+                $data['gstin'] ?? null,
+                $data['machine_heads'] ?? null,
+                $data['embroidery_types'] ?? null,
+                isset($data['rate_per_thousand_stitches']) ? (float)$data['rate_per_thousand_stitches'] : null,
+                isset($data['daily_capacity_pcs']) ? (int)$data['daily_capacity_pcs'] : null,
+                isset($data['payment_terms_days']) ? (int)$data['payment_terms_days'] : null,
+                $data['status'] ?? null,
+                $id
+            ]);
+            Response::success(['id' => $id], "Embroidery unit updated");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteEmbroideryWork(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureEmbroideryWorksTable($pdo);
+            $stmt = $pdo->prepare("DELETE FROM embroidery_works WHERE id = ?");
+            $stmt->execute([$id]);
+            Response::success(null, "Embroidery unit deleted");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
 }

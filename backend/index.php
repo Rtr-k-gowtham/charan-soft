@@ -211,6 +211,18 @@ try {
         $r0 === 'designs' && $method === 'GET' => (new MastersController)->getDesigns(),
         $r0 === 'designs' && $method === 'POST' => (new MastersController)->createDesign(),
 
+        // ---------------- DYEING MILLS MASTER ----------------
+        $r0 === 'dyeing-mills' && $method === 'GET' && !$id => (new MastersController)->getDyeingMills(),
+        $r0 === 'dyeing-mills' && $method === 'POST' && !$id => (new MastersController)->createDyeingMill(),
+        $r0 === 'dyeing-mills' && $id && ($method === 'PUT' || $method === 'PATCH') => (new MastersController)->updateDyeingMill((int)$id),
+        $r0 === 'dyeing-mills' && $id && $method === 'DELETE' => (new MastersController)->deleteDyeingMill((int)$id),
+
+        // ---------------- EMBROIDERY WORKS MASTER ----------------
+        $r0 === 'embroidery-works' && $method === 'GET' && !$id => (new MastersController)->getEmbroideryWorks(),
+        $r0 === 'embroidery-works' && $method === 'POST' && !$id => (new MastersController)->createEmbroideryWork(),
+        $r0 === 'embroidery-works' && $id && ($method === 'PUT' || $method === 'PATCH') => (new MastersController)->updateEmbroideryWork((int)$id),
+        $r0 === 'embroidery-works' && $id && $method === 'DELETE' => (new MastersController)->deleteEmbroideryWork((int)$id),
+
         // ---------------- TEMPLATES ----------------
         $r0 === 'templates' && $method === 'GET' => (new TemplatesController)->index(),
         $r0 === 'templates' && $method === 'POST' => (new TemplatesController)->store(),

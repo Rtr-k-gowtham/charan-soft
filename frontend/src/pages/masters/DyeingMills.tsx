@@ -390,30 +390,6 @@ export default function DyeingMills() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormField label="Category / Mill Type" required>
-              <select
-                value={form.mill_type}
-                onChange={e => setForm({ ...form, mill_type: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {MILL_TYPES.map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-            </FormField>
-
-            <FormField label="Specialization">
-              <input
-                type="text"
-                value={form.specialization}
-                onChange={e => setForm({ ...form, specialization: e.target.value })}
-                placeholder="Woven & Knitted Fabric Dyeing"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </FormField>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Contact Person">
               <input
                 type="text"
@@ -459,46 +435,13 @@ export default function DyeingMills() {
 
           <FormField label="Full Address">
             <textarea
-              rows={2}
+              rows={3}
               value={form.address}
               onChange={e => setForm({ ...form, address: e.target.value })}
               placeholder="No.5, Kamadenunagar, Pugalur Road, Karur - 639001"
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
             />
           </FormField>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <FormField label="GSTIN">
-              <input
-                type="text"
-                value={form.gstin}
-                onChange={e => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
-                placeholder="33AAAAA0000A1Z5"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono uppercase focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </FormField>
-
-            <FormField label="Payment Terms (Days)">
-              <input
-                type="number"
-                value={form.payment_terms_days}
-                onChange={e => setForm({ ...form, payment_terms_days: e.target.value })}
-                placeholder="30"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </FormField>
-
-            <FormField label="Status">
-              <select
-                value={form.status}
-                onChange={e => setForm({ ...form, status: e.target.value as 'active' | 'inactive' })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </FormField>
-          </div>
         </div>
       </Drawer>
     </div>
