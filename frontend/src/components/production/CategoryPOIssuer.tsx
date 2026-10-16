@@ -126,6 +126,13 @@ export default function CategoryPOIssuer({
   }, [orderId, orderNumber]);
 
   useEffect(() => {
+    if (location.state?.successMessage) {
+      setActionSuccess(location.state.successMessage);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
+  useEffect(() => {
     if (actionSuccess) {
       const timer = setTimeout(() => setActionSuccess(null), 3500);
       return () => clearTimeout(timer);
@@ -210,6 +217,39 @@ export default function CategoryPOIssuer({
       setSelectedVendors(next);
     }
   }, [suppliers, categories, categorizedMaterials, existingPOs]);
+
+  const handleOpenCreatePOPage = (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
+    const selectedSupId = selectedVendors[categoryName] || '';
+    const selectedSup = suppliers.find(s => String(s.id) === String(selectedSupId));
+    const catObj = categories.find(
+      c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+    );
+    const catId = catObj ? catObj.id : (selectedSup?.category_id || 1);
+
+    navigate('/purchase/orders?create=true', {
+      state: {
+        production_order_id: Number(orderId),
+        production_order_number: orderNumber,
+        category_id: catId,
+        category_name: categoryName,
+        supplier_id: selectedSupId ? Number(selectedSupId) : (selectedSup?.id || ''),
+        target_delivery_date: targetDeliveryDate,
+        remarks: `PO for ${categoryName} - Production Order ${orderNumber}`,
+        materials: catMaterials.map((m, idx) => ({
+          material_id: m.material_id || undefined,
+          material_code: m.material_code || undefined,
+          item_description: m.name + (m.material_code ? ` [${m.material_code}]` : ''),
+          description: m.name,
+          uom: m.uom || 'KG',
+          quantity: Number(m.total_required_qty) || 1,
+          rate: Number(m.unit_cost) || 0,
+          tax_percent: 5,
+          order_no: orderNumber || `ORD-${idx + 1}`,
+        })),
+        from: `/production/po/${orderId}`,
+      }
+    });
+  };
 
   // Create & Issue PO for a category
   const handleIssuePOForCategory = async (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
@@ -557,18 +597,18 @@ export default function CategoryPOIssuer({
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
                 <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
-                    <th className="py-2.5 px-3 w-10 text-center">#</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">PO Number</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">Material Category</th>
-                    <th className="py-2.5 px-3 text-center whitespace-nowrap">Item Count</th>
-                    <th className="py-2.5 px-3">Required Materials</th>
-                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Total Est. Cost</th>
-                    <th className="py-2.5 px-3 whitespace-nowrap">Vendor / Supplier</th>
-                    <th className="py-2.5 px-3 text-center whitespace-nowrap">PO Status</th>
-                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Action</th>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[110px]">PO Number</th>
+                    <th className="py-2.5 px-2.5 w-[160px]">Material Category</th>
+                    <th className="py-2.5 px-2 text-center w-[80px]">Item Count</th>
+                    <th className="py-2.5 px-3 min-w-[180px]">Required Materials</th>
+                    <th className="py-2.5 px-2.5 text-right w-[100px]">Total Est. Cost</th>
+                    <th className="py-2.5 px-2.5 w-[200px]">Vendor / Supplier</th>
+                    <th className="py-2.5 px-2 text-center w-[95px]">PO Status</th>
+                    <th className="py-2.5 px-2.5 text-right w-[100px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -628,12 +668,12 @@ export default function CategoryPOIssuer({
                     return (
                       <tr key={categoryName} className="hover:bg-slate-50/70 transition">
                         {/* 1. # */}
-                        <td className="py-2.5 px-3 text-center font-mono text-slate-400 text-[11px] w-10">
+                        <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
                           {idx + 1}
                         </td>
 
                         {/* 2. PO Number (Dedicated column with prominent badge & clickable link) */}
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 align-middle">
                           {matchingPOs.length > 0 ? (
                             <div className="flex flex-col gap-1 items-start">
                               {matchingPOs.map(p => (
@@ -641,7 +681,7 @@ export default function CategoryPOIssuer({
                                   key={p.id}
                                   type="button"
                                   onClick={() => navigate(`/purchase/orders/${p.id}`)}
-                                  className="font-mono font-bold text-xs text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 px-2.5 py-0.5 rounded border border-brand-200 shadow-2xs transition inline-flex items-center gap-1 text-left"
+                                  className="font-mono font-bold text-xs text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 px-2 py-0.5 rounded border border-brand-200 shadow-2xs transition inline-flex items-center gap-1 text-left truncate max-w-full"
                                   title={`Click to view PO ${p.po_number}`}
                                 >
                                   <span>{p.po_number}</span>
@@ -653,41 +693,41 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 3. Material Category (Full readable name without truncation) */}
-                        <td className="py-2.5 px-3 whitespace-nowrap">
+                        {/* 3. Material Category (Full readable name with badge) */}
+                        <td className="py-2.5 px-2.5 align-middle">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs max-w-full truncate`}
                             title={categoryName}
                           >
                             <CatIcon className="w-3.5 h-3.5 shrink-0" />
-                            <span>{categoryName}</span>
+                            <span className="truncate">{categoryName}</span>
                           </span>
                         </td>
 
-                        {/* 4. Item Count (Single-line) */}
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                          <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
+                        {/* 4. Item Count */}
+                        <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
+                          <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
                             {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
                           </span>
                         </td>
 
-                        {/* 5. Required Materials / Summary */}
-                        <td className="py-2.5 px-3">
-                          <span
-                            className="text-slate-700 text-[11px] font-medium block truncate max-w-[280px]"
+                        {/* 5. Required Materials / Summary (Wrapped text in fixed table view) */}
+                        <td className="py-2.5 px-3 align-middle">
+                          <p
+                            className="text-slate-700 text-[11px] font-medium leading-relaxed break-words whitespace-normal"
                             title={materialsText}
                           >
                             {materialsText}
-                          </span>
+                          </p>
                         </td>
 
                         {/* 6. Total Estimated Cost */}
-                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap">
+                        <td className="py-2.5 px-2.5 text-right font-mono font-bold text-slate-900 text-xs whitespace-nowrap align-middle">
                           {totalCatCost > 0 ? fmtCurrency(totalCatCost) : '—'}
                         </td>
 
                         {/* 7. Vendor / Supplier */}
-                        <td className="py-2.5 px-3 min-w-[180px]">
+                        <td className="py-2.5 px-2.5 align-middle">
                           {hasOrderedPO ? (
                             <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
                               <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -721,90 +761,64 @@ export default function CategoryPOIssuer({
                         </td>
 
                         {/* 8. PO Status */}
-                        <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
                           {isSaving ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                               <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
                             </span>
                           ) : hasOrderedPO ? (
                             <span
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
                               title="Purchase Order issued & ordered"
                             >
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
                             </span>
                           ) : hasDraftPO ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                               Draft
                             </span>
                           ) : selectedSupId ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                               Ready to Issue
                             </span>
                           ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
                               Not Issued
                             </span>
                           )}
                         </td>
 
-                        {/* 9. Action (PO Stage: Issue PO, Edit, View PO ONLY — Inward belongs in Inward stage) */}
-                        <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                        {/* 9. Action */}
+                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle">
                           {hasOrderedPO ? (
                             <button
                               type="button"
                               onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
-                              title="View & Print PO Details"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                              title="View PO Details"
                             >
                               <Eye className="w-3.5 h-3.5 text-brand-600" />
                               <span>View PO</span>
                             </button>
                           ) : hasDraftPO && draftPO ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                disabled={!!updatingPOStatus[draftPO.id]}
-                                onClick={() => handleMarkPOAsIssued(draftPO)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md shadow-2xs transition disabled:opacity-50"
-                                title="Issue draft PO to vendor"
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>Issue PO</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditPO(draftPO)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md shadow-2xs transition"
-                                title="Edit draft PO items & rates"
-                              >
-                                <Pencil className="w-3 h-3 text-slate-600" />
-                                <span>Edit</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/purchase/orders/${draftPO.id}`)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
-                                title="View draft PO"
-                              >
-                                <Eye className="w-3 h-3 text-brand-600" />
-                                <span>View</span>
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${draftPO.id}`)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md shadow-2xs transition whitespace-nowrap"
+                              title="View & Edit Draft PO"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-amber-700" />
+                              <span>View PO</span>
+                            </button>
                           ) : (
                             <button
                               type="button"
-                              disabled={isSaving || !selectedSupId}
-                              onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
-                              className="inline-flex items-center gap-1.5 px-3.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-2xs transition disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={
-                                !selectedSupId
-                                  ? 'Select a supplier first to issue PO'
-                                  : `Generate & Issue official PO for ${categoryName}`
-                              }
+                              onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                              title={`View PO creation with materials for ${categoryName}`}
                             >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>{isSaving ? 'Issuing...' : 'Issue PO'}</span>
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View PO</span>
                             </button>
                           )}
                         </td>

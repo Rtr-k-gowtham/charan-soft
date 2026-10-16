@@ -230,15 +230,81 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       const iName = (i.current_stage_name || '').toLowerCase();
       const sCode = activeCode;
       const sName = stageName.toLowerCase();
+      const currentStageId = Number(i.current_stage_id || 1);
+
+      // STAGE 01: Requirement Gathering
+      // If order item has progressed past Stage 1 (currentStageId > 1 or iCode is PO/INW/etc.), NEVER show in Stage 1!
+      if (sCode === 'REQ') {
+        if (currentStageId > 1 || iCode === 'PO' || iCode === 'INW' || iCode === 'DYE' || iCode === 'CUT' || iCode === 'EMB' || iCode === 'STI' || iCode === 'CHK' || iCode === 'PCK' || iCode === 'COMP') {
+          return false;
+        }
+        return currentStageId === 1 || iCode === 'REQ' || iName.includes('requirement');
+      }
+
+      // STAGE 02: Purchase Order (PO)
+      // Belongs to Stage 2 if currentStageId == 2 or iCode is PO
+      if (sCode === 'PO') {
+        if (currentStageId === 2 || iCode === 'PO' || iName.includes('purchase order')) {
+          return true;
+        }
+        return false;
+      }
+
+      // STAGE 03: Material Inward
+      // Belongs to Stage 3 if currentStageId == 3 or iCode is INW,
+      // OR if the order has at least one issued Purchase Order (status != 'Draft') and has progressed past REQ (currentStageId >= 2)
+      if (sCode === 'INW') {
+        if (currentStageId === 3 || iCode === 'INW' || iName.includes('inward') || iCode === 'DET') {
+          return true;
+        }
+        const ordId = i.order_id || (i.production_order_id as number);
+        const ordNum = i.order_number;
+        const hasIssuedPO = stagePOs.some(po => {
+          const isThisOrder = (po.production_order_id && String(po.production_order_id) === String(ordId)) ||
+                              (po.production_order_number && po.production_order_number === ordNum) ||
+                              (po.remarks && ordNum && po.remarks.includes(ordNum));
+          return isThisOrder && (po.status || '').toLowerCase() !== 'draft';
+        });
+        if (hasIssuedPO && currentStageId >= 2) {
+          return true;
+        }
+        return false;
+      }
+
+      // STAGE 04: Dyeing
+      if (sCode === 'DYE') {
+        if (currentStageId === 4 || iCode === 'DYE' || iName.includes('dye')) {
+          return true;
+        }
+        // If this order has inwarded fabric from Stage 03, it is ready for Dyeing batches
+        const ordId = i.order_id || (i.production_order_id as number);
+        const ordNum = i.order_number;
+        const hasFabricInwarded = stagePOs.some(po => {
+          const isThisOrder = (po.production_order_id && String(po.production_order_id) === String(ordId)) ||
+                              (po.production_order_number && po.production_order_number === ordNum) ||
+                              (po.remarks && ordNum && po.remarks.includes(ordNum));
+          if (!isThisOrder) return false;
+          const isFabricCat = (po.category_name || '').toUpperCase().includes('FABRIC') ||
+                              (po.remarks || '').toUpperCase().includes('FABRIC');
+          const hasReceivedItems = Array.isArray(po.items) && po.items.some((it: any) => {
+            const isFabric = isFabricCat ||
+                             (it.item_description || '').toUpperCase().includes('FABRIC') ||
+                             (it.item_description || '').toUpperCase().includes('COTTON') ||
+                             (it.item_description || '').toUpperCase().includes('MAT-FAB');
+            return isFabric && Number(it.received_quantity || 0) > 0;
+          });
+          return hasReceivedItems;
+        });
+        if (hasFabricInwarded && currentStageId >= 2) {
+          return true;
+        }
+        return false;
+      }
 
       if (iCode === sCode) return true;
       if (iName === sName) return true;
 
-      // Alias mapping
-      if (sCode === 'REQ' && (iName.includes('requirement') || iCode === 'INST')) return true;
-      if (sCode === 'PO' && (iName.includes('purchase order') || iCode === 'PO')) return true;
-      if (sCode === 'INW' && (iName.includes('inward') || iCode === 'DET')) return true;
-      if (sCode === 'DYE' && (iName.includes('dye') || iCode === 'DYE')) return true;
+      // Alias mapping for downstream stages
       if (sCode === 'CUT' && (iName.includes('cut') || iCode === 'CUT')) return true;
       if (sCode === 'EMB' && (iName.includes('embroid') || iCode === 'EMB')) return true;
       if (sCode === 'STI' && (iName.includes('stitch') || iCode === 'STI')) return true;
@@ -248,7 +314,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
 
       return false;
     });
-  }, [allItems, activeCode, stageName]);
+  }, [allItems, activeCode, stageName, stagePOs]);
 
   // Group items by Order for the Order-Centric view
   const orderGroups = useMemo(() => {
