@@ -120,6 +120,7 @@ try {
         $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'job-orders' && $method === 'GET' => (new ProductionController)->embroideryJobOrders(),
         $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'job-order' && $method === 'POST' => (new ProductionController)->createEmbroideryJobOrder(),
         $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'inward' && $method === 'POST' => (new ProductionController)->receiveEmbroideryJobOrder(),
+        $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferEmbroideryOutput(),
         $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'vendor-outstanding' && $method === 'GET' => (new ProductionController)->vendorOutstandingEmbroidery(),
         $r0 === 'production' && $r1 === 'embroidery' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->embroideryOrderDetails((int)$r2),
 

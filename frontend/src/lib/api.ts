@@ -185,6 +185,8 @@ export const api = {
     request<any>('/production/embroidery/inward', 'POST', data),
   getVendorOutstandingEmbroidery: () =>
     request<any[]>('/production/embroidery/vendor-outstanding'),
+  transferEmbroideryOutput: (data: any) =>
+    request<any>('/production/embroidery/transfer', 'POST', data),
 
   // Stage 07: Stitching
   getStitchingOrders: (productionOrderId?: number | string) =>
