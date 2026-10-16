@@ -7,7 +7,7 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@cheransoftgoods.com');
+  const [email, setEmail] = useState('admin');
   const [password, setPassword] = useState('admin123');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -86,14 +86,14 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>
               <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                Email Address <span className="text-red-500">*</span>
+                Username or Email <span className="text-red-500">*</span>
               </label>
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                placeholder="you@cheransoftgoods.com"
+                placeholder="admin or admin@cheransoftgoods.com"
                 className="w-full px-3 py-2 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200"
               />
             </div>
@@ -132,21 +132,16 @@ export default function Login() {
           </form>
 
           <div className="mt-5 p-3 bg-slate-50 border border-slate-200 rounded-md">
-            <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Demo Credentials:</p>
-            <div className="flex flex-col gap-0.5">
-              {[
-                ['Admin', 'admin@cheransoftgoods.com', 'admin123'],
-                ['Purchase', 'purchase@cheransoftgoods.com', 'admin123'],
-              ].map(([role, em, pw]) => (
-                <button
-                  key={em}
-                  type="button"
-                  onClick={() => { setEmail(em); setPassword(pw); }}
-                  className="text-left text-[10px] text-brand-600 hover:underline"
-                >
-                  {role}: {em}
-                </button>
-              ))}
+            <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Sign In Credentials:</p>
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => { setEmail('admin'); setPassword('admin123'); }}
+                className="text-left text-xs font-semibold text-brand-700 hover:underline flex items-center justify-between"
+              >
+                <span>Username: <code className="bg-brand-50 px-1.5 py-0.5 rounded text-brand-800">admin</code></span>
+                <span className="text-[11px] text-slate-500 font-normal">Password: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">admin123</code></span>
+              </button>
             </div>
           </div>
         </div>

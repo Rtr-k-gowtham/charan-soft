@@ -18,10 +18,7 @@ if (!fs.existsSync(DATA_DIR)) {
 // Initial seed data
 const initialData = {
   users: [
-    { id: 1, name: 'K. Senthil Nathan', email: 'admin@cheransoftgoods.com', role: 'ADMIN', role_id: 1, role_name: 'System Administrator', phone: '+91 98422 10001', status: 'active', created_at: '2026-01-01' },
-    { id: 2, name: 'M. Ramesh Kumar', email: 'purchase@cheransoftgoods.com', role: 'PURCHASE_MGR', role_id: 2, role_name: 'Purchase Manager', phone: '+91 98422 10002', status: 'active', created_at: '2026-01-05' },
-    { id: 3, name: 'P. Anand', email: 'production@cheransoftgoods.com', role: 'PROD_MGR', role_id: 3, role_name: 'Production Head', phone: '+91 98422 10003', status: 'active', created_at: '2026-01-10' },
-    { id: 4, name: 'S. Divya', email: 'qc@cheransoftgoods.com', role: 'QC_INSPECTOR', role_id: 4, role_name: 'Quality Lead', phone: '+91 98422 10004', status: 'active', created_at: '2026-01-15' },
+    { id: 1, name: 'Admin', username: 'admin', email: 'admin@cheransoftgoods.com', role: 'ADMIN', role_id: 1, role_name: 'System Administrator', phone: '+91 98422 10001', status: 'active', created_at: '2026-01-01' },
   ],
   roles: [
     { id: 1, name: 'ADMIN', display_name: 'System Administrator', description: 'Full access to all ERP modules' },
@@ -371,12 +368,22 @@ const server = http.createServer(async (req, res) => {
   try {
     // 1. Auth
     if (pathname === '/auth/login' && method === 'POST') {
-      const { email, password } = body;
-      const user = db.users.find(u => u.email === email);
-      if (user || email === 'admin@cheransoftgoods.com') {
-        const u = user || db.users[0];
+      const emailOrUser = (body.email || body.username || '').trim().toLowerCase();
+      const user = (db.users || []).find(u => (u.email && u.email.toLowerCase() === emailOrUser) || (u.username && u.username.toLowerCase() === emailOrUser));
+      if (user || emailOrUser === 'admin' || emailOrUser === 'admin@cheransoftgoods.com') {
+        const u = user || db.users[0] || {
+          id: 1,
+          name: 'Admin',
+          username: 'admin',
+          email: 'admin@cheransoftgoods.com',
+          role: 'ADMIN',
+          role_id: 1,
+          role_name: 'System Administrator'
+        };
         return sendSuccess(res, {
           ...u,
+          name: 'Admin',
+          username: 'admin',
           token: 'jwt_mock_token_' + Date.now(),
         }, 'Login successful');
       }
@@ -384,7 +391,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/auth/me') {
-      return sendSuccess(res, db.users[0]);
+      const u = (db.users && db.users[0]) || {
+        id: 1,
+        name: 'Admin',
+        username: 'admin',
+        email: 'admin@cheransoftgoods.com',
+        role: 'ADMIN',
+        role_id: 1,
+        role_name: 'System Administrator'
+      };
+      return sendSuccess(res, { ...u, name: 'Admin', username: 'admin' });
     }
 
     // 2. Dashboard KPIs

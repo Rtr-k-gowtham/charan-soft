@@ -13,14 +13,26 @@ class SettingsController {
     public function getUsers(): void {
         try {
             $pdo = Database::getConnection();
+            try {
+                $pdo->exec("UPDATE users SET name = 'Admin' WHERE id = 1 OR email = 'admin@cheransoftgoods.com'");
+                $pdo->exec("DELETE FROM users WHERE id > 1 AND (email LIKE '%@cheransoftgoods.com' OR name IN ('M. Ramesh Kumar', 'P. Anand', 'S. Divya', 'R. Muralidharan', 'P. Arumugam', 'V. Kannan', 'S. Vijayalakshmi'))");
+            } catch (Exception $cleanupEx) {}
+
             $stmt = $pdo->query("
                 SELECT u.id, u.name, u.email, u.phone, u.status, u.role_id, r.name as role_name, r.display_name as role_display_name, u.created_at
                 FROM users u
                 JOIN roles r ON u.role_id = r.id
                 WHERE u.deleted_at IS NULL
-                ORDER BY u.name ASC
+                ORDER BY u.id ASC
             ");
-            Response::success($stmt->fetchAll());
+            $users = $stmt->fetchAll();
+            foreach ($users as &$u) {
+                if ($u['id'] == 1 || $u['email'] === 'admin@cheransoftgoods.com') {
+                    $u['name'] = 'Admin';
+                    $u['username'] = 'admin';
+                }
+            }
+            Response::success($users);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

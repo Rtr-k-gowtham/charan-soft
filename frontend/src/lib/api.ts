@@ -40,7 +40,7 @@ async function request<T>(
 export const api = {
   // Auth
   login: (email: string, password: string) =>
-    request<{ token: string; name: string; role: string; email: string }>('/auth/login', 'POST', { email, password }),
+    request<{ token: string; name: string; role: string; email: string }>('/auth/login', 'POST', { email, username: email, password }),
   getMe: () => request<unknown>('/auth/me'),
 
   // Dashboard

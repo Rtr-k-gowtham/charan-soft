@@ -13,11 +13,7 @@ INSERT INTO roles (id, name, display_name, description) VALUES
 (7, 'STAFF', 'Floor Staff', 'View assigned production jobs');
 
 INSERT INTO users (id, role_id, name, email, password_hash, phone, status) VALUES
-(1, 1, 'K. Senthil Nathan', 'admin@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 10001', 'active'),
-(2, 4, 'R. Muralidharan', 'purchase@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 20002', 'active'),
-(3, 3, 'P. Arumugam', 'store@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 30003', 'active'),
-(4, 5, 'V. Kannan', 'production@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 40004', 'active'),
-(5, 6, 'S. Vijayalakshmi', 'qc@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 50005', 'active');
+(1, 1, 'Admin', 'admin@cheransoftgoods.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '+91 98422 10001', 'active');
 
 -- 2. Master Units, Colors, Sizes
 INSERT INTO units (code, name, description) VALUES
