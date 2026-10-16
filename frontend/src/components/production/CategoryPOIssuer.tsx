@@ -238,8 +238,9 @@ export default function CategoryPOIssuer({
         materials: catMaterials.map((m, idx) => ({
           material_id: m.material_id || undefined,
           material_code: m.material_code || undefined,
-          item_description: m.name + (m.material_code ? ` [${m.material_code}]` : ''),
+          item_description: m.name,
           description: m.name,
+          accessory_name: m.name,
           uom: m.uom || 'KG',
           quantity: Number(m.total_required_qty) || 1,
           rate: Number(m.unit_cost) || 0,
@@ -288,7 +289,9 @@ export default function CategoryPOIssuer({
 
       const itemsPayload = catMaterials.map((m, idx) => ({
         material_id: m.material_id || undefined,
-        item_description: m.name + (m.material_code ? ` [${m.material_code}]` : ''),
+        item_description: m.name,
+        description: m.name,
+        accessory_name: m.name,
         uom: m.uom || 'PCS',
         quantity: Number(m.total_required_qty) || 1,
         rate: Number(m.unit_cost) || 0,

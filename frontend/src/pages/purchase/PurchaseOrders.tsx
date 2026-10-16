@@ -296,19 +296,17 @@ export default function PurchaseOrders() {
   const materialOptions: SelectOption[] = useMemo(() => {
     const list: SelectOption[] = [];
     matchingMaterials.forEach(m => {
-      const idPrefix = m.code ? `[${m.code}] ` : `[#${m.id}] `;
       list.push({
         value: m.id,
-        label: `${idPrefix}${m.name}`,
+        label: m.name,
         sublabel: `Material ID: #${m.id} | Code: ${m.code || '—'} | ${m.uom} | ₹${m.purchase_rate}${m.spec ? ` | ${m.spec}` : ''}`,
         group: otherMaterials.length > 0 ? 'Recommended for Category' : 'Materials Catalog',
       });
     });
     otherMaterials.forEach(m => {
-      const idPrefix = m.code ? `[${m.code}] ` : `[#${m.id}] `;
       list.push({
         value: m.id,
-        label: `${idPrefix}${m.name}`,
+        label: m.name,
         sublabel: `Material ID: #${m.id} | Code: ${m.code || '—'} | ${m.uom} | ₹${m.purchase_rate} | [${m.category_name || 'General'}]`,
         group: 'Other Materials',
       });
@@ -593,21 +591,23 @@ export default function PurchaseOrders() {
       }));
 
       if (Array.isArray(state.materials) && state.materials.length > 0) {
-        const prefilled = state.materials.map((m: any, idx: number) =>
-          calcItem({
+        const prefilled = state.materials.map((m: any, idx: number) => {
+          const rawName = (m.item_description || m.name || m.description || '').replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+          return calcItem({
             order_no: m.order_no || state.production_order_number || `ORD-${String(idx + 1).padStart(3, '0')}`,
             material_id: m.material_id,
             material_code: m.material_code,
             item_code: m.material_code,
-            item_description: m.item_description || m.name || m.description || '',
-            description: m.description || m.name || m.item_description || '',
+            item_description: rawName,
+            description: rawName,
+            accessory_name: rawName,
             quantity: Number(m.quantity || m.total_required_qty) || 1,
             qty: Number(m.quantity || m.total_required_qty) || 1,
             uom: m.uom || 'KG',
             rate: Number(m.rate || m.unit_cost) || 0,
             tax_percent: Number(m.tax_percent) || 5,
-          })
-        );
+          });
+        });
         setItems(prefilled);
       }
     } else {
@@ -2693,7 +2693,8 @@ export default function PurchaseOrders() {
                                 dynVal = parsed[key] || parsed.accessory_name || parsed.item_description || parsed.description || '';
                               } catch (e) {}
                             }
-                            const valDesc = it.accessory_name || it.item_description || it.description || it[key] || dynVal || it.item_name || '—';
+                            const rawVal = it.accessory_name || it.item_description || it.description || it[key] || dynVal || it.item_name || '—';
+                            const valDesc = typeof rawVal === 'string' ? rawVal.replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim() : rawVal;
                             return (
                               <td key={key} style={{ width: colDim.width, minWidth: colDim.minWidth }} className="py-2 px-1.5 font-medium text-slate-800 text-xs">
                                 {valDesc}

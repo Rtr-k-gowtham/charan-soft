@@ -861,7 +861,8 @@ const server = http.createServer(async (req, res) => {
         const net = Math.round((taxable + taxAmt) * 100) / 100;
         subtotal += taxable;
         totalTax += taxAmt;
-        const desc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
+        const rawDesc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
+        const desc = typeof rawDesc === 'string' ? rawDesc.replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim() : rawDesc;
         return {
           id: idx + 1,
           order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
@@ -993,7 +994,8 @@ const server = http.createServer(async (req, res) => {
         const net = Math.round((taxable + taxAmt) * 100) / 100;
         subtotal += taxable;
         totalTax += taxAmt;
-        const desc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
+        const rawDesc = it.accessory_name || it.item_description || it.description || 'Fabric Material';
+        const desc = typeof rawDesc === 'string' ? rawDesc.replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim() : rawDesc;
         return {
           id: idx + 1,
           order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,

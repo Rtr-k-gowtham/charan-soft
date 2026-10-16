@@ -74,6 +74,15 @@ class PurchaseOrderController {
                         if (empty($poi['item_description']) && !empty($poi['accessory_name'])) {
                             $poi['item_description'] = $poi['accessory_name'];
                         }
+                        if (!empty($poi['item_description'])) {
+                            $poi['item_description'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['item_description']));
+                        }
+                        if (!empty($poi['accessory_name'])) {
+                            $poi['accessory_name'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['accessory_name']));
+                        }
+                        if (!empty($poi['description'])) {
+                            $poi['description'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['description']));
+                        }
                     }
                     $po['items'] = $items;
                 } catch (Exception $ie) {
@@ -264,6 +273,7 @@ class PurchaseOrderController {
                     $it['order_no'] = 'ORD-' . str_pad((string)($idx + 1), 3, '0', STR_PAD_LEFT);
                 }
                 $desc = $it['item_description'] ?? $it['description'] ?? $it['accessory_name'] ?? 'Textile Material';
+                $desc = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$desc));
                 if (empty($it['accessory_name']) && !empty($desc)) {
                     $it['accessory_name'] = $desc;
                 }
@@ -432,6 +442,7 @@ class PurchaseOrderController {
                     $it['order_no'] = 'ORD-' . str_pad((string)($idx + 1), 3, '0', STR_PAD_LEFT);
                 }
                 $desc = $it['item_description'] ?? $it['description'] ?? $it['accessory_name'] ?? 'Textile Material';
+                $desc = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$desc));
                 if (empty($it['accessory_name']) && !empty($desc)) {
                     $it['accessory_name'] = $desc;
                 }
@@ -918,6 +929,15 @@ class PurchaseOrderController {
                     }
                     if (empty($poi['item_description']) && !empty($poi['accessory_name'])) {
                         $poi['item_description'] = $poi['accessory_name'];
+                    }
+                    if (!empty($poi['item_description'])) {
+                        $poi['item_description'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['item_description']));
+                    }
+                    if (!empty($poi['accessory_name'])) {
+                        $poi['accessory_name'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['accessory_name']));
+                    }
+                    if (!empty($poi['description'])) {
+                        $poi['description'] = trim(preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', (string)$poi['description']));
                     }
                 }
                 $po['items'] = $items;

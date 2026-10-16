@@ -618,6 +618,12 @@ export default function DynamicPOTemplate({
                     val = `${Number(val || 0)}%`;
                   }
 
+                  if (col.column_key === 'accessory_name' || col.column_key === 'accessory' || col.column_key === 'item_description' || col.column_key === 'description' || col.column_key === 'material_name') {
+                    if (typeof val === 'string') {
+                      val = val.replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+                    }
+                  }
+
                   const isMajorText = col.column_key === 'item_description' || col.column_key === 'accessory_name' || col.column_key === 'description' || col.column_key === 'material_name' || col.column_key === 'net_amount';
 
                   return (
