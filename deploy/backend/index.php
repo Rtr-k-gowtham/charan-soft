@@ -102,10 +102,53 @@ try {
         $r0 === 'production-orders' && $method === 'GET' && $id => (new ProductionController)->show($id),
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && ($action === 'stage' || $r1 === 'stage' || $r2 === 'stage') && $method === 'POST' => (new ProductionController)->moveStage(),
+        $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
+        $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'product-quantities' && $method === 'GET' => (new ProductionController)->orderProductQuantities((int)$r2),
+        $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'quantity-ledger' && $method === 'GET' => (new ProductionController)->orderQuantityLedger((int)$r2),
         $r0 === 'production' && $r1 === 'stage' && !empty($r2) => (new ProductionController)->stageOrders($r2),
         $r0 === 'production' && $r1 === 'rework' && $method === 'GET' => (new ProductionController)->reworkList(),
         $r0 === 'production' && $r1 === 'qc' && $method === 'GET' => (new ProductionController)->qcList(),
         $r0 === 'qc' && $method === 'POST' => (new ProductionController)->recordQC(),
+
+        // ---------------- STAGE 05: CUTTING ----------------
+        $r0 === 'production' && $r1 === 'cutting' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->cuttingOrders(),
+        $r0 === 'production' && $r1 === 'cutting' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createCuttingBatch(),
+        $r0 === 'production' && $r1 === 'cutting' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferCuttingOutput(),
+        $r0 === 'production' && $r1 === 'cutting' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->cuttingOrderDetails((int)$r2),
+
+        // ---------------- STAGE 06: EMBROIDERY (JOB WORK OUTWARD / INWARD) ----------------
+        $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'job-orders' && $method === 'GET' => (new ProductionController)->embroideryJobOrders(),
+        $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'job-order' && $method === 'POST' => (new ProductionController)->createEmbroideryJobOrder(),
+        $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'inward' && $method === 'POST' => (new ProductionController)->receiveEmbroideryJobOrder(),
+        $r0 === 'production' && $r1 === 'embroidery' && $r2 === 'vendor-outstanding' && $method === 'GET' => (new ProductionController)->vendorOutstandingEmbroidery(),
+        $r0 === 'production' && $r1 === 'embroidery' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->embroideryOrderDetails((int)$r2),
+
+        // ---------------- STAGE 07: STITCHING ----------------
+        $r0 === 'production' && $r1 === 'stitching' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->stitchingOrders(),
+        $r0 === 'production' && $r1 === 'stitching' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createStitchingBatch(),
+        $r0 === 'production' && $r1 === 'stitching' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferStitchingOutput(),
+        $r0 === 'production' && $r1 === 'stitching' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->stitchingOrderDetails((int)$r2),
+
+        // ---------------- STAGE 08: CHECKING / QC ----------------
+        $r0 === 'production' && $r1 === 'checking' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->checkingOrders(),
+        $r0 === 'production' && $r1 === 'checking' && $r2 === 'inspect' && $method === 'POST' => (new ProductionController)->recordQualityInspection(),
+        $r0 === 'production' && $r1 === 'checking' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->checkingOrderDetails((int)$r2),
+
+        // ---------------- STAGE 09: PACKING & CARTON MANAGEMENT ----------------
+        $r0 === 'production' && $r1 === 'packing' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->packingOrders(),
+        $r0 === 'production' && $r1 === 'packing' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createPackingBatch(),
+        $r0 === 'production' && $r1 === 'packing' && $r2 === 'cartons' && $method === 'GET' => (new ProductionController)->packingCartons(),
+        $r0 === 'production' && $r1 === 'packing' && $r2 === 'carton' && isset($segments[3]) && $method === 'GET' => (new ProductionController)->getCartonBySerial($segments[3]),
+        $r0 === 'production' && $r1 === 'packing' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->packingOrderDetails((int)$r2),
+
+        // ---------------- STAGE 10: COMPLETED & DISPATCH ----------------
+        $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->dispatchOrders(),
+        $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'record' && $method === 'POST' => (new ProductionController)->recordOrderDispatch(),
+        $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'history' && $method === 'GET' => (new ProductionController)->dispatchHistory(),
+        $r0 === 'production' && $r1 === 'dispatch' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->dispatchOrderDetails((int)$r2),
+
+        // ---------------- REPORTS ----------------
+        $r0 === 'reports' && $r1 === 'production' && ($segments[2] ?? '') === 'detailed' && $method === 'GET' => (new ProductionController)->detailedReports(),
 
         // ---------------- DYEING (STAGE 04) ----------------
         $r0 === 'dyeing' && $r1 === 'orders' && $method === 'GET' && !$id => (new DyeingController)->index(),

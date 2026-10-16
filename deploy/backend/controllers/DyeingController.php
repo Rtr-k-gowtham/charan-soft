@@ -190,9 +190,19 @@ class DyeingController {
             $pdo = Database::getConnection();
             $this->ensureTables($pdo);
 
-            $poId = isset($_GET['production_order_id']) && is_numeric($_GET['production_order_id']) 
-                ? (int)$_GET['production_order_id'] 
-                : 0;
+            $rawPoId = trim((string)($_GET['production_order_id'] ?? $_GET['id'] ?? $_GET['order_id'] ?? ''));
+            $poId = is_numeric($rawPoId) ? (int)$rawPoId : 0;
+
+            if ($poId <= 0 && !empty($rawPoId)) {
+                $lookup = $pdo->prepare("SELECT id FROM production_orders WHERE order_number = ? OR id = ? LIMIT 1");
+                $lookup->execute([$rawPoId, $rawPoId]);
+                $poId = (int)$lookup->fetchColumn();
+            }
+
+            if ($poId <= 0) {
+                $fallback = $pdo->query("SELECT id FROM production_orders WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1")->fetchColumn();
+                $poId = (int)($fallback ?: 0);
+            }
 
             if ($poId <= 0) {
                 Response::error("Valid production_order_id is required", 422);
@@ -462,7 +472,16 @@ class DyeingController {
     public function store(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
 
-        $poId = (int)($data['production_order_id'] ?? 0);
+        $rawPo = trim((string)($data['production_order_id'] ?? $data['order_number'] ?? ''));
+        $poId = is_numeric($rawPo) ? (int)$rawPo : 0;
+        if ($poId <= 0 && !empty($rawPo)) {
+            try {
+                $pdoCheck = Database::getConnection();
+                $pLookup = $pdoCheck->prepare("SELECT id FROM production_orders WHERE order_number = ? OR id = ? LIMIT 1");
+                $pLookup->execute([$rawPo, $rawPo]);
+                $poId = (int)$pLookup->fetchColumn();
+            } catch (Exception $e) {}
+        }
         $fabricName = trim($data['fabric_name'] ?? 'Cotton Fabric');
         $uom = trim($data['uom'] ?? 'MTR');
         $items = $data['items'] ?? [];
@@ -696,7 +715,17 @@ class DyeingController {
                 return;
             }
 
-            $poId = (int)$dOrder['production_order_id'];
+            $poId = (int)($dOrder['production_order_id'] ?? 0);
+            if ($poId <= 0) {
+                $rawPo = trim((string)($data['production_order_id'] ?? $data['order_number'] ?? ''));
+                if (is_numeric($rawPo)) {
+                    $poId = (int)$rawPo;
+                } elseif (!empty($rawPo)) {
+                    $pLookup = $pdo->prepare("SELECT id FROM production_orders WHERE order_number = ? OR id = ? LIMIT 1");
+                    $pLookup->execute([$rawPo, $rawPo]);
+                    $poId = (int)$pLookup->fetchColumn();
+                }
+            }
             $receiptNo = 'DYE-GRN-' . str_pad((string)rand(100, 99999), 5, '0', STR_PAD_LEFT);
             $receiptDate = !empty($data['receipt_date']) ? $data['receipt_date'] : date('Y-m-d');
             $challanNo = trim($data['delivery_challan_no'] ?? $data['challan_no'] ?? '');
@@ -740,11 +769,29 @@ class DyeingController {
                 $itemId = (int)($it['item_id'] ?? $it['id'] ?? 0);
                 $qtyRec = (float)($it['received_quantity'] ?? 0);
                 $shrinkage = (float)($it['shrinkage_loss_percent'] ?? 0);
-                $shade = trim($it['shade_match_status'] ?? 'Matched');
+                $shade = trim($it['shade_match_status'] ?? 'Approved - Pantone Matched');
 
-                if ($qtyRec > 0 && $itemId > 0) {
+                if ($qtyRec > 0) {
                     $totalBatchReceived += $qtyRec;
-                    $itemUpd->execute([$qtyRec, $shrinkage, $shade, $itemId, $dyeingOrderId]);
+                    if ($itemId > 0) {
+                        $itemUpd->execute([$qtyRec, $shrinkage, $shade, $itemId, $dyeingOrderId]);
+                    } else {
+                        $insItem = $pdo->prepare("
+                            INSERT INTO dyeing_order_items (
+                                dyeing_order_id, color_name, planned_quantity, received_quantity,
+                                shrinkage_loss_percent, shade_match_status, notes
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $insItem->execute([
+                            $dyeingOrderId,
+                            $it['color_name'] ?? ($dOrder['fabric_name'] ?? 'Dyed Fabric Material'),
+                            (float)($it['planned_quantity'] ?? $qtyRec),
+                            $qtyRec,
+                            $shrinkage,
+                            $shade,
+                            $it['notes'] ?? ''
+                        ]);
+                    }
                 }
             }
 

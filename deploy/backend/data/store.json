@@ -1068,6 +1068,99 @@
           "color_badge": "#0d9488"
         }
       ]
+    },
+    {
+      "id": 4,
+      "order_number": "ORD-1004",
+      "title": "Max Lifestyle Autumn-Winter 2026 Coordinated Export Collection",
+      "customer_id": 2,
+      "customer_code": "CUST-002",
+      "customer_name": "Max Lifestyle Garments",
+      "customer_avatar_style": "lorelei",
+      "customer_avatar_seed": "MaxLifestyle-Lorelei-2",
+      "customer_avatar_config": null,
+      "category_id": 1,
+      "priority": "High",
+      "start_date": "2026-10-10",
+      "target_delivery_date": "2026-11-05",
+      "total_quantity": 2500,
+      "completed_quantity": 0,
+      "status": "IN PRODUCTION",
+      "notes": "Specification: Product A (1,000 pcs), Product B (500 pcs), Product C (750 pcs), Product D (250 pcs). Total order quantity = 2,500 pieces.",
+      "items": [
+        {
+          "id": 10,
+          "product_id": 1,
+          "product_name": "Organic Bio-Wash Crewneck T-Shirt",
+          "product_code": "BPRD-001",
+          "color": "Navy Blue",
+          "size": "L",
+          "total_quantity": 1000,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 1000,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress",
+          "color_badge": "#d97706"
+        },
+        {
+          "id": 11,
+          "product_id": 2,
+          "product_name": "French Terry Raglan Pullover Hoodie",
+          "product_code": "BPRD-002",
+          "color": "Heather Grey",
+          "size": "XL",
+          "total_quantity": 500,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 500,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress",
+          "color_badge": "#d97706"
+        },
+        {
+          "id": 12,
+          "product_id": 3,
+          "product_name": "Mercerized Pique Polo Shirt",
+          "product_code": "BPRD-003",
+          "color": "Pure White",
+          "size": "M",
+          "total_quantity": 750,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 750,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress",
+          "color_badge": "#d97706"
+        },
+        {
+          "id": 13,
+          "product_id": 4,
+          "product_name": "Classic Cotton Interlock Zip Jacket",
+          "product_code": "BPRD-004",
+          "color": "Olive Green",
+          "size": "L",
+          "total_quantity": 250,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 250,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress",
+          "color_badge": "#d97706"
+        }
+      ]
     }
   ],
   "qcRecords": [
@@ -1148,5 +1241,504 @@
     "currency": "INR",
     "financial_year_start": "04-01"
   },
-  "buyer_products": []
+  "buyer_products": [
+    {
+      "id": 1,
+      "buyer_id": 2,
+      "product_name": "Organic Bio-Wash Crewneck T-Shirt",
+      "product_code": "BPRD-001",
+      "uom": "Pieces",
+      "notes": "100% GOTS Certified combed organic cotton 180 GSM single jersey. Anti-pilling silicone bio-wash finish with 1x1 cotton rib collar band.",
+      "image_url": "",
+      "dimensions": {
+        "length": 30,
+        "width": 25,
+        "height": 2,
+        "unit": "cm",
+        "calculated_volume_cm3": 1500,
+        "calculated_volume_m3": 0.0015,
+        "weight_grams": 185
+      },
+      "boxes": [
+        {
+          "id": "box-1-1",
+          "box_name": "Standard Export Master Carton (50 Pcs)",
+          "box_code": "BOX-M50",
+          "length": 55,
+          "width": 35,
+          "height": 30,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 57750,
+          "calculated_volume_m3": 0.0578,
+          "items_per_box": 50,
+          "max_packing_qty": 50,
+          "notes": "Contains 50 flat-folded garments individually polybagged"
+        }
+      ],
+      "components": [
+        {
+          "id": "c1",
+          "name": "100% Combed Cotton 30s Single Jersey",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.22,
+          "wastage_percent": 4
+        },
+        {
+          "id": "c2",
+          "name": "1x1 Combed Cotton Lycra Rib",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.03,
+          "wastage_percent": 3
+        },
+        {
+          "id": "c3",
+          "name": "Cotton Sewing Thread 40/2",
+          "category": "Thread",
+          "uom": "Meters",
+          "quantity_per_product": 120,
+          "wastage_percent": 2
+        },
+        {
+          "id": "c4",
+          "name": "Woven Satin Brand Main Label",
+          "category": "Label",
+          "uom": "Pieces",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        }
+      ],
+      "created_at": "2026-10-01 10:00:00"
+    },
+    {
+      "id": 2,
+      "buyer_id": 2,
+      "product_name": "French Terry Raglan Pullover Hoodie",
+      "product_code": "BPRD-002",
+      "uom": "Pieces",
+      "notes": "Heavyweight 320 GSM 3-thread unbrushed French Terry fleece. Double-layered crossover hood with flat braided natural cotton drawcords and kangaroo pocket.",
+      "image_url": "",
+      "dimensions": {
+        "length": 36,
+        "width": 28,
+        "height": 5,
+        "unit": "cm",
+        "calculated_volume_cm3": 5040,
+        "calculated_volume_m3": 0.00504,
+        "weight_grams": 540
+      },
+      "boxes": [
+        {
+          "id": "box-2-1",
+          "box_name": "Heavy-Duty 7-Ply Outer Export Carton (25 Pcs)",
+          "box_code": "BOX-H25",
+          "length": 60,
+          "width": 45,
+          "height": 40,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 108000,
+          "calculated_volume_m3": 0.108,
+          "items_per_box": 25,
+          "max_packing_qty": 25,
+          "notes": "Master carton packing 25 folded heavy hoodies"
+        }
+      ],
+      "components": [
+        {
+          "id": "c2-1",
+          "name": "3-Thread French Terry Fleece 320 GSM",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.65,
+          "wastage_percent": 5
+        },
+        {
+          "id": "c2-2",
+          "name": "2x2 Heavy Cotton Spandex Rib",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.12,
+          "wastage_percent": 3
+        },
+        {
+          "id": "c2-3",
+          "name": "Flat Braided 100% Cotton Drawcord",
+          "category": "Trims",
+          "uom": "Meters",
+          "quantity_per_product": 1.35,
+          "wastage_percent": 2
+        }
+      ],
+      "created_at": "2026-10-02 11:30:00"
+    },
+    {
+      "id": 3,
+      "buyer_id": 2,
+      "product_name": "Mercerized Pique Polo Shirt",
+      "product_code": "BPRD-003",
+      "uom": "Pieces",
+      "notes": "220 GSM 2-ply double-mercerized Egyptian cotton honeycomb pique. Jacquard knit flat collar and cuffs, 3-button trocas shell button placket.",
+      "image_url": "",
+      "dimensions": {
+        "length": 32,
+        "width": 26,
+        "height": 3,
+        "unit": "cm",
+        "calculated_volume_cm3": 2496,
+        "calculated_volume_m3": 0.002496,
+        "weight_grams": 240
+      },
+      "boxes": [
+        {
+          "id": "box-3-1",
+          "box_name": "Solid Corrugated Export Shipper (30 Pcs)",
+          "box_code": "BOX-P30",
+          "length": 50,
+          "width": 40,
+          "height": 32,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 64000,
+          "calculated_volume_m3": 0.064,
+          "items_per_box": 30,
+          "max_packing_qty": 30,
+          "notes": "Standard 30 pcs packed in stand-up fold format"
+        }
+      ],
+      "components": [
+        {
+          "id": "c3-1",
+          "name": "Mercerized Cotton Honeycomb Pique 220 GSM",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.3,
+          "wastage_percent": 4
+        },
+        {
+          "id": "c3-2",
+          "name": "Jacquard Knit Collar and Cuff Set",
+          "category": "Trims",
+          "uom": "Set",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        },
+        {
+          "id": "c3-3",
+          "name": "Genuine Trocas Shell Buttons 18L",
+          "category": "Trims",
+          "uom": "Pieces",
+          "quantity_per_product": 3,
+          "wastage_percent": 2
+        }
+      ],
+      "created_at": "2026-10-03 14:15:00"
+    },
+    {
+      "id": 4,
+      "buyer_id": 2,
+      "product_name": "Classic Cotton Interlock Zip Jacket",
+      "product_code": "BPRD-004",
+      "uom": "Pieces",
+      "notes": "Premium 280 GSM 100% combed cotton double interlock knit jacket with full-length YKK antique brass zipper, stand collar, and side welt pockets.",
+      "image_url": "",
+      "dimensions": {
+        "length": 38,
+        "width": 28,
+        "height": 4.5,
+        "unit": "cm",
+        "calculated_volume_cm3": 4788,
+        "calculated_volume_m3": 0.004788,
+        "weight_grams": 420
+      },
+      "boxes": [
+        {
+          "id": "box-4-1",
+          "box_name": "7-Ply Heavy Duty Master Export Carton",
+          "box_code": "BOX-EXP-M",
+          "length": 60,
+          "width": 40,
+          "height": 45,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 108000,
+          "calculated_volume_m3": 0.108,
+          "items_per_box": 20,
+          "max_packing_qty": 20,
+          "notes": "Standard master carton holding 20 folded jackets"
+        },
+        {
+          "id": "box-4-2",
+          "box_name": "3-Ply Retail Inner Box",
+          "box_code": "BOX-RET-S",
+          "length": 30,
+          "width": 20,
+          "height": 25,
+          "dimension_unit": "cm",
+          "calculated_volume_cm3": 15000,
+          "calculated_volume_m3": 0.015,
+          "items_per_box": 5,
+          "max_packing_qty": 5,
+          "notes": "Inner retail box (4 inner boxes fit into 1 master carton)"
+        }
+      ],
+      "components": [
+        {
+          "id": "c4-1",
+          "name": "100% Combed Cotton Interlock 280 GSM",
+          "category": "Fabric",
+          "uom": "KG",
+          "quantity_per_product": 0.52,
+          "wastage_percent": 5
+        },
+        {
+          "id": "c4-2",
+          "name": "YKK Antique Brass Metal Zipper #5 (26 inch)",
+          "category": "Trims",
+          "uom": "Pieces",
+          "quantity_per_product": 1,
+          "wastage_percent": 1
+        },
+        {
+          "id": "c4-3",
+          "name": "Cotton Pocket Bag Twill 140 GSM",
+          "category": "Fabric",
+          "uom": "Meters",
+          "quantity_per_product": 0.25,
+          "wastage_percent": 3
+        }
+      ],
+      "created_at": "2026-10-04 16:00:00"
+    }
+  ],
+  "productionOrders": [
+    {
+      "id": 1,
+      "order_number": "ORD-1001",
+      "title": "Zudio Autumn Winter 2026 Crewneck Batch",
+      "customer_id": 1,
+      "customer_name": "Zudio Retail Fashion",
+      "customer_code": "CUST-001",
+      "category_id": 1,
+      "category_name": "Knitted Garments",
+      "priority": "High",
+      "start_date": "2026-10-01",
+      "target_delivery_date": "2026-10-25",
+      "total_quantity": 1200,
+      "completed_quantity": 400,
+      "status": "IN PRODUCTION",
+      "notes": "Ensure double-needle reinforcement on collar band",
+      "items": [
+        {
+          "id": 1,
+          "production_order_id": 1,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Navy Blue",
+          "size": "M",
+          "total_quantity": 400,
+          "current_stage_id": 7,
+          "current_stage_name": "Stitching — Color-wise Tracking",
+          "stage_code": "STI",
+          "current_stage_quantity": 400,
+          "completed_quantity": 200,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 2,
+          "production_order_id": 1,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Jet Black",
+          "size": "L",
+          "total_quantity": 400,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 400,
+          "completed_quantity": 200,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 3,
+          "production_order_id": 1,
+          "product_id": 1,
+          "product_name": "Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Heather Grey",
+          "size": "XL",
+          "total_quantity": 400,
+          "current_stage_id": 4,
+          "current_stage_name": "Dyeing",
+          "stage_code": "DYE",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "order_number": "ORD-1002",
+      "title": "Allen Solly Pique Polo Export Order",
+      "customer_id": 3,
+      "customer_name": "Allen Solly Apparel Corp",
+      "customer_code": "CUST-003",
+      "category_id": 1,
+      "category_name": "Polo Shirts",
+      "priority": "Medium",
+      "start_date": "2026-10-02",
+      "target_delivery_date": "2026-10-28",
+      "total_quantity": 800,
+      "completed_quantity": 200,
+      "status": "IN PRODUCTION",
+      "notes": "Customer QC inspector will review on Oct 20",
+      "items": [
+        {
+          "id": 4,
+          "production_order_id": 2,
+          "product_id": 3,
+          "product_name": "Cotton Pique Polo Shirt",
+          "product_code": "PRD-003",
+          "color": "Pure White",
+          "size": "M",
+          "total_quantity": 400,
+          "current_stage_id": 8,
+          "current_stage_name": "Checking",
+          "stage_code": "CHK",
+          "current_stage_quantity": 200,
+          "completed_quantity": 200,
+          "rejected_quantity": 4,
+          "rework_quantity": 8,
+          "status": "In Progress"
+        },
+        {
+          "id": 5,
+          "production_order_id": 2,
+          "product_id": 3,
+          "product_name": "Cotton Pique Polo Shirt",
+          "product_code": "PRD-003",
+          "color": "Forest Green",
+          "size": "L",
+          "total_quantity": 400,
+          "current_stage_id": 6,
+          "current_stage_name": "Embroidery — Outward / Inward",
+          "stage_code": "EMB",
+          "current_stage_quantity": 400,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "order_number": "ORD-1004",
+      "title": "Max Lifestyle 4-Product Comprehensive Export Run",
+      "customer_id": 2,
+      "customer_name": "Max Lifestyle Garments",
+      "customer_code": "CUST-002",
+      "customer_avatar_style": "lorelei",
+      "customer_avatar_seed": "buyer-2",
+      "category_id": 1,
+      "category_name": "Premium Garments & Hoodies",
+      "priority": "Urgent",
+      "start_date": "2026-10-10",
+      "target_delivery_date": "2026-11-05",
+      "total_quantity": 2500,
+      "completed_quantity": 0,
+      "status": "IN PRODUCTION",
+      "notes": "4-Product test run validating stages 5-10: Cutting, Embroidery, Stitching, Checking, Packing (Sections C & D specs), and Completed / Dispatch.",
+      "items": [
+        {
+          "id": 10,
+          "production_order_id": 4,
+          "product_id": 1,
+          "product_name": "Product A: Classic Crew Neck T-Shirt",
+          "product_code": "PRD-001",
+          "color": "Navy Blue",
+          "size": "M",
+          "total_quantity": 1000,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 1000,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 11,
+          "production_order_id": 4,
+          "product_id": 2,
+          "product_name": "Product B: Slim Fit Chino Trousers",
+          "product_code": "PRD-002",
+          "color": "Khaki Beige",
+          "size": "32",
+          "total_quantity": 500,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 500,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 12,
+          "production_order_id": 4,
+          "product_id": 3,
+          "product_name": "Product C: Cotton Pique Polo Shirt",
+          "product_code": "PRD-003",
+          "color": "Crimson Red",
+          "size": "L",
+          "total_quantity": 750,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 750,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        },
+        {
+          "id": 13,
+          "production_order_id": 4,
+          "product_id": 4,
+          "product_name": "Product D: Premium Heavyweight French Terry Zip Hoodie",
+          "product_code": "PRD-004",
+          "color": "Charcoal Melange",
+          "size": "XL",
+          "total_quantity": 250,
+          "current_stage_id": 5,
+          "current_stage_name": "Cutting — Product-wise",
+          "stage_code": "CUT",
+          "current_stage_quantity": 250,
+          "completed_quantity": 0,
+          "rejected_quantity": 0,
+          "rework_quantity": 0,
+          "status": "In Progress"
+        }
+      ]
+    }
+  ],
+  "productionQuantityLedger": [],
+  "cuttingBatches": [],
+  "embroideryJobOrders": [],
+  "embroideryReceipts": [],
+  "stitchingBatches": [],
+  "qualityInspections": [],
+  "packingBatches": [],
+  "packingCartons": [],
+  "dispatchRecords": []
 }

@@ -988,5 +988,835 @@ class ProductionController {
             Response::error($e->getMessage(), 500);
         }
     }
+
+    private function ensureWorkflowTables(PDO $pdo): void {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `production_quantity_ledger` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `stage_id` INT NOT NULL,
+                  `stage_code` VARCHAR(20) NOT NULL,
+                  `transaction_type` VARCHAR(50) NOT NULL,
+                  `quantity` DECIMAL(12, 2) NOT NULL,
+                  `batch_number` VARCHAR(100) NULL,
+                  `operator_name` VARCHAR(150) NULL,
+                  `supervisor_name` VARCHAR(150) NULL,
+                  `reference_type` VARCHAR(100) NULL,
+                  `reference_id` VARCHAR(100) NULL,
+                  `remarks` TEXT NULL,
+                  `metadata_json` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_pql_ord` (`production_order_id`),
+                  INDEX `idx_pql_itm` (`production_order_item_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `cutting_batches` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `batch_number` VARCHAR(100) NOT NULL,
+                  `cutting_date` DATE NOT NULL,
+                  `assigned_quantity` DECIMAL(12, 2) NOT NULL,
+                  `actual_cut_quantity` DECIMAL(12, 2) NOT NULL,
+                  `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `accepted_output_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `pending_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `operator` VARCHAR(150) NULL,
+                  `supervisor` VARCHAR(150) NULL,
+                  `machine_line` VARCHAR(100) NULL,
+                  `remarks` TEXT NULL,
+                  `photo_urls` JSON NULL,
+                  `transferred_to_next_stage_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `status` VARCHAR(50) DEFAULT 'In Progress',
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_cut_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `embroidery_job_orders` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `job_order_number` VARCHAR(100) NOT NULL UNIQUE,
+                  `production_order_id` INT NOT NULL,
+                  `vendor_name` VARCHAR(255) NOT NULL,
+                  `job_order_date` DATE NOT NULL,
+                  `dispatch_date` DATE NOT NULL,
+                  `expected_return_date` DATE NULL,
+                  `delivery_challan_no` VARCHAR(100) NULL,
+                  `transport_courier` VARCHAR(255) NULL,
+                  `sent_by` VARCHAR(150) NULL,
+                  `total_quantity_sent` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_quantity_received` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_quantity_accepted` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_quantity_rejected` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_quantity_rework` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_quantity_outstanding` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `status` VARCHAR(50) DEFAULT 'Sent to Vendor',
+                  `notes` TEXT NULL,
+                  `attachments` JSON NULL,
+                  `items_json` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_emb_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `embroidery_receipts` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `receipt_number` VARCHAR(100) NOT NULL UNIQUE,
+                  `job_order_id` INT NOT NULL,
+                  `production_order_id` INT NOT NULL,
+                  `vendor_name` VARCHAR(255) NOT NULL,
+                  `receipt_date` DATE NOT NULL,
+                  `vendor_challan_no` VARCHAR(100) NULL,
+                  `received_by` VARCHAR(150) NULL,
+                  `total_received_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_accepted_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_rejected_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_rework_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `remarks` TEXT NULL,
+                  `photo_urls` JSON NULL,
+                  `items_data` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_er_job` (`job_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `stitching_batches` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `batch_number` VARCHAR(100) NOT NULL,
+                  `assigned_quantity` DECIMAL(12, 2) NOT NULL,
+                  `received_quantity` DECIMAL(12, 2) NOT NULL,
+                  `completed_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `balance_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `operator_team` VARCHAR(150) NULL,
+                  `production_line` VARCHAR(100) NULL,
+                  `start_date` DATE NOT NULL,
+                  `completion_date` DATE NULL,
+                  `supervisor` VARCHAR(150) NULL,
+                  `remarks` TEXT NULL,
+                  `photo_urls` JSON NULL,
+                  `status` VARCHAR(50) DEFAULT 'Completed',
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_sti_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `quality_inspections` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `batch_number` VARCHAR(100) NULL,
+                  `submitted_quantity` DECIMAL(12, 2) NOT NULL,
+                  `checked_quantity` DECIMAL(12, 2) NOT NULL,
+                  `passed_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `failed_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `defect_category` VARCHAR(100) NULL,
+                  `defect_description` TEXT NULL,
+                  `inspector` VARCHAR(150) NULL,
+                  `inspection_date` DATE NOT NULL,
+                  `is_reinspection` TINYINT(1) DEFAULT 0,
+                  `original_inspection_id` INT NULL,
+                  `remarks` TEXT NULL,
+                  `photo_urls` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_qi_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `packing_batches` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `batch_number` VARCHAR(100) NOT NULL,
+                  `packing_date` DATE NOT NULL,
+                  `approved_quantity` DECIMAL(12, 2) NOT NULL,
+                  `packed_quantity` DECIMAL(12, 2) NOT NULL,
+                  `remaining_unpacked_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `units_per_box` INT NOT NULL DEFAULT 1,
+                  `number_of_boxes` INT NOT NULL DEFAULT 0,
+                  `boxes_per_master_carton` INT NOT NULL DEFAULT 1,
+                  `number_of_master_cartons` INT NOT NULL DEFAULT 0,
+                  `partial_box_quantity` INT NOT NULL DEFAULT 0,
+                  `partial_carton_quantity` INT NOT NULL DEFAULT 0,
+                  `carton_serial_numbers` TEXT NULL,
+                  `gross_weight` DECIMAL(10, 2) NULL,
+                  `net_weight` DECIMAL(10, 2) NULL,
+                  `packing_operator` VARCHAR(150) NULL,
+                  `packing_supervisor` VARCHAR(150) NULL,
+                  `remarks` TEXT NULL,
+                  `photo_urls` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_pb_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `packing_cartons` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `carton_serial_number` VARCHAR(100) NOT NULL UNIQUE,
+                  `packing_batch_id` INT NOT NULL,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NOT NULL,
+                  `product_name` VARCHAR(255) NOT NULL,
+                  `product_code` VARCHAR(100) NULL,
+                  `color` VARCHAR(100) NULL,
+                  `size` VARCHAR(50) NULL,
+                  `box_name` VARCHAR(150) NULL,
+                  `items_count` INT NOT NULL DEFAULT 0,
+                  `is_full` TINYINT(1) DEFAULT 1,
+                  `gross_weight` DECIMAL(10, 2) NULL,
+                  `status` VARCHAR(50) DEFAULT 'Packed',
+                  `dispatch_id` INT NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_pc_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `dispatch_records` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `dispatch_number` VARCHAR(100) NOT NULL UNIQUE,
+                  `production_order_id` INT NOT NULL,
+                  `buyer_name` VARCHAR(255) NOT NULL,
+                  `dispatch_date` DATE NOT NULL,
+                  `dispatch_time` TIME NULL,
+                  `total_dispatched_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `total_boxes` INT NOT NULL DEFAULT 0,
+                  `total_master_cartons` INT NOT NULL DEFAULT 0,
+                  `vehicle_number` VARCHAR(100) NOT NULL,
+                  `driver_name` VARCHAR(150) NULL,
+                  `driver_contact` VARCHAR(50) NULL,
+                  `transporter_name` VARCHAR(255) NULL,
+                  `delivery_challan_number` VARCHAR(100) NULL,
+                  `invoice_reference` VARCHAR(100) NULL,
+                  `destination_notes` TEXT NULL,
+                  `remarks` TEXT NULL,
+                  `truck_photo_urls` JSON NULL,
+                  `loaded_cartons_photo_urls` JSON NULL,
+                  `labels_photo_urls` JSON NULL,
+                  `document_urls` JSON NULL,
+                  `status` VARCHAR(50) DEFAULT 'Dispatched',
+                  `carton_serial_numbers` JSON NULL,
+                  `items_breakdown` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  INDEX `idx_dr_ord` (`production_order_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+        } catch (Exception $e) {}
+    }
+
+    public function dashboardStats(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $stmt = $pdo->query("SELECT * FROM production_orders WHERE deleted_at IS NULL");
+            $orders = $stmt->fetchAll();
+
+            $activeOrders = array_filter($orders, fn($o) => $o['status'] !== 'COMPLETED' && $o['status'] !== 'Cancelled');
+            $totalOrderedQty = array_reduce($activeOrders, fn($sum, $o) => $sum + (float)$o['total_quantity'], 0.0);
+
+            $iStmt = $pdo->query("SELECT * FROM production_order_items");
+            $items = $iStmt->fetchAll();
+
+            $cutPending = 0; $stiPending = 0; $chkPending = 0; $pckPending = 0; $totalInProd = 0;
+            foreach ($items as $it) {
+                $q = (float)($it['current_stage_quantity'] ?? 0);
+                $stgId = (int)$it['current_stage_id'];
+                if ($stgId < 10) $totalInProd += $q;
+                if ($stgId === 5) $cutPending += $q;
+                if ($stgId === 7) $stiPending += $q;
+                if ($stgId === 8) $chkPending += $q;
+                if ($stgId === 9) $pckPending += $q;
+            }
+
+            $embOutward = (float)$pdo->query("SELECT COALESCE(SUM(total_quantity_sent), 0) FROM embroidery_job_orders WHERE status != 'Cancelled'")->fetchColumn();
+            $embInward = (float)$pdo->query("SELECT COALESCE(SUM(total_quantity_received), 0) FROM embroidery_job_orders WHERE status != 'Cancelled'")->fetchColumn();
+            $embOutstanding = max(0.0, $embOutward - $embInward);
+
+            $completedCount = count(array_filter($orders, fn($o) => $o['status'] === 'COMPLETED' || $o['status'] === 'Fully Dispatched'));
+            $partiallyDispatched = count(array_filter($orders, fn($o) => $o['status'] === 'Partially Dispatched'));
+
+            $today = date('Y-m-d');
+            $overdueCount = count(array_filter($orders, fn($o) => $o['status'] !== 'COMPLETED' && !empty($o['target_delivery_date']) && $o['target_delivery_date'] < $today));
+
+            Response::success([
+                'total_active_orders' => count($activeOrders),
+                'total_ordered_quantity' => $totalOrderedQty,
+                'total_quantity_in_production' => $totalInProd,
+                'cutting_pending_quantity' => $cutPending,
+                'embroidery_outward_quantity' => $embOutward,
+                'embroidery_outstanding_quantity' => $embOutstanding,
+                'stitching_pending_quantity' => $stiPending,
+                'checking_pending_quantity' => $chkPending,
+                'packing_pending_quantity' => $pckPending,
+                'completed_orders' => $completedCount,
+                'partially_dispatched_orders' => $partiallyDispatched,
+                'overdue_orders' => $overdueCount
+            ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function orderProductQuantities(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ordStmt = $pdo->prepare("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = ?");
+            $ordStmt->execute([$orderId]);
+            $ord = $ordStmt->fetch();
+            if (!$ord) { Response::error("Order not found", 404); return; }
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, COALESCE(bp.product_code, p.code) as product_code, ps.name as current_stage_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id JOIN production_stages ps ON poi.current_stage_id = ps.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            $products = [];
+            foreach ($items as $it) {
+                $itemId = (int)$it['id'];
+                $totalQty = (float)$it['total_quantity'];
+
+                $cStmt = $pdo->prepare("SELECT COALESCE(SUM(actual_cut_quantity), 0) as cut, COALESCE(SUM(accepted_output_quantity), 0) as acc, COALESCE(SUM(rejected_quantity), 0) as rej, COALESCE(SUM(rework_quantity), 0) as rwk FROM cutting_batches WHERE production_order_item_id = ?");
+                $cStmt->execute([$itemId]);
+                $cut = $cStmt->fetch();
+
+                $sStmt = $pdo->prepare("SELECT COALESCE(SUM(completed_quantity), 0) as comp, COALESCE(SUM(accepted_quantity), 0) as acc, COALESCE(SUM(rejected_quantity), 0) as rej, COALESCE(SUM(rework_quantity), 0) as rwk FROM stitching_batches WHERE production_order_item_id = ?");
+                $sStmt->execute([$itemId]);
+                $sti = $sStmt->fetch();
+
+                $qStmt = $pdo->prepare("SELECT COALESCE(SUM(submitted_quantity), 0) as sub, COALESCE(SUM(passed_quantity), 0) as passed, COALESCE(SUM(failed_quantity), 0) as failed, COALESCE(SUM(rework_quantity), 0) as rwk, COALESCE(SUM(rejected_quantity), 0) as rej FROM quality_inspections WHERE production_order_item_id = ?");
+                $qStmt->execute([$itemId]);
+                $chk = $qStmt->fetch();
+
+                $pStmt = $pdo->prepare("SELECT COALESCE(SUM(packed_quantity), 0) as packed, COALESCE(SUM(number_of_boxes), 0) as boxes, COALESCE(SUM(number_of_master_cartons), 0) as cartons FROM packing_batches WHERE production_order_item_id = ?");
+                $pStmt->execute([$itemId]);
+                $pck = $pStmt->fetch();
+
+                $dispatchedQty = (float)($it['completed_quantity'] ?? 0);
+
+                $products[] = [
+                    'item_id' => $itemId,
+                    'product_id' => (int)$it['product_id'],
+                    'product_name' => $it['product_name'],
+                    'product_code' => $it['product_code'],
+                    'color' => $it['color'],
+                    'size' => $it['size'] ?? 'M',
+                    'order_quantity' => $totalQty,
+                    'current_stage_id' => (int)$it['current_stage_id'],
+                    'current_stage_name' => $it['current_stage_name'],
+                    'current_stage_quantity' => (float)$it['current_stage_quantity'],
+                    'status' => $it['status'],
+                    'cutting' => [
+                        'cut_quantity' => (float)$cut['cut'],
+                        'accepted_quantity' => (float)$cut['acc'],
+                        'rejected_quantity' => (float)$cut['rej'],
+                        'rework_quantity' => (float)$cut['rwk'],
+                        'pending_quantity' => max(0.0, $totalQty - (float)$cut['acc']),
+                    ],
+                    'stitching' => [
+                        'completed_quantity' => (float)$sti['comp'],
+                        'accepted_quantity' => (float)$sti['acc'],
+                        'rejected_quantity' => (float)$sti['rej'],
+                        'rework_quantity' => (float)$sti['rwk'],
+                    ],
+                    'checking' => [
+                        'submitted_quantity' => (float)$chk['sub'],
+                        'passed_quantity' => (float)$chk['passed'],
+                        'failed_quantity' => (float)$chk['failed'],
+                        'rework_quantity' => (float)$chk['rwk'],
+                        'rejected_quantity' => (float)$chk['rej'],
+                    ],
+                    'packing' => [
+                        'packed_quantity' => (float)$pck['packed'],
+                        'boxes_count' => (int)$pck['boxes'],
+                        'cartons_count' => (int)$pck['cartons'],
+                        'unpacked_quantity' => max(0.0, ((float)$chk['passed'] ?: $totalQty) - (float)$pck['packed']),
+                    ],
+                    'dispatch' => [
+                        'dispatched_quantity' => $dispatchedQty,
+                        'pending_dispatch_quantity' => max(0.0, (float)$pck['packed'] - $dispatchedQty),
+                    ],
+                    'progress_percent' => $totalQty > 0 ? min(100, round(($dispatchedQty / $totalQty) * 100)) : 0,
+                    'overall_pending_quantity' => max(0.0, $totalQty - $dispatchedQty),
+                ];
+            }
+
+            Response::success([
+                'order_id' => $ord['id'],
+                'order_number' => $ord['order_number'],
+                'title' => $ord['title'],
+                'customer_name' => $ord['customer_name'],
+                'total_order_quantity' => (float)$ord['total_quantity'],
+                'completed_quantity' => (float)$ord['completed_quantity'],
+                'products' => $products
+            ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function orderQuantityLedger(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $stmt = $pdo->prepare("SELECT * FROM production_quantity_ledger WHERE production_order_id = ? ORDER BY id DESC");
+            $stmt->execute([$orderId]);
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function cuttingOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT po.*, cu.name as customer_name, (SELECT COUNT(*) FROM cutting_batches WHERE production_order_id = po.id) as batches_count FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function cuttingOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ordStmt = $pdo->prepare("SELECT po.*, cu.name as customer_name, cu.code as customer_code FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = ?");
+            $ordStmt->execute([$orderId]);
+            $ord = $ordStmt->fetch();
+            if (!$ord) { Response::error("Order not found", 404); return; }
+
+            $bStmt = $pdo->prepare("SELECT cb.*, poi.product_id, COALESCE(bp.product_name, p.name) as product_name, poi.color FROM cutting_batches cb JOIN production_order_items poi ON cb.production_order_item_id = poi.id LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE cb.production_order_id = ? ORDER BY cb.id DESC");
+            $bStmt->execute([$orderId]);
+            $batches = $bStmt->fetchAll();
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, COALESCE(bp.product_code, p.code) as product_code FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function createCuttingBatch(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['production_order_item_id'] ?? 0);
+            $actual = (float)($data['actual_cut_quantity'] ?? 0);
+            $rej = (float)($data['rejected_quantity'] ?? 0);
+            $rwk = (float)($data['rework_quantity'] ?? 0);
+            $acc = max(0.0, $actual - $rej - $rwk);
+
+            $batchNo = 'CUT-' . rand(1000, 9999);
+            $stmt = $pdo->prepare("INSERT INTO cutting_batches (production_order_id, production_order_item_id, batch_number, cutting_date, assigned_quantity, actual_cut_quantity, rejected_quantity, rework_quantity, accepted_output_quantity, pending_quantity, operator, supervisor, machine_line, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)");
+            $stmt->execute([$pId, $itemId, $batchNo, $data['cutting_date'] ?? date('Y-m-d'), $data['assigned_quantity'] ?? $actual, $actual, $rej, $rwk, $acc, $data['operator'] ?? null, $data['supervisor'] ?? null, $data['machine_line'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+
+            // Ledger
+            $lStmt = $pdo->prepare("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, remarks) VALUES (?, ?, 5, 'CUT', 'ACCEPTED', ?, ?, ?, ?, 'Cutting Batch', ?)");
+            $lStmt->execute([$pId, $itemId, $acc, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $data['remarks'] ?? '']);
+
+            Response::success(['batch_number' => $batchNo, 'accepted' => $acc], "Cutting batch recorded successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function transferCuttingOutput(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $bId = (int)($data['batch_id'] ?? 0);
+            $qty = (float)($data['transfer_quantity'] ?? 0);
+            $destStageId = (int)($data['destination_stage_id'] ?? 6);
+
+            $stmt = $pdo->prepare("UPDATE cutting_batches SET transferred_to_next_stage_quantity = transferred_to_next_stage_quantity + ?, status = 'Transferred' WHERE id = ?");
+            $stmt->execute([$qty, $bId]);
+            Response::success(null, "Transferred {$qty} pcs to next stage successfully");
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function embroideryJobOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT * FROM embroidery_job_orders ORDER BY id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function embroideryOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            $jobs = $pdo->query("SELECT * FROM embroidery_job_orders WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $receipts = $pdo->query("SELECT * FROM embroidery_receipts WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            Response::success(['order' => $ord, 'items' => $items, 'job_orders' => $jobs, 'receipts' => $receipts]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function createEmbroideryJobOrder(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $jobNo = 'EMB-JOB-' . rand(1000, 9999);
+            $items = $data['items'] ?? [];
+            $totalSent = array_reduce($items, fn($s, $i) => $s + (float)($i['quantity_sent'] ?? 0), 0.0);
+
+            $stmt = $pdo->prepare("INSERT INTO embroidery_job_orders (job_order_number, production_order_id, vendor_name, job_order_date, dispatch_date, expected_return_date, delivery_challan_no, transport_courier, sent_by, total_quantity_sent, total_quantity_outstanding, notes, attachments, items_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$jobNo, $pId, $data['vendor_name'] ?? 'Apex Embroidery Works', date('Y-m-d'), $data['dispatch_date'] ?? date('Y-m-d'), $data['expected_return_date'] ?? null, $data['delivery_challan_no'] ?? null, $data['transport_courier'] ?? null, $data['sent_by'] ?? null, $totalSent, $totalSent, $data['notes'] ?? '', json_encode($data['attachments'] ?? []), json_encode($items)]);
+
+            Response::success(['job_order_number' => $jobNo, 'total_sent' => $totalSent], "Embroidery job order created successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function receiveEmbroideryJobOrder(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $jId = (int)($data['job_order_id'] ?? 0);
+            $recNo = 'EMB-INW-' . rand(1000, 9999);
+            $items = $data['items'] ?? [];
+            $recTotal = array_reduce($items, fn($s, $i) => $s + (float)($i['received_quantity'] ?? 0), 0.0);
+            $accTotal = array_reduce($items, fn($s, $i) => $s + (float)($i['accepted_quantity'] ?? 0), 0.0);
+
+            $jStmt = $pdo->prepare("SELECT * FROM embroidery_job_orders WHERE id = ?");
+            $jStmt->execute([$jId]);
+            $job = $jStmt->fetch();
+            if (!$job) { Response::error("Job order not found", 404); return; }
+
+            $stmt = $pdo->prepare("INSERT INTO embroidery_receipts (receipt_number, job_order_id, production_order_id, vendor_name, receipt_date, vendor_challan_no, received_by, total_received_qty, total_accepted_qty, total_rejected_qty, total_rework_qty, remarks, photo_urls, items_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)");
+            $stmt->execute([$recNo, $jId, $job['production_order_id'], $job['vendor_name'], $data['receipt_date'] ?? date('Y-m-d'), $data['vendor_challan_no'] ?? '', $data['received_by'] ?? '', $recTotal, $accTotal, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? []), json_encode($items)]);
+
+            // Update job order totals
+            $upd = $pdo->prepare("UPDATE embroidery_job_orders SET total_quantity_received = total_quantity_received + ?, total_quantity_accepted = total_quantity_accepted + ?, total_quantity_outstanding = GREATEST(0, total_quantity_sent - (total_quantity_received + ?)) WHERE id = ?");
+            $upd->execute([$recTotal, $accTotal, $recTotal, $jId]);
+
+            Response::success(['receipt_number' => $recNo], "Embroidery inward recorded successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function vendorOutstandingEmbroidery(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT vendor_name, COUNT(*) as total_job_orders, SUM(total_quantity_sent) as total_sent, SUM(total_quantity_received) as total_received, SUM(total_quantity_outstanding) as total_outstanding FROM embroidery_job_orders GROUP BY vendor_name");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function stitchingOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT po.*, cu.name as customer_name, (SELECT COUNT(*) FROM stitching_batches WHERE production_order_id = po.id) as batches_count FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function stitchingOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            $batches = $pdo->query("SELECT * FROM stitching_batches WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function createStitchingBatch(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['production_order_item_id'] ?? 0);
+            $comp = (float)($data['completed_quantity'] ?? 0);
+            $rej = (float)($data['rejected_quantity'] ?? 0);
+            $rwk = (float)($data['rework_quantity'] ?? 0);
+            $acc = max(0.0, $comp - $rej - $rwk);
+            $batchNo = 'STI-' . rand(1000, 9999);
+
+            $stmt = $pdo->prepare("INSERT INTO stitching_batches (production_order_id, production_order_item_id, batch_number, assigned_quantity, received_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, balance_quantity, operator_team, production_line, start_date, completion_date, supervisor, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$pId, $itemId, $batchNo, $comp, $comp, $comp, $acc, $rej, $rwk, $data['operator_team'] ?? 'Team A', $data['production_line'] ?? 'Line 1', $data['start_date'] ?? date('Y-m-d'), $data['completion_date'] ?? date('Y-m-d'), $data['supervisor'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+
+            Response::success(['batch_number' => $batchNo, 'accepted' => $acc], "Stitching batch recorded successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function transferStitchingOutput(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $bId = (int)($data['batch_id'] ?? 0);
+            $stmt = $pdo->prepare("SELECT * FROM stitching_batches WHERE id = ?");
+            $stmt->execute([$bId]);
+            $b = $stmt->fetch();
+            if ($b) {
+                $upd = $pdo->prepare("UPDATE production_order_items SET current_stage_id = 8, current_stage_quantity = ? WHERE id = ?");
+                $upd->execute([$b['accepted_quantity'], $b['production_order_item_id']]);
+            }
+            Response::success(null, "Transferred to Checking stage successfully");
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function checkingOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT po.*, cu.name as customer_name, (SELECT COUNT(*) FROM quality_inspections WHERE production_order_id = po.id) as inspections_count FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function checkingOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            $inspections = $pdo->query("SELECT * FROM quality_inspections WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            Response::success(['order' => $ord, 'items' => $items, 'inspections' => $inspections]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function recordQualityInspection(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['production_order_item_id'] ?? 0);
+            $sub = (float)($data['submitted_quantity'] ?? 0);
+            $passed = (float)($data['passed_quantity'] ?? 0);
+            $failed = (float)($data['failed_quantity'] ?? 0);
+            $rwk = (float)($data['rework_quantity'] ?? 0);
+            $rej = (float)($data['rejected_quantity'] ?? 0);
+
+            $batchNo = 'CHK-' . rand(1000, 9999);
+            $stmt = $pdo->prepare("INSERT INTO quality_inspections (production_order_id, production_order_item_id, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, defect_category, defect_description, inspector, inspection_date, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$pId, $itemId, $batchNo, $sub, $sub, $passed, $failed, $rwk, $rej, $data['defect_category'] ?? 'Finishing', $data['defect_description'] ?? '', $data['inspector'] ?? 'QC Inspector', $data['inspection_date'] ?? date('Y-m-d'), $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+
+            if ($passed > 0) {
+                $upd = $pdo->prepare("UPDATE production_order_items SET current_stage_id = 9, current_stage_quantity = ? WHERE id = ?");
+                $upd->execute([$passed, $itemId]);
+            }
+
+            Response::success(['batch_number' => $batchNo, 'passed' => $passed], "Inspection recorded successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function packingOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT po.*, cu.name as customer_name, (SELECT COUNT(*) FROM packing_batches WHERE production_order_id = po.id) as batches_count FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function packingOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            $batches = $pdo->query("SELECT * FROM packing_batches WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, bp.dimensions_json FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
+            $iStmt->execute([$orderId]);
+            $items = $iStmt->fetchAll();
+
+            Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches, 'cartons' => $cartons]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function createPackingBatch(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['production_order_item_id'] ?? 0);
+            $packed = (float)($data['packed_quantity'] ?? 0);
+            $unitsBox = max(1, (int)($data['units_per_box'] ?? 20));
+            $boxesMaster = max(1, (int)($data['boxes_per_master_carton'] ?? 1));
+
+            $totalBoxes = (int)ceil($packed / $unitsBox);
+            $totalCartons = (int)ceil($totalBoxes / $boxesMaster);
+            $batchNo = 'PCK-' . rand(1000, 9999);
+
+            $stmt = $pdo->prepare("INSERT INTO packing_batches (production_order_id, production_order_item_id, batch_number, packing_date, approved_quantity, packed_quantity, units_per_box, number_of_boxes, boxes_per_master_carton, number_of_master_cartons, packing_operator, packing_supervisor, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$pId, $itemId, $batchNo, $data['packing_date'] ?? date('Y-m-d'), $data['approved_quantity'] ?? $packed, $packed, $unitsBox, $totalBoxes, $boxesMaster, $totalCartons, $data['packing_operator'] ?? null, $data['packing_supervisor'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+            $bId = (int)$pdo->lastInsertId();
+
+            // Insert individual cartons
+            $cStmt = $pdo->prepare("INSERT INTO packing_cartons (carton_serial_number, packing_batch_id, production_order_id, production_order_item_id, product_name, items_count, status) VALUES (?, ?, ?, ?, ?, ?, 'Packed')");
+            for ($i = 1; $i <= $totalBoxes; $i++) {
+                $serial = "CTN-{$pId}-{$itemId}-{$bId}-{$i}";
+                $cStmt->execute([$serial, $bId, $pId, $itemId, 'Garment Product', $unitsBox]);
+            }
+
+            // Update item to Stage 10
+            $pdo->prepare("UPDATE production_order_items SET current_stage_id = 10, current_stage_quantity = ? WHERE id = ?")->execute([$packed, $itemId]);
+
+            Response::success(['batch_number' => $batchNo, 'cartons' => $totalBoxes], "Packing batch and cartons generated successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function packingCartons(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT * FROM packing_cartons ORDER BY id DESC LIMIT 100");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function getCartonBySerial(string $serial): void {
+        try {
+            $pdo = Database::getConnection();
+            $stmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE carton_serial_number = ?");
+            $stmt->execute([$serial]);
+            $carton = $stmt->fetch();
+            if (!$carton) { Response::error("Carton not found", 404); return; }
+            Response::success($carton);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function dispatchOrders(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT po.*, cu.name as customer_name, (SELECT COUNT(*) FROM dispatch_records WHERE production_order_id = po.id) as dispatches_count FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function dispatchOrderDetails(int $orderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            $dispatches = $pdo->query("SELECT * FROM dispatch_records WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            Response::success(['order' => $ord, 'dispatches' => $dispatches, 'cartons' => $cartons]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function recordOrderDispatch(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $dspNo = 'DSP-2026-' . rand(1000, 9999);
+            $items = $data['items_breakdown'] ?? [];
+            $totalDispatched = array_reduce($items, fn($s, $i) => $s + (float)($i['dispatched_quantity'] ?? 0), 0.0);
+            $serials = $data['carton_serial_numbers'] ?? [];
+
+            $stmt = $pdo->prepare("INSERT INTO dispatch_records (dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, items_breakdown) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$dspNo, $pId, $data['buyer_name'] ?? 'Buyer', $data['dispatch_date'] ?? date('Y-m-d'), date('H:i:s'), $totalDispatched, count($serials), $data['vehicle_number'] ?? 'TN-38-AX-9912', $data['driver_name'] ?? null, $data['driver_contact'] ?? null, $data['transporter_name'] ?? null, $data['delivery_challan_number'] ?? null, $data['invoice_reference'] ?? null, $data['destination_notes'] ?? null, $data['remarks'] ?? '', json_encode($data['truck_photo_urls'] ?? []), json_encode($data['loaded_cartons_photo_urls'] ?? []), json_encode($data['labels_photo_urls'] ?? []), json_encode($data['document_urls'] ?? []), json_encode($serials), json_encode($items)]);
+
+            // Update parent production order completed_quantity
+            $pdo->prepare("UPDATE production_orders SET completed_quantity = completed_quantity + ?, status = IF(completed_quantity >= total_quantity, 'COMPLETED', 'Partially Dispatched') WHERE id = ?")->execute([$totalDispatched, $pId]);
+
+            Response::success(['dispatch_number' => $dspNo, 'dispatched_quantity' => $totalDispatched], "Dispatch recorded successfully", 201);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function dispatchHistory(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+            $stmt = $pdo->query("SELECT * FROM dispatch_records ORDER BY id DESC");
+            Response::success($stmt->fetchAll());
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function detailedReports(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $stmt = $pdo->query("SELECT po.*, cu.name as buyer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
+            $orders = $stmt->fetchAll();
+
+            $reportData = [];
+            foreach ($orders as $ord) {
+                $totalQty = (float)$ord['total_quantity'];
+                $doneQty = (float)$ord['completed_quantity'];
+                $reportData[] = [
+                    'order_id' => $ord['id'],
+                    'order_number' => $ord['order_number'],
+                    'title' => $ord['title'],
+                    'buyer_name' => $ord['buyer_name'],
+                    'target_delivery_date' => $ord['target_delivery_date'],
+                    'total_quantity' => $totalQty,
+                    'dispatched_quantity' => $doneQty,
+                    'pending_quantity' => max(0.0, $totalQty - $doneQty),
+                    'status' => $ord['status'],
+                    'completion_percent' => $totalQty > 0 ? min(100, round(($doneQty / $totalQty) * 100)) : 0,
+                ];
+            }
+
+            Response::success([
+                'generated_at' => date('Y-m-d H:i:s'),
+                'total_orders_analyzed' => count($reportData),
+                'items' => $reportData
+            ]);
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
 }
+
 

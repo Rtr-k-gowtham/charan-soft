@@ -324,6 +324,7 @@ export interface ProductionOrderItem {
   total_quantity: number;
   current_stage_id: number;
   current_stage_name?: string;
+  stage_code?: string;
   color_badge?: string;
   stage_sequence?: number;
   current_stage_quantity: number;
@@ -530,4 +531,286 @@ export interface ProductionOrderBOMReport {
   };
   generated_at: string;
 }
+
+// -------------------------------------------------------------
+// ADVANCED PRODUCTION TRACKING INTERFACES (STAGES 5 THROUGH 10)
+// -------------------------------------------------------------
+
+export interface ProductionQuantityLedgerEntry {
+  id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  stage_id: number;
+  stage_code: string;
+  transaction_type: 'INPUT' | 'PROCESSED' | 'ACCEPTED' | 'REJECTED' | 'REWORK' | 'TRANSFERRED' | 'OUTWARD' | 'INWARD' | 'PACKED' | 'DISPATCHED' | 'ADJUSTMENT';
+  quantity: number;
+  batch_number?: string;
+  operator_name?: string;
+  supervisor_name?: string;
+  reference_type?: string;
+  reference_id?: string;
+  remarks?: string;
+  metadata_json?: Record<string, any>;
+  created_at?: string;
+}
+
+// Stage 5: Cutting
+export interface CuttingBatch {
+  id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  batch_number: string;
+  cutting_date: string;
+  assigned_quantity: number;
+  actual_cut_quantity: number;
+  rejected_quantity: number;
+  rework_quantity: number;
+  accepted_output_quantity: number;
+  pending_quantity: number;
+  operator?: string;
+  supervisor?: string;
+  machine_line?: string;
+  remarks?: string;
+  photo_urls?: string[];
+  transferred_to_next_stage_quantity?: number;
+  status?: 'In Progress' | 'Completed' | 'Partial Transfer' | 'Fully Transferred';
+  product_name?: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  created_at?: string;
+}
+
+// Stage 6: Embroidery Job Orders (Outward) & Receipts (Inward)
+export interface EmbroideryJobOrderItem {
+  id?: number;
+  job_order_id?: number;
+  production_order_item_id: number;
+  product_name: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  design_reference?: string;
+  uom: string;
+  quantity_sent: number;
+  quantity_received?: number;
+  quantity_accepted?: number;
+  quantity_rejected?: number;
+  quantity_rework?: number;
+  quantity_outstanding?: number;
+}
+
+export interface EmbroideryJobOrder {
+  id?: number;
+  job_order_number: string;
+  production_order_id: number;
+  production_order_number?: string;
+  vendor_id?: number;
+  vendor_name: string;
+  job_order_date: string;
+  dispatch_date: string;
+  expected_return_date?: string;
+  delivery_challan_no?: string;
+  transport_courier?: string;
+  sent_by?: string;
+  total_quantity_sent: number;
+  total_quantity_received: number;
+  total_quantity_accepted: number;
+  total_quantity_rejected: number;
+  total_quantity_rework: number;
+  total_quantity_outstanding: number;
+  status: 'Sent to Vendor' | 'Partially Received' | 'Received' | 'Cancelled';
+  notes?: string;
+  attachments?: string[];
+  items?: EmbroideryJobOrderItem[];
+  receipts?: EmbroideryReceipt[];
+  created_at?: string;
+}
+
+export interface EmbroideryReceipt {
+  id?: number;
+  receipt_number: string;
+  job_order_id: number;
+  production_order_id: number;
+  vendor_name: string;
+  receipt_date: string;
+  vendor_challan_no?: string;
+  received_by?: string;
+  total_received_qty: number;
+  total_accepted_qty: number;
+  total_rejected_qty: number;
+  total_rework_qty: number;
+  remarks?: string;
+  photo_urls?: string[];
+  items_data?: {
+    production_order_item_id: number;
+    product_name: string;
+    color: string;
+    received_quantity: number;
+    accepted_quantity: number;
+    rejected_quantity: number;
+    rework_quantity: number;
+  }[];
+  created_at?: string;
+}
+
+// Stage 7: Stitching
+export interface StitchingBatch {
+  id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  batch_number: string;
+  assigned_quantity: number;
+  received_quantity: number;
+  completed_quantity: number;
+  accepted_quantity: number;
+  rejected_quantity: number;
+  rework_quantity: number;
+  balance_quantity: number;
+  operator_team?: string;
+  production_line?: string;
+  start_date: string;
+  completion_date?: string;
+  supervisor?: string;
+  remarks?: string;
+  photo_urls?: string[];
+  status?: 'In Progress' | 'Completed' | 'On Hold';
+  product_name?: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  created_at?: string;
+}
+
+// Stage 8: Checking / Quality Inspections
+export interface QualityInspection {
+  id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  batch_number?: string;
+  submitted_quantity: number;
+  checked_quantity: number;
+  passed_quantity: number;
+  failed_quantity: number;
+  rework_quantity: number;
+  rejected_quantity: number;
+  defect_category?: string;
+  defect_description?: string;
+  inspector?: string;
+  inspection_date: string;
+  is_reinspection?: boolean | number;
+  original_inspection_id?: number;
+  remarks?: string;
+  photo_urls?: string[];
+  product_name?: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  created_at?: string;
+}
+
+// Stage 9: Packing & Cartons
+export interface PackingBatch {
+  id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  batch_number: string;
+  packing_date: string;
+  approved_quantity: number;
+  packed_quantity: number;
+  remaining_unpacked_quantity: number;
+  units_per_box: number;
+  number_of_boxes: number;
+  boxes_per_master_carton: number;
+  number_of_master_cartons: number;
+  partial_box_quantity: number;
+  partial_carton_quantity: number;
+  carton_serial_numbers?: string;
+  gross_weight?: number;
+  net_weight?: number;
+  packing_operator?: string;
+  packing_supervisor?: string;
+  remarks?: string;
+  photo_urls?: string[];
+  product_name?: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  created_at?: string;
+}
+
+export interface PackingCarton {
+  id?: number;
+  carton_serial_number: string;
+  packing_batch_id?: number;
+  production_order_id: number;
+  production_order_item_id: number;
+  product_name: string;
+  product_code?: string;
+  color?: string;
+  size?: string;
+  box_name?: string;
+  items_count: number;
+  is_full: boolean;
+  gross_weight?: number;
+  status: 'Packed' | 'Staged for Dispatch' | 'Dispatched';
+  dispatch_id?: number;
+  created_at?: string;
+}
+
+// Stage 10: Dispatch Records
+export interface DispatchRecord {
+  id?: number;
+  dispatch_number: string;
+  production_order_id: number;
+  production_order_number?: string;
+  buyer_id?: number;
+  buyer_name: string;
+  dispatch_date: string;
+  dispatch_time?: string;
+  total_dispatched_quantity: number;
+  total_boxes: number;
+  total_master_cartons: number;
+  vehicle_number: string;
+  driver_name?: string;
+  driver_contact?: string;
+  transporter_name?: string;
+  delivery_challan_number?: string;
+  invoice_reference?: string;
+  destination_notes?: string;
+  remarks?: string;
+  truck_photo_urls?: string[];
+  loaded_cartons_photo_urls?: string[];
+  labels_photo_urls?: string[];
+  document_urls?: string[];
+  status: 'Partially Dispatched' | 'Fully Dispatched';
+  carton_serial_numbers?: string[];
+  items_breakdown?: {
+    production_order_item_id: number;
+    product_name: string;
+    color: string;
+    size?: string;
+    dispatched_quantity: number;
+  }[];
+  created_at?: string;
+}
+
+// Production Dashboard KPIs
+export interface ProductionDashboardKPIs {
+  total_active_orders: number;
+  total_ordered_quantity: number;
+  total_quantity_in_production: number;
+  cutting_pending_quantity: number;
+  embroidery_outward_quantity: number;
+  embroidery_outstanding_quantity: number;
+  stitching_pending_quantity: number;
+  checking_pending_quantity: number;
+  packing_pending_quantity: number;
+  completed_orders: number;
+  partially_dispatched_orders: number;
+  overdue_orders: number;
+}
+
+export type ProductionDashboardStats = ProductionDashboardKPIs;
+
 

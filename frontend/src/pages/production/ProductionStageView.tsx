@@ -32,7 +32,12 @@ import {
   CheckCheck,
   ShoppingCart,
   PackageOpen,
-  Droplets
+  Droplets,
+  Scissors,
+  Activity,
+  CheckCircle,
+  Truck,
+  Box
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -792,6 +797,12 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                       if (activeCode === 'PO') targetUrl = `/production/po/${group.order_id}`;
                       if (activeCode === 'INW') targetUrl = `/production/inward/${group.order_id}`;
                       if (activeCode === 'DYE') targetUrl = `/production/dyeing/${group.order_id}`;
+                      if (activeCode === 'CUT') targetUrl = `/production/cutting/${group.order_id}`;
+                      if (activeCode === 'EMB') targetUrl = `/production/embroidery/${group.order_id}`;
+                      if (activeCode === 'STI') targetUrl = `/production/stitching/${group.order_id}`;
+                      if (activeCode === 'CHK') targetUrl = `/production/checking/${group.order_id}`;
+                      if (activeCode === 'PCK') targetUrl = `/production/packing/${group.order_id}`;
+                      if (activeCode === 'COMP') targetUrl = `/production/completed/${group.order_id}`;
 
                       // PO count for PO stage
                       const ordNum = group.order_number;
@@ -1014,7 +1025,73 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                   </button>
                                 )}
 
-                                {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
+                                {activeCode === 'CUT' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition hover:text-indigo-900"
+                                  >
+                                    <Scissors className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    <span>Cutting Batches</span>
+                                  </button>
+                                )}
+
+                                {activeCode === 'EMB' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-md shadow-2xs transition hover:text-pink-900"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5 text-pink-600 shrink-0" />
+                                    <span>Embroidery Job Work</span>
+                                  </button>
+                                )}
+
+                                {activeCode === 'STI' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md shadow-2xs transition hover:text-teal-900"
+                                  >
+                                    <Activity className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                    <span>Stitching Workspace</span>
+                                  </button>
+                                )}
+
+                                {activeCode === 'CHK' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-md shadow-2xs transition hover:text-sky-900"
+                                  >
+                                    <CheckCircle className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                    <span>Quality Checking</span>
+                                  </button>
+                                )}
+
+                                {activeCode === 'PCK' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md shadow-2xs transition hover:text-amber-900"
+                                  >
+                                    <Box className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>Box Packing</span>
+                                  </button>
+                                )}
+
+                                {activeCode === 'COMP' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(targetUrl)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition hover:text-emerald-900"
+                                  >
+                                    <Truck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Dispatch & Proof</span>
+                                  </button>
+                                )}
+
+                                {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && activeCode !== 'CUT' && activeCode !== 'EMB' && activeCode !== 'STI' && activeCode !== 'CHK' && activeCode !== 'PCK' && activeCode !== 'COMP' && (
                                   <button
                                     type="button"
                                     onClick={() => navigate(targetUrl)}

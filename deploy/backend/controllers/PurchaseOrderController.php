@@ -489,19 +489,16 @@ class PurchaseOrderController {
             $po = $stmt->fetch();
 
             if (!$po) {
-                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Purchase Order not found", 404);
                 return;
             }
 
             if (strtolower(trim((string)($po['status'] ?? ''))) === 'draft') {
-                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Cannot record payments against a Draft Purchase Order. Please confirm and order the PO first.", 422);
                 return;
             }
 
             if ($amount > (float)$po['balance_amount']) {
-                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Payment amount (₹{$amount}) cannot exceed outstanding balance (₹{$po['balance_amount']})", 422);
                 return;
             }
@@ -757,12 +754,11 @@ class PurchaseOrderController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("
-                SELECT pr.*, po.po_number, po.production_order_id, pro.order_number as production_order_number, s.name as supplier_name,
+                SELECT pr.*, po.po_number, s.name as supplier_name,
                        (SELECT COUNT(*) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as item_count,
                        (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as total_quantity
                 FROM purchase_receipts pr
                 JOIN purchase_orders po ON pr.purchase_order_id = po.id
-                LEFT JOIN production_orders pro ON po.production_order_id = pro.id
                 JOIN suppliers s ON po.supplier_id = s.id
                 ORDER BY pr.id DESC
             ");
@@ -968,7 +964,7 @@ class PurchaseOrderController {
 
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date, production_order_id FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date FROM purchase_orders WHERE id = ? FOR UPDATE");
             $stmt->execute([$poId]);
             $po = $stmt->fetch();
 
@@ -1007,13 +1003,6 @@ class PurchaseOrderController {
 
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ?, ordered_at = ?, payment_due_date = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $orderedAt, $dueDate, $poId]);
-
-                // Auto-advance linked production order items to Stage 03: Inward (current_stage_id = 3)
-                if (!empty($po['production_order_id'])) {
-                    try {
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_id = 3 WHERE production_order_id = ? AND current_stage_id IN (1, 2)")->execute([(int)$po['production_order_id']]);
-                    } catch (Exception $stageEx) {}
-                }
             } else {
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $poId]);

@@ -3,11 +3,13 @@ import React, { useEffect, ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 interface Props {
-  open: boolean;
+  open?: boolean;
+  isOpen?: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full';
+  maxWidth?: string;
   className?: string;
   children: ReactNode;
   footer?: ReactNode;
@@ -24,14 +26,15 @@ const sizes: Record<string, string> = {
   full: 'max-w-[94vw]'
 };
 
-export default function Modal({ open, onClose, title, subtitle, size = 'md', className = '', children, footer }: Props) {
+export default function Modal({ open, isOpen, onClose, title, subtitle, size = 'md', maxWidth, className = '', children, footer }: Props) {
+  const isVisible = open ?? isOpen ?? false;
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    if (open) document.addEventListener('keydown', handler);
+    if (isVisible) document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [isVisible, onClose]);
 
-  if (!open) return null;
+  if (!isVisible) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">

@@ -125,6 +125,8 @@ export const api = {
     request<unknown>(`/production-orders/${id}/material-requirements`, 'POST', data),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
+  updateProductionOrderStatus: (id: number | string, stageId: number | string, data?: any) =>
+    request<any>(`/production-orders/${id}/status`, 'PUT', { stage_id: stageId, ...data }),
   moveStage: (data: unknown) =>
     request<unknown>('/production-orders/0/stage', 'POST', data),
   getStageOrders: (stageCode: string) =>
@@ -132,6 +134,12 @@ export const api = {
   getReworkList: () => request<unknown[]>('/production/rework'),
   getQCList: () => request<unknown[]>('/production/qc'),
   recordQC: (data: unknown) => request<unknown>('/qc', 'POST', data),
+
+  // Production Dashboard & Tracking
+  getProductionDashboardKPIs: () => request<any>('/production/dashboard-stats'),
+  getOrderProductQuantities: (orderId: number | string) => request<any>(`/production/orders/${orderId}/product-quantities`),
+  getOrderQuantityLedger: (orderId: number | string, itemId?: number | string) => 
+    request<any[]>(`/production/orders/${orderId}/quantity-ledger${itemId ? `?item_id=${itemId}` : ''}`),
 
   // Dyeing (Stage 04)
   getDyeingOrders: (productionOrderId?: number | string) =>
@@ -141,6 +149,82 @@ export const api = {
   receiveDyeingOrder: (id: number | string, data: any) => request<any>(`/dyeing/orders/${id}/receive`, 'POST', data),
   getDyeingFabricStock: (productionOrderId: number | string) =>
     request<any>(`/dyeing/fabric-stock?production_order_id=${productionOrderId}`),
+
+  // Stage 05: Cutting
+  getCuttingOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/cutting/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getCuttingOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/cutting/${orderId}`),
+  createCuttingBatch: (data: any) =>
+    request<any>('/production/cutting/batch', 'POST', data),
+  transferCuttingOutput: (data: any) =>
+    request<any>('/production/cutting/transfer', 'POST', data),
+
+  // Stage 06: Embroidery Outward / Inward
+  getEmbroideryJobOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/embroidery/job-orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getEmbroideryOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/embroidery/${orderId}`),
+  createEmbroideryJobOrder: (data: any) =>
+    request<any>('/production/embroidery/job-order', 'POST', data),
+  receiveEmbroideryJobOrder: (data: any) =>
+    request<any>('/production/embroidery/inward', 'POST', data),
+  createEmbroideryReceipt: (data: any) =>
+    request<any>('/production/embroidery/inward', 'POST', data),
+  getVendorOutstandingEmbroidery: () =>
+    request<any[]>('/production/embroidery/vendor-outstanding'),
+
+  // Stage 07: Stitching
+  getStitchingOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/stitching/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getStitchingOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/stitching/${orderId}`),
+  getStitchingBatches: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/stitching/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  createStitchingBatch: (data: any) =>
+    request<any>('/production/stitching/batch', 'POST', data),
+  transferStitchingOutput: (data: any) =>
+    request<any>('/production/stitching/transfer', 'POST', data),
+
+  // Stage 08: Checking / Quality Inspections
+  getCheckingOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/checking/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getCheckingOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/checking/${orderId}`),
+  recordQualityInspection: (data: any) =>
+    request<any>('/production/checking/inspect', 'POST', data),
+  createQualityInspection: (data: any) =>
+    request<any>('/production/checking/inspect', 'POST', data),
+  getQualityInspections: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/checking/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+
+  // Stage 09: Packing & Master Carton Management
+  getPackingOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/packing/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getPackingOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/packing/${orderId}`),
+  createPackingBatch: (data: any) =>
+    request<any>('/production/packing/batch', 'POST', data),
+  getPackingCartons: (orderId?: number | string) =>
+    request<any[]>(`/production/packing/cartons${orderId ? `?production_order_id=${orderId}` : ''}`),
+  getCartonBySerial: (serial: string) =>
+    request<any>(`/production/packing/carton/${encodeURIComponent(serial)}`),
+
+  // Stage 10: Completed & Final Dispatch
+  getDispatchOrders: (productionOrderId?: number | string) =>
+    request<any[]>(`/production/dispatch/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  getDispatchOrderDetails: (orderId: number | string) =>
+    request<any>(`/production/dispatch/${orderId}`),
+  recordOrderDispatch: (data: any) =>
+    request<any>('/production/dispatch/record', 'POST', data),
+  getDispatchHistory: (orderId?: number | string) =>
+    request<any[]>(`/production/dispatch/history${orderId ? `?production_order_id=${orderId}` : ''}`),
+
+  // Production Reports
+  getDetailedProductionReports: (params?: Record<string, string>) => {
+    const q = new URLSearchParams(params || {});
+    return request<any>(`/reports/production/detailed?${q.toString()}`);
+  },
 
   // Masters
   lookupPantoneColor: (code: string) =>
