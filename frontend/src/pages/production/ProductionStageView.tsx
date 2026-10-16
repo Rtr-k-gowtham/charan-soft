@@ -1292,9 +1292,9 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                   <button
                                     type="button"
                                     onClick={() => navigate(targetUrl)}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-pink-700 bg-pink-50 hover:bg-pink-100 border border-pink-200 rounded-md shadow-2xs transition hover:text-pink-900"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
                                   >
-                                    <Sparkles className="w-3.5 h-3.5 text-pink-600 shrink-0" />
+                                    <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                                     <span>Embroidery Job Work</span>
                                   </button>
                                 )}

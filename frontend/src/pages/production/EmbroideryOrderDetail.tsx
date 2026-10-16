@@ -1,15 +1,18 @@
 // src/pages/production/EmbroideryOrderDetail.tsx
 // Stage 06: Embroidery — Dedicated Outward / Inward Job Work Module with Vendor Tracking & Proof
-// Redesigned to strict Cheran Soft Goods ERP design system: Table-based layout, ERP palette,
+// Redesigned to strict Cheran Soft Goods ERP design system: Table-based layout, ERP blue palette,
+// full-page Outward Job Order creation form matching Stage 04 Dyeing Order UI,
 // proper item tracking from Cutting arrival to Outward Dispatch, Inward QC, and Transfer to Stitching.
 import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, EmbroideryJobOrder, EmbroideryReceipt } from '../../types';
 import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
+import { lookupPantone, VERIFIED_PANTONE_LIBRARY } from '../../lib/pantoneService';
 import {
   ArrowLeft,
   Sparkles,
@@ -35,7 +38,11 @@ import {
   Upload,
   Clock,
   ArrowDownCircle,
-  Scissors
+  Scissors,
+  Building2,
+  Save,
+  FileSpreadsheet,
+  AlertCircle
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -94,15 +101,35 @@ function parsePhotos(urls: any): string[] {
   return [];
 }
 
+export interface EmbroideryLineRow {
+  production_order_item_id: number;
+  product_id?: number;
+  product_name: string;
+  color_name: string;
+  pantone_code: string;
+  hex_code: string;
+  size: string;
+  arrived_quantity: number;
+  planned_quantity: number | '';
+  uom: string;
+  rate_per_unit: number | '';
+  tax_percent: number;
+  notes: string;
+}
+
 export default function EmbroideryOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [order, setOrder] = useState<any | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [jobOrders, setJobOrders] = useState<EmbroideryJobOrder[]>([]);
   const [receipts, setReceipts] = useState<EmbroideryReceipt[]>([]);
   const [stages, setStages] = useState<ProductionStage[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [embroideryUnits, setEmbroideryUnits] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -110,22 +137,26 @@ export default function EmbroideryOrderDetail() {
   // Filter tabs: 'ALL' | 'EMBROIDERY'
   const [activeTab, setActiveTab] = useState<'ALL' | 'EMBROIDERY'>('ALL');
 
-  // Outward Job Order Modal
-  const [outwardModalOpen, setOutwardModalOpen] = useState(false);
-  const [outwardForm, setOutwardForm] = useState({
-    vendor_name: 'Sri Krishna Embroidery Works (Vendor ID: V-04)',
-    job_order_date: new Date().toISOString().split('T')[0],
-    dispatch_date: new Date().toISOString().split('T')[0],
-    expected_return_date: new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0],
-    delivery_challan_no: `DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`,
-    transport_courier: 'Dedicated Factory Van (TN-38-BZ-4412)',
-    sent_by: 'M. Ramesh (Production Dispatch)',
-    notes: 'Premium 12-head multi-needle embroidery with Madeira polyester threads. Strict quality check upon inward.'
+  // Full Page Create Embroidery Job Order State (matching DyeingOrderDetail)
+  const [showCreatePage, setShowCreatePage] = useState<boolean>(() => searchParams.get('create') === 'true');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState<string>('Sri Krishna Embroidery Works (Vendor ID: V-04)');
+  const [categoryType, setCategoryType] = useState<string>('EMBROIDERY JOB ORDER');
+  const [challanNo, setChallanNo] = useState<string>(() => `DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`);
+  const [orderDate, setOrderDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [expectedDate, setExpectedDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 5);
+    return d.toISOString().split('T')[0];
   });
-  const [outwardItems, setOutwardItems] = useState<{ [key: string]: number }>({});
+  const [processType, setProcessType] = useState<string>('12-head Multi-needle Embroidery & Applique');
+  const [fabricName, setFabricName] = useState<string>('Cut Pieces (Eligible for Embroidery)');
+  const [transportDetails, setTransportDetails] = useState<string>('Dedicated Factory Van (TN-38-BZ-4412)');
+  const [dispatchedBy, setDispatchedBy] = useState<string>('M. Ramesh (Production Dispatch)');
+  const [remarks, setRemarks] = useState<string>('PO for EMBROIDERY JOB ORDER - Stage 06 Outward');
   const [outwardPhotos, setOutwardPhotos] = useState<string[]>([]);
-  const [savingOutward, setSavingOutward] = useState(false);
-  const [outwardError, setOutwardError] = useState('');
+  const [lineRows, setLineRows] = useState<EmbroideryLineRow[]>([]);
 
   // Inward Receipt Modal
   const [inwardModalOpen, setInwardModalOpen] = useState(false);
@@ -151,23 +182,24 @@ export default function EmbroideryOrderDetail() {
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
-  // Image Preview Modal
+  // Image Zoom Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [embroideryUnits, setEmbroideryUnits] = useState<any[]>([]);
 
   const fetchOrderData = async () => {
     if (!id) return;
     try {
       setLoading(true);
       setError('');
-      const [embRes, stagesRes, unitsRes] = await Promise.all([
+      const [embRes, stagesRes, unitsRes, supRes] = await Promise.all([
         api.getEmbroideryOrderDetails(Number(id)),
         api.getProductionStages(),
-        api.getEmbroideryWorks().catch(() => [])
+        api.getEmbroideryWorks().catch(() => []),
+        api.getSuppliers().catch(() => [])
       ]);
 
       const embData = (embRes as any)?.data || embRes;
-      setOrder(embData.order || null);
+      const orderData = embData.order || null;
+      setOrder(orderData);
       setItems(embData.items || []);
       setJobOrders(embData.job_orders || []);
       setReceipts(embData.receipts || []);
@@ -179,6 +211,11 @@ export default function EmbroideryOrderDetail() {
         ? (unitsRes as any).data
         : (Array.isArray(unitsRes) ? unitsRes : []);
       setEmbroideryUnits(units);
+
+      const sups = Array.isArray((supRes as any)?.data)
+        ? (supRes as any).data
+        : (Array.isArray(supRes) ? supRes : []);
+      setSuppliers(sups);
     } catch (err: any) {
       console.error('Failed to load embroidery stage data:', err);
       setError(err?.message || 'Failed to load embroidery stage data.');
@@ -196,7 +233,47 @@ export default function EmbroideryOrderDetail() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // KPI Overall Totals
+  // Supplier Options for SearchableSelect
+  const supplierOptions = useMemo<SelectOption[]>(() => {
+    const list: SelectOption[] = [];
+    const seen = new Set<string>();
+
+    embroideryUnits.forEach(u => {
+      const val = u.name || String(u.id);
+      if (!seen.has(val.toLowerCase())) {
+        seen.add(val.toLowerCase());
+        list.push({
+          value: val,
+          label: u.name,
+          sublabel: u.code ? `[${u.code}] ${u.machine_heads ? u.machine_heads + ' heads' : 'Embroidery Mill'}` : 'Embroidery Mill'
+        });
+      }
+    });
+
+    suppliers.forEach(s => {
+      const val = s.name || String(s.id);
+      if (!seen.has(val.toLowerCase())) {
+        seen.add(val.toLowerCase());
+        list.push({
+          value: val,
+          label: s.name,
+          sublabel: s.code ? `[${s.code}] ${s.contact_person || 'Supplier'}` : (s.supplier_type || 'Vendor')
+        });
+      }
+    });
+
+    if (list.length === 0) {
+      list.push(
+        { value: 'Sri Krishna Embroidery Works (Vendor ID: V-04)', label: 'Sri Krishna Embroidery Works', sublabel: 'Vendor ID: V-04 • Multi-Head Embroidery' },
+        { value: 'Aart tex', label: 'Aart tex', sublabel: 'Dyeing & Embroidery Unit' },
+        { value: 'Apex Embroidery Works', label: 'Apex Embroidery Works', sublabel: 'Specialized 12-Head Mill' }
+      );
+    }
+
+    return list;
+  }, [embroideryUnits, suppliers]);
+
+  // Overall Totals for KPIs
   const overallTotals = useMemo(() => {
     let orderQty = 0;
     let arrivedQty = 0;
@@ -230,29 +307,97 @@ export default function EmbroideryOrderDetail() {
     };
   }, [items]);
 
-  // Open Outward Modal for a specific item (or globally)
-  const handleOpenOutwardModal = (specificItem?: any) => {
-    const initItems: { [key: string]: number } = {};
-    if (specificItem) {
-      const avail = Number(specificItem.available_to_dispatch || 0);
-      initItems[specificItem.id || specificItem.active_embroidery_item_id] = avail;
-    } else {
-      items.forEach(it => {
-        const avail = Number(it.available_to_dispatch || 0);
-        if (avail > 0) {
-          initItems[it.id || it.active_embroidery_item_id] = avail;
+  // Helper to construct initial line rows from order items
+  const buildInitialLineRows = (rawItems: any[]): EmbroideryLineRow[] => {
+    const eligible = rawItems.filter(it => Number(it.available_to_dispatch || it.arrived_from_cutting || 0) > 0);
+    const source = eligible.length > 0 ? eligible : rawItems;
+
+    if (source.length === 0) {
+      return [
+        {
+          production_order_item_id: 0,
+          product_name: 'Sample Embroidery Item',
+          color_name: '101 C',
+          pantone_code: '101 C',
+          hex_code: '#F4E842',
+          size: 'M',
+          arrived_quantity: 50,
+          planned_quantity: 50,
+          uom: 'PCS',
+          rate_per_unit: 15.00,
+          tax_percent: 5,
+          notes: 'Standard 12-head embroidery'
         }
-      });
+      ];
     }
-    setOutwardItems(initItems);
-    setOutwardPhotos([]);
-    setOutwardError('');
-    setOutwardForm(prev => ({
-      ...prev,
-      delivery_challan_no: `DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`
-    }));
-    setOutwardModalOpen(true);
+
+    return source.map(it => {
+      const avail = Number(it.available_to_dispatch || it.arrived_from_cutting || 0);
+      const colorStr = (it.color || 'Standard').trim();
+      const pMatch = lookupPantone(colorStr);
+      return {
+        production_order_item_id: Number(it.active_embroidery_item_id || it.id || 0),
+        product_id: it.product_id,
+        product_name: it.product_name || 'sample',
+        color_name: colorStr,
+        pantone_code: colorStr,
+        hex_code: pMatch.found && pMatch.hex_code ? pMatch.hex_code : '#3b82f6',
+        size: it.size || 'M',
+        arrived_quantity: Number(it.arrived_from_cutting || 0),
+        planned_quantity: avail > 0 ? avail : (Number(it.order_quantity) || 50),
+        uom: 'PCS',
+        rate_per_unit: 15.00,
+        tax_percent: 5,
+        notes: `Size: ${it.size || 'M'} • Arrived: ${Number(it.arrived_from_cutting || 0)} pcs`
+      };
+    });
   };
+
+  // Open Full-Page Create Order View
+  const handleOpenCreatePage = (specificItem?: any) => {
+    setChallanNo(`DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`);
+    setCreateError('');
+
+    if (specificItem) {
+      const avail = Number(specificItem.available_to_dispatch || specificItem.arrived_from_cutting || 0);
+      const colorStr = (specificItem.color || 'Standard').trim();
+      const pMatch = lookupPantone(colorStr);
+      setLineRows([
+        {
+          production_order_item_id: Number(specificItem.active_embroidery_item_id || specificItem.id || 0),
+          product_id: specificItem.product_id,
+          product_name: specificItem.product_name || 'sample',
+          color_name: colorStr,
+          pantone_code: colorStr,
+          hex_code: pMatch.found && pMatch.hex_code ? pMatch.hex_code : '#3b82f6',
+          size: specificItem.size || 'M',
+          arrived_quantity: Number(specificItem.arrived_from_cutting || 0),
+          planned_quantity: avail > 0 ? avail : 50,
+          uom: 'PCS',
+          rate_per_unit: 15.00,
+          tax_percent: 5,
+          notes: `Size: ${specificItem.size || 'M'} • Arrived: ${Number(specificItem.arrived_from_cutting || 0)} pcs`
+        }
+      ]);
+    } else {
+      setLineRows(buildInitialLineRows(items));
+    }
+
+    setShowCreatePage(true);
+    const next = new URLSearchParams(searchParams);
+    next.set('create', 'true');
+    setSearchParams(next);
+  };
+
+  // Sync create mode from URL query params
+  useEffect(() => {
+    if (searchParams.get('create') === 'true' && order) {
+      if (lineRows.length === 0) {
+        setLineRows(buildInitialLineRows(items));
+      }
+      setShowCreatePage(true);
+    }
+  }, [searchParams, order, items]);
 
   const handleOutwardPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -265,64 +410,144 @@ export default function EmbroideryOrderDetail() {
       }
       setOutwardPhotos(prev => [...prev, ...newUrls]);
     } catch (err: any) {
-      setOutwardError('Failed to process image: ' + err.message);
+      setCreateError('Failed to process image: ' + err.message);
     }
   };
 
-  // Submit Outward Job Order
-  const handleCreateOutward = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Line Row Manipulation
+  const handleAddLineRow = () => {
+    const firstIt = items[0];
+    setLineRows(prev => [
+      ...prev,
+      {
+        production_order_item_id: firstIt?.active_embroidery_item_id || firstIt?.id || 0,
+        product_id: firstIt?.product_id,
+        product_name: firstIt?.product_name || 'sample',
+        color_name: '101 C',
+        pantone_code: '101 C',
+        hex_code: '#3b82f6',
+        size: 'M',
+        arrived_quantity: 50,
+        planned_quantity: 50,
+        uom: 'PCS',
+        rate_per_unit: 15.00,
+        tax_percent: 5,
+        notes: ''
+      }
+    ]);
+  };
+
+  const handleRemoveLineRow = (index: number) => {
+    if (lineRows.length <= 1) return;
+    setLineRows(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleLineRowChange = (index: number, field: keyof EmbroideryLineRow, value: any) => {
+    setLineRows(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+
+      if (field === 'pantone_code' && typeof value === 'string') {
+        const clean = value.trim();
+        if (clean) {
+          const lookup = lookupPantone(clean);
+          if (lookup.found) {
+            if (lookup.name && !updated[index].color_name) {
+              updated[index].color_name = lookup.name;
+            }
+            if (lookup.hex_code) {
+              updated[index].hex_code = lookup.hex_code;
+            }
+          }
+        }
+      }
+      return updated;
+    });
+  };
+
+  const handleAutofillItems = () => {
+    setLineRows(buildInitialLineRows(items));
+  };
+
+  // Submit Create Embroidery Job Order (Full Page)
+  const handleCreateEmbroideryJobOrder = async (orderStatus: 'Draft' | 'Sent to Vendor' = 'Sent to Vendor') => {
+    setCreateError('');
     if (!order) return;
 
-    const itemsToDispatch: any[] = [];
-    Object.entries(outwardItems).forEach(([idStr, qty]) => {
-      const q = Number(qty);
-      if (q > 0) {
-        const it = items.find(i => String(i.id) === idStr || String(i.active_embroidery_item_id) === idStr);
-        itemsToDispatch.push({
-          production_order_item_id: it?.active_embroidery_item_id || it?.id || Number(idStr),
-          product_id: it?.product_id,
-          product_name: it?.product_name,
-          color: it?.color,
-          size: it?.size,
-          quantity_sent: q
-        });
-      }
-    });
-
-    if (itemsToDispatch.length === 0) {
-      setOutwardError('Please specify a positive quantity to dispatch for at least one item.');
+    if (!selectedSupplier || !selectedSupplier.trim()) {
+      setCreateError('Please select or specify an Embroidery Processor / Vendor.');
       return;
     }
 
-    try {
-      setSavingOutward(true);
-      setOutwardError('');
-      const res: any = await api.createEmbroideryJobOrder({
-        production_order_id: order.id,
-        vendor_name: outwardForm.vendor_name,
-        job_order_date: outwardForm.job_order_date,
-        dispatch_date: outwardForm.dispatch_date,
-        expected_return_date: outwardForm.expected_return_date,
-        delivery_challan_no: outwardForm.delivery_challan_no,
-        transport_courier: outwardForm.transport_courier,
-        sent_by: outwardForm.sent_by,
-        notes: outwardForm.notes,
-        attachments: outwardPhotos,
-        items: itemsToDispatch
-      });
+    if (!challanNo.trim()) {
+      setCreateError('Outward Delivery Challan No is required.');
+      return;
+    }
 
-      setOutwardModalOpen(false);
-      showToast(`Outward Job Order ${res?.job_order_number || ''} created successfully!`);
+    if (lineRows.length === 0) {
+      setCreateError('Please specify at least one product line to dispatch.');
+      return;
+    }
+
+    const itemsToDispatch = lineRows
+      .filter(r => (Number(r.planned_quantity) || 0) > 0)
+      .map(r => ({
+        production_order_item_id: r.production_order_item_id || items[0]?.active_embroidery_item_id || items[0]?.id || 0,
+        product_id: r.product_id,
+        product_name: r.product_name,
+        color: r.color_name,
+        size: r.size,
+        quantity_sent: Number(r.planned_quantity) || 0,
+        uom: r.uom || 'PCS',
+        rate_per_unit: Number(r.rate_per_unit) || 0,
+        tax_percent: Number(r.tax_percent) || 0,
+        taxable_amount: (Number(r.planned_quantity) || 0) * (Number(r.rate_per_unit) || 0),
+        net_amount: ((Number(r.planned_quantity) || 0) * (Number(r.rate_per_unit) || 0)) * (1 + (Number(r.tax_percent) || 0) / 100),
+        notes: r.notes
+      }));
+
+    if (itemsToDispatch.length === 0) {
+      setCreateError('Please enter a dispatch quantity greater than 0 for at least one item.');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const payload = {
+        production_order_id: Number(order.id),
+        vendor_name: selectedSupplier,
+        category_name: categoryType,
+        job_order_date: orderDate,
+        dispatch_date: orderDate,
+        expected_return_date: expectedDate,
+        delivery_challan_no: challanNo,
+        transport_courier: transportDetails,
+        sent_by: dispatchedBy,
+        notes: remarks,
+        attachments: outwardPhotos,
+        status: orderStatus,
+        items: itemsToDispatch
+      };
+
+      const res: any = await api.createEmbroideryJobOrder(payload);
+
+      setShowCreatePage(false);
+      if (searchParams.get('create')) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('create');
+        setSearchParams(next);
+      }
+      showToast(`Embroidery Job Order ${res?.job_order_number || challanNo} created successfully!`);
       await fetchOrderData();
     } catch (err: any) {
-      setOutwardError(err.message || 'Failed to create outward job order.');
+      console.error('Failed to create embroidery job order:', err);
+      setCreateError(err?.message || 'Failed to create Embroidery Job Order. Please check inputs.');
     } finally {
-      setSavingOutward(false);
+      setCreating(false);
     }
   };
 
-  // Open Inward Receipt Modal for a Job Order
+  // Inward Modal Handlers
   const handleOpenInwardModal = (job: any) => {
     setSelectedJobOrder(job);
     const jItems = Array.isArray(job.items_json) ? job.items_json : [];
@@ -341,7 +566,6 @@ export default function EmbroideryOrderDetail() {
       };
     });
 
-    // Fallback if items_json was empty
     if (jItems.length === 0) {
       const out = Number(job.total_quantity_outstanding || job.total_quantity_sent || 0);
       initQty['0'] = { received: out, accepted: out, rejected: 0, rework: 0 };
@@ -374,7 +598,6 @@ export default function EmbroideryOrderDetail() {
     }
   };
 
-  // Submit Inward Receipt
   const handleSaveInward = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedJobOrder) return;
@@ -440,11 +663,10 @@ export default function EmbroideryOrderDetail() {
     }
   };
 
-  // Open Stage Transfer Modal to Stitching
+  // Stage Transfer to Stitching
   const handleOpenTransferModal = (itemOrJob: any) => {
     let it = itemOrJob;
     if (itemOrJob.total_quantity_sent !== undefined) {
-      // It was called with a job order, match the first relevant product
       it = items.find(i => Number(i.accepted_inward || 0) > 0) || items[0];
     }
     setTransferItem(it);
@@ -455,7 +677,6 @@ export default function EmbroideryOrderDetail() {
     setTransferModalOpen(true);
   };
 
-  // Submit Stage Transfer to Stitching
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!order || transferQuantity <= 0) {
@@ -495,6 +716,517 @@ export default function EmbroideryOrderDetail() {
     return items;
   }, [items, activeTab]);
 
+  // =========================================================================
+  // FULL PAGE: CREATE EMBROIDERY JOB ORDER (MATCHING CREATE DYEING ORDER UI)
+  // =========================================================================
+  if (showCreatePage && order) {
+    const totalQty = lineRows.reduce((sum, r) => sum + (Number(r.planned_quantity) || 0), 0);
+    const totalTaxable = lineRows.reduce((sum, r) => {
+      const q = Number(r.planned_quantity) || 0;
+      const rt = Number(r.rate_per_unit) || 0;
+      return sum + (q * rt);
+    }, 0);
+    const totalTax = lineRows.reduce((sum, r) => {
+      const q = Number(r.planned_quantity) || 0;
+      const rt = Number(r.rate_per_unit) || 0;
+      const pct = r.tax_percent !== undefined ? Number(r.tax_percent) : 5;
+      return sum + ((q * rt * pct) / 100);
+    }, 0);
+    const netGrandTotal = totalTaxable + totalTax;
+
+    return (
+      <div className="flex flex-col h-full bg-slate-50/70 overflow-y-auto">
+        {/* Sticky Top Bar matching Image 2 */}
+        <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreatePage(false);
+                if (searchParams.get('create')) {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('create');
+                  setSearchParams(next);
+                }
+              }}
+              className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back to Orders</span>
+            </button>
+            <div>
+              <h1 className="text-base font-bold text-slate-900 leading-tight">Create Embroidery Job Order</h1>
+              <p className="text-xs text-slate-500">Full-page order creation with searchable dropdowns & material catalog</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowCreatePage(false);
+                if (searchParams.get('create')) {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('create');
+                  setSearchParams(next);
+                }
+              }}
+              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
+              disabled={creating}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleCreateEmbroideryJobOrder('Draft')}
+              disabled={creating}
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>Save as Draft</span>
+            </button>
+
+            <Button
+              type="button"
+              loading={creating}
+              onClick={() => handleCreateEmbroideryJobOrder('Sent to Vendor')}
+              icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-4 py-2"
+            >
+              <span>+ Create Embroidery Job Order</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Full Page Body matching Image 2 */}
+        <div className="max-w-7xl w-full mx-auto p-6 space-y-6">
+          {createError && (
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 shadow-2xs">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1 font-medium">{createError}</div>
+            </div>
+          )}
+
+          {/* Section 1: ORDER HEADER & SUPPLIER */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Building2 className="w-4 h-4 text-brand-600" />
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">Order Header & Supplier</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <SearchableSelect
+                label="Supplier"
+                required
+                value={selectedSupplier}
+                onChange={val => setSelectedSupplier(val)}
+                options={supplierOptions}
+                placeholder="— Select Embroidery Unit with Search —"
+                searchPlaceholder="Search supplier name or phone..."
+              />
+
+              <SearchableSelect
+                label="PO Category"
+                required
+                value={categoryType}
+                onChange={val => setCategoryType(val)}
+                options={[
+                  { value: 'EMBROIDERY JOB ORDER', label: 'EMBROIDERY JOB ORDER' },
+                  { value: 'MULTI-HEAD EMBROIDERY', label: 'MULTI-HEAD EMBROIDERY' },
+                  { value: 'APPLIQUE WORK', label: 'APPLIQUE WORK' },
+                  { value: 'BADGE / PATCH EMBROIDERY', label: 'BADGE / PATCH EMBROIDERY' },
+                  { value: 'SAMPLE EMBROIDERY ORDER', label: 'SAMPLE EMBROIDERY ORDER' },
+                ]}
+                placeholder="— Select Category with Search —"
+                searchPlaceholder="Search category..."
+              />
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Production Order</label>
+                <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+                  <BuyerAvatar
+                    buyer={{
+                      id: order.customer_id,
+                      code: order.customer_code,
+                      name: order.customer_name,
+                      avatar_style: order.customer_avatar_style,
+                      avatar_seed: order.customer_avatar_seed,
+                      avatar_config: order.customer_avatar_config,
+                    }}
+                    size="xs"
+                    shape="circle"
+                  />
+                  <span className="text-xs font-bold text-slate-900 font-mono">{order.order_number}</span>
+                  <span className="text-xs text-slate-500 truncate">- {order.title}</span>
+                </div>
+              </div>
+
+              <FormField
+                label="PO Date"
+                type="date"
+                required
+                value={orderDate}
+                onChange={e => setOrderDate(e.target.value)}
+              />
+
+              <FormField
+                label="Delivery Due Date"
+                type="date"
+                value={expectedDate}
+                onChange={e => setExpectedDate(e.target.value)}
+              />
+
+              <FormField label="Fabric Material (Eligible for Embroidery)" required>
+                <input
+                  type="text"
+                  value={fabricName}
+                  onChange={e => setFabricName(e.target.value)}
+                  className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-medium bg-white focus:ring-brand-500 focus:border-brand-500"
+                  placeholder="e.g. Cut Pieces / Garment Fabric"
+                />
+              </FormField>
+
+              <FormField label="Outward DC No" required>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={challanNo}
+                    onChange={e => setChallanNo(e.target.value)}
+                    className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-mono font-bold text-slate-900 bg-white pr-8 focus:ring-brand-500 focus:border-brand-500"
+                    placeholder="e.g. DC-EMB-5341"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setChallanNo(`DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`)}
+                    className="absolute right-2 p-1 text-slate-400 hover:text-brand-600 transition"
+                    title="Generate new DC number"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </FormField>
+
+              <FormField label="Process Type">
+                <input
+                  type="text"
+                  value={processType}
+                  onChange={e => setProcessType(e.target.value)}
+                  className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-medium bg-white focus:ring-brand-500 focus:border-brand-500"
+                  placeholder="e.g. 12-head Multi-needle Embroidery & Applique"
+                />
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <FormField label="Transport / Vehicle / Courier Details">
+                <input
+                  type="text"
+                  value={transportDetails}
+                  onChange={e => setTransportDetails(e.target.value)}
+                  className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-medium bg-white focus:ring-brand-500 focus:border-brand-500"
+                  placeholder="e.g. Dedicated Factory Van (TN-38-BZ-4412)"
+                />
+              </FormField>
+
+              <FormField label="Dispatched By">
+                <input
+                  type="text"
+                  value={dispatchedBy}
+                  onChange={e => setDispatchedBy(e.target.value)}
+                  className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-medium bg-white focus:ring-brand-500 focus:border-brand-500"
+                  placeholder="e.g. M. Ramesh (Production Dispatch)"
+                />
+              </FormField>
+            </div>
+
+            <div>
+              <FormField
+                as="textarea"
+                label="Remarks / Terms & Notes"
+                value={remarks}
+                onChange={e => setRemarks(e.target.value)}
+                placeholder="PO for EMBROIDERY JOB ORDER - Stage 06 Outward"
+                rows={2}
+              />
+            </div>
+
+            {/* Photo upload */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Delivery Challan & Dispatch Slip Photos (Optional)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 transition text-xs text-slate-600 font-semibold">
+                  <Camera className="w-4 h-4 text-brand-600" />
+                  <span>Upload Dispatch Photo</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleOutwardPhotoUpload}
+                    className="hidden"
+                  />
+                </label>
+                {outwardPhotos.map((url, idx) => (
+                  <div key={idx} className="relative w-12 h-12 rounded-lg border border-slate-200 overflow-hidden group">
+                    <img src={url} alt="Challan" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setOutwardPhotos(prev => prev.filter((_, i) => i !== idx))}
+                      className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-300" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Dynamic PO LINE ITEMS Table (Matching Image 2 Card 2) */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-4 h-4 text-brand-600 shrink-0" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">PO Line Items</h2>
+                    <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider bg-brand-50 text-brand-700 border border-brand-200 rounded">
+                      {categoryType}: {lineRows.length} DB Columns Loaded
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Table columns and inputs are fetched dynamically from the database (<code>category_fields</code>) for: <strong className="text-slate-600">{categoryType}</strong>
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={handleAutofillItems}
+                  className="flex items-center gap-1.5 text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg font-medium shadow-2xs transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Reset to Order Colors</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddLineRow}
+                  className="flex items-center gap-1.5 text-xs bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-lg font-medium shadow-sm transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Item Row</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse table-auto">
+                <thead>
+                  <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold">
+                    <th className="py-2.5 px-2 text-center text-[10px] uppercase tracking-wider w-12 text-slate-600">S.NO</th>
+                    <th className="py-2.5 px-3 text-left text-[10px] uppercase tracking-wider min-w-[220px]">
+                      COLOR / FABRIC ITEM <span className="text-red-500 font-bold">*</span>
+                    </th>
+                    <th className="py-2.5 px-3 text-left text-[10px] uppercase tracking-wider min-w-[140px]">PANTONE CODE</th>
+                    <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[100px]">
+                      QTY <span className="text-red-500 font-bold">*</span>
+                    </th>
+                    <th className="py-2.5 px-2 text-center text-[10px] uppercase tracking-wider min-w-[80px]">UOM</th>
+                    <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[100px]">
+                      RATE <span className="text-red-500 font-bold">*</span>
+                    </th>
+                    <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[110px]">TAXABLE AMOUNT</th>
+                    <th className="py-2.5 px-2 text-center text-[10px] uppercase tracking-wider min-w-[80px]">TAX %</th>
+                    <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[110px]">TAX AMOUNT</th>
+                    <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[120px]">NET AMOUNT</th>
+                    <th className="py-2.5 px-2 text-center text-[10px] uppercase tracking-wider w-12">ACTION</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lineRows.map((row, idx) => {
+                    const rowQty = Number(row.planned_quantity) || 0;
+                    const rowRate = Number(row.rate_per_unit) || 0;
+                    const taxable = rowQty * rowRate;
+                    const taxPct = row.tax_percent !== undefined ? Number(row.tax_percent) : 5;
+                    const taxAmount = (taxable * taxPct) / 100;
+                    const netAmount = taxable + taxAmount;
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                        {/* 1. S.No */}
+                        <td className="py-2 px-2 text-center font-mono text-slate-400 font-bold text-xs">
+                          {idx + 1}
+                        </td>
+
+                        {/* 2. Color / Product Item with Swatch */}
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={row.hex_code || '#3b82f6'}
+                              onChange={e => handleLineRowChange(idx, 'hex_code', e.target.value)}
+                              className="w-7 h-7 rounded cursor-pointer border border-slate-300 p-0.5 shrink-0"
+                              title="Pick Color Swatch"
+                            />
+                            <input
+                              type="text"
+                              list="pantone-colors-datalist"
+                              value={row.color_name}
+                              onChange={e => handleLineRowChange(idx, 'color_name', e.target.value)}
+                              placeholder="e.g. 101 C / Yellow"
+                              className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-800 bg-white focus:ring-brand-500 focus:border-brand-500"
+                              required
+                            />
+                          </div>
+                        </td>
+
+                        {/* 3. Pantone Code */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="text"
+                            list="pantone-codes-datalist"
+                            value={row.pantone_code}
+                            onChange={e => handleLineRowChange(idx, 'pantone_code', e.target.value)}
+                            placeholder="e.g. 101 C"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-mono text-slate-800 bg-white font-medium focus:ring-brand-500 focus:border-brand-500"
+                          />
+                        </td>
+
+                        {/* 4. Qty */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            value={row.planned_quantity}
+                            onChange={e => handleLineRowChange(idx, 'planned_quantity', e.target.value)}
+                            placeholder="0"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono font-bold text-slate-900 bg-white focus:ring-brand-500 focus:border-brand-500"
+                            required
+                          />
+                        </td>
+
+                        {/* 5. UOM */}
+                        <td className="py-2 px-2 text-center">
+                          <select
+                            value={row.uom || 'PCS'}
+                            onChange={e => handleLineRowChange(idx, 'uom', e.target.value)}
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-1.5 text-center font-semibold text-slate-700 bg-white focus:ring-brand-500 focus:border-brand-500"
+                          >
+                            <option value="PCS">PCS</option>
+                            <option value="MTR">MTR</option>
+                            <option value="SETS">SETS</option>
+                            <option value="KG">KG</option>
+                          </select>
+                        </td>
+
+                        {/* 6. Rate */}
+                        <td className="py-2 px-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={row.rate_per_unit}
+                            onChange={e => handleLineRowChange(idx, 'rate_per_unit', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono text-slate-800 bg-white focus:ring-brand-500 focus:border-brand-500"
+                          />
+                        </td>
+
+                        {/* 7. Taxable Amount */}
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          ₹{fmt(taxable, 2)}
+                        </td>
+
+                        {/* 8. Tax % */}
+                        <td className="py-2 px-2 text-center">
+                          <select
+                            value={row.tax_percent !== undefined ? row.tax_percent : 5}
+                            onChange={e => handleLineRowChange(idx, 'tax_percent', Number(e.target.value))}
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-1 text-center font-medium text-slate-700 bg-white focus:ring-brand-500 focus:border-brand-500"
+                          >
+                            <option value="0">0%</option>
+                            <option value="5">5%</option>
+                            <option value="12">12%</option>
+                            <option value="18">18%</option>
+                          </select>
+                        </td>
+
+                        {/* 9. Tax Amount */}
+                        <td className="py-2 px-3 text-right font-mono text-slate-600">
+                          ₹{fmt(taxAmount, 2)}
+                        </td>
+
+                        {/* 10. Net Amount */}
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          ₹{fmt(netAmount, 2)}
+                        </td>
+
+                        {/* 11. Action */}
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLineRow(idx)}
+                            className="p-1 text-slate-400 hover:text-red-500 transition disabled:opacity-30"
+                            disabled={lineRows.length <= 1}
+                            title="Delete Row"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50 border-t-2 border-slate-200 font-bold text-slate-800">
+                    <td colSpan={3} className="py-3 px-3 text-right uppercase text-[11px] text-slate-600">
+                      Total Summary:
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-xs font-bold text-brand-700">
+                      {fmt(totalQty)}
+                    </td>
+                    <td className="py-3 px-2 text-center text-[10px] text-slate-400 font-medium">PCS</td>
+                    <td className="py-3 px-3"></td>
+                    <td className="py-3 px-3 text-right font-mono text-xs font-bold text-slate-900">
+                      ₹{fmt(totalTaxable, 2)}
+                    </td>
+                    <td className="py-3 px-2"></td>
+                    <td className="py-3 px-3 text-right font-mono text-xs text-slate-600">
+                      ₹{fmt(totalTax, 2)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono text-sm font-extrabold text-brand-700">
+                      ₹{fmt(netGrandTotal, 2)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Datalists for Pantone autocompletion */}
+        <datalist id="pantone-colors-datalist">
+          {VERIFIED_PANTONE_LIBRARY.map((p, idx) => (
+            <option key={idx} value={`${p.code} - ${p.name}`} />
+          ))}
+        </datalist>
+        <datalist id="pantone-codes-datalist">
+          {VERIFIED_PANTONE_LIBRARY.map((p, idx) => (
+            <option key={idx} value={p.code} />
+          ))}
+        </datalist>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // MAIN EMBROIDERY STAGE ORDER VIEW (TABLE LAYOUT WITH BLUE THEME)
+  // =========================================================================
   return (
     <div className="min-h-screen bg-slate-50/60 pb-16">
       {/* Toast Notification */}
@@ -523,8 +1255,8 @@ export default function EmbroideryOrderDetail() {
                 <span className="font-mono text-base font-black text-slate-900 tracking-tight">
                   {order?.order_number || `ORD-${id}`}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-pink-50 text-pink-700 border border-pink-200 flex items-center gap-1.5 shadow-2xs">
-                  <Sparkles className="w-3 h-3 text-pink-600" />
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1.5 shadow-2xs">
+                  <Sparkles className="w-3 h-3 text-brand-600" />
                   Stage 06: Embroidery — Outward / Inward
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
@@ -553,9 +1285,9 @@ export default function EmbroideryOrderDetail() {
               variant="primary"
               size="sm"
               icon={<Send className="w-3.5 h-3.5" />}
-              onClick={() => handleOpenOutwardModal()}
+              onClick={() => handleOpenCreatePage()}
               disabled={overallTotals.arrivedQty <= 0}
-              className="bg-pink-600 hover:bg-pink-700 text-white font-bold text-xs shadow-sm shadow-pink-200"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-sm shadow-brand-200"
             >
               + New Outward Challan
             </Button>
@@ -582,7 +1314,7 @@ export default function EmbroideryOrderDetail() {
 
             <div className="flex items-center gap-1.5 text-slate-500 font-medium">
               <Scissors className="w-3.5 h-3.5 text-amber-600" />
-              <span>Arrived in Embroidery: <strong className="text-pink-700 font-mono">{fmt(overallTotals.arrivedQty)} pcs</strong></span>
+              <span>Arrived in Embroidery: <strong className="text-brand-700 font-mono">{fmt(overallTotals.arrivedQty)} pcs</strong></span>
             </div>
           </div>
         )}
@@ -606,8 +1338,8 @@ export default function EmbroideryOrderDetail() {
           </div>
 
           <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
-            <span className="text-[10px] font-bold text-pink-600 uppercase tracking-wider block">Sent to Vendor</span>
-            <span className="text-lg font-black text-pink-600 font-mono mt-0.5 block">{fmt(overallTotals.sentQty)}</span>
+            <span className="text-[10px] font-bold text-brand-600 uppercase tracking-wider block">Sent to Vendor</span>
+            <span className="text-lg font-black text-brand-600 font-mono mt-0.5 block">{fmt(overallTotals.sentQty)}</span>
             <span className="text-[10px] text-slate-400 mt-0.5 block">{jobOrders.length} Outward Challans</span>
           </div>
 
@@ -643,7 +1375,7 @@ export default function EmbroideryOrderDetail() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-pink-100 flex items-center justify-center text-pink-700">
+              <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700">
                 <Sparkles className="w-4 h-4" />
               </div>
               <div>
@@ -673,7 +1405,7 @@ export default function EmbroideryOrderDetail() {
                 onClick={() => setActiveTab('EMBROIDERY')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
                   activeTab === 'EMBROIDERY'
-                    ? 'bg-pink-600 text-white shadow-2xs'
+                    ? 'bg-brand-600 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
@@ -722,7 +1454,7 @@ export default function EmbroideryOrderDetail() {
                         <td className="py-3 px-4">
                           <span className="font-bold text-slate-900 block">{it.product_name || 'Product'}</span>
                           {it.product_code && (
-                            <span className="font-mono text-[10px] text-pink-600 block">{it.product_code}</span>
+                            <span className="font-mono text-[10px] text-brand-600 block">{it.product_code}</span>
                           )}
                         </td>
                         <td className="py-3 px-3">
@@ -733,7 +1465,7 @@ export default function EmbroideryOrderDetail() {
                         <td className="py-3 px-3 text-right font-mono font-bold text-indigo-700">
                           {arrivedQ > 0 ? fmt(arrivedQ) : <span className="text-slate-300 font-normal">0</span>}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono font-semibold text-pink-600">
+                        <td className="py-3 px-3 text-right font-mono font-semibold text-brand-600">
                           {sentQ > 0 ? fmt(sentQ) : <span className="text-slate-300 font-normal">0</span>}
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700">
@@ -747,7 +1479,7 @@ export default function EmbroideryOrderDetail() {
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
                           {availQ > 0 ? (
-                            <span className="text-pink-700 bg-pink-50 px-2 py-0.5 rounded border border-pink-200">
+                            <span className="text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
                               {fmt(availQ)}
                             </span>
                           ) : (
@@ -762,8 +1494,8 @@ export default function EmbroideryOrderDetail() {
                                 size="xs"
                                 variant="primary"
                                 icon={<Send className="w-3 h-3" />}
-                                onClick={() => handleOpenOutwardModal(it)}
-                                className="bg-pink-600 hover:bg-pink-700 text-white font-bold text-[11px] shadow-2xs"
+                                onClick={() => handleOpenCreatePage(it)}
+                                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px] shadow-2xs"
                               >
                                 Dispatch Outward
                               </Button>
@@ -856,7 +1588,6 @@ export default function EmbroideryOrderDetail() {
                     const rej = Number(job.total_quantity_rejected || 0);
                     const out = Number(job.total_quantity_outstanding || 0);
 
-                    // Combine photos from job order attachments and matching receipts
                     const jobPhotos = parsePhotos(job.attachments);
                     const receiptPhotos = receipts
                       .filter(r => Number(r.job_order_id) === Number(job.id))
@@ -865,7 +1596,7 @@ export default function EmbroideryOrderDetail() {
 
                     return (
                       <tr key={job.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-mono font-bold text-pink-700">
+                        <td className="py-3 px-4 font-mono font-bold text-brand-700">
                           {job.job_order_number}
                         </td>
                         <td className="py-3 px-3 text-slate-600 font-mono">
@@ -964,205 +1695,7 @@ export default function EmbroideryOrderDetail() {
         </div>
       </div>
 
-      {/* MODAL 1: Create Outward Job Order */}
-      <Modal
-        isOpen={outwardModalOpen}
-        onClose={() => setOutwardModalOpen(false)}
-        title="Create Outward Embroidery Job Order"
-        size="lg"
-      >
-        <form onSubmit={handleCreateOutward} className="space-y-4">
-          {outwardError && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{outwardError}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField label="Vendor / Job Worker Name" required>
-              <input
-                type="text"
-                list="embroidery-master-units"
-                value={outwardForm.vendor_name}
-                onChange={e => setOutwardForm({ ...outwardForm, vendor_name: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 font-medium text-slate-800"
-                placeholder="Select or type embroidery unit..."
-                required
-              />
-              <datalist id="embroidery-master-units">
-                {embroideryUnits.map(unit => (
-                  <option key={unit.id} value={unit.name}>
-                    {unit.code ? `[${unit.code}] ` : ''}{unit.name}{unit.machine_heads ? ` • ${unit.machine_heads}` : ''}
-                  </option>
-                ))}
-              </datalist>
-            </FormField>
-
-            <FormField label="Delivery Challan No" required>
-              <input
-                type="text"
-                value={outwardForm.delivery_challan_no}
-                onChange={e => setOutwardForm({ ...outwardForm, delivery_challan_no: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 font-mono font-bold text-slate-800"
-                required
-              />
-            </FormField>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <FormField label="Dispatch Date" required>
-              <input
-                type="date"
-                value={outwardForm.dispatch_date}
-                onChange={e => setOutwardForm({ ...outwardForm, dispatch_date: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 font-mono"
-                required
-              />
-            </FormField>
-
-            <FormField label="Expected Return Date">
-              <input
-                type="date"
-                value={outwardForm.expected_return_date}
-                onChange={e => setOutwardForm({ ...outwardForm, expected_return_date: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 font-mono"
-              />
-            </FormField>
-
-            <FormField label="Dispatched By">
-              <input
-                type="text"
-                value={outwardForm.sent_by}
-                onChange={e => setOutwardForm({ ...outwardForm, sent_by: e.target.value })}
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-slate-800"
-              />
-            </FormField>
-          </div>
-
-          <FormField label="Transport / Vehicle / Courier Details">
-            <input
-              type="text"
-              value={outwardForm.transport_courier}
-              onChange={e => setOutwardForm({ ...outwardForm, transport_courier: e.target.value })}
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-slate-800"
-              placeholder="e.g. Factory Van (TN-38-BZ-4412)"
-            />
-          </FormField>
-
-          {/* Product Items Dispatch Breakdown */}
-          <div className="border border-slate-200 rounded-xl overflow-hidden mt-3">
-            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Select Items & Quantities to Dispatch
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Total Available: {fmt(overallTotals.arrivedQty - overallTotals.sentQty)} pcs
-              </span>
-            </div>
-            <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-              {items
-                .filter(it => Number(it.available_to_dispatch || it.arrived_from_cutting || 0) > 0)
-                .map((it) => {
-                  const key = String(it.active_embroidery_item_id || it.id);
-                  const maxAvail = Number(it.available_to_dispatch || it.arrived_from_cutting || 0);
-                  const currentVal = outwardItems[key] !== undefined ? outwardItems[key] : maxAvail;
-
-                  return (
-                    <div key={key} className="px-4 py-3 flex items-center justify-between gap-4 bg-white hover:bg-slate-50/50">
-                      <div>
-                        <span className="font-bold text-slate-900 block text-xs">{it.product_name}</span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          Color: {it.color} • Size: {it.size || 'M'} • Arrived: {fmt(it.arrived_from_cutting)} pcs • Avail: {fmt(maxAvail)} pcs
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 font-medium">Dispatch Qty:</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max={maxAvail}
-                          value={currentVal}
-                          onChange={e => {
-                            const val = Math.max(0, Math.min(maxAvail, Number(e.target.value)));
-                            setOutwardItems(prev => ({ ...prev, [key]: val }));
-                          }}
-                          className="w-24 px-3 py-1.5 border border-slate-300 rounded-lg text-right font-mono font-bold text-pink-700 text-xs focus:ring-2 focus:ring-pink-500"
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
-
-          <FormField label="Embroidery Work Specifications & Notes">
-            <textarea
-              rows={2}
-              value={outwardForm.notes}
-              onChange={e => setOutwardForm({ ...outwardForm, notes: e.target.value })}
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-slate-800"
-              placeholder="Specify stitch density, thread colors, backing material, quality requirements..."
-            />
-          </FormField>
-
-          {/* Outward Photo Upload */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Delivery Challan & Dispatch Slip Photos (Optional)
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 transition text-xs text-slate-600 font-semibold">
-                <Camera className="w-4 h-4 text-pink-600" />
-                <span>Upload Dispatch Photo</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleOutwardPhotoUpload}
-                  className="hidden"
-                />
-              </label>
-
-              {outwardPhotos.map((url, idx) => (
-                <div key={idx} className="relative w-12 h-12 rounded-lg border border-slate-200 overflow-hidden group">
-                  <img src={url} alt="Challan" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setOutwardPhotos(prev => prev.filter((_, i) => i !== idx))}
-                    className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-300" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setOutwardModalOpen(false)}
-              disabled={savingOutward}
-            >
-              Cancel
-            </Button>
-            <Button
-              id="btn-submit-outward-job-order"
-              variant="primary"
-              size="sm"
-              type="submit"
-              disabled={savingOutward}
-              className="bg-pink-600 hover:bg-pink-700 text-white font-bold"
-            >
-              {savingOutward ? 'Creating...' : 'Confirm & Dispatch Job Order'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* MODAL 2: Receive Inward & QC */}
+      {/* MODAL 1: Receive Inward & QC */}
       <Modal
         isOpen={inwardModalOpen}
         onClose={() => setInwardModalOpen(false)}
@@ -1459,7 +1992,7 @@ export default function EmbroideryOrderDetail() {
         </form>
       </Modal>
 
-      {/* MODAL 3: Transfer to Stitching */}
+      {/* MODAL 2: Transfer to Stitching */}
       <Modal
         isOpen={transferModalOpen}
         onClose={() => setTransferModalOpen(false)}
