@@ -323,6 +323,27 @@ class MastersController {
         }
     }
 
+    private function ensureCustomerAvatarColumns(PDO $pdo): void {
+        try {
+            $cols = $pdo->query("DESCRIBE customers")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('image_url', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN image_url LONGTEXT NULL");
+            }
+            if (!in_array('avatar_url', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN avatar_url LONGTEXT NULL");
+            }
+            if (!in_array('avatar_style', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN avatar_style VARCHAR(50) DEFAULT 'lorelei'");
+            }
+            if (!in_array('avatar_seed', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN avatar_seed VARCHAR(100) DEFAULT NULL");
+            }
+            if (!in_array('avatar_config', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN avatar_config LONGTEXT DEFAULT NULL");
+            }
+        } catch (Exception $e) {}
+    }
+
     public function createCustomer(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
@@ -341,15 +362,18 @@ class MastersController {
         $avatarStyle = trim($data['avatar_style'] ?? 'lorelei');
         $avatarSeed = trim($data['avatar_seed'] ?? ('buyer-' . $code));
         $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
+        $imageUrl = isset($data['image_url']) ? trim($data['image_url']) : (isset($data['avatar_url']) ? trim($data['avatar_url']) : null);
+        $avatarUrl = $imageUrl;
 
         try {
             $pdo = Database::getConnection();
+            $this->ensureCustomerAvatarColumns($pdo);
             try {
                 $stmt = $pdo->prepare("
-                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address, avatar_style, avatar_seed, avatar_config)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address, avatar_style, avatar_seed, avatar_config, image_url, avatar_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig]);
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig, $imageUrl, $avatarUrl]);
             } catch (Exception $colEx) {
                 // Fallback if avatar columns don't exist yet in active table
                 $stmt = $pdo->prepare("
@@ -364,6 +388,8 @@ class MastersController {
                 'id' => $id, 
                 'code' => $code, 
                 'name' => $name,
+                'image_url' => $imageUrl,
+                'avatar_url' => $avatarUrl,
                 'avatar_style' => $avatarStyle,
                 'avatar_seed' => $avatarSeed,
                 'avatar_config' => $avatarConfig
@@ -385,9 +411,11 @@ class MastersController {
         $avatarStyle = isset($data['avatar_style']) ? trim($data['avatar_style']) : null;
         $avatarSeed = isset($data['avatar_seed']) ? trim($data['avatar_seed']) : null;
         $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
+        $imageUrl = array_key_exists('image_url', $data) ? trim($data['image_url'] ?? '') : (array_key_exists('avatar_url', $data) ? trim($data['avatar_url'] ?? '') : null);
 
         try {
             $pdo = Database::getConnection();
+            $this->ensureCustomerAvatarColumns($pdo);
 
             // Fetch existing customer to resolve fields without SQL NULLIF collation conflicts
             $stmtFind = $pdo->prepare("SELECT * FROM customers WHERE id = ? AND deleted_at IS NULL");
@@ -409,6 +437,8 @@ class MastersController {
             $finalAvatarStyle = ($avatarStyle !== null && $avatarStyle !== '') ? $avatarStyle : ($existing['avatar_style'] ?? 'lorelei');
             $finalAvatarSeed = ($avatarSeed !== null && $avatarSeed !== '') ? $avatarSeed : ($existing['avatar_seed'] ?? ('buyer-' . $finalCode));
             $finalAvatarConfig = ($avatarConfig !== null && $avatarConfig !== '') ? $avatarConfig : ($existing['avatar_config'] ?? null);
+            $finalImageUrl = ($imageUrl !== null) ? $imageUrl : ($existing['image_url'] ?? ($existing['avatar_url'] ?? null));
+            $finalAvatarUrl = $finalImageUrl;
 
             try {
                 $stmt = $pdo->prepare("
@@ -422,7 +452,9 @@ class MastersController {
                         billing_address = ?,
                         avatar_style = ?,
                         avatar_seed = ?,
-                        avatar_config = ?
+                        avatar_config = ?,
+                        image_url = ?,
+                        avatar_url = ?
                     WHERE id = ? AND deleted_at IS NULL
                 ");
                 $stmt->execute([
@@ -436,6 +468,8 @@ class MastersController {
                     $finalAvatarStyle,
                     $finalAvatarSeed,
                     $finalAvatarConfig,
+                    $finalImageUrl,
+                    $finalAvatarUrl,
                     $id
                 ]);
             } catch (Exception $colEx) {
@@ -468,6 +502,8 @@ class MastersController {
                 'id' => $id,
                 'name' => $finalName,
                 'code' => $finalCode,
+                'image_url' => $finalImageUrl,
+                'avatar_url' => $finalAvatarUrl,
                 'avatar_style' => $finalAvatarStyle,
                 'avatar_seed' => $finalAvatarSeed,
                 'avatar_config' => $finalAvatarConfig
