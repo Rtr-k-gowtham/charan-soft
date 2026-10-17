@@ -2773,24 +2773,91 @@ const server = http.createServer(async (req, res) => {
 
       const cust = (db.customers || []).find(c => c.id === Number(ord.customer_id));
       const batches = (db.stitchingBatches || []).filter(b => b.production_order_id === oId);
-      const items = (ord.items || []).map(it => {
+      const cuttingBatches = (db.cuttingBatches || []).filter(b => b.production_order_id === oId);
+      const embReceipts = (db.embroideryReceipts || []).filter(r => r.production_order_id === oId);
+      const embJobs = (db.embroideryJobOrders || []).filter(j => j.production_order_id === oId);
+
+      // Group order items by product_id and color
+      const grouped = {};
+      (ord.items || []).forEach(it => {
         const bp = (db.buyer_products || []).find(p => p.id === Number(it.product_id));
-        const itBatches = batches.filter(b => b.production_order_item_id === it.id);
+        const key = `${it.product_id}_${(it.color || '').trim()}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            ...it,
+            product_name: bp?.product_name || it.product_name || 'Garment Product',
+            product_code: bp?.product_code || it.product_code || 'PRD',
+            order_quantity: Number(it.total_quantity || 0),
+            active_stitching_item_id: it.id,
+            current_stage_quantity: Number(it.current_stage_id) === 7 ? Number(it.current_stage_quantity || 0) : 0
+          };
+        } else {
+          grouped[key].order_quantity += Number(it.total_quantity || 0);
+          if (Number(it.current_stage_id) === 7) {
+            grouped[key].current_stage_quantity += Number(it.current_stage_quantity || 0);
+            grouped[key].active_stitching_item_id = it.id;
+          }
+        }
+      });
+
+      const items = Object.values(grouped).map(gIt => {
+        const pId = Number(gIt.product_id);
+        const color = (gIt.color || '').trim();
+
+        // 1. Arrived from Cutting to Stitching (destination_stage_id === 7)
+        let arrivedFromCutting = 0;
+        cuttingBatches.forEach(cb => {
+          const cbDest = Number(cb.destination_stage_id || 6);
+          if (cbDest === 7 && Number(cb.product_id) === pId && (cb.color || '').trim() === color) {
+            arrivedFromCutting += Number(cb.transferred_quantity > 0 ? cb.transferred_quantity : (cb.actual_cut_quantity || 0));
+          }
+        });
+
+        // 2. Arrived from Embroidery
+        let arrivedFromEmbroidery = 0;
+        embReceipts.forEach(rcpt => {
+          const rItems = Array.isArray(rcpt.items_data) ? rcpt.items_data : [];
+          rItems.forEach(ri => {
+            if (Number(ri.product_id) === pId && (ri.color || '').trim() === color) {
+              arrivedFromEmbroidery += Number(ri.accepted_quantity || 0);
+            }
+          });
+        });
+        if (arrivedFromEmbroidery <= 0) {
+          embJobs.forEach(job => {
+            const jItems = Array.isArray(job.items_json) ? job.items_json : [];
+            jItems.forEach(ji => {
+              if (Number(ji.product_id) === pId && (ji.color || '').trim() === color) {
+                arrivedFromEmbroidery += Number(ji.received_quantity || ji.quantity_sent || 0);
+              }
+            });
+          });
+        }
+
+        let totalArrived = arrivedFromCutting + arrivedFromEmbroidery;
+        if (totalArrived <= 0 && gIt.current_stage_quantity > 0) {
+          totalArrived = gIt.current_stage_quantity;
+        }
+
+        const itBatches = batches.filter(b => b.production_order_item_id === gIt.active_stitching_item_id || (b.color || '').trim() === color);
         const comp = itBatches.reduce((s, b) => s + Number(b.completed_quantity || 0), 0);
         const acc = itBatches.reduce((s, b) => s + Number(b.accepted_quantity || 0), 0);
         const rej = itBatches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
         const rwk = itBatches.reduce((s, b) => s + Number(b.rework_quantity || 0), 0);
 
         return {
-          ...it,
-          product_name: bp?.product_name || it.product_name,
-          product_code: bp?.product_code || it.product_code,
-          batches: itBatches,
+          ...gIt,
+          arrived_from_cutting: arrivedFromCutting,
+          arrived_from_embroidery: arrivedFromEmbroidery,
+          total_arrived: totalArrived,
           completed_quantity: comp,
           accepted_quantity: acc,
           rejected_quantity: rej,
           rework_quantity: rwk,
-          balance_quantity: Math.max(0, Number(it.total_quantity || 0) - acc)
+          available_to_stitch: Math.max(0, totalArrived - comp),
+          assigned_quantity: Math.max(0, totalArrived - comp),
+          pending_stitching: Math.max(0, totalArrived - comp),
+          ready_to_transfer: Math.max(0, acc)
         };
       });
 
@@ -2803,24 +2870,25 @@ const server = http.createServer(async (req, res) => {
           customer_avatar_seed: cust?.avatar_seed || `buyer-${ord.customer_id}`
         },
         items,
-        batches: batches.reverse()
+        batches: [...batches].reverse()
       });
     }
 
     if (pathname === '/production/stitching/batch' && method === 'POST') {
-      const { production_order_id, production_order_item_id, assigned_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, operator_team, production_line, supervisor, remarks, photo_urls } = body;
+      const { production_order_id, production_order_item_id, assigned_quantity, completed_quantity, rejected_quantity, rework_quantity, remarks, photo_urls } = body;
       const pId = Number(production_order_id);
       const itemId = Number(production_order_item_id);
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
-      const item = (ord.items || []).find(i => i.id === itemId);
+      const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
       if (!item) return sendError(res, 'Order item not found', 404);
 
       const comp = Number(completed_quantity || 0);
       const rej = Number(rejected_quantity || 0);
       const rwk = Number(rework_quantity || 0);
-      const acc = Number(accepted_quantity || (comp - rej - rwk));
+      const acc = Math.max(0, comp - rej - rwk);
+      const assigned = Number(assigned_quantity || comp);
 
       if (comp <= 0) return sendError(res, 'Completed quantity must be greater than zero', 422);
 
@@ -2832,18 +2900,18 @@ const server = http.createServer(async (req, res) => {
         production_order_id: pId,
         production_order_item_id: itemId,
         batch_number: batchNo,
-        assigned_quantity: Number(assigned_quantity || comp),
-        received_quantity: Number(assigned_quantity || comp),
+        assigned_quantity: assigned,
+        received_quantity: assigned,
         completed_quantity: comp,
         accepted_quantity: acc,
         rejected_quantity: rej,
         rework_quantity: rwk,
-        balance_quantity: Math.max(0, Number(item.total_quantity) - acc),
-        operator_team: operator_team || 'Sewing Team A',
-        production_line: production_line || 'Line 2 - High Speed Overlock',
+        balance_quantity: 0,
+        operator_team: 'Stitching Department',
+        production_line: 'Standard Line',
         start_date: body.start_date || new Date().toISOString().split('T')[0],
         completion_date: body.completion_date || new Date().toISOString().split('T')[0],
-        supervisor: supervisor || 'Stitching Floor Head',
+        supervisor: 'Supervisor / In-charge',
         remarks: remarks || '',
         photo_urls: photo_urls || [],
         status: 'Completed',
@@ -2856,33 +2924,73 @@ const server = http.createServer(async (req, res) => {
 
       db.stitchingBatches.push(newBatch);
 
-      logLedger(pId, itemId, 7, 'STI', 'PROCESSED', comp, batchNo, operator_team, supervisor, 'Stitching Output', String(newBatch.id), remarks);
-      logLedger(pId, itemId, 7, 'STI', 'ACCEPTED', acc, batchNo, operator_team, supervisor, 'Stitching Passed', String(newBatch.id), 'Passed sewing audit');
+      logLedger(pId, itemId, 7, 'STI', 'PROCESSED', comp, batchNo, '', '', 'Stitching Output', String(newBatch.id), remarks);
+      if (acc > 0) {
+        logLedger(pId, itemId, 7, 'STI', 'ACCEPTED', acc, batchNo, '', '', 'Stitching Passed', String(newBatch.id), 'Passed sewing audit');
+      }
 
       saveDB();
       return sendSuccess(res, newBatch, 'Stitching batch logged successfully', 201);
     }
 
     if (pathname === '/production/stitching/transfer' && method === 'POST') {
-      const { batch_id, remarks } = body;
-      const bId = Number(batch_id);
-      const batch = (db.stitchingBatches || []).find(b => b.id === bId);
-      if (!batch) return sendError(res, 'Stitching batch not found', 404);
+      const { batch_id, production_order_id, item_id, transfer_quantity, remarks } = body;
+      let qty = Number(transfer_quantity || 0);
+      let pId = Number(production_order_id || 0);
+      let itemId = Number(item_id || 0);
 
-      const ord = (db.productionOrders || []).find(o => o.id === batch.production_order_id);
-      if (ord) {
-        const item = (ord.items || []).find(i => i.id === batch.production_order_item_id);
-        if (item) {
-          item.current_stage_id = 8;
-          item.current_stage_name = 'Checking';
-          item.stage_code = 'CHK';
-          item.current_stage_quantity = batch.accepted_quantity;
+      const bId = Number(batch_id || 0);
+      if (bId > 0) {
+        const batch = (db.stitchingBatches || []).find(b => b.id === bId);
+        if (batch) {
+          pId = batch.production_order_id;
+          itemId = batch.production_order_item_id;
+          qty = Number(batch.accepted_quantity || 0);
         }
       }
 
-      logLedger(batch.production_order_id, batch.production_order_item_id, 7, 'STI', 'TRANSFERRED', batch.accepted_quantity, batch.batch_number, null, null, 'Stage Transfer', '8', remarks || 'Submitted to Checking / QC');
+      if (pId <= 0 || qty <= 0) {
+        return sendError(res, 'Production order ID and positive transfer quantity are required', 422);
+      }
+
+      const ord = (db.productionOrders || []).find(o => o.id === pId);
+      if (ord) {
+        const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
+        if (item) {
+          // Check if Checking item already exists
+          let chkItem = (ord.items || []).find(i => i.product_id === item.product_id && (i.color || '').trim() === (item.color || '').trim() && (i.current_stage_id === 8 || (i.stage_code || '').toUpperCase() === 'CHK'));
+          if (chkItem) {
+            chkItem.current_stage_quantity = Number(chkItem.current_stage_quantity || 0) + qty;
+            chkItem.total_quantity = Number(chkItem.total_quantity || 0) + qty;
+          } else {
+            const newItemId = Math.max(...(ord.items || []).map(i => i.id), 0) + 1;
+            chkItem = {
+              id: newItemId,
+              production_order_id: pId,
+              product_id: item.product_id,
+              product_name: item.product_name,
+              product_code: item.product_code,
+              color: item.color,
+              size: item.size || 'M',
+              total_quantity: qty,
+              current_stage_id: 8,
+              current_stage_name: 'Checking',
+              stage_code: 'CHK',
+              current_stage_quantity: qty,
+              completed_quantity: 0,
+              rejected_quantity: 0,
+              rework_quantity: 0,
+              status: 'In Progress'
+            };
+            ord.items.push(chkItem);
+          }
+        }
+      }
+
+      logLedger(pId, itemId, 7, 'STI', 'TRANSFERRED', qty, '', null, null, 'Stage Transfer', '8', remarks || 'Transferred to Checking / QC');
+      logLedger(pId, itemId, 8, 'CHK', 'TRANSFER_IN', qty, '', null, null, 'Stage Transfer', '8', 'Received from Stitching');
       saveDB();
-      return sendSuccess(res, batch, `Transferred ${batch.accepted_quantity} pcs to Checking`);
+      return sendSuccess(res, { transferred_quantity: qty, destination_stage_id: 8, destination_stage_name: 'Checking' }, `Transferred ${qty} pcs to Checking`);
     }
 
     // 6. Stage 8: Checking / Quality Inspections

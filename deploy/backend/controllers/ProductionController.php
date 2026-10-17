@@ -2226,8 +2226,40 @@ class ProductionController {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
 
-            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
-            $batches = $pdo->query("SELECT * FROM stitching_batches WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name, cu.code as customer_code, cu.avatar_style as customer_avatar_style, cu.avatar_seed as customer_avatar_seed, cu.avatar_config as customer_avatar_config FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            if (!$ord) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            // All base items
+            $iStmt = $pdo->prepare("
+                SELECT poi.*, 
+                       COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                       COALESCE(bp.product_code, p.code, 'PRD') as product_code
+                FROM production_order_items poi 
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id 
+                LEFT JOIN products p ON poi.product_id = p.id 
+                WHERE poi.production_order_id = ?
+            ");
+            $iStmt->execute([$orderId]);
+            $rawItems = $iStmt->fetchAll();
+
+            // Stitching batches
+            $bStmt = $pdo->prepare("
+                SELECT sb.*, 
+                       COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                       COALESCE(bp.product_code, p.code, 'PRD') as product_code,
+                       poi.color
+                FROM stitching_batches sb
+                LEFT JOIN production_order_items poi ON sb.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
+                WHERE sb.production_order_id = ?
+                ORDER BY sb.id DESC
+            ");
+            $bStmt->execute([$orderId]);
+            $batches = $bStmt->fetchAll();
             foreach ($batches as &$b) {
                 if (isset($b['photo_urls']) && is_string($b['photo_urls'])) {
                     $b['photo_urls'] = json_decode($b['photo_urls'], true) ?: [];
@@ -2235,16 +2267,134 @@ class ProductionController {
             }
             unset($b);
 
-            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ? AND (poi.current_stage_id = 7 OR poi.current_stage_id IN (SELECT id FROM production_stages WHERE code = 'STI'))");
-            $iStmt->execute([$orderId]);
-            $items = $iStmt->fetchAll();
-            if (empty($items)) {
-                $fallbackStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name, 0 as current_stage_quantity FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
-                $fallbackStmt->execute([$orderId]);
-                $items = $fallbackStmt->fetchAll();
+            // Cutting batches
+            $cStmt = $pdo->prepare("SELECT * FROM cutting_batches WHERE production_order_id = ?");
+            $cStmt->execute([$orderId]);
+            $cuttingBatches = $cStmt->fetchAll();
+
+            // Embroidery job orders and receipts
+            $ejStmt = $pdo->prepare("SELECT * FROM embroidery_job_orders WHERE production_order_id = ?");
+            $ejStmt->execute([$orderId]);
+            $embJobs = $ejStmt->fetchAll();
+            foreach ($embJobs as &$ej) {
+                if (isset($ej['items_json']) && is_string($ej['items_json'])) {
+                    $ej['items_json'] = json_decode($ej['items_json'], true) ?: [];
+                }
+            }
+            unset($ej);
+
+            $erStmt = $pdo->prepare("SELECT * FROM embroidery_receipts WHERE production_order_id = ?");
+            $erStmt->execute([$orderId]);
+            $embReceipts = $erStmt->fetchAll();
+            foreach ($embReceipts as &$er) {
+                if (isset($er['items_data']) && is_string($er['items_data'])) {
+                    $er['items_data'] = json_decode($er['items_data'], true) ?: [];
+                }
+            }
+            unset($er);
+
+            // Group items by product_id and color
+            $groupedItems = [];
+            foreach ($rawItems as $rawIt) {
+                $grpKey = $rawIt['product_id'] . '_' . trim((string)($rawIt['color'] ?? ''));
+                if (!isset($groupedItems[$grpKey])) {
+                    $groupedItems[$grpKey] = $rawIt;
+                    $groupedItems[$grpKey]['order_quantity'] = (float)$rawIt['total_quantity'];
+                    $groupedItems[$grpKey]['active_stitching_item_id'] = (int)$rawIt['id'];
+                    $groupedItems[$grpKey]['current_stage_quantity'] = ((int)$rawIt['current_stage_id'] === 7) ? (float)$rawIt['current_stage_quantity'] : 0.0;
+                } else {
+                    $groupedItems[$grpKey]['order_quantity'] += (float)$rawIt['total_quantity'];
+                    if ((int)$rawIt['current_stage_id'] === 7) {
+                        $groupedItems[$grpKey]['current_stage_quantity'] += (float)$rawIt['current_stage_quantity'];
+                        $groupedItems[$grpKey]['active_stitching_item_id'] = (int)$rawIt['id'];
+                    }
+                }
             }
 
-            Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
+            // Calculate arriving quantities from Cutting & Embroidery, and stitched quantities
+            foreach ($groupedItems as &$gIt) {
+                $pId = (int)$gIt['product_id'];
+                $color = trim((string)($gIt['color'] ?? ''));
+
+                // 1. Arrived from Cutting directly to Stitching (destination_stage_id = 7)
+                $arrivedFromCutting = 0.0;
+                foreach ($cuttingBatches as $cb) {
+                    $cbDest = (int)($cb['destination_stage_id'] ?? 6);
+                    if ($cbDest === 7) {
+                        if ((int)$cb['product_id'] === $pId && trim((string)($cb['color'] ?? '')) === $color) {
+                            $arrivedFromCutting += (float)($cb['transferred_quantity'] > 0 ? $cb['transferred_quantity'] : $cb['actual_cut_quantity']);
+                        }
+                    }
+                }
+
+                // 2. Arrived from Embroidery (accepted pieces transferred to Stitching)
+                $arrivedFromEmbroidery = 0.0;
+                foreach ($embReceipts as $rcpt) {
+                    $rItems = $rcpt['items_data'] ?? [];
+                    foreach ($rItems as $ri) {
+                        $m = false;
+                        if (!empty($ri['product_id']) && (int)$ri['product_id'] === $pId && trim((string)($ri['color'] ?? '')) === $color) $m = true;
+                        if ($m) {
+                            $arrivedFromEmbroidery += (float)($ri['accepted_quantity'] ?? 0);
+                        }
+                    }
+                }
+                // Fallback check job orders accepted
+                if ($arrivedFromEmbroidery <= 0) {
+                    foreach ($embJobs as $job) {
+                        $jItems = $job['items_json'] ?? [];
+                        foreach ($jItems as $ji) {
+                            if (!empty($ji['product_id']) && (int)$ji['product_id'] === $pId && trim((string)($ji['color'] ?? '')) === $color) {
+                                $arrivedFromEmbroidery += (float)($ji['received_quantity'] ?? $ji['quantity_sent'] ?? 0);
+                            }
+                        }
+                    }
+                }
+
+                // Total Arrived at Stitching
+                $totalArrived = $arrivedFromCutting + $arrivedFromEmbroidery;
+                if ($totalArrived <= 0 && $gIt['current_stage_quantity'] > 0) {
+                    $totalArrived = (float)$gIt['current_stage_quantity'];
+                }
+
+                // 3. Stitched batches recorded
+                $stitchedComp = 0.0;
+                $stitchedAcc = 0.0;
+                $stitchedRej = 0.0;
+                $stitchedRwk = 0.0;
+                foreach ($batches as $b) {
+                    $m = false;
+                    if ((int)$b['production_order_item_id'] === (int)$gIt['active_stitching_item_id']) $m = true;
+                    if (trim((string)($b['color'] ?? '')) === $color) $m = true;
+                    if ($m) {
+                        $stitchedComp += (float)($b['completed_quantity'] ?? 0);
+                        $stitchedAcc += (float)($b['accepted_quantity'] ?? 0);
+                        $stitchedRej += (float)($b['rejected_quantity'] ?? 0);
+                        $stitchedRwk += (float)($b['rework_quantity'] ?? 0);
+                    }
+                }
+
+                $gIt['arrived_from_cutting'] = $arrivedFromCutting;
+                $gIt['arrived_from_embroidery'] = $arrivedFromEmbroidery;
+                $gIt['total_arrived'] = $totalArrived;
+                $gIt['completed_quantity'] = $stitchedComp;
+                $gIt['accepted_quantity'] = $stitchedAcc;
+                $gIt['rejected_quantity'] = $stitchedRej;
+                $gIt['rework_quantity'] = $stitchedRwk;
+                $gIt['available_to_stitch'] = max(0.0, $totalArrived - $stitchedComp);
+                $gIt['assigned_quantity'] = $gIt['available_to_stitch'];
+                $gIt['pending_stitching'] = max(0.0, $totalArrived - $stitchedComp);
+                $gIt['ready_to_transfer'] = max(0.0, $stitchedAcc);
+            }
+            unset($gIt);
+
+            $items = array_values($groupedItems);
+
+            Response::success([
+                'order' => $ord,
+                'items' => $items,
+                'batches' => $batches
+            ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
 
@@ -2256,16 +2406,80 @@ class ProductionController {
 
             $pId = (int)($data['production_order_id'] ?? 0);
             $itemId = (int)($data['production_order_item_id'] ?? 0);
+            $assigned = (float)($data['assigned_quantity'] ?? 0);
             $comp = (float)($data['completed_quantity'] ?? 0);
             $rej = (float)($data['rejected_quantity'] ?? 0);
             $rwk = (float)($data['rework_quantity'] ?? 0);
             $acc = max(0.0, $comp - $rej - $rwk);
             $batchNo = 'STI-' . rand(1000, 9999);
 
-            $stmt = $pdo->prepare("INSERT INTO stitching_batches (production_order_id, production_order_item_id, batch_number, assigned_quantity, received_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, balance_quantity, operator_team, production_line, start_date, completion_date, supervisor, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$pId, $itemId, $batchNo, $comp, $comp, $comp, $acc, $rej, $rwk, $data['operator_team'] ?? 'Team A', $data['production_line'] ?? 'Line 1', $data['start_date'] ?? date('Y-m-d'), $data['completion_date'] ?? date('Y-m-d'), $data['supervisor'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+            if ($pId <= 0) {
+                Response::error("Production order ID is required", 422);
+                return;
+            }
+            if ($comp <= 0) {
+                Response::error("Completed quantity must be greater than zero", 422);
+                return;
+            }
 
-            Response::success(['batch_number' => $batchNo, 'accepted' => $acc], "Stitching batch recorded successfully", 201);
+            // Clean defaults for removed operator/machine/supervisor fields
+            $operatorTeam = trim($data['operator_team'] ?? 'Stitching Line #1');
+            $prodLine = trim($data['production_line'] ?? 'Direct Drive Machine Line');
+            $supervisor = trim($data['supervisor'] ?? 'Sewing Floor Head');
+            $startDate = !empty($data['start_date']) ? $data['start_date'] : date('Y-m-d');
+            $compDate = !empty($data['completion_date']) ? $data['completion_date'] : date('Y-m-d');
+            $remarks = trim($data['remarks'] ?? '');
+            $photoUrls = json_encode($data['photo_urls'] ?? []);
+
+            $stmt = $pdo->prepare("INSERT INTO stitching_batches 
+                (production_order_id, production_order_item_id, batch_number, assigned_quantity, received_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, balance_quantity, operator_team, production_line, start_date, completion_date, supervisor, remarks, photo_urls) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $pId, 
+                $itemId, 
+                $batchNo, 
+                $assigned > 0 ? $assigned : $comp, 
+                $assigned > 0 ? $assigned : $comp, 
+                $comp, 
+                $acc, 
+                $rej, 
+                $rwk, 
+                $operatorTeam, 
+                $prodLine, 
+                $startDate, 
+                $compDate, 
+                $supervisor, 
+                $remarks, 
+                $photoUrls
+            ]);
+            $bId = (int)$pdo->lastInsertId();
+
+            // Log to quantity ledger
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 7, 'STI', 'PROCESSED', ?, ?, ?, ?, 'Stitching Output', ?, ?)
+            ");
+            $lStmt->execute([$pId, $itemId, $comp, $batchNo, $operatorTeam, $supervisor, (string)$bId, $remarks]);
+
+            if ($acc > 0) {
+                $lStmtAcc = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 7, 'STI', 'ACCEPTED', ?, ?, ?, ?, 'Stitching Passed', ?, ?)
+                ");
+                $lStmtAcc->execute([$pId, $itemId, $acc, $batchNo, $operatorTeam, $supervisor, (string)$bId, "Passed stitching QC"]);
+            }
+
+            Response::success([
+                'id' => $bId,
+                'batch_number' => $batchNo,
+                'assigned' => $assigned,
+                'completed' => $comp,
+                'accepted' => $acc,
+                'rejected' => $rej,
+                'rework' => $rwk
+            ], "Stitching batch recorded successfully", 201);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
 
@@ -2273,16 +2487,82 @@ class ProductionController {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         try {
             $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
             $bId = (int)($data['batch_id'] ?? 0);
-            $stmt = $pdo->prepare("SELECT * FROM stitching_batches WHERE id = ?");
-            $stmt->execute([$bId]);
-            $b = $stmt->fetch();
-            if ($b) {
-                $upd = $pdo->prepare("UPDATE production_order_items SET current_stage_id = 8, current_stage_quantity = ? WHERE id = ?");
-                $upd->execute([$b['accepted_quantity'], $b['production_order_item_id']]);
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['item_id'] ?? 0);
+            $qty = (float)($data['transfer_quantity'] ?? 0);
+            $destStageId = 8; // Stage 08: Checking
+            $remarks = trim($data['remarks'] ?? 'Transferred completed stitching to Stage 08: Checking');
+
+            if ($bId > 0) {
+                $bStmt = $pdo->prepare("SELECT * FROM stitching_batches WHERE id = ?");
+                $bStmt->execute([$bId]);
+                $b = $bStmt->fetch();
+                if ($b) {
+                    $pId = (int)$b['production_order_id'];
+                    $itemId = (int)$b['production_order_item_id'];
+                    $qty = (float)$b['accepted_quantity'];
+                }
             }
-            Response::success(null, "Transferred to Checking stage successfully");
-        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+
+            if ($pId <= 0 || $qty <= 0) {
+                Response::error("Production order ID and positive transfer quantity are required", 422);
+                return;
+            }
+
+            $pdo->beginTransaction();
+
+            if ($itemId > 0) {
+                $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ?");
+                $iStmt->execute([$itemId]);
+                $item = $iStmt->fetch();
+            } else {
+                $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND (current_stage_id = 7 OR current_stage_id = 6) LIMIT 1");
+                $iStmt->execute([$pId]);
+                $item = $iStmt->fetch();
+            }
+
+            if ($item) {
+                $chkStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = 8");
+                $chkStmt->execute([$pId, $item['product_id'], $item['color']]);
+                $checkingItem = $chkStmt->fetch();
+
+                if ($checkingItem) {
+                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ? WHERE id = ?")
+                        ->execute([$qty, $qty, $checkingItem['id']]);
+                } else {
+                    $ins = $pdo->prepare("INSERT INTO production_order_items 
+                        (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                        VALUES (?, ?, ?, ?, 8, ?, 0, 0, 0, 'In Progress')");
+                    $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                }
+            }
+
+            $tStmt = $pdo->prepare("INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks) VALUES (?, 7, 8, ?, ?)");
+            $tStmt->execute([$itemId ?: ($item['id'] ?? 0), $qty, $remarks]);
+
+            $lStmtOut = $pdo->prepare("INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 7, 'STI', 'TRANSFER_OUT', ?, '', '', '', 'Stitching Transfer', '8', ?)");
+            $lStmtOut->execute([$pId, $itemId ?: ($item['id'] ?? 0), $qty, "Transferred to Stage 08: Checking"]);
+
+            $lStmtIn = $pdo->prepare("INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 8, 'CHK', 'TRANSFER_IN', ?, '', '', '', 'Stitching Transfer', '8', ?)");
+            $lStmtIn->execute([$pId, $itemId ?: ($item['id'] ?? 0), $qty, "Received from Stitching"]);
+
+            $pdo->commit();
+            Response::success([
+                'transferred_quantity' => $qty,
+                'destination_stage_id' => 8,
+                'destination_stage_name' => 'Checking'
+            ], "Successfully transferred {$qty} pcs to Stage 08: Checking");
+        } catch (Exception $e) {
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            Response::error($e->getMessage(), 500);
+        }
     }
 
     public function checkingOrders(): void {
