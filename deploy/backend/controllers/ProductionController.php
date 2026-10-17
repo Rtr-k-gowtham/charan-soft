@@ -1073,6 +1073,9 @@ class ProductionController {
             try {
                 $pdo->exec("ALTER TABLE `packing_batches` ADD COLUMN `status` VARCHAR(50) NOT NULL DEFAULT 'Packed' AFTER `photo_urls`");
             } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `color` VARCHAR(100) NULL AFTER `defect_description`");
+            } catch (Exception $e) {}
 
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `embroidery_job_orders` (
@@ -1163,6 +1166,7 @@ class ProductionController {
                   `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
                   `defect_category` VARCHAR(100) NULL,
                   `defect_description` TEXT NULL,
+                  `color` VARCHAR(100) NULL,
                   `inspector` VARCHAR(150) NULL,
                   `inspection_date` DATE NOT NULL,
                   `is_reinspection` TINYINT(1) DEFAULT 0,
@@ -2938,8 +2942,18 @@ class ProductionController {
                 $pdo->prepare("UPDATE quality_inspections SET status = 'Transferred to Packing', transferred_quantity = ? WHERE id = ?")
                     ->execute([$qty, $insId]);
             } else if ($item) {
-                $pdo->prepare("UPDATE quality_inspections SET status = 'Transferred to Packing', transferred_quantity = passed_quantity WHERE production_order_id = ? AND (production_order_item_id = ? OR color = ?)")
-                    ->execute([$pId, $item['id'], $item['color']]);
+                $mStmt = $pdo->prepare("SELECT id FROM production_order_items WHERE production_order_id = ? AND (id = ? OR (color = ? AND product_id = ?))");
+                $mStmt->execute([$pId, $item['id'], $item['color'], $item['product_id']]);
+                $matchedIds = $mStmt->fetchAll(PDO::FETCH_COLUMN);
+
+                if (!empty($matchedIds)) {
+                    $inPlaceholders = implode(',', array_fill(0, count($matchedIds), '?'));
+                    $pdo->prepare("UPDATE quality_inspections SET status = 'Transferred to Packing', transferred_quantity = passed_quantity WHERE production_order_id = ? AND (production_order_item_id IN ($inPlaceholders) OR color = ?)")
+                        ->execute(array_merge([$pId], $matchedIds, [$item['color']]));
+                } else {
+                    $pdo->prepare("UPDATE quality_inspections SET status = 'Transferred to Packing', transferred_quantity = passed_quantity WHERE production_order_id = ? AND (production_order_item_id = ? OR color = ?)")
+                        ->execute([$pId, $item['id'], $item['color']]);
+                }
             }
 
             $realItemId = $item ? (int)$item['id'] : $itemId;
@@ -3320,19 +3334,183 @@ class ProductionController {
             $this->ensureWorkflowTables($pdo);
 
             $pId = (int)($data['production_order_id'] ?? 0);
+            if ($pId <= 0) {
+                Response::error("Production order ID is required", 422);
+                return;
+            }
+
+            $ordStmt = $pdo->prepare("SELECT * FROM production_orders WHERE id = ?");
+            $ordStmt->execute([$pId]);
+            $ord = $ordStmt->fetch();
+            if (!$ord) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            // 1. Check for Duplicate Delivery Challan Number
+            $dcNo = trim((string)($data['delivery_challan_number'] ?? ''));
+            if (!empty($dcNo)) {
+                $dupDcStmt = $pdo->prepare("SELECT id, dispatch_number FROM dispatch_records WHERE production_order_id = ? AND LOWER(TRIM(delivery_challan_number)) = LOWER(?)");
+                $dupDcStmt->execute([$pId, $dcNo]);
+                $dupDc = $dupDcStmt->fetch();
+                if ($dupDc) {
+                    Response::error("Duplicate Dispatch Error: Delivery Challan '{$dcNo}' has already been recorded for this order (Dispatch {$dupDc['dispatch_number']}). Duplicate dispatch is not allowed.", 422);
+                    return;
+                }
+            }
+
+            // 2. Check for Duplicate Tax Invoice Reference
+            $invRef = trim((string)($data['invoice_reference'] ?? ''));
+            if (!empty($invRef)) {
+                $dupInvStmt = $pdo->prepare("SELECT id, dispatch_number FROM dispatch_records WHERE production_order_id = ? AND LOWER(TRIM(invoice_reference)) = LOWER(?)");
+                $dupInvStmt->execute([$pId, $invRef]);
+                $dupInv = $dupInvStmt->fetch();
+                if ($dupInv) {
+                    Response::error("Duplicate Dispatch Error: Invoice reference '{$invRef}' has already been recorded for this order (Dispatch {$dupInv['dispatch_number']}). Duplicate dispatch is not allowed.", 422);
+                    return;
+                }
+            }
+
+            // 3. Check if all cartons for this order have already been dispatched
+            $cartonCheckStmt = $pdo->prepare("SELECT COUNT(*) as total_ctns, SUM(IF(status = 'Dispatched', 1, 0)) as dispatched_ctns FROM packing_cartons WHERE production_order_id = ?");
+            $cartonCheckStmt->execute([$pId]);
+            $ctnCounts = $cartonCheckStmt->fetch();
+            $totalCtns = (int)($ctnCounts['total_ctns'] ?? 0);
+            $dispatchedCtns = (int)($ctnCounts['dispatched_ctns'] ?? 0);
+
+            if ($totalCtns > 0 && $dispatchedCtns >= $totalCtns) {
+                Response::error("All master cartons ({$totalCtns} cartons) for Order {$ord['order_number']} have already been dispatched. No pending cartons remain in the dispatch bay.", 422);
+                return;
+            }
+
+            // 4. Resolve and validate selected cartons
+            $cartonIds = array_values(array_filter(array_map('intval', (array)($data['carton_ids'] ?? []))));
+            $serials = (array)($data['carton_serial_numbers'] ?? []);
+
+            $selectedCartons = [];
+            if (!empty($cartonIds)) {
+                $inClause = implode(',', array_fill(0, count($cartonIds), '?'));
+                $cStmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE id IN ($inClause)");
+                $cStmt->execute($cartonIds);
+                $selectedCartons = $cStmt->fetchAll();
+            } else if (!empty($serials)) {
+                $inClause = implode(',', array_fill(0, count($serials), '?'));
+                $cStmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE carton_serial_number IN ($inClause)");
+                $cStmt->execute($serials);
+                $selectedCartons = $cStmt->fetchAll();
+                $cartonIds = array_column($selectedCartons, 'id');
+            } else {
+                // If neither passed, find all non-dispatched cartons for this order
+                $cStmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE production_order_id = ? AND status != 'Dispatched'");
+                $cStmt->execute([$pId]);
+                $selectedCartons = $cStmt->fetchAll();
+                $cartonIds = array_column($selectedCartons, 'id');
+            }
+
+            if (empty($selectedCartons)) {
+                Response::error("Please select at least one master carton to dispatch.", 422);
+                return;
+            }
+
+            // Check if ANY selected carton is already dispatched
+            foreach ($selectedCartons as $c) {
+                if ($c['status'] === 'Dispatched') {
+                    Response::error("Carton '{$c['carton_serial_number']}' has already been dispatched. Duplicate dispatch of the same carton is not allowed.", 422);
+                    return;
+                }
+            }
+
+            // 5. Calculate total dispatched pieces & boxes
+            $calcPcs = array_reduce($selectedCartons, fn($s, $c) => $s + (float)$c['items_count'], 0.0);
+            $totalDispatched = (float)($data['total_dispatched_quantity'] ?? 0);
+            if ($totalDispatched <= 0) {
+                $totalDispatched = $calcPcs;
+            }
+            if ($totalDispatched <= 0) {
+                Response::error("Dispatched quantity must be greater than zero.", 422);
+                return;
+            }
+
+            $totalBoxes = (int)($data['total_boxes'] ?? (count($selectedCartons) * 5));
+            $cartonSerialList = array_column($selectedCartons, 'carton_serial_number');
+
             $dspNo = 'DSP-2026-' . rand(1000, 9999);
-            $items = $data['items_breakdown'] ?? [];
-            $totalDispatched = array_reduce($items, fn($s, $i) => $s + (float)($i['dispatched_quantity'] ?? 0), 0.0);
-            $serials = $data['carton_serial_numbers'] ?? [];
 
-            $stmt = $pdo->prepare("INSERT INTO dispatch_records (dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, items_breakdown) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$dspNo, $pId, $data['buyer_name'] ?? 'Buyer', $data['dispatch_date'] ?? date('Y-m-d'), date('H:i:s'), $totalDispatched, count($serials), $data['vehicle_number'] ?? 'TN-38-AX-9912', $data['driver_name'] ?? null, $data['driver_contact'] ?? null, $data['transporter_name'] ?? null, $data['delivery_challan_number'] ?? null, $data['invoice_reference'] ?? null, $data['destination_notes'] ?? null, $data['remarks'] ?? '', json_encode($data['truck_photo_urls'] ?? []), json_encode($data['loaded_cartons_photo_urls'] ?? []), json_encode($data['labels_photo_urls'] ?? []), json_encode($data['document_urls'] ?? []), json_encode($serials), json_encode($items)]);
+            $pdo->beginTransaction();
 
-            // Update parent production order completed_quantity
-            $pdo->prepare("UPDATE production_orders SET completed_quantity = completed_quantity + ?, status = IF(completed_quantity >= total_quantity, 'COMPLETED', 'Partially Dispatched') WHERE id = ?")->execute([$totalDispatched, $pId]);
+            $stmt = $pdo->prepare("INSERT INTO dispatch_records (
+                dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
+                total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
+                transporter_name, delivery_challan_number, invoice_reference, destination_notes, 
+                remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, 
+                document_urls, carton_serial_numbers, items_breakdown
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-            Response::success(['dispatch_number' => $dspNo, 'dispatched_quantity' => $totalDispatched], "Dispatch recorded successfully", 201);
-        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+            $stmt->execute([
+                $dspNo, 
+                $pId, 
+                $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
+                $data['dispatch_date'] ?? date('Y-m-d'), 
+                $data['dispatch_time'] ?? date('H:i:s'), 
+                $totalDispatched, 
+                $totalBoxes, 
+                $data['vehicle_number'] ?? '', 
+                $data['driver_name'] ?? null, 
+                $data['driver_contact'] ?? null, 
+                $data['transporter_name'] ?? null, 
+                $dcNo ?: null, 
+                $invRef ?: null, 
+                $data['destination_notes'] ?? null, 
+                $data['remarks'] ?? '', 
+                json_encode($data['truck_photo_urls'] ?? []), 
+                json_encode($data['loaded_cartons_photo_urls'] ?? []), 
+                json_encode($data['labels_photo_urls'] ?? []), 
+                json_encode($data['document_urls'] ?? []), 
+                json_encode($cartonSerialList), 
+                json_encode($data['items_breakdown'] ?? [])
+            ]);
+            $dspId = (int)$pdo->lastInsertId();
+
+            // 6. Mark selected cartons as Dispatched in packing_cartons
+            if (!empty($cartonIds)) {
+                $updClause = implode(',', array_fill(0, count($cartonIds), '?'));
+                $updCtnStmt = $pdo->prepare("UPDATE packing_cartons SET status = 'Dispatched', dispatch_id = ? WHERE id IN ($updClause)");
+                $updCtnStmt->execute(array_merge([$dspId], $cartonIds));
+            }
+
+            // 7. Update parent production order completed_quantity and status
+            $pdo->prepare("UPDATE production_orders SET completed_quantity = completed_quantity + ?, status = IF(completed_quantity >= total_quantity, 'COMPLETED', 'Partially Dispatched') WHERE id = ?")
+                ->execute([$totalDispatched, $pId]);
+
+            // 8. Record in production quantity ledger
+            $firstPoiId = (int)($selectedCartons[0]['production_order_item_id'] ?? 0);
+            $lStmt = $pdo->prepare("INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 10, 'COMP', 'DISPATCHED', ?, ?, ?, ?, 'Vehicle Dispatch', ?, ?)");
+            $lStmt->execute([
+                $pId, 
+                $firstPoiId, 
+                $totalDispatched, 
+                $dspNo, 
+                $data['driver_name'] ?? 'Driver', 
+                $data['transporter_name'] ?? 'Transporter', 
+                (string)$dspId, 
+                "Dispatched via " . ($data['vehicle_number'] ?? 'Vehicle') . ($dcNo ? " (DC: {$dcNo})" : '')
+            ]);
+
+            $pdo->commit();
+
+            Response::success([
+                'dispatch_number' => $dspNo, 
+                'dispatched_quantity' => $totalDispatched,
+                'cartons_dispatched' => count($selectedCartons)
+            ], "Dispatch recorded successfully with " . count($selectedCartons) . " master cartons ({$totalDispatched} pcs)", 201);
+        } catch (Exception $e) { 
+            if (isset($pdo) && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Response::error($e->getMessage(), 500); 
+        }
     }
 
     public function dispatchHistory(): void {

@@ -3474,20 +3474,55 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/production/dispatch/record' && method === 'POST') {
-      const { production_order_id, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, items_breakdown } = body;
+      const { production_order_id, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, carton_ids, items_breakdown, total_dispatched_quantity } = body;
       const pId = Number(production_order_id);
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
       if (!vehicle_number) return sendError(res, 'Vehicle / truck registration number is required', 422);
 
-      const serials = carton_serial_numbers || [];
-      const items = items_breakdown || [];
-      let totalDispatched = 0;
+      // Check for Duplicate Delivery Challan
+      if (delivery_challan_number && (db.dispatchRecords || []).some(d => d.production_order_id === pId && (d.delivery_challan_number || '').trim().toLowerCase() === delivery_challan_number.trim().toLowerCase())) {
+        return sendError(res, `Duplicate Dispatch Error: Delivery Challan '${delivery_challan_number}' has already been recorded for this order. Duplicate dispatch is not allowed.`, 422);
+      }
 
-      items.forEach(it => {
-        totalDispatched += Number(it.dispatched_quantity || 0);
-      });
+      // Check for Duplicate Invoice Reference
+      if (invoice_reference && (db.dispatchRecords || []).some(d => d.production_order_id === pId && (d.invoice_reference || '').trim().toLowerCase() === invoice_reference.trim().toLowerCase())) {
+        return sendError(res, `Duplicate Dispatch Error: Invoice Reference '${invoice_reference}' has already been recorded for this order. Duplicate dispatch is not allowed.`, 422);
+      }
+
+      // Check if all cartons already dispatched
+      const orderCartons = (db.packingCartons || []).filter(c => c.production_order_id === pId);
+      const remainingCartons = orderCartons.filter(c => c.status !== 'Dispatched');
+      if (orderCartons.length > 0 && remainingCartons.length === 0) {
+        return sendError(res, `All master cartons (${orderCartons.length} cartons) for this order have already been dispatched. No pending cartons remain in the dispatch bay.`, 422);
+      }
+
+      let serials = Array.isArray(carton_serial_numbers) ? [...carton_serial_numbers] : [];
+      const cIds = Array.isArray(carton_ids) ? carton_ids.map(Number) : [];
+      if (cIds.length > 0) {
+        const matchedCartons = (db.packingCartons || []).filter(c => cIds.includes(Number(c.id)));
+        matchedCartons.forEach(c => {
+          if (!serials.includes(c.carton_serial_number)) serials.push(c.carton_serial_number);
+        });
+      }
+
+      // Check if any selected carton was already dispatched
+      for (const s of serials) {
+        const ctn = (db.packingCartons || []).find(c => c.carton_serial_number === s);
+        if (ctn && ctn.status === 'Dispatched') {
+          return sendError(res, `Carton '${s}' has already been dispatched. Duplicate dispatch is not allowed.`, 422);
+        }
+      }
+
+      const items = items_breakdown || [];
+      let totalDispatched = Number(total_dispatched_quantity || 0);
+
+      if (totalDispatched <= 0) {
+        items.forEach(it => {
+          totalDispatched += Number(it.dispatched_quantity || 0);
+        });
+      }
 
       if (totalDispatched <= 0 && serials.length > 0) {
         serials.forEach(s => {

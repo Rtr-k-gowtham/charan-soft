@@ -52,6 +52,26 @@ const initialData = {
     { id: 3, code: 'SUP-003', name: 'Apex Trims & Accessories', contact_person: 'G. Karthik', phone: '+91 97910 88990', email: 'support@apextrims.com', gstin: '33AABCA7711E1Z2', city: 'Karur', state: 'Tamil Nadu' },
     { id: 4, code: 'SUP-004', name: 'DyeChem Colours Pvt Ltd', contact_person: 'R. Srinivasan', phone: '+91 94422 33445', email: 'orders@dyechem.in', gstin: '33AABCD5533F1Z6', city: 'Erode', state: 'Tamil Nadu' },
   ],
+  dyeingMills: [
+    { id: 1, code: 'VEND-DYE-001', name: 'Allied Textiles', mill_type: 'Fabric Dyeing', contact_person: '', phone: '9843054566', email: '', city: 'Karur', state: 'Tamil Nadu', address: 'No.5, Kamadenunagar, Pugalur Road, karur-639001', gstin: '', daily_capacity_kg: 8500, lead_time_days: 5, specialization: 'Woven & Knitted Fabric Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 2, code: 'VEND-DYE-002', name: 'Maxima Tex process Mill', mill_type: 'Soft Flow Processing', contact_person: '', phone: '7397752199', email: '', city: 'Karur', state: 'Tamil Nadu', address: 'S.F No. 228/2,232/1, Thaneerpandal Pudur, Punnamchatram (Po), Erode Mani Road, Karur 639163', gstin: '', daily_capacity_kg: 10000, lead_time_days: 5, specialization: 'Soft Flow Fabric Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 3, code: 'VEND-DYE-003', name: 'Wintex Processing Mills', mill_type: 'Continuous Dyeing', contact_person: '', phone: '04288-240219', email: '', city: 'Namakkal', state: 'Tamil Nadu', address: '165,R.S. Road Pallipalayam Kumarapalayam, Namakkal DT', gstin: '', daily_capacity_kg: 12000, lead_time_days: 6, specialization: 'Continuous Bleaching & Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 4, code: 'VEND-DYE-004', name: 'Sri Vedha Mill', mill_type: 'Yarn & Fabric Dyeing', contact_person: '', phone: '9047025261', email: '', city: 'Erode', state: 'Tamil Nadu', address: 'Near Eleiyathaal Kovil Nasiyanur Road, vallarasampatti (po), Erode', gstin: '', daily_capacity_kg: 6000, lead_time_days: 4, specialization: 'Yarn Cone & Fabric Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 5, code: 'VEND-DYE-005', name: 'M.R.C. Mills Pvt. Ltd.', mill_type: 'Fabric Processing', contact_person: '', phone: '98426 42799', email: '', city: 'Karur', state: 'Tamil Nadu', address: '9/1, Chinnandan kovil Road Near Water Pumping Station, Karur – 639 001', gstin: '', daily_capacity_kg: 7500, lead_time_days: 5, specialization: 'Jiggar & Soft Flow', payment_terms_days: 30, status: 'active' },
+    { id: 6, code: 'VEND-DYE-006', name: 'Sri Jothi Colours', mill_type: 'Dyeing Mill', contact_person: '', phone: '9659059449', email: '', city: 'Karur', state: 'Tamil Nadu', address: 'New Bye Pass Road Sukkaliur South, Karur - 639003', gstin: '', daily_capacity_kg: 5000, lead_time_days: 4, specialization: 'Fabric Colors & Bleaching', payment_terms_days: 30, status: 'active' },
+    { id: 7, code: 'VEND-DYE-007', name: 'Sri Vinayaga Mills', mill_type: 'Cabinet & Dyeing', contact_person: '', phone: '98435 07766', email: '', city: 'Erode', state: 'Tamil Nadu', address: 'R.S.NO 63,45/1,45/3, Kovilkadu, Sadayamplayam,Gandhipuram Village, Chitode-638102. erode', gstin: '', daily_capacity_kg: 6500, lead_time_days: 5, specialization: 'Cabinet Bleaching & Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 8, code: 'VEND-DYE-008', name: 'Sri Sivaperumal Dyeing', mill_type: 'Dyeing & Bleaching', contact_person: '', phone: '9751769482', email: '', city: 'Karur', state: 'Tamil Nadu', address: '1/176/A, S.n.Nagar, Near Primary Health Centre, Karupanpalayam, Karur – 639003', gstin: '', daily_capacity_kg: 5500, lead_time_days: 4, specialization: 'Fabric Dyeing', payment_terms_days: 30, status: 'active' },
+    { id: 9, code: 'VEND-DYE-009', name: 'Arasi Colors', mill_type: 'Cotton Dyeing', contact_person: '', phone: '9843055188', email: '', city: 'Karur', state: 'Tamil Nadu', address: 'Othaiyur Road, T.sellandipalayam, Karur - 3', gstin: '', daily_capacity_kg: 4500, lead_time_days: 4, specialization: 'Cotton Dyeing Unit', payment_terms_days: 30, status: 'active' },
+    { id: 10, code: 'VEND-DYE-010', name: 'Anantha screen printer', mill_type: 'Screen Printing & Dyeing', contact_person: '', phone: '9894182486', email: '', city: 'Erode', state: 'Tamil Nadu', address: '63, Devarankandu, Sathyamoorthy Nagar Veerappanchatram, Erode – 638 004', gstin: '', daily_capacity_kg: 4000, lead_time_days: 4, specialization: 'Screen Print & Washing', payment_terms_days: 30, status: 'active' },
+    { id: 11, code: 'VEND-DYE-011', name: 'Balaji Print', mill_type: 'Printing & Processing', contact_person: '', phone: '9994666199', email: '', city: 'Tirupur', state: 'Tamil Nadu', address: '2E/ 136, Main Street, Tirumurugan Poondi Avinashi, Tirupur – 641 652', gstin: '', daily_capacity_kg: 5000, lead_time_days: 4, specialization: 'Textile Printing & Soft Flow', payment_terms_days: 30, status: 'active' },
+  ],
+  embroideryWorks: [
+    { id: 1, code: 'VEND-EMB-001', name: 'Sri Krishna Embroidery Works', unit_type: 'Multi-Head Computerized', contact_person: 'R. Krishnakumar', phone: '9842199881', email: '', city: 'Tiruppur', state: 'Tamil Nadu', address: '14, College Road, Near Odakkadu, Tiruppur - 641602', gstin: '', machine_heads: '20-Head Tajima High Speed (15 Needles)', embroidery_types: 'Multi-Color Flat, 3D Puff, Applique', rate_per_thousand_stitches: 2.80, daily_capacity_pcs: 3500, payment_terms_days: 30, status: 'active' },
+    { id: 2, code: 'VEND-EMB-002', name: 'Apex Precision Embroidery Unit', unit_type: 'Multi-Head Automatic & Sequin', contact_person: 'K. Balan', phone: '9790044556', email: '', city: 'Tiruppur', state: 'Tamil Nadu', address: '88, Rayapuram Main Road, Tiruppur - 641601', gstin: '', machine_heads: '12-Head Barudan Automatic (12 Needles)', embroidery_types: 'Sequin, Cording, Badges', rate_per_thousand_stitches: 3.20, daily_capacity_pcs: 2400, payment_terms_days: 30, status: 'active' },
+    { id: 3, code: 'VEND-EMB-003', name: 'Vasantham Computer Embroidery', unit_type: 'Specialized Fashion Embroidery', contact_person: 'M. Vasanth', phone: '9442033112', email: '', city: 'Coimbatore', state: 'Tamil Nadu', address: '102, Sathy Road, Ganapathy, Coimbatore - 641006', gstin: '', machine_heads: '16-Head SWF Embroidery Machines', embroidery_types: 'Logo Embroidery, Chest Placement', rate_per_thousand_stitches: 2.50, daily_capacity_pcs: 4000, payment_terms_days: 30, status: 'active' },
+    { id: 4, code: 'VEND-EMB-004', name: 'Classic Multi Head Embroidery', unit_type: 'Multi-Head Computerized', contact_person: '', phone: '9843022119', email: '', city: 'Tiruppur', state: 'Tamil Nadu', address: 'Near New Bus Stand, Tiruppur', gstin: '', machine_heads: '20-Head High Speed', embroidery_types: 'Flat, 3D Puff', rate_per_thousand_stitches: 2.50, daily_capacity_pcs: 3000, payment_terms_days: 30, status: 'active' },
+    { id: 5, code: 'VEND-EMB-005', name: 'Universal Embroidery Works', unit_type: 'Cording & Chain Stitch', contact_person: '', phone: '9894455123', email: '', city: 'Karur', state: 'Tamil Nadu', address: 'Sengunthapuram, Karur', gstin: '', machine_heads: '12-Head Cording Unit', embroidery_types: 'Cording, Chain Stitch, Applique', rate_per_thousand_stitches: 3.00, daily_capacity_pcs: 2000, payment_terms_days: 30, status: 'active' },
+  ],
   customers: [
     { id: 1, code: 'CUST-001', name: 'Zudio Retail Fashion', contact_person: 'Rohan Sharma', phone: '+91 98200 44551', email: 'buying@zudio.com', gstin: '27AABCT1234A1Z9', city: 'Mumbai', state: 'Maharashtra', avatar_style: 'lorelei', avatar_seed: 'Zudio-Lorelei-1' },
     { id: 2, code: 'CUST-002', name: 'Max Lifestyle Garments', contact_person: 'Pooja Nair', phone: '+91 98450 77882', email: 'sourcing@maxlifestyle.in', gstin: '29AABCL5678B1Z1', city: 'Bengaluru', state: 'Karnataka', avatar_style: 'lorelei', avatar_seed: 'MaxLifestyle-Lorelei-2' },
@@ -653,6 +673,82 @@ const server = http.createServer(async (req, res) => {
       db.suppliers.splice(idx, 1);
       saveDB();
       return sendSuccess(res, null, 'Supplier deleted');
+    }
+
+    // Dyeing Mills Master
+    if (pathname === '/dyeing-mills' && method === 'GET') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      return sendSuccess(res, db.dyeingMills);
+    }
+    if (pathname === '/dyeing-mills' && method === 'POST') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const newMill = {
+        id: db.dyeingMills.length > 0 ? Math.max(...db.dyeingMills.map(m => m.id)) + 1 : 1,
+        code: body.code || `MILL-${String(db.dyeingMills.length + 1).padStart(3, '0')}`,
+        ...body,
+        status: body.status || 'active',
+        created_at: new Date().toISOString()
+      };
+      db.dyeingMills.push(newMill);
+      saveDB();
+      return sendSuccess(res, newMill, 'Dyeing Mill registered', 201);
+    }
+    const millMatch = pathname.match(/^\/dyeing-mills\/(\d+)$/);
+    if (millMatch && (method === 'PUT' || method === 'PATCH')) {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const mId = Number(millMatch[1]);
+      const idx = db.dyeingMills.findIndex(m => m.id === mId);
+      if (idx === -1) return sendError(res, 'Dyeing Mill not found', 404);
+      db.dyeingMills[idx] = { ...db.dyeingMills[idx], ...body, id: mId };
+      saveDB();
+      return sendSuccess(res, db.dyeingMills[idx], 'Dyeing Mill updated');
+    }
+    if (millMatch && method === 'DELETE') {
+      if (!db.dyeingMills) db.dyeingMills = [];
+      const mId = Number(millMatch[1]);
+      const idx = db.dyeingMills.findIndex(m => m.id === mId);
+      if (idx === -1) return sendError(res, 'Dyeing Mill not found', 404);
+      db.dyeingMills.splice(idx, 1);
+      saveDB();
+      return sendSuccess(res, null, 'Dyeing Mill deleted');
+    }
+
+    // Embroidery Works Master
+    if (pathname === '/embroidery-works' && method === 'GET') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      return sendSuccess(res, db.embroideryWorks);
+    }
+    if (pathname === '/embroidery-works' && method === 'POST') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const newEmb = {
+        id: db.embroideryWorks.length > 0 ? Math.max(...db.embroideryWorks.map(e => e.id)) + 1 : 1,
+        code: body.code || `EMB-${String(db.embroideryWorks.length + 1).padStart(3, '0')}`,
+        ...body,
+        status: body.status || 'active',
+        created_at: new Date().toISOString()
+      };
+      db.embroideryWorks.push(newEmb);
+      saveDB();
+      return sendSuccess(res, newEmb, 'Embroidery Work unit registered', 201);
+    }
+    const embMatch = pathname.match(/^\/embroidery-works\/(\d+)$/);
+    if (embMatch && (method === 'PUT' || method === 'PATCH')) {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const eId = Number(embMatch[1]);
+      const idx = db.embroideryWorks.findIndex(e => e.id === eId);
+      if (idx === -1) return sendError(res, 'Embroidery Unit not found', 404);
+      db.embroideryWorks[idx] = { ...db.embroideryWorks[idx], ...body, id: eId };
+      saveDB();
+      return sendSuccess(res, db.embroideryWorks[idx], 'Embroidery Unit updated');
+    }
+    if (embMatch && method === 'DELETE') {
+      if (!db.embroideryWorks) db.embroideryWorks = [];
+      const eId = Number(embMatch[1]);
+      const idx = db.embroideryWorks.findIndex(e => e.id === eId);
+      if (idx === -1) return sendError(res, 'Embroidery Unit not found', 404);
+      db.embroideryWorks.splice(idx, 1);
+      saveDB();
+      return sendSuccess(res, null, 'Embroidery Unit deleted');
     }
 
     if ((pathname === '/customers' || pathname === '/buyers') && method === 'GET') return sendSuccess(res, db.customers);
@@ -1775,13 +1871,14 @@ const server = http.createServer(async (req, res) => {
       });
 
       const balanceAvailable = Math.max(0, Number((totalInwarded - totalOutward).toFixed(2)));
+      const allowAdditional = !!(body.allow_overdraft || body.is_additional_lot || body.force_create || body.is_redyeing);
 
-      if (balanceAvailable <= 0) {
-        return sendError(res, 'Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted)', 422);
+      if (balanceAvailable <= 0 && !allowAdditional) {
+        return sendError(res, 'Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted). Enable "Additional Lot / Re-dyeing" to issue additional outward fabric.', 422);
       }
 
-      if (totalFabricQty > balanceAvailable) {
-        return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'})`, 422);
+      if (balanceAvailable > 0 && totalFabricQty > balanceAvailable && !allowAdditional) {
+        return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'}). Enable "Additional Lot / Re-dyeing" to authorize.`, 422);
       }
 
       const newDye = {
@@ -1993,7 +2090,7 @@ const server = http.createServer(async (req, res) => {
         total_fabric_received_from_dyeing: totalReceivedFromDyeing,
         fabric_materials: fabricMaterialsList,
         suggested_colors: suggestedColors,
-        dyeing_mills: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('DYE') || true),
+        dyeing_mills: (db.dyeingMills && db.dyeingMills.length > 0) ? db.dyeingMills : (db.suppliers || []),
       });
     }
 
@@ -2442,7 +2539,7 @@ const server = http.createServer(async (req, res) => {
         items,
         job_orders: jobOrders.reverse(),
         receipts: receipts.reverse(),
-        vendors: (db.suppliers || []).filter(s => (s.name || '').toUpperCase().includes('EMBROID') || true)
+        vendors: (db.embroideryWorks && db.embroideryWorks.length > 0) ? db.embroideryWorks : (db.suppliers || [])
       });
     }
 
@@ -2676,24 +2773,91 @@ const server = http.createServer(async (req, res) => {
 
       const cust = (db.customers || []).find(c => c.id === Number(ord.customer_id));
       const batches = (db.stitchingBatches || []).filter(b => b.production_order_id === oId);
-      const items = (ord.items || []).map(it => {
+      const cuttingBatches = (db.cuttingBatches || []).filter(b => b.production_order_id === oId);
+      const embReceipts = (db.embroideryReceipts || []).filter(r => r.production_order_id === oId);
+      const embJobs = (db.embroideryJobOrders || []).filter(j => j.production_order_id === oId);
+
+      // Group order items by product_id and color
+      const grouped = {};
+      (ord.items || []).forEach(it => {
         const bp = (db.buyer_products || []).find(p => p.id === Number(it.product_id));
-        const itBatches = batches.filter(b => b.production_order_item_id === it.id);
+        const key = `${it.product_id}_${(it.color || '').trim()}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            ...it,
+            product_name: bp?.product_name || it.product_name || 'Garment Product',
+            product_code: bp?.product_code || it.product_code || 'PRD',
+            order_quantity: Number(it.total_quantity || 0),
+            active_stitching_item_id: it.id,
+            current_stage_quantity: Number(it.current_stage_id) === 7 ? Number(it.current_stage_quantity || 0) : 0
+          };
+        } else {
+          grouped[key].order_quantity += Number(it.total_quantity || 0);
+          if (Number(it.current_stage_id) === 7) {
+            grouped[key].current_stage_quantity += Number(it.current_stage_quantity || 0);
+            grouped[key].active_stitching_item_id = it.id;
+          }
+        }
+      });
+
+      const items = Object.values(grouped).map(gIt => {
+        const pId = Number(gIt.product_id);
+        const color = (gIt.color || '').trim();
+
+        // 1. Arrived from Cutting to Stitching (destination_stage_id === 7)
+        let arrivedFromCutting = 0;
+        cuttingBatches.forEach(cb => {
+          const cbDest = Number(cb.destination_stage_id || 6);
+          if (cbDest === 7 && Number(cb.product_id) === pId && (cb.color || '').trim() === color) {
+            arrivedFromCutting += Number(cb.transferred_quantity > 0 ? cb.transferred_quantity : (cb.actual_cut_quantity || 0));
+          }
+        });
+
+        // 2. Arrived from Embroidery
+        let arrivedFromEmbroidery = 0;
+        embReceipts.forEach(rcpt => {
+          const rItems = Array.isArray(rcpt.items_data) ? rcpt.items_data : [];
+          rItems.forEach(ri => {
+            if (Number(ri.product_id) === pId && (ri.color || '').trim() === color) {
+              arrivedFromEmbroidery += Number(ri.accepted_quantity || 0);
+            }
+          });
+        });
+        if (arrivedFromEmbroidery <= 0) {
+          embJobs.forEach(job => {
+            const jItems = Array.isArray(job.items_json) ? job.items_json : [];
+            jItems.forEach(ji => {
+              if (Number(ji.product_id) === pId && (ji.color || '').trim() === color) {
+                arrivedFromEmbroidery += Number(ji.received_quantity || ji.quantity_sent || 0);
+              }
+            });
+          });
+        }
+
+        let totalArrived = arrivedFromCutting + arrivedFromEmbroidery;
+        if (totalArrived <= 0 && gIt.current_stage_quantity > 0) {
+          totalArrived = gIt.current_stage_quantity;
+        }
+
+        const itBatches = batches.filter(b => b.production_order_item_id === gIt.active_stitching_item_id || (b.color || '').trim() === color);
         const comp = itBatches.reduce((s, b) => s + Number(b.completed_quantity || 0), 0);
         const acc = itBatches.reduce((s, b) => s + Number(b.accepted_quantity || 0), 0);
         const rej = itBatches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
         const rwk = itBatches.reduce((s, b) => s + Number(b.rework_quantity || 0), 0);
 
         return {
-          ...it,
-          product_name: bp?.product_name || it.product_name,
-          product_code: bp?.product_code || it.product_code,
-          batches: itBatches,
+          ...gIt,
+          arrived_from_cutting: arrivedFromCutting,
+          arrived_from_embroidery: arrivedFromEmbroidery,
+          total_arrived: totalArrived,
           completed_quantity: comp,
           accepted_quantity: acc,
           rejected_quantity: rej,
           rework_quantity: rwk,
-          balance_quantity: Math.max(0, Number(it.total_quantity || 0) - acc)
+          available_to_stitch: Math.max(0, totalArrived - comp),
+          assigned_quantity: Math.max(0, totalArrived - comp),
+          pending_stitching: Math.max(0, totalArrived - comp),
+          ready_to_transfer: Math.max(0, acc)
         };
       });
 
@@ -2706,24 +2870,25 @@ const server = http.createServer(async (req, res) => {
           customer_avatar_seed: cust?.avatar_seed || `buyer-${ord.customer_id}`
         },
         items,
-        batches: batches.reverse()
+        batches: [...batches].reverse()
       });
     }
 
     if (pathname === '/production/stitching/batch' && method === 'POST') {
-      const { production_order_id, production_order_item_id, assigned_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, operator_team, production_line, supervisor, remarks, photo_urls } = body;
+      const { production_order_id, production_order_item_id, assigned_quantity, completed_quantity, rejected_quantity, rework_quantity, remarks, photo_urls } = body;
       const pId = Number(production_order_id);
       const itemId = Number(production_order_item_id);
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
-      const item = (ord.items || []).find(i => i.id === itemId);
+      const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
       if (!item) return sendError(res, 'Order item not found', 404);
 
       const comp = Number(completed_quantity || 0);
       const rej = Number(rejected_quantity || 0);
       const rwk = Number(rework_quantity || 0);
-      const acc = Number(accepted_quantity || (comp - rej - rwk));
+      const acc = Math.max(0, comp - rej - rwk);
+      const assigned = Number(assigned_quantity || comp);
 
       if (comp <= 0) return sendError(res, 'Completed quantity must be greater than zero', 422);
 
@@ -2735,18 +2900,18 @@ const server = http.createServer(async (req, res) => {
         production_order_id: pId,
         production_order_item_id: itemId,
         batch_number: batchNo,
-        assigned_quantity: Number(assigned_quantity || comp),
-        received_quantity: Number(assigned_quantity || comp),
+        assigned_quantity: assigned,
+        received_quantity: assigned,
         completed_quantity: comp,
         accepted_quantity: acc,
         rejected_quantity: rej,
         rework_quantity: rwk,
-        balance_quantity: Math.max(0, Number(item.total_quantity) - acc),
-        operator_team: operator_team || 'Sewing Team A',
-        production_line: production_line || 'Line 2 - High Speed Overlock',
+        balance_quantity: 0,
+        operator_team: 'Stitching Department',
+        production_line: 'Standard Line',
         start_date: body.start_date || new Date().toISOString().split('T')[0],
         completion_date: body.completion_date || new Date().toISOString().split('T')[0],
-        supervisor: supervisor || 'Stitching Floor Head',
+        supervisor: 'Supervisor / In-charge',
         remarks: remarks || '',
         photo_urls: photo_urls || [],
         status: 'Completed',
@@ -2759,33 +2924,73 @@ const server = http.createServer(async (req, res) => {
 
       db.stitchingBatches.push(newBatch);
 
-      logLedger(pId, itemId, 7, 'STI', 'PROCESSED', comp, batchNo, operator_team, supervisor, 'Stitching Output', String(newBatch.id), remarks);
-      logLedger(pId, itemId, 7, 'STI', 'ACCEPTED', acc, batchNo, operator_team, supervisor, 'Stitching Passed', String(newBatch.id), 'Passed sewing audit');
+      logLedger(pId, itemId, 7, 'STI', 'PROCESSED', comp, batchNo, '', '', 'Stitching Output', String(newBatch.id), remarks);
+      if (acc > 0) {
+        logLedger(pId, itemId, 7, 'STI', 'ACCEPTED', acc, batchNo, '', '', 'Stitching Passed', String(newBatch.id), 'Passed sewing audit');
+      }
 
       saveDB();
       return sendSuccess(res, newBatch, 'Stitching batch logged successfully', 201);
     }
 
     if (pathname === '/production/stitching/transfer' && method === 'POST') {
-      const { batch_id, remarks } = body;
-      const bId = Number(batch_id);
-      const batch = (db.stitchingBatches || []).find(b => b.id === bId);
-      if (!batch) return sendError(res, 'Stitching batch not found', 404);
+      const { batch_id, production_order_id, item_id, transfer_quantity, remarks } = body;
+      let qty = Number(transfer_quantity || 0);
+      let pId = Number(production_order_id || 0);
+      let itemId = Number(item_id || 0);
 
-      const ord = (db.productionOrders || []).find(o => o.id === batch.production_order_id);
-      if (ord) {
-        const item = (ord.items || []).find(i => i.id === batch.production_order_item_id);
-        if (item) {
-          item.current_stage_id = 8;
-          item.current_stage_name = 'Checking';
-          item.stage_code = 'CHK';
-          item.current_stage_quantity = batch.accepted_quantity;
+      const bId = Number(batch_id || 0);
+      if (bId > 0) {
+        const batch = (db.stitchingBatches || []).find(b => b.id === bId);
+        if (batch) {
+          pId = batch.production_order_id;
+          itemId = batch.production_order_item_id;
+          qty = Number(batch.accepted_quantity || 0);
         }
       }
 
-      logLedger(batch.production_order_id, batch.production_order_item_id, 7, 'STI', 'TRANSFERRED', batch.accepted_quantity, batch.batch_number, null, null, 'Stage Transfer', '8', remarks || 'Submitted to Checking / QC');
+      if (pId <= 0 || qty <= 0) {
+        return sendError(res, 'Production order ID and positive transfer quantity are required', 422);
+      }
+
+      const ord = (db.productionOrders || []).find(o => o.id === pId);
+      if (ord) {
+        const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
+        if (item) {
+          // Check if Checking item already exists
+          let chkItem = (ord.items || []).find(i => i.product_id === item.product_id && (i.color || '').trim() === (item.color || '').trim() && (i.current_stage_id === 8 || (i.stage_code || '').toUpperCase() === 'CHK'));
+          if (chkItem) {
+            chkItem.current_stage_quantity = Number(chkItem.current_stage_quantity || 0) + qty;
+            chkItem.total_quantity = Number(chkItem.total_quantity || 0) + qty;
+          } else {
+            const newItemId = Math.max(...(ord.items || []).map(i => i.id), 0) + 1;
+            chkItem = {
+              id: newItemId,
+              production_order_id: pId,
+              product_id: item.product_id,
+              product_name: item.product_name,
+              product_code: item.product_code,
+              color: item.color,
+              size: item.size || 'M',
+              total_quantity: qty,
+              current_stage_id: 8,
+              current_stage_name: 'Checking',
+              stage_code: 'CHK',
+              current_stage_quantity: qty,
+              completed_quantity: 0,
+              rejected_quantity: 0,
+              rework_quantity: 0,
+              status: 'In Progress'
+            };
+            ord.items.push(chkItem);
+          }
+        }
+      }
+
+      logLedger(pId, itemId, 7, 'STI', 'TRANSFERRED', qty, '', null, null, 'Stage Transfer', '8', remarks || 'Transferred to Checking / QC');
+      logLedger(pId, itemId, 8, 'CHK', 'TRANSFER_IN', qty, '', null, null, 'Stage Transfer', '8', 'Received from Stitching');
       saveDB();
-      return sendSuccess(res, batch, `Transferred ${batch.accepted_quantity} pcs to Checking`);
+      return sendSuccess(res, { transferred_quantity: qty, destination_stage_id: 8, destination_stage_name: 'Checking' }, `Transferred ${qty} pcs to Checking`);
     }
 
     // 6. Stage 8: Checking / Quality Inspections
@@ -2817,27 +3022,66 @@ const server = http.createServer(async (req, res) => {
 
       const cust = (db.customers || []).find(c => c.id === Number(ord.customer_id));
       const inspections = (db.qualityInspections || []).filter(qi => qi.production_order_id === oId);
+      const stitchingBatches = (db.stitchingBatches || []).filter(sb => sb.production_order_id === oId);
 
-      const items = (ord.items || []).map(it => {
+      // Group base items by product_id and color
+      const grouped = {};
+      (ord.items || []).forEach(it => {
         const bp = (db.buyer_products || []).find(p => p.id === Number(it.product_id));
-        const itInspections = inspections.filter(qi => qi.production_order_item_id === it.id);
-        const submitted = itInspections.reduce((s, qi) => s + Number(qi.submitted_quantity || 0), 0);
+        const key = `${it.product_id}_${(it.color || '').trim()}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            ...it,
+            product_name: bp?.product_name || it.product_name || 'Garment Product',
+            product_code: bp?.product_code || it.product_code || 'PRD',
+            order_quantity: Number(it.total_quantity || 0),
+            active_checking_item_id: it.id,
+            current_stage_quantity: Number(it.current_stage_id) === 8 ? Number(it.current_stage_quantity || 0) : 0
+          };
+        } else {
+          grouped[key].order_quantity += Number(it.total_quantity || 0);
+          if (Number(it.current_stage_id) === 8) {
+            grouped[key].current_stage_quantity += Number(it.current_stage_quantity || 0);
+            grouped[key].active_checking_item_id = it.id;
+          }
+        }
+      });
+
+      const items = Object.values(grouped).map(gIt => {
+        const pId = Number(gIt.product_id);
+        const color = (gIt.color || '').trim();
+
+        // 1. Arrived from Stitching
+        let fromStitching = 0;
+        stitchingBatches.forEach(sb => {
+          if ((sb.color || '').trim() === color || sb.production_order_item_id === gIt.active_checking_item_id) {
+            fromStitching += Number(sb.accepted_quantity || 0);
+          }
+        });
+        if (gIt.current_stage_quantity > 0) {
+          fromStitching = Math.max(fromStitching, gIt.current_stage_quantity);
+        }
+
+        const itInspections = inspections.filter(qi => qi.production_order_item_id === gIt.active_checking_item_id || (qi.color || '').trim() === color);
+        const checked = itInspections.reduce((s, qi) => s + Number(qi.checked_quantity || qi.submitted_quantity || 0), 0);
         const passed = itInspections.reduce((s, qi) => s + Number(qi.passed_quantity || 0), 0);
         const failed = itInspections.reduce((s, qi) => s + Number(qi.failed_quantity || 0), 0);
         const rwk = itInspections.reduce((s, qi) => s + Number(qi.rework_quantity || 0), 0);
         const rej = itInspections.reduce((s, qi) => s + Number(qi.rejected_quantity || 0), 0);
 
         return {
-          ...it,
-          product_name: bp?.product_name || it.product_name,
-          product_code: bp?.product_code || it.product_code,
-          inspections: itInspections,
-          submitted_quantity: submitted,
+          ...gIt,
+          arrived_from_stitching: fromStitching,
+          total_arrived: fromStitching,
+          checked_quantity: checked,
           passed_quantity: passed,
           failed_quantity: failed,
           rework_quantity: rwk,
           rejected_quantity: rej,
-          pending_inspection_quantity: Math.max(0, Number(it.total_quantity || 0) - passed)
+          available_to_inspect: Math.max(0, fromStitching - checked),
+          pending_inspection: Math.max(0, fromStitching - checked),
+          ready_to_pack: Math.max(0, passed),
+          pass_rate: checked > 0 ? Number(((passed / checked) * 100).toFixed(1)) : 100.0
         };
       });
 
@@ -2850,43 +3094,44 @@ const server = http.createServer(async (req, res) => {
           customer_avatar_seed: cust?.avatar_seed || `buyer-${ord.customer_id}`
         },
         items,
-        inspections: inspections.reverse()
+        inspections: [...inspections].reverse()
       });
     }
 
     if (pathname === '/production/checking/inspect' && method === 'POST') {
-      const { production_order_id, production_order_item_id, submitted_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, defect_category, defect_description, inspector, remarks, photo_urls, is_reinspection, original_inspection_id } = body;
+      const { production_order_id, production_order_item_id, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, defect_category, defect_description, inspector, remarks, photo_urls, is_reinspection, original_inspection_id } = body;
       const pId = Number(production_order_id);
       const itemId = Number(production_order_item_id);
-      const sub = Number(submitted_quantity || 0);
-      const passed = Number(passed_quantity || 0);
-      const failed = Number(failed_quantity || 0);
-      const rwk = Number(rework_quantity || 0);
+      const chk = Number(checked_quantity || submitted_quantity || 0);
       const rej = Number(rejected_quantity || 0);
+      const rwk = Number(rework_quantity || 0);
+      const passed = Number(passed_quantity ?? Math.max(0, chk - rej - rwk));
+      const failed = Number(failed_quantity || (rej + rwk));
 
-      if (sub <= 0) return sendError(res, 'Submitted quantity must be greater than zero', 422);
+      if (chk <= 0) return sendError(res, 'Checked quantity must be greater than zero', 422);
 
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
-      const item = (ord.items || []).find(i => i.id === itemId);
+      const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
       if (!item) return sendError(res, 'Order item not found', 404);
 
       if (!db.qualityInspections) db.qualityInspections = [];
+      const batchNo = `CHK-${ord.order_number}-${item.id}-${db.qualityInspections.length + 1}`;
       const newQi = {
         id: db.qualityInspections.length + 1,
         production_order_id: pId,
         production_order_item_id: itemId,
-        batch_number: `CHK-${ord.order_number}-${item.id}-${db.qualityInspections.length + 1}`,
-        submitted_quantity: sub,
-        checked_quantity: sub,
+        batch_number: batchNo,
+        submitted_quantity: chk,
+        checked_quantity: chk,
         passed_quantity: passed,
         failed_quantity: failed,
         rework_quantity: rwk,
         rejected_quantity: rej,
         defect_category: defect_category || 'Measurement & Finishing',
-        defect_description: defect_description || remarks || '',
-        inspector: inspector || 'Senior QC Auditor',
+        defect_description: defect_description || '',
+        inspector: inspector || 'Lead QC Inspector',
         inspection_date: body.inspection_date || new Date().toISOString().split('T')[0],
         is_reinspection: Boolean(is_reinspection),
         original_inspection_id: original_inspection_id ? Number(original_inspection_id) : null,
@@ -2902,20 +3147,62 @@ const server = http.createServer(async (req, res) => {
       db.qualityInspections.push(newQi);
 
       // Ledger
-      if (passed > 0) logLedger(pId, itemId, 8, 'CHK', 'ACCEPTED', passed, newQi.batch_number, inspector, null, 'Quality Audit', String(newQi.id), 'QC Passed and Approved for Packing');
-      if (rwk > 0) logLedger(pId, itemId, 8, 'CHK', 'REWORK', rwk, newQi.batch_number, inspector, null, 'Quality Audit Rework', String(newQi.id), defect_description || 'Rerouted to Rework');
-      if (rej > 0) logLedger(pId, itemId, 8, 'CHK', 'REJECTED', rej, newQi.batch_number, inspector, null, 'Quality Audit Rejection', String(newQi.id), defect_description || 'Rejected lot');
-
-      // Auto-advance passed quantity to Packing (9)
-      if (passed > 0) {
-        item.current_stage_id = 9;
-        item.current_stage_name = 'Packing';
-        item.stage_code = 'PCK';
-        item.current_stage_quantity = passed;
-      }
+      logLedger(pId, itemId, 8, 'CHK', 'INSPECTED', chk, batchNo, inspector, null, 'Quality Inspection', String(newQi.id), remarks);
+      if (passed > 0) logLedger(pId, itemId, 8, 'CHK', 'PASSED', passed, batchNo, inspector, null, 'Quality Passed', String(newQi.id), 'Passed quality audit');
+      if (rwk > 0) logLedger(pId, itemId, 8, 'CHK', 'REWORK', rwk, batchNo, inspector, null, 'Quality Audit Rework', String(newQi.id), defect_description || 'Rerouted to Rework');
+      if (rej > 0) logLedger(pId, itemId, 8, 'CHK', 'REJECTED', rej, batchNo, inspector, null, 'Quality Audit Rejection', String(newQi.id), defect_description || 'Rejected lot');
 
       saveDB();
       return sendSuccess(res, newQi, 'Inspection recorded successfully', 201);
+    }
+
+    if (pathname === '/production/checking/transfer' && method === 'POST') {
+      const { production_order_id, item_id, transfer_quantity, remarks } = body;
+      const pId = Number(production_order_id || 0);
+      const itemId = Number(item_id || 0);
+      const qty = Number(transfer_quantity || 0);
+
+      if (pId <= 0 || qty <= 0) {
+        return sendError(res, 'Production order ID and positive transfer quantity are required', 422);
+      }
+
+      const ord = (db.productionOrders || []).find(o => o.id === pId);
+      if (ord) {
+        const item = (ord.items || []).find(i => i.id === itemId) || (ord.items || [])[0];
+        if (item) {
+          let pckItem = (ord.items || []).find(i => i.product_id === item.product_id && (i.color || '').trim() === (item.color || '').trim() && (i.current_stage_id === 9 || (i.stage_code || '').toUpperCase() === 'PCK'));
+          if (pckItem) {
+            pckItem.current_stage_quantity = Number(pckItem.current_stage_quantity || 0) + qty;
+            pckItem.total_quantity = Number(pckItem.total_quantity || 0) + qty;
+          } else {
+            const newItemId = Math.max(...(ord.items || []).map(i => i.id), 0) + 1;
+            pckItem = {
+              id: newItemId,
+              production_order_id: pId,
+              product_id: item.product_id,
+              product_name: item.product_name,
+              product_code: item.product_code,
+              color: item.color,
+              size: item.size || 'M',
+              total_quantity: qty,
+              current_stage_id: 9,
+              current_stage_name: 'Packing',
+              stage_code: 'PCK',
+              current_stage_quantity: qty,
+              completed_quantity: 0,
+              rejected_quantity: 0,
+              rework_quantity: 0,
+              status: 'In Progress'
+            };
+            ord.items.push(pckItem);
+          }
+        }
+      }
+
+      logLedger(pId, itemId, 8, 'CHK', 'TRANSFERRED', qty, '', null, null, 'Stage Transfer', '9', remarks || 'Transferred to Stage 09: Packing');
+      logLedger(pId, itemId, 9, 'PCK', 'TRANSFER_IN', qty, '', null, null, 'Stage Transfer', '9', 'Received from Checking');
+      saveDB();
+      return sendSuccess(res, { transferred_quantity: qty, destination_stage_id: 9, destination_stage_name: 'Packing' }, `Transferred ${qty} pcs to Packing`);
     }
 
     // 7. Stage 9: Packing & Carton Management
@@ -3187,20 +3474,55 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/production/dispatch/record' && method === 'POST') {
-      const { production_order_id, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, items_breakdown } = body;
+      const { production_order_id, vehicle_number, driver_name, driver_contact, transporter_name, delivery_challan_number, invoice_reference, destination_notes, remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, document_urls, carton_serial_numbers, carton_ids, items_breakdown, total_dispatched_quantity } = body;
       const pId = Number(production_order_id);
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
       if (!vehicle_number) return sendError(res, 'Vehicle / truck registration number is required', 422);
 
-      const serials = carton_serial_numbers || [];
-      const items = items_breakdown || [];
-      let totalDispatched = 0;
+      // Check for Duplicate Delivery Challan
+      if (delivery_challan_number && (db.dispatchRecords || []).some(d => d.production_order_id === pId && (d.delivery_challan_number || '').trim().toLowerCase() === delivery_challan_number.trim().toLowerCase())) {
+        return sendError(res, `Duplicate Dispatch Error: Delivery Challan '${delivery_challan_number}' has already been recorded for this order. Duplicate dispatch is not allowed.`, 422);
+      }
 
-      items.forEach(it => {
-        totalDispatched += Number(it.dispatched_quantity || 0);
-      });
+      // Check for Duplicate Invoice Reference
+      if (invoice_reference && (db.dispatchRecords || []).some(d => d.production_order_id === pId && (d.invoice_reference || '').trim().toLowerCase() === invoice_reference.trim().toLowerCase())) {
+        return sendError(res, `Duplicate Dispatch Error: Invoice Reference '${invoice_reference}' has already been recorded for this order. Duplicate dispatch is not allowed.`, 422);
+      }
+
+      // Check if all cartons already dispatched
+      const orderCartons = (db.packingCartons || []).filter(c => c.production_order_id === pId);
+      const remainingCartons = orderCartons.filter(c => c.status !== 'Dispatched');
+      if (orderCartons.length > 0 && remainingCartons.length === 0) {
+        return sendError(res, `All master cartons (${orderCartons.length} cartons) for this order have already been dispatched. No pending cartons remain in the dispatch bay.`, 422);
+      }
+
+      let serials = Array.isArray(carton_serial_numbers) ? [...carton_serial_numbers] : [];
+      const cIds = Array.isArray(carton_ids) ? carton_ids.map(Number) : [];
+      if (cIds.length > 0) {
+        const matchedCartons = (db.packingCartons || []).filter(c => cIds.includes(Number(c.id)));
+        matchedCartons.forEach(c => {
+          if (!serials.includes(c.carton_serial_number)) serials.push(c.carton_serial_number);
+        });
+      }
+
+      // Check if any selected carton was already dispatched
+      for (const s of serials) {
+        const ctn = (db.packingCartons || []).find(c => c.carton_serial_number === s);
+        if (ctn && ctn.status === 'Dispatched') {
+          return sendError(res, `Carton '${s}' has already been dispatched. Duplicate dispatch is not allowed.`, 422);
+        }
+      }
+
+      const items = items_breakdown || [];
+      let totalDispatched = Number(total_dispatched_quantity || 0);
+
+      if (totalDispatched <= 0) {
+        items.forEach(it => {
+          totalDispatched += Number(it.dispatched_quantity || 0);
+        });
+      }
 
       if (totalDispatched <= 0 && serials.length > 0) {
         serials.forEach(s => {

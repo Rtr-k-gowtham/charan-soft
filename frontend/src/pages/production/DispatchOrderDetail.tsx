@@ -106,14 +106,14 @@ export default function DispatchOrderDetail() {
   const [dispatchForm, setDispatchForm] = useState({
     dispatch_date: new Date().toISOString().split('T')[0],
     dispatch_time: new Date().toTimeString().slice(0, 5),
-    vehicle_number: 'TN-38-BZ-4412',
-    driver_name: 'P. Balasubramanian',
-    driver_contact: '+91 98422 55441',
-    transporter_name: 'VRL Logistics Express',
-    delivery_challan_number: `DC-DISP-${Math.floor(1000 + Math.random() * 9000)}`,
-    invoice_reference: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
-    destination_notes: 'Buyer Central Distribution Hub, Peenya Industrial Area, Bengaluru',
-    remarks: 'Goods loaded in dry waterproof container. Seal # CSG-998821 applied.'
+    vehicle_number: '',
+    driver_name: '',
+    driver_contact: '',
+    transporter_name: '',
+    delivery_challan_number: '',
+    invoice_reference: '',
+    destination_notes: '',
+    remarks: ''
   });
   const [selectedCartonIds, setSelectedCartonIds] = useState<number[]>([]);
   const [truckPhotos, setTruckPhotos] = useState<string[]>([]);
@@ -174,19 +174,22 @@ export default function DispatchOrderDetail() {
   const metrics = useMemo(() => {
     let orderedQty = 0;
     items.forEach(it => {
-      orderedQty += Number(it.quantity || 0);
+      orderedQty += Number(it.total_quantity || it.order_quantity || it.quantity || 0);
     });
+    if (orderedQty === 0 && order) {
+      orderedQty = Number(order.total_quantity || 0);
+    }
 
     const dispatchedQty = dispatches.reduce((sum, d) => sum + Number(d.total_dispatched_quantity || 0), 0);
     const totalPackedCartons = cartons.length;
     const dispatchedCartons = cartons.filter(c => c.status === 'Dispatched').length;
-    const remainingCartons = totalPackedCartons - dispatchedCartons;
+    const remainingCartons = Math.max(0, totalPackedCartons - dispatchedCartons);
     const remainingToDispatchQty = Math.max(0, orderedQty - dispatchedQty);
 
     let completionStatus: 'Packed / Awaiting Dispatch' | 'Partially Dispatched' | 'Fully Dispatched & Completed' = 'Packed / Awaiting Dispatch';
-    if (dispatchedQty >= orderedQty && orderedQty > 0) {
+    if ((dispatchedQty >= orderedQty && orderedQty > 0) || (totalPackedCartons > 0 && remainingCartons === 0)) {
       completionStatus = 'Fully Dispatched & Completed';
-    } else if (dispatchedQty > 0) {
+    } else if (dispatchedQty > 0 || dispatchedCartons > 0) {
       completionStatus = 'Partially Dispatched';
     }
 
@@ -199,10 +202,28 @@ export default function DispatchOrderDetail() {
       remainingToDispatchQty,
       completionStatus
     };
-  }, [items, dispatches, cartons]);
+  }, [order, items, dispatches, cartons]);
 
   // Open Dispatch Modal
   const handleOpenDispatchModal = () => {
+    if (availableCartons.length === 0) {
+      showToast('All master cartons have already been dispatched. No cartons remain in bay.');
+      return;
+    }
+    const randNum = Math.floor(1000 + Math.random() * 9000);
+    setDispatchForm(prev => ({
+      ...prev,
+      dispatch_date: new Date().toISOString().split('T')[0],
+      dispatch_time: new Date().toTimeString().slice(0, 5),
+      vehicle_number: '',
+      driver_name: '',
+      driver_contact: '',
+      transporter_name: '',
+      delivery_challan_number: `DC-DISP-${randNum}`,
+      invoice_reference: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
+      destination_notes: (order as any)?.delivery_address || (order as any)?.destination_hub || '',
+      remarks: ''
+    }));
     // By default select all available cartons
     setSelectedCartonIds(availableCartons.map(c => c.id || 0).filter(Boolean));
     setTruckPhotos([]);
@@ -247,8 +268,26 @@ export default function DispatchOrderDetail() {
     e.preventDefault();
     if (!order) return;
 
+    if (availableCartons.length === 0) {
+      setDispatchError('All master cartons for this order have already been dispatched. No pending cartons remain in bay.');
+      return;
+    }
+
     if (selectedCartonIds.length === 0) {
       setDispatchError('Please select at least one packed carton to load for this dispatch.');
+      return;
+    }
+
+    // Duplicate check on frontend
+    const trimDc = dispatchForm.delivery_challan_number.trim();
+    if (trimDc && dispatches.some(d => (d.delivery_challan_number || '').trim().toLowerCase() === trimDc.toLowerCase())) {
+      setDispatchError(`Duplicate Dispatch Error: Delivery Challan '${trimDc}' has already been recorded for this order.`);
+      return;
+    }
+
+    const trimInv = dispatchForm.invoice_reference.trim();
+    if (trimInv && dispatches.some(d => (d.invoice_reference || '').trim().toLowerCase() === trimInv.toLowerCase())) {
+      setDispatchError(`Duplicate Dispatch Error: Invoice reference '${trimInv}' has already been recorded for this order.`);
       return;
     }
 
@@ -393,16 +432,23 @@ export default function DispatchOrderDetail() {
             <span>Refresh</span>
           </Button>
 
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleOpenDispatchModal}
-            disabled={availableCartons.length === 0}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs"
-          >
-            <Truck className="w-3.5 h-3.5" />
-            <span>Record Vehicle Dispatch</span>
-          </Button>
+          {availableCartons.length === 0 && cartons.length > 0 ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+              <CheckCheck className="w-4 h-4 text-emerald-600" />
+              <span>All Cartons Dispatched</span>
+            </div>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleOpenDispatchModal}
+              disabled={availableCartons.length === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Truck className="w-3.5 h-3.5" />
+              <span>Record Vehicle Dispatch</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -624,6 +670,7 @@ export default function DispatchOrderDetail() {
               <input
                 type="text"
                 required
+                placeholder="e.g. TN-38-BZ-4412"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.vehicle_number}
                 onChange={e => setDispatchForm({ ...dispatchForm, vehicle_number: e.target.value })}
@@ -634,6 +681,7 @@ export default function DispatchOrderDetail() {
               <input
                 type="text"
                 required
+                placeholder="e.g. VRL Logistics / SRS Express"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.transporter_name}
                 onChange={e => setDispatchForm({ ...dispatchForm, transporter_name: e.target.value })}
@@ -644,6 +692,7 @@ export default function DispatchOrderDetail() {
               <input
                 type="text"
                 required
+                placeholder="e.g. Driver Name"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.driver_name}
                 onChange={e => setDispatchForm({ ...dispatchForm, driver_name: e.target.value })}
@@ -654,6 +703,7 @@ export default function DispatchOrderDetail() {
               <input
                 type="text"
                 required
+                placeholder="e.g. +91 98422 55441"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.driver_contact}
                 onChange={e => setDispatchForm({ ...dispatchForm, driver_contact: e.target.value })}
@@ -664,6 +714,7 @@ export default function DispatchOrderDetail() {
               <input
                 type="text"
                 required
+                placeholder="e.g. DC-DISP-4560"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.delivery_challan_number}
                 onChange={e => setDispatchForm({ ...dispatchForm, delivery_challan_number: e.target.value })}
@@ -673,6 +724,7 @@ export default function DispatchOrderDetail() {
             <FormField label="Tax Invoice Reference">
               <input
                 type="text"
+                placeholder="e.g. INV-2026-521"
                 className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
                 value={dispatchForm.invoice_reference}
                 onChange={e => setDispatchForm({ ...dispatchForm, invoice_reference: e.target.value })}

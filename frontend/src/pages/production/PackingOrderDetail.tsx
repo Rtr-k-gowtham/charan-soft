@@ -268,7 +268,8 @@ export default function PackingOrderDetail() {
       }
     });
 
-    return { orderQty, arrivedQty, packedQty, totalBoxes, totalCartons, unpackedQty, availableToPackQty };
+    const completionRate = arrivedQty > 0 ? Math.round((packedQty / arrivedQty) * 100) : 0;
+    return { orderQty, arrivedQty, packedQty, totalBoxes, totalCartons, unpackedQty, availableToPackQty, completionRate };
   }, [items, summaryByItem]);
 
   // Filter items
@@ -527,53 +528,59 @@ export default function PackingOrderDetail() {
 
       {/* HEADER BAR */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
             <Button
               variant="outline"
               size="sm"
               onClick={() => navigate('/production/packing')}
-              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-300"
+              className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 border-slate-200 hover:bg-slate-50 shrink-0 h-9 px-3"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back</span>
+              <ArrowLeft className="w-4 h-4 text-slate-500" />
+              <span className="font-medium text-xs">Back</span>
             </Button>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl font-bold text-slate-900 font-mono tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl font-black text-slate-900 font-mono tracking-tight">
                   {order?.order_number || 'Order Details'}
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                   <Boxes className="w-3.5 h-3.5 text-amber-600" />
-                  Stage 09: Packing & Carton Management
+                  Stage 09: Packing
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
                   {order?.status || 'IN PRODUCTION'}
                 </span>
-                {isFullyPacked && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                {isFullyPacked ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
                     <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
                     100% Packed & Ready for Dispatch
                   </span>
-                )}
+                ) : overallTotals.packedQty > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                    Packing ({overallTotals.completionRate}%)
+                  </span>
+                ) : null}
               </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-                <span>{(order as any)?.order_title || (order as any)?.title || 'Garments Production'}</span>
-                <span>•</span>
-                <span className="font-semibold text-slate-700">
-                  {fmt(overallTotals.arrivedQty)} pcs arrived from Checking
+              <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+                <span className="text-slate-600 font-medium truncate max-w-xs sm:max-w-md">
+                  {(order as any)?.order_title || (order as any)?.title || 'Garments Production'}
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="text-slate-600 font-medium">
+                  <strong className="text-slate-800 font-semibold">{fmt(overallTotals.arrivedQty)} pcs</strong> arrived from Checking
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end md:self-center flex-wrap">
+          <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
             <Button
               variant="outline"
               size="sm"
               onClick={fetchOrderData}
               disabled={loading}
-              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 h-9"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Refresh</span>
@@ -584,7 +591,7 @@ export default function PackingOrderDetail() {
               size="sm"
               onClick={() => setTransferModalOpen(true)}
               disabled={overallTotals.packedQty === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-9 px-3.5"
             >
               <span>Pass to Completed / Dispatch (Stage 10)</span>
               <ArrowRight className="w-4 h-4" />
@@ -593,7 +600,7 @@ export default function PackingOrderDetail() {
         </div>
 
         {/* Buyer & Delivery Info */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-4 text-xs">
+        <div className="mt-3.5 pt-3.5 border-t border-slate-100 flex items-center justify-between flex-wrap gap-4 text-xs text-slate-600">
           <div className="flex items-center gap-2">
             <BuyerAvatar
               buyer={order}
@@ -601,17 +608,25 @@ export default function PackingOrderDetail() {
               shape="circle"
               className="shrink-0"
             />
-            <span className="font-semibold text-slate-800">{order?.customer_name || 'gowtham'}</span>
-            <span className="text-slate-400">({order?.customer_code || 'CUST-001'})</span>
+            <span className="font-bold text-slate-800">{order?.customer_name || 'gowtham'}</span>
+            <span className="text-slate-400 font-mono">({order?.customer_code || 'CUST-001'})</span>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-600">
+          <div className="flex items-center gap-5 flex-wrap">
             {order.target_delivery_date && (
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 text-slate-500 font-medium">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Target Delivery: <strong className="text-slate-800">{order.target_delivery_date}</strong></span>
+                <span>Target Delivery: <strong className="text-slate-800 font-mono">{order.target_delivery_date}</strong></span>
               </span>
             )}
+            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+              <Package className="w-3.5 h-3.5 text-slate-400" />
+              <span>Order Qty: <strong className="text-slate-800 font-mono">{fmt(overallTotals.orderQty)} pcs</strong></span>
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-500 font-medium">
+              <Boxes className="w-3.5 h-3.5 text-amber-600" />
+              <span>Packed: <strong className="text-emerald-700 font-mono">{fmt(overallTotals.packedQty)} / {fmt(overallTotals.arrivedQty)} pcs</strong></span>
+            </span>
           </div>
         </div>
       </div>
