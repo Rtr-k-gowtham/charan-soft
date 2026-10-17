@@ -27,7 +27,12 @@ import {
   QrCode,
   ShieldCheck,
   Check,
-  Clock
+  Clock,
+  User,
+  Scale,
+  FileText,
+  Sparkles,
+  Layers
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -100,11 +105,11 @@ export default function PackingOrderDetail() {
     number_of_master_cartons: 0,
     partial_box_quantity: 0,
     partial_carton_quantity: 0,
-    gross_weight: 14.5,
-    net_weight: 13.0,
-    packing_operator: 'S. Selvaraj (Packing Lead)',
-    packing_supervisor: 'K. Senthil (Quality & Packaging Manager)',
-    remarks: 'Pre-pack polybagging and carton barcode labels verified against Buyer Spec Sheet.'
+    gross_weight: 0,
+    net_weight: 0,
+    packing_operator: '',
+    packing_supervisor: '',
+    remarks: ''
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [savingBatch, setSavingBatch] = useState(false);
@@ -338,11 +343,11 @@ export default function PackingOrderDetail() {
       number_of_master_cartons: calc.number_of_master_cartons,
       partial_box_quantity: calc.partial_box_quantity,
       partial_carton_quantity: calc.partial_carton_quantity,
-      gross_weight: 14.8,
-      net_weight: 13.2,
-      packing_operator: 'S. Selvaraj (Packing Lead)',
-      packing_supervisor: 'K. Senthil (Quality & Packaging Manager)',
-      remarks: `Packed per Section D master carton specifications (${unitsPerBox} pcs/box, ${boxesPerCarton} boxes/carton).`
+      gross_weight: 0,
+      net_weight: 0,
+      packing_operator: '',
+      packing_supervisor: '',
+      remarks: ''
     });
 
     setPhotoUrls([]);
@@ -351,12 +356,36 @@ export default function PackingOrderDetail() {
   };
 
   const handlePackedQtyChange = (val: number) => {
-    const calc = recalculatePackaging(val, batchForm.units_per_box, batchForm.boxes_per_master_carton);
-    setBatchForm({
-      ...batchForm,
+    const u = batchForm.units_per_box || 1;
+    const b = batchForm.boxes_per_master_carton || 1;
+    const calc = recalculatePackaging(val, u, b);
+    setBatchForm(prev => ({
+      ...prev,
       packed_quantity: val,
       ...calc
-    });
+    }));
+  };
+
+  const handleUnitsPerBoxChange = (val: number) => {
+    const u = val;
+    const b = batchForm.boxes_per_master_carton || 1;
+    const calc = recalculatePackaging(batchForm.packed_quantity, u || 1, b);
+    setBatchForm(prev => ({
+      ...prev,
+      units_per_box: u,
+      ...calc
+    }));
+  };
+
+  const handleBoxesPerCartonChange = (val: number) => {
+    const b = val;
+    const u = batchForm.units_per_box || 1;
+    const calc = recalculatePackaging(batchForm.packed_quantity, u, b || 1);
+    setBatchForm(prev => ({
+      ...prev,
+      boxes_per_master_carton: b,
+      ...calc
+    }));
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1016,10 +1045,51 @@ export default function PackingOrderDetail() {
       <Modal
         isOpen={batchModalOpen}
         onClose={() => setBatchModalOpen(false)}
-        title={`Create Packing Batch — ${selectedItem?.product_name || ''}`}
-        size="lg"
+        title={`Create Packing Batch — ${selectedItem?.product_name || 'Product'}`}
+        subtitle={`Stage 09: Box & Master Carton Packaging Breakdown • Order #${order?.order_number || id}`}
+        size="2xl"
+        footer={
+          <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+              <span className="font-semibold text-slate-700">Batch Plan:</span>
+              <span className="font-mono bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded font-bold">
+                {fmt(batchForm.packed_quantity)} pcs
+              </span>
+              <span>→</span>
+              <span className="font-mono bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded font-bold">
+                {batchForm.number_of_boxes} boxes
+              </span>
+              <span>→</span>
+              <span className="font-mono bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded font-black">
+                {batchForm.number_of_master_cartons} Master Cartons
+              </span>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <Button
+                variant="secondary"
+                size="md"
+                type="button"
+                onClick={() => setBatchModalOpen(false)}
+                className="min-w-[80px]"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                type="submit"
+                form="create-packing-batch-form"
+                disabled={savingBatch || batchForm.packed_quantity <= 0}
+                className="bg-amber-600 hover:bg-amber-700 text-white gap-2 font-semibold shadow-xs min-w-[220px]"
+              >
+                {savingBatch ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}
+                <span>Save & Generate Master Cartons</span>
+              </Button>
+            </div>
+          </div>
+        }
       >
-        <form onSubmit={handleSaveBatch} className="space-y-4">
+        <form id="create-packing-batch-form" onSubmit={handleSaveBatch} className="space-y-4">
           {batchError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
@@ -1027,22 +1097,78 @@ export default function PackingOrderDetail() {
             </div>
           )}
 
+          {/* Product & Available to Pack Header Banner */}
+          {selectedItem && (
+            <div className="p-3.5 bg-gradient-to-r from-amber-50/90 via-slate-50 to-amber-50/40 rounded-xl border border-amber-200 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/10 text-amber-700 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <Package className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-bold text-slate-900 text-sm">{selectedItem.product_name}</span>
+                    {(selectedItem.sku || selectedItem.product_sku || selectedItem.product_code) && (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 text-[10px] font-mono font-semibold">
+                        {selectedItem.sku || selectedItem.product_sku || selectedItem.product_code}
+                      </span>
+                    )}
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-semibold border border-amber-300">
+                      Color: {selectedItem.color || 'Standard'}
+                    </span>
+                    {selectedItem.size && (
+                      <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-mono font-semibold border border-slate-200">
+                        Size: {selectedItem.size}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                    <span>From Checking Stage: <strong>{fmt(summaryByItem[selectedItem.id]?.arrivedFromChecking || 0)} pcs</strong></span>
+                    <span>•</span>
+                    <span>Already Packed: <strong>{fmt(summaryByItem[selectedItem.id]?.totalPacked || 0)} pcs</strong></span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 bg-white px-3 py-1.5 rounded-lg border border-amber-200 shadow-2xs">
+                <div className="text-right">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Available to Pack</div>
+                  <div className="text-base font-black text-amber-600 font-mono leading-tight">
+                    {fmt(summaryByItem[selectedItem.id]?.availableToPack || 0)} <span className="text-[11px] font-normal text-slate-500">pcs</span>
+                  </div>
+                </div>
+                {summaryByItem[selectedItem.id]?.availableToPack > 0 && batchForm.packed_quantity !== summaryByItem[selectedItem.id]?.availableToPack && (
+                  <button
+                    type="button"
+                    onClick={() => handlePackedQtyChange(summaryByItem[selectedItem.id]?.availableToPack || 0)}
+                    className="px-2.5 py-1 text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-md border border-amber-300 transition-colors cursor-pointer"
+                  >
+                    Pack All
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Row 1: Date & Operator Details */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <FormField label="Packing Date" required>
-              <input
-                type="date"
-                required
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
-                value={batchForm.packing_date}
-                onChange={e => setBatchForm({ ...batchForm, packing_date: e.target.value })}
-              />
+              <div className="relative">
+                <input
+                  type="date"
+                  required
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                  value={batchForm.packing_date}
+                  onChange={e => setBatchForm({ ...batchForm, packing_date: e.target.value })}
+                />
+              </div>
             </FormField>
 
             <FormField label="Packing Lead / Operator" required>
               <input
                 type="text"
                 required
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                placeholder="e.g. S. Selvaraj (Packing Lead)"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
                 value={batchForm.packing_operator}
                 onChange={e => setBatchForm({ ...batchForm, packing_operator: e.target.value })}
               />
@@ -1051,7 +1177,8 @@ export default function PackingOrderDetail() {
             <FormField label="Packing Supervisor">
               <input
                 type="text"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                placeholder="e.g. K. Senthil (Quality & Packing Supervisor)"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
                 value={batchForm.packing_supervisor}
                 onChange={e => setBatchForm({ ...batchForm, packing_supervisor: e.target.value })}
               />
@@ -1059,28 +1186,47 @@ export default function PackingOrderDetail() {
           </div>
 
           {/* Section D Packaging Calculator Box */}
-          <div className="p-4 bg-amber-50/60 rounded-xl border border-amber-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+          <div className="p-4 bg-gradient-to-br from-amber-50/80 via-white to-amber-50/30 rounded-xl border border-amber-200 space-y-3.5 shadow-2xs">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
                 <Boxes className="w-4 h-4 text-amber-600" />
                 <span>Automatic Box & Master Carton Calculation (Section D)</span>
               </div>
-              <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded font-medium">
-                Live Formula Sync
-              </span>
+              <div className="flex items-center gap-2">
+                {selectedProductSpec?.boxes?.[0]?.box_name && (
+                  <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded font-mono border border-slate-200">
+                    Spec: {selectedProductSpec.boxes[0].box_name}
+                  </span>
+                )}
+                <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-semibold border border-amber-300 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-600" />
+                  Live Sync
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label className="text-[11px] font-semibold text-slate-800 block mb-1">Quantity to Pack (Pcs)</label>
+                <label className="text-[11px] font-semibold text-slate-800 block mb-1">
+                  Quantity to Pack (Pcs) <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="number"
                   min="1"
+                  max={selectedItem ? (summaryByItem[selectedItem.id]?.availableToPack || undefined) : undefined}
                   required
-                  className="w-full font-mono text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-900"
-                  value={batchForm.packed_quantity}
-                  onChange={e => handlePackedQtyChange(Math.max(0, parseInt(e.target.value) || 0))}
+                  placeholder="0"
+                  className="w-full font-mono text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-900 bg-white"
+                  value={batchForm.packed_quantity || ''}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    const val = raw === '' ? 0 : parseInt(raw) || 0;
+                    handlePackedQtyChange(val);
+                  }}
                 />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Max: {selectedItem ? fmt(summaryByItem[selectedItem.id]?.availableToPack || 0) : 0} pcs
+                </span>
               </div>
 
               <div>
@@ -1089,14 +1235,16 @@ export default function PackingOrderDetail() {
                   type="number"
                   min="1"
                   required
-                  className="w-full font-mono text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-800"
-                  value={batchForm.units_per_box}
+                  placeholder="20"
+                  className="w-full font-mono text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-800 bg-white"
+                  value={batchForm.units_per_box || ''}
                   onChange={e => {
-                    const u = Math.max(1, parseInt(e.target.value) || 1);
-                    const calc = recalculatePackaging(batchForm.packed_quantity, u, batchForm.boxes_per_master_carton);
-                    setBatchForm({ ...batchForm, units_per_box: u, ...calc });
+                    const raw = e.target.value;
+                    const val = raw === '' ? 0 : parseInt(raw) || 0;
+                    handleUnitsPerBoxChange(val);
                   }}
                 />
+                <span className="text-[10px] text-slate-500 mt-1 block">Pieces per inner box</span>
               </div>
 
               <div>
@@ -1105,105 +1253,170 @@ export default function PackingOrderDetail() {
                   type="number"
                   min="1"
                   required
-                  className="w-full font-mono text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-800"
-                  value={batchForm.boxes_per_master_carton}
+                  placeholder="5"
+                  className="w-full font-mono text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-800 bg-white"
+                  value={batchForm.boxes_per_master_carton || ''}
                   onChange={e => {
-                    const b = Math.max(1, parseInt(e.target.value) || 1);
-                    const calc = recalculatePackaging(batchForm.packed_quantity, batchForm.units_per_box, b);
-                    setBatchForm({ ...batchForm, boxes_per_master_carton: b, ...calc });
+                    const raw = e.target.value;
+                    const val = raw === '' ? 0 : parseInt(raw) || 0;
+                    handleBoxesPerCartonChange(val);
                   }}
                 />
+                <span className="text-[10px] text-slate-500 mt-1 block">Boxes in master ctn</span>
               </div>
 
               <div>
                 <label className="text-[11px] font-semibold text-emerald-800 block mb-1">Cartons Generated</label>
-                <div className="font-mono text-base font-black text-emerald-700 px-2.5 py-1 bg-white rounded-lg border border-emerald-300">
-                  {batchForm.number_of_master_cartons} Cartons
+                <div className="px-3 py-2 bg-emerald-50/80 rounded-lg border border-emerald-300 flex items-center justify-between">
+                  <div>
+                    <span className="font-mono text-base font-black text-emerald-700">
+                      {batchForm.number_of_master_cartons}
+                    </span>
+                    <span className="text-xs font-semibold text-emerald-800 ml-1.5">Cartons</span>
+                  </div>
+                  <Package className="w-4 h-4 text-emerald-600" />
                 </div>
+                <span className="text-[10px] text-emerald-700 mt-1 block font-medium">To be registered</span>
               </div>
             </div>
 
-            {/* Calculated Breakdown Display */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-amber-200/60 text-xs text-amber-900 font-mono">
-              <div>Total Inner Boxes: <strong>{batchForm.number_of_boxes}</strong></div>
-              <div>Partial Box Pcs: <strong>{batchForm.partial_box_quantity} pcs</strong></div>
-              <div>Partial Carton Boxes: <strong>{batchForm.partial_carton_quantity} boxes</strong></div>
-              <div>Gross Weight: <strong>{batchForm.gross_weight} kg/ctn</strong></div>
+            {/* Calculated Breakdown Display - 4 Modern Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-amber-200/70">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Inner Boxes</div>
+                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
+                  {batchForm.number_of_boxes} <span className="text-[11px] font-normal text-slate-500">boxes</span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                  {batchForm.units_per_box} pcs / box
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Full Boxes</div>
+                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
+                  {Math.floor((batchForm.packed_quantity || 0) / (batchForm.units_per_box || 1))} <span className="text-[11px] font-normal text-slate-500">boxes</span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                  @{batchForm.units_per_box} pcs each
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Partial Box Qty</div>
+                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
+                  {batchForm.partial_box_quantity > 0 ? (
+                    <span className="text-amber-700 font-bold">{batchForm.partial_box_quantity} <span className="text-[11px] font-normal text-slate-600">pcs (1 box)</span></span>
+                  ) : (
+                    <span className="text-emerald-600 text-xs font-semibold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> None (All full)
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                  {batchForm.partial_box_quantity > 0 ? 'Last box has remainder' : 'Zero partial boxes'}
+                </div>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Partial Carton</div>
+                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
+                  {batchForm.partial_carton_quantity > 0 ? (
+                    <span className="text-amber-700 font-bold">{batchForm.partial_carton_quantity} <span className="text-[11px] font-normal text-slate-600">boxes</span></span>
+                  ) : (
+                    <span className="text-emerald-600 text-xs font-semibold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> None (All full)
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                  {batchForm.partial_carton_quantity > 0 ? 'In last master carton' : 'All master cartons full'}
+                </div>
+              </div>
             </div>
           </div>
 
+          {/* Row 2: Weights */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Gross Weight per Carton (kg)">
-              <input
-                type="number"
-                step="0.1"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
-                value={batchForm.gross_weight}
-                onChange={e => setBatchForm({ ...batchForm, gross_weight: parseFloat(e.target.value) || 0 })}
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 14.50"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                  value={batchForm.gross_weight || ''}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    setBatchForm({ ...batchForm, gross_weight: raw === '' ? 0 : parseFloat(raw) || 0 });
+                  }}
+                />
+              </div>
             </FormField>
 
             <FormField label="Net Weight per Carton (kg)">
-              <input
-                type="number"
-                step="0.1"
-                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
-                value={batchForm.net_weight}
-                onChange={e => setBatchForm({ ...batchForm, net_weight: parseFloat(e.target.value) || 0 })}
-              />
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 13.00"
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
+                  value={batchForm.net_weight || ''}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    setBatchForm({ ...batchForm, net_weight: raw === '' ? 0 : parseFloat(raw) || 0 });
+                  }}
+                />
+              </div>
             </FormField>
           </div>
 
+          {/* Row 3: Remarks */}
           <FormField label="Packaging Notes & Barcode Instructions">
             <textarea
               rows={2}
-              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+              placeholder="Add any carton labeling instructions, barcode verification notes, or customer packaging guidelines..."
+              className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 bg-white"
               value={batchForm.remarks}
               onChange={e => setBatchForm({ ...batchForm, remarks: e.target.value })}
             />
           </FormField>
 
-          {/* Photo Evidence */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Packed Boxes & Master Carton Evidence Photographs
-            </label>
-            <div className="flex items-center gap-2 flex-wrap">
-              <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-amber-500 rounded-xl p-3 flex items-center gap-2 text-xs text-slate-600 transition">
+          {/* Row 4: Evidence Photos */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
                 <Camera className="w-4 h-4 text-amber-600" />
-                <span>Upload Packing Photo</span>
+                <span>Packed Boxes & Master Carton Evidence Photographs</span>
+              </label>
+              <span className="text-[10px] text-slate-500 font-mono">
+                {photoUrls.length} photo{photoUrls.length === 1 ? '' : 's'} attached
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-amber-500 hover:bg-amber-50/30 rounded-xl px-4 py-3 flex items-center gap-2 text-xs font-medium text-slate-600 transition bg-white">
+                <Camera className="w-4 h-4 text-amber-600" />
+                <span>Upload Photos</span>
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
               </label>
 
               {photoUrls.map((url, idx) => (
-                <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-300 group">
-                  <img src={url} alt="Packing" className="w-full h-full object-cover" />
+                <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-300 group shadow-2xs">
+                  <img src={url} alt={`Packing ${idx + 1}`} className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => setPhotoUrls(prev => prev.filter((_, i) => i !== idx))}
-                    className="absolute top-0.5 right-0.5 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
+                    className="absolute top-0.5 right-0.5 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition shadow-sm"
+                    title="Remove photo"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
               ))}
             </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <Button variant="secondary" size="sm" type="button" onClick={() => setBatchModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              type="submit"
-              disabled={savingBatch}
-              className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
-            >
-              {savingBatch ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Box className="w-3.5 h-3.5" />}
-              <span>Save & Generate Master Cartons</span>
-            </Button>
           </div>
         </form>
       </Modal>
