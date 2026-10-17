@@ -1070,6 +1070,9 @@ class ProductionController {
             try {
                 $pdo->exec("ALTER TABLE `embroidery_receipts` ADD COLUMN `photo_urls` JSON NULL");
             } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `packing_batches` ADD COLUMN `status` VARCHAR(50) NOT NULL DEFAULT 'Packed' AFTER `photo_urls`");
+            } catch (Exception $e) {}
 
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `embroidery_job_orders` (
@@ -1194,6 +1197,7 @@ class ProductionController {
                   `packing_supervisor` VARCHAR(150) NULL,
                   `remarks` TEXT NULL,
                   `photo_urls` JSON NULL,
+                  `status` VARCHAR(50) DEFAULT 'Packed',
                   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   INDEX `idx_pb_ord` (`production_order_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -3115,18 +3119,42 @@ class ProductionController {
             $itemRow = $iStmt->fetch();
             $prodName = $itemRow['prod_name'] ?? 'Garment Product';
 
-            $stmt = $pdo->prepare("INSERT INTO packing_batches (production_order_id, production_order_item_id, batch_number, packing_date, approved_quantity, packed_quantity, units_per_box, number_of_boxes, boxes_per_master_carton, number_of_master_cartons, packing_operator, packing_supervisor, remarks, photo_urls, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Packed')");
-            $stmt->execute([$pId, $itemId, $batchNo, $data['packing_date'] ?? date('Y-m-d'), $data['approved_quantity'] ?? $packed, $packed, $unitsBox, $totalBoxes, $boxesMaster, $totalCartons, $data['packing_operator'] ?? null, $data['packing_supervisor'] ?? null, $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
+            $stmt = $pdo->prepare("INSERT INTO packing_batches (
+                production_order_id, production_order_item_id, batch_number, packing_date, 
+                approved_quantity, packed_quantity, remaining_unpacked_quantity,
+                units_per_box, number_of_boxes, boxes_per_master_carton, number_of_master_cartons, 
+                partial_box_quantity, partial_carton_quantity,
+                gross_weight, net_weight, packing_operator, packing_supervisor, remarks, photo_urls, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Packed')");
+            $stmt->execute([
+                $pId, $itemId, $batchNo, $data['packing_date'] ?? date('Y-m-d'), 
+                $data['approved_quantity'] ?? $packed, $packed, (float)($data['remaining_unpacked_quantity'] ?? 0),
+                $unitsBox, $totalBoxes, $boxesMaster, $totalCartons, 
+                (int)($data['partial_box_quantity'] ?? ($packed % $unitsBox)), 
+                (int)($data['partial_carton_quantity'] ?? ($totalBoxes % $boxesMaster)),
+                !empty($data['gross_weight']) ? (float)$data['gross_weight'] : null,
+                !empty($data['net_weight']) ? (float)$data['net_weight'] : null,
+                $data['packing_operator'] ?? null, $data['packing_supervisor'] ?? null, 
+                $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])
+            ]);
             $bId = (int)$pdo->lastInsertId();
 
             // Insert individual cartons
-            $cStmt = $pdo->prepare("INSERT INTO packing_cartons (carton_serial_number, packing_batch_id, production_order_id, production_order_item_id, product_name, items_count, is_full, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'Packed')");
+            $cStmt = $pdo->prepare("INSERT INTO packing_cartons (
+                carton_serial_number, packing_batch_id, production_order_id, production_order_item_id, 
+                product_name, product_code, color, size, items_count, is_full, gross_weight, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Packed')");
             $itemsPerCarton = $unitsBox * $boxesMaster;
             for ($i = 1; $i <= $totalCartons; $i++) {
                 $serial = "CTN-{$pId}-{$itemId}-{$bId}-{$i}";
                 $isFull = ($i < $totalCartons || ($packed % $itemsPerCarton === 0)) ? 1 : 0;
                 $cQty = ($i === $totalCartons && ($packed % $itemsPerCarton !== 0)) ? ($packed % $itemsPerCarton) : $itemsPerCarton;
-                $cStmt->execute([$serial, $bId, $pId, $itemId, $prodName, $cQty, $isFull]);
+                $cStmt->execute([
+                    $serial, $bId, $pId, $itemId, 
+                    $prodName, $itemRow['product_sku'] ?? $itemRow['product_code'] ?? null, 
+                    $itemRow['color'] ?? null, $itemRow['size'] ?? null, 
+                    $cQty, $isFull, !empty($data['gross_weight']) ? (float)$data['gross_weight'] : null
+                ]);
             }
 
             // Record in ledger
