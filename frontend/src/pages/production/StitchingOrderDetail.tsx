@@ -130,6 +130,7 @@ export default function StitchingOrderDetail() {
   // Transfer to Checking Modal
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferItem, setTransferItem] = useState<any | null>(null);
+  const [transferBatchId, setTransferBatchId] = useState<number | undefined>(undefined);
   const [transferQuantity, setTransferQuantity] = useState<number>(0);
   const [transferRemarks, setTransferRemarks] = useState('Stitching completed and passed initial line audit. Transferred to Stage 08: Checking.');
   const [transferring, setTransferring] = useState(false);
@@ -296,14 +297,21 @@ export default function StitchingOrderDetail() {
   // Open Transfer Modal to Checking (Stage 08)
   const handleOpenTransferModal = (itOrBatch?: any) => {
     let it = itOrBatch;
+    let bId: number | undefined = undefined;
     if (itOrBatch && itOrBatch.batch_number) {
       // Called with batch
       it = items.find(i => String(i.color).trim() === String(itOrBatch.color).trim()) || items[0];
+      bId = itOrBatch.id;
+    } else if (itOrBatch) {
+      it = itOrBatch;
     } else if (!itOrBatch) {
       it = items.find(i => Number(i.ready_to_transfer || 0) > 0) || items[0];
     }
     setTransferItem(it);
-    const maxQty = Number(it?.ready_to_transfer || it?.accepted_quantity || overallTotals.readyForChecking || 0);
+    setTransferBatchId(bId);
+    const maxQty = bId 
+      ? Number(itOrBatch?.accepted_quantity || 0)
+      : Number(it?.ready_to_transfer ?? it?.accepted_quantity ?? overallTotals.readyForChecking ?? 0);
     setTransferQuantity(maxQty);
     setTransferRemarks('Stitching completed and passed initial line audit. Transferred to Stage 08: Checking.');
     setTransferError('');
@@ -323,6 +331,7 @@ export default function StitchingOrderDetail() {
       setTransferError('');
       await api.transferStitchingOutput({
         production_order_id: Number(order.id),
+        batch_id: transferBatchId,
         item_id: transferItem?.active_stitching_item_id || transferItem?.id,
         transfer_quantity: Number(transferQuantity),
         remarks: transferRemarks
@@ -569,7 +578,7 @@ export default function StitchingOrderDetail() {
                     const rejQ = Number(it.rejected_quantity || 0);
                     const rwkQ = Number(it.rework_quantity || 0);
                     const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
-                    const readyQ = Number(it.ready_to_transfer || accQ);
+                    const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : accQ);
 
                     return (
                       <tr key={it.id || idx} className="hover:bg-slate-50/70 transition">
@@ -640,10 +649,17 @@ export default function StitchingOrderDetail() {
                                   variant="secondary"
                                   icon={<ArrowRight className="w-3 h-3" />}
                                   onClick={() => handleOpenTransferModal(it)}
-                                  className="text-[11px] font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200"
+                                  className="text-[11px] font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 shadow-2xs"
                                 >
                                   To Checking
                                 </Button>
+                              </div>
+                            ) : compQ > 0 && readyQ <= 0 && (Number(it.transferred_to_checking || 0) > 0 || accQ > 0) ? (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1.5 shadow-2xs">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                                  Transferred to Checking
+                                </span>
                               </div>
                             ) : (
                               <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
@@ -738,9 +754,16 @@ export default function StitchingOrderDetail() {
                         <td className="py-3 px-3 text-right font-mono text-red-600 font-semibold">{fmt(rej)}</td>
                         <td className="py-3 px-3 text-right font-mono text-amber-600 font-semibold">{fmt(rwk)}</td>
                         <td className="py-3 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Completed
-                          </span>
+                          {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                              Transferred to Checking
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Completed
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-center">
                           {photos.length > 0 ? (
@@ -770,16 +793,23 @@ export default function StitchingOrderDetail() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <Button
-                            id={`btn-transfer-checking-${batch.id}`}
-                            size="xs"
-                            variant="secondary"
-                            icon={<ArrowRight className="w-3 h-3" />}
-                            onClick={() => handleOpenTransferModal(batch)}
-                            className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
-                          >
-                            To Checking
-                          </Button>
+                          {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
+                            <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1 shadow-2xs">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                              In Checking
+                            </span>
+                          ) : (
+                            <Button
+                              id={`btn-transfer-checking-${batch.id}`}
+                              size="xs"
+                              variant="secondary"
+                              icon={<ArrowRight className="w-3 h-3" />}
+                              onClick={() => handleOpenTransferModal(batch)}
+                              className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
+                            >
+                              To Checking
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );

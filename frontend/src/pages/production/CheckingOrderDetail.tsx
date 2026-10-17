@@ -41,8 +41,10 @@ import {
   Scissors,
   Sparkles,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Boxes
 } from 'lucide-react';
+
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -138,6 +140,7 @@ export default function CheckingOrderDetail() {
   // Transfer to Packing (Stage 09) Modal State
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferItem, setTransferItem] = useState<any | null>(null);
+  const [transferInspectionId, setTransferInspectionId] = useState<number | undefined>(undefined);
   const [transferQuantity, setTransferQuantity] = useState<number>(0);
   const [transferRemarks, setTransferRemarks] = useState('');
   const [transferring, setTransferring] = useState(false);
@@ -213,8 +216,9 @@ export default function CheckingOrderDetail() {
       const rwk = Number(it.rework_quantity || 0);
       totalRework += rwk;
 
+      const transferred = Number(it.transferred_to_packing || 0);
       pendingInspection += Math.max(0, arrived - chk);
-      readyForPacking += Math.max(0, pass);
+      readyForPacking += Math.max(0, pass - transferred);
     });
 
     const passRate = totalChecked > 0 ? ((totalPassed / totalChecked) * 100).toFixed(1) : '100.0';
@@ -325,15 +329,25 @@ export default function CheckingOrderDetail() {
   };
 
   // Open Transfer to Packing Modal
-  const handleOpenTransferModal = (it?: any) => {
-    if (it) {
-      setTransferItem(it);
-      setTransferQuantity(Number(it.ready_to_pack || it.passed_quantity || 0));
-    } else {
-      setTransferItem(null);
-      setTransferQuantity(overallTotals.readyForPacking);
+  const handleOpenTransferModal = (itOrInsp?: any) => {
+    let it = itOrInsp;
+    let insId: number | undefined = undefined;
+    if (itOrInsp && itOrInsp.batch_number && itOrInsp.checked_quantity !== undefined) {
+      // Called with inspection row from Table 2
+      insId = itOrInsp.id;
+      it = items.find(i => String(i.color).trim() === String(itOrInsp.color).trim()) || items[0];
+    } else if (itOrInsp) {
+      it = itOrInsp;
+    } else if (!itOrInsp) {
+      it = items.find(i => Number(i.ready_to_pack || 0) > 0) || items[0];
     }
-    setTransferRemarks('');
+    setTransferItem(it);
+    setTransferInspectionId(insId);
+    const maxQty = insId 
+      ? Number(itOrInsp?.passed_quantity || 0)
+      : Number(it?.ready_to_pack ?? it?.passed_quantity ?? overallTotals.readyForPacking ?? 0);
+    setTransferQuantity(maxQty);
+    setTransferRemarks('Inspection completed and passed 100% audit. Transferred to Stage 09: Packing.');
     setTransferError('');
     setTransferModalOpen(true);
   };
@@ -352,7 +366,8 @@ export default function CheckingOrderDetail() {
 
       await api.transferCheckingOutput({
         production_order_id: Number(order.id),
-        item_id: transferItem?.active_checking_item_id || transferItem?.id,
+        inspection_id: transferInspectionId,
+        item_id: transferItem?.active_checking_item_id || transferItem?.production_order_item_id || transferItem?.id,
         transfer_quantity: Number(transferQuantity),
         remarks: transferRemarks || 'Transferred passed inspection output to Stage 09: Packing'
       });
@@ -504,7 +519,11 @@ export default function CheckingOrderDetail() {
           <div className="text-xl font-black font-mono text-emerald-700 mt-0.5">
             {fmt(overallTotals.totalPassed)}
           </div>
-          <div className="text-[10px] text-emerald-600 font-medium mt-1">Approved for Packing</div>
+          <div className="text-[10px] text-emerald-600 font-medium mt-1">
+            {overallTotals.readyForPacking > 0
+              ? `${overallTotals.readyForPacking} Ready for Packing`
+              : 'Transferred to Packing (Stage 09)'}
+          </div>
         </div>
 
         {/* Card 4: Scrap Rejections */}
@@ -616,7 +635,8 @@ export default function CheckingOrderDetail() {
                   const rej = Number(it.rejected_quantity || 0);
                   const rwk = Number(it.rework_quantity || 0);
                   const avail = Math.max(0, arrivedStitching - inspected);
-                  const readyToPack = Math.max(0, passed);
+                  const transferredToPacking = Number(it.transferred_to_packing || 0);
+                  const readyToPack = Math.max(0, passed - transferredToPacking);
 
                   return (
                     <tr key={idx} className="hover:bg-slate-50/70 transition">
@@ -697,6 +717,13 @@ export default function CheckingOrderDetail() {
                                 <span>To Packing</span>
                                 <ArrowRight className="w-3 h-3" />
                               </Button>
+                            </div>
+                          ) : (transferredToPacking > 0 || passed > 0) ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded border border-amber-200 shadow-2xs">
+                                <Boxes className="w-3.5 h-3.5 text-amber-600" />
+                                Transferred to Packing
+                              </span>
                             </div>
                           ) : arrivedStitching === 0 ? (
                             <span className="text-[11px] text-slate-400 italic bg-slate-50 px-2.5 py-1 rounded border border-slate-200 block">
@@ -853,17 +880,22 @@ export default function CheckingOrderDetail() {
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
-                        {pass > 0 && (
+                        {insp.status === 'Transferred to Packing' || (insp as any).is_transferred ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded border border-amber-200 shadow-2xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-amber-600" />
+                            In Packing
+                          </span>
+                        ) : pass > 0 ? (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleOpenTransferModal(insp)}
-                            className="text-[11px] text-emerald-700 border-emerald-300 hover:bg-emerald-50 flex items-center gap-1 mx-auto py-1 px-2.5"
+                            className="text-[11px] text-emerald-700 border-emerald-300 hover:bg-emerald-50 flex items-center gap-1 mx-auto py-1 px-2.5 font-semibold"
                           >
                             <span>To Packing</span>
                             <ArrowRight className="w-3 h-3" />
                           </Button>
-                        )}
+                        ) : null}
                       </td>
                     </tr>
                   );

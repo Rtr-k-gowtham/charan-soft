@@ -221,6 +221,8 @@ export const api = {
     request<any>(`/production/packing/${orderId}`),
   createPackingBatch: (data: any) =>
     request<any>('/production/packing/batch', 'POST', data),
+  transferPackingOutput: (data: any) =>
+    request<any>('/production/packing/transfer', 'POST', data),
   getPackingCartons: (orderId?: number | string) =>
     request<any[]>(`/production/packing/cartons${orderId ? `?production_order_id=${orderId}` : ''}`),
   getCartonBySerial: (serial: string) =>

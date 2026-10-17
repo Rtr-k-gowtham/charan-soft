@@ -3,9 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionStage, PackingBatch, PackingCarton, BuyerProduct } from '../../types';
-import PageHeader from '../../components/ui/PageHeader';
-import StatusBadge from '../../components/ui/StatusBadge';
+import { ProductionOrder, ProductionStage, PackingBatch, PackingCarton } from '../../types';
 import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
@@ -18,21 +16,18 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
-  Layers,
   Calendar,
   Camera,
-  Image as ImageIcon,
-  User,
   Trash2,
-  ZoomIn,
   Eye,
   CheckCheck,
-  FileText,
   Box,
   Boxes,
   ExternalLink,
   QrCode,
-  Scale
+  ShieldCheck,
+  Check,
+  Clock
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -87,6 +82,9 @@ export default function PackingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Tab filter: 'ALL' or 'PACKING'
+  const [activeTab, setActiveTab] = useState<'ALL' | 'PACKING'>('ALL');
+
   // New Packing Batch Modal State
   const [batchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
@@ -136,7 +134,6 @@ export default function PackingOrderDetail() {
 
       const ord = (orderRes as any)?.data || orderRes;
       setOrder(ord);
-      setItems(ord.items || []);
 
       const st = (stagesRes as any)?.data || stagesRes;
       setStages(Array.isArray(st) ? st : []);
@@ -144,13 +141,18 @@ export default function PackingOrderDetail() {
       const packData = (packRes as any)?.data || packRes;
       setBatches(Array.isArray(packData?.batches) ? packData.batches : []);
 
+      const finalItems = (Array.isArray(packData?.items) && packData.items.length > 0)
+        ? packData.items
+        : (ord.items || []);
+      setItems(finalItems);
+
       const cData = (cartonsRes as any)?.data || cartonsRes;
-      setCartons(Array.isArray(cData) ? cData : []);
+      setCartons(Array.isArray(cData) ? cData : (Array.isArray(packData?.cartons) ? packData.cartons : []));
 
       // Fetch packaging specs for each item from Buyer Master (Sections C & D)
-      if (ord.customer_id && ord.items) {
+      if (ord.customer_id && finalItems.length > 0) {
         const configs: { [key: number]: any } = {};
-        for (const it of ord.items) {
+        for (const it of finalItems) {
           if (it.product_id) {
             try {
               const pRes = await api.getBuyerProduct(ord.customer_id, it.product_id);
@@ -184,10 +186,11 @@ export default function PackingOrderDetail() {
   const batchesByItem = useMemo(() => {
     const map: Record<number, PackingBatch[]> = {};
     batches.forEach(b => {
-      if (!map[b.production_order_item_id]) {
-        map[b.production_order_item_id] = [];
+      const bItemId = b.production_order_item_id;
+      if (!map[bItemId]) {
+        map[bItemId] = [];
       }
-      map[b.production_order_item_id].push(b);
+      map[bItemId].push(b);
     });
     return map;
   }, [batches]);
@@ -199,21 +202,38 @@ export default function PackingOrderDetail() {
       totalBoxes: number;
       totalCartons: number;
       unpacked: number;
+      availableToPack: number;
+      arrivedFromChecking: number;
+      orderQty: number;
     }> = {};
 
     items.forEach(it => {
-      const itBatches = batchesByItem[it.id] || [];
+      const activeId = it.active_packing_item_id || it.id;
+      const itBatches = (batchesByItem[activeId] || []).concat(
+        activeId !== it.id ? (batchesByItem[it.id] || []) : []
+      );
       const totalPacked = itBatches.reduce((sum, b) => sum + Number(b.packed_quantity || 0), 0);
       const totalBoxes = itBatches.reduce((sum, b) => sum + Number(b.number_of_boxes || 0), 0);
       const totalCartons = itBatches.reduce((sum, b) => sum + Number(b.number_of_master_cartons || 0), 0);
-      const unpacked = Math.max(0, Number(it.quantity || 0) - totalPacked);
 
-      map[it.id] = {
+      const arrivedFromChecking = Number(it.arrived_from_checking ?? it.stage_9_qty ?? it.current_stage_quantity ?? 0);
+      const availableToPack = Math.max(0, arrivedFromChecking - totalPacked);
+      const orderQty = Number(it.order_quantity || it.quantity || it.total_quantity || 0);
+      const unpacked = Math.max(0, orderQty - totalPacked);
+
+      const stats = {
         totalPacked,
         totalBoxes,
         totalCartons,
-        unpacked
+        unpacked,
+        availableToPack,
+        arrivedFromChecking,
+        orderQty
       };
+      map[it.id] = stats;
+      if (activeId !== it.id) {
+        map[activeId] = stats;
+      }
     });
 
     return map;
@@ -222,24 +242,40 @@ export default function PackingOrderDetail() {
   // Overall totals across all products
   const overallTotals = useMemo(() => {
     let orderQty = 0;
+    let arrivedQty = 0;
     let packedQty = 0;
     let totalBoxes = 0;
     let totalCartons = 0;
     let unpackedQty = 0;
+    let availableToPackQty = 0;
 
     items.forEach(it => {
-      orderQty += Number(it.quantity || 0);
       const s = summaryByItem[it.id];
+      const itOrderQty = Number(it.order_quantity || it.quantity || it.total_quantity || 0);
+      orderQty += itOrderQty;
       if (s) {
+        arrivedQty += s.arrivedFromChecking;
         packedQty += s.totalPacked;
         totalBoxes += s.totalBoxes;
         totalCartons += s.totalCartons;
         unpackedQty += s.unpacked;
+        availableToPackQty += s.availableToPack;
       }
     });
 
-    return { orderQty, packedQty, totalBoxes, totalCartons, unpackedQty };
+    return { orderQty, arrivedQty, packedQty, totalBoxes, totalCartons, unpackedQty, availableToPackQty };
   }, [items, summaryByItem]);
+
+  // Filter items
+  const filteredItems = useMemo(() => {
+    if (activeTab === 'PACKING') {
+      return items.filter(it => {
+        const s = summaryByItem[it.id];
+        return (s?.arrivedFromChecking || 0) > 0;
+      });
+    }
+    return items;
+  }, [items, activeTab, summaryByItem]);
 
   // Helper function to recalculate box packaging based on Section C & D specs
   const recalculatePackaging = (
@@ -269,8 +305,13 @@ export default function PackingOrderDetail() {
   // Open Packing Batch Modal
   const handleOpenBatchModal = (item: any) => {
     setSelectedItem(item);
-    const existing = summaryByItem[item.id] || { totalPacked: 0 };
-    const remainingQty = Math.max(0, Number(item.quantity || 0) - existing.totalPacked);
+    const existing = summaryByItem[item.id] || { totalPacked: 0, availableToPack: 0 };
+    const remainingQty = existing.availableToPack;
+
+    if (remainingQty <= 0) {
+      showToast('No pieces currently available from Checking to pack for this product.');
+      return;
+    }
 
     // Retrieve Section D packing specs from buyer product
     const pSpec = productConfigs[item.product_id] || null;
@@ -339,15 +380,15 @@ export default function PackingOrderDetail() {
     if (!order || !selectedItem) return;
 
     const packed = Number(batchForm.packed_quantity || 0);
-    const existing = summaryByItem[selectedItem.id] || { totalPacked: 0 };
-    const maxAllowed = Number(selectedItem.quantity || 0) - existing.totalPacked;
+    const existing = summaryByItem[selectedItem.id] || { totalPacked: 0, availableToPack: 0 };
+    const maxAllowed = existing.availableToPack;
 
     if (packed <= 0) {
       setBatchError('Packed quantity must be greater than zero.');
       return;
     }
     if (packed > maxAllowed) {
-      setBatchError(`Packed quantity (${packed}) cannot exceed remaining approved quantity (${maxAllowed}).`);
+      setBatchError(`Packed quantity (${packed}) cannot exceed available quantity from Checking (${maxAllowed}).`);
       return;
     }
 
@@ -357,7 +398,7 @@ export default function PackingOrderDetail() {
 
       await api.createPackingBatch({
         production_order_id: order.id,
-        production_order_item_id: selectedItem.id,
+        production_order_item_id: selectedItem.active_packing_item_id || selectedItem.id,
         packing_date: batchForm.packing_date,
         approved_quantity: batchForm.approved_quantity,
         packed_quantity: packed,
@@ -392,11 +433,18 @@ export default function PackingOrderDetail() {
     if (!order) return;
     try {
       setTransferring(true);
+      await api.transferPackingOutput({
+        production_order_id: order.id,
+        item_id: items[0]?.active_packing_item_id || items[0]?.id,
+        transfer_quantity: overallTotals.packedQty,
+        remarks: `Transferred from Stage 09 Packing to Stage 10 Completed / Dispatch with ${fmt(overallTotals.packedQty)} packed pieces across ${overallTotals.totalCartons} master cartons.`
+      });
+
       const compStage = stages.find(s => (s.code || '').toUpperCase() === 'COMP');
       if (compStage && compStage.id) {
         await api.updateProductionOrderStatus(order.id, compStage.id, {
           notes: `Transferred from Stage 09 Packing to Stage 10 Completed / Dispatch with ${fmt(overallTotals.packedQty)} packed pieces across ${overallTotals.totalCartons} master cartons.`
-        });
+        }).catch(() => {});
       }
       showToast('Successfully transferred order to Stage 10: Completed / Dispatch.');
       setTransferModalOpen(false);
@@ -411,7 +459,7 @@ export default function PackingOrderDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="w-8 h-8 text-amber-600 animate-spin" />
           <p className="text-xs text-slate-500 font-medium">Loading Stage 09 Packing & Carton workspace...</p>
@@ -436,271 +484,533 @@ export default function PackingOrderDetail() {
     );
   }
 
-  const isFullyPacked = overallTotals.unpackedQty === 0 && overallTotals.packedQty > 0;
+  const isFullyPacked = overallTotals.availableToPackQty === 0 && overallTotals.packedQty > 0;
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-700 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 text-sm font-semibold animate-in fade-in slide-in-from-top duration-300">
-          <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-          <span>{toastMessage}</span>
+        <div className="fixed top-5 right-5 z-50 bg-emerald-700 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 border border-emerald-600 animate-slide-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-200 shrink-0" />
+          <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
-        <div className="flex items-start gap-4">
-          <button
-            onClick={() => navigate('/production/packing')}
-            className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
-            title="Return to Stage 09 Board"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                <Boxes className="w-3 h-3 text-amber-600" />
-                Stage 09: Packing & Carton Management
-              </span>
-              <StatusBadge status={order.status || 'In Progress'} />
-              {isFullyPacked && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                  <CheckCheck className="w-3 h-3 text-emerald-600" />
-                  100% Packed & Staged for Dispatch
+      {/* HEADER BAR */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/production/packing')}
+              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-300"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back</span>
+            </Button>
+            <div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h1 className="text-xl font-bold text-slate-900 font-mono tracking-tight">
+                  {order?.order_number || 'Order Details'}
+                </h1>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <Boxes className="w-3.5 h-3.5 text-amber-600" />
+                  Stage 09: Packing & Carton Management
                 </span>
-              )}
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <span>Order {order.order_number}</span>
-              <span className="text-sm font-normal text-slate-500">({order.title || 'Garments Production'})</span>
-            </h1>
-            <div className="flex items-center gap-4 text-xs text-slate-500 mt-1 flex-wrap">
-              <div className="flex items-center gap-1.5">
-                <BuyerAvatar
-                  buyer={{
-                    id: order.customer_id,
-                    code: order.customer_code,
-                    name: order.customer_name,
-                    avatar_style: order.customer_avatar_style,
-                    avatar_seed: order.customer_avatar_seed,
-                    avatar_config: order.customer_avatar_config,
-                  }}
-                  size="xs"
-                />
-                <span className="font-semibold text-slate-700">{order.customer_name || 'Direct Buyer'}</span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {order?.status || 'IN PRODUCTION'}
+                </span>
+                {isFullyPacked && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    100% Packed & Ready for Dispatch
+                  </span>
+                )}
               </div>
-              {order.target_delivery_date && (
-                <div className="flex items-center gap-1 text-slate-600">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Target Delivery: {order.target_delivery_date}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
+                <span>{(order as any)?.order_title || (order as any)?.title || 'Garments Production'}</span>
+                <span>•</span>
+                <span className="font-semibold text-slate-700">
+                  {fmt(overallTotals.arrivedQty)} pcs arrived from Checking
+                </span>
+              </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-3 self-end md:self-center flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchOrderData}
+              disabled={loading}
+              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </Button>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setTransferModalOpen(true)}
+              disabled={overallTotals.packedQty === 0}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>Pass to Completed / Dispatch (Stage 10)</span>
+              <ArrowRight className="w-4 h-4" />
+            </Button>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <Button variant="secondary" size="sm" onClick={fetchOrderData} className="gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
-          </Button>
+        {/* Buyer & Delivery Info */}
+        <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <BuyerAvatar
+              buyer={order}
+              size="sm"
+              shape="circle"
+              className="shrink-0"
+            />
+            <span className="font-semibold text-slate-800">{order?.customer_name || 'gowtham'}</span>
+            <span className="text-slate-400">({order?.customer_code || 'CUST-001'})</span>
+          </div>
 
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setTransferModalOpen(true)}
-            disabled={overallTotals.packedQty === 0}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs"
-          >
-            <span>Pass to Completed / Dispatch (Stage 10)</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Button>
+          <div className="flex items-center gap-4 text-slate-600">
+            {order.target_delivery_date && (
+              <span className="flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span>Target Delivery: <strong className="text-slate-800">{order.target_delivery_date}</strong></span>
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Approved to Pack</div>
-          <div className="text-xl sm:text-2xl font-black text-slate-800">{fmt(overallTotals.orderQty)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">{items.length} Product Lines</div>
+        {/* Card 1: From Checking */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700">From Checking</span>
+            <ShieldCheck className="w-4 h-4 text-blue-500" />
+          </div>
+          <div className="text-xl font-black font-mono text-blue-700 mt-0.5">
+            {fmt(overallTotals.arrivedQty)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">Order: {fmt(overallTotals.orderQty)} pcs</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider mb-1">Total Packed</div>
-          <div className="text-xl sm:text-2xl font-black text-amber-600">{fmt(overallTotals.packedQty)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">Batches: {batches.length}</div>
+        {/* Card 2: Total Packed */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Total Packed</span>
+            <Package className="w-4 h-4 text-amber-600" />
+          </div>
+          <div className="text-xl font-black font-mono text-amber-600 mt-0.5">
+            {fmt(overallTotals.packedQty)}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">{batches.length} Packing Batches</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-indigo-700 uppercase tracking-wider mb-1">Unpacked Balance</div>
-          <div className="text-xl sm:text-2xl font-black text-indigo-700">{fmt(overallTotals.unpackedQty)}</div>
-          <div className="text-[10px] text-indigo-600 mt-1 font-medium">Pending packaging</div>
+        {/* Card 3: Ready to Pack */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Avail. to Pack</span>
+            <Clock className="w-4 h-4 text-indigo-500" />
+          </div>
+          <div className="text-xl font-black font-mono text-indigo-700 mt-0.5">
+            {fmt(overallTotals.availableToPackQty)}
+          </div>
+          <div className="text-[10px] text-indigo-600 mt-1 font-medium">Ready in Stage 09</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Inner Boxes</div>
-          <div className="text-xl sm:text-2xl font-black text-slate-800 font-mono">{fmt(overallTotals.totalBoxes)}</div>
+        {/* Card 4: Inner Boxes */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Inner Boxes</span>
+            <Box className="w-4 h-4 text-slate-400" />
+          </div>
+          <div className="text-xl font-black font-mono text-slate-800 mt-0.5">
+            {fmt(overallTotals.totalBoxes)}
+          </div>
           <div className="text-[10px] text-slate-500 mt-1">Section D Spec Boxes</div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/40 shadow-2xs">
-          <div className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider mb-1">Master Cartons</div>
-          <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">{fmt(overallTotals.totalCartons)}</div>
-          <div className="text-[10px] text-emerald-600 mt-1 font-medium">Ready for Truck Loading</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <div className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider mb-1">Packing Progress</div>
-          <div className="text-xl sm:text-2xl font-black text-slate-800 font-mono">
-            {overallTotals.orderQty > 0 ? Math.round((overallTotals.packedQty / overallTotals.orderQty) * 100) : 0}%
+        {/* Card 5: Master Cartons */}
+        <div className="bg-white border border-emerald-200 bg-emerald-50/30 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Master Cartons</span>
+            <Boxes className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-[10px] text-slate-500 mt-1">Overall completion</div>
+          <div className="text-xl font-black font-mono text-emerald-700 mt-0.5">
+            {fmt(overallTotals.totalCartons)}
+          </div>
+          <div className="text-[10px] text-emerald-600 mt-1 font-medium">Ready for Loading</div>
+        </div>
+
+        {/* Card 6: Packing Progress */}
+        <div className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Completion</span>
+            <Check className="w-4 h-4 text-slate-400" />
+          </div>
+          <div className="text-xl font-black font-mono text-slate-800 mt-0.5">
+            {overallTotals.arrivedQty > 0 ? Math.round((overallTotals.packedQty / overallTotals.arrivedQty) * 100) : 0}%
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">Arrived Pcs Packed</div>
         </div>
       </div>
 
-      {/* Product-wise Packaging Config & Batches */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-800">Product Packaging & Carton Generation</h2>
-          <span className="text-xs text-slate-500">Integrated directly with Section C & Section D packaging masters</span>
+      {/* TABLE 1: Product-Wise Packing Status & Action */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+              <Boxes className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Product-Wise Packing Status & Action
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Audited garments arriving from Checking are packed into inner boxes and master cartons per buyer specs.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-center">
+            <button
+              onClick={() => setActiveTab('ALL')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All Products ({items.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('PACKING')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === 'PACKING'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              In Packing ({items.filter(it => Number(it.arrived_from_checking || it.stage_9_qty || 0) > 0).length})
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {items.map(it => {
-            const itBatches = batchesByItem[it.id] || [];
-            const itCartons = cartons.filter(c => c.production_order_item_id === it.id);
-            const stats = summaryByItem[it.id] || { totalPacked: 0, totalBoxes: 0, totalCartons: 0, unpacked: it.quantity };
-            const pSpec = productConfigs[it.product_id] || null;
-            const primaryBox = pSpec?.boxes?.[0] || null;
-            const dims = pSpec?.dimensions || null;
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                <th className="py-3 px-4 w-12 text-center">#</th>
+                <th className="py-3 px-4">Product Name & SKU</th>
+                <th className="py-3 px-4">Color / Size</th>
+                <th className="py-3 px-3 text-right">Order Qty</th>
+                <th className="py-3 px-3 text-right text-blue-700 bg-blue-50/50">From Checking</th>
+                <th className="py-3 px-3 text-right text-amber-700">Packed Qty</th>
+                <th className="py-3 px-3 text-right text-slate-700">Inner Boxes</th>
+                <th className="py-3 px-3 text-right text-emerald-700">Master Cartons</th>
+                <th className="py-3 px-3 text-right font-black text-slate-900 bg-slate-50">Avail. to Pack</th>
+                <th className="py-3 px-4 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-xs text-slate-700">
+              {filteredItems.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
+                    No products found for this filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredItems.map((it, idx) => {
+                  const stats = summaryByItem[it.id] || {
+                    totalPacked: 0,
+                    totalBoxes: 0,
+                    totalCartons: 0,
+                    unpacked: 0,
+                    availableToPack: 0,
+                    arrivedFromChecking: 0,
+                    orderQty: 0
+                  };
 
-            return (
-              <div key={it.id} className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <h3 className="font-bold text-base text-slate-900">{it.product_name}</h3>
-                      <span className="px-2 py-0.5 rounded bg-slate-100 font-mono text-xs text-slate-600 border border-slate-200">
-                        {it.product_code || 'GARMENT-REF'}
-                      </span>
-                      <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-medium text-xs border border-amber-200">
-                        Color: {it.color || 'Standard'}
-                      </span>
-                      {it.size && (
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-xs">
-                          Size: {it.size}
-                        </span>
-                      )}
-                    </div>
+                  const pSpec = productConfigs[it.product_id] || null;
+                  const primaryBox = pSpec?.boxes?.[0] || null;
 
-                    {/* Section C & D specifications preview */}
-                    <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap mt-1">
-                      {dims && (
-                        <div className="flex items-center gap-1 text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-                          <span className="text-slate-400">Dimensions (Sec C):</span>
-                          <span className="font-mono font-semibold">
-                            {dims.length || 0} × {dims.width || 0} × {dims.height || 0} {dims.dimension_unit || 'cm'}
+                  return (
+                    <tr key={it.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-4 text-center font-mono text-slate-400 text-xs">
+                        {idx + 1}
+                      </td>
+
+                      {/* Product Name & SKU */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900">{it.product_name}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">
+                            {it.product_code || 'PRD'}
                           </span>
-                        </div>
-                      )}
-
-                      {primaryBox && (
-                        <div className="flex items-center gap-1 text-[11px] bg-amber-50/70 text-amber-900 px-2 py-0.5 rounded border border-amber-200">
-                          <Box className="w-3 h-3 text-amber-600" />
-                          <span>Sec D Spec:</span>
-                          <span className="font-mono font-bold">{primaryBox.items_per_box} pcs/box</span>
-                          <span>|</span>
-                          <span className="font-mono font-bold">{primaryBox.boxes_per_master_carton || 5} boxes/carton</span>
-                        </div>
-                      )}
-
-                      {it.product_id && order.customer_id && (
-                        <Link
-                          to={`/masters/buyers/${order.customer_id}/products/${it.product_id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 font-medium"
-                        >
-                          <span>View Section C & D Spec</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => handleOpenBatchModal(it)}
-                      disabled={stats.unpacked === 0}
-                      className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5 text-xs shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Pack Batch & Generate Cartons</span>
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-                    <span>Packing Completion</span>
-                    <span className="font-mono">
-                      {fmt(stats.totalPacked)} / {fmt(it.quantity)} pcs ({stats.totalCartons} Master Cartons)
-                    </span>
-                  </div>
-                  <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 transition-all duration-500"
-                      style={{ width: `${it.quantity > 0 ? Math.min(100, Math.round((stats.totalPacked / it.quantity) * 100)) : 0}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Master Cartons List */}
-                {itCartons.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                      <QrCode className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Generated Master Cartons ({itCartons.length} Cartons)</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                      {itCartons.map(c => (
-                        <div
-                          key={c.id || c.carton_serial_number}
-                          onClick={() => setSelectedCarton(c)}
-                          className="p-2.5 bg-slate-50 hover:bg-amber-50/50 border border-slate-200 hover:border-amber-300 rounded-xl cursor-pointer transition text-xs space-y-1 group"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-slate-800 group-hover:text-amber-800 text-[11px]">
-                              {c.carton_serial_number}
+                          {primaryBox && (
+                            <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                              {primaryBox.items_per_box} pcs/box
                             </span>
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
-                              {c.is_full ? 'Full' : 'Partial'}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-600 font-medium">
-                            {fmt(c.items_count)} pcs
-                          </div>
-                          <div className="text-[10px] text-slate-400 truncate">
-                            {c.box_name || 'Master Carton'}
-                          </div>
+                          )}
+                          {it.product_id && order.customer_id && (
+                            <Link
+                              to={`/masters/buyers/${order.customer_id}/products/${it.product_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-medium"
+                              title="View Section C & D specifications"
+                            >
+                              <span>Specs</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </Link>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      </td>
+
+                      {/* Color / Size */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-800">{it.color || 'Standard'}</div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          Size: {it.size || 'Free Size'}
+                        </div>
+                      </td>
+
+                      {/* Order Qty */}
+                      <td className="py-3.5 px-3 text-right font-bold text-slate-900 font-mono">
+                        {fmt(stats.orderQty || it.order_quantity || it.quantity || 0)}
+                      </td>
+
+                      {/* From Checking */}
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-blue-700 bg-blue-50/30">
+                        {fmt(stats.arrivedFromChecking)}
+                      </td>
+
+                      {/* Packed Qty */}
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-amber-600">
+                        {fmt(stats.totalPacked)}
+                      </td>
+
+                      {/* Inner Boxes */}
+                      <td className="py-3.5 px-3 text-right font-mono text-slate-700">
+                        {fmt(stats.totalBoxes)}
+                      </td>
+
+                      {/* Master Cartons */}
+                      <td className="py-3.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        {fmt(stats.totalCartons)}
+                      </td>
+
+                      {/* Avail. to Pack */}
+                      <td className="py-3.5 px-3 text-right font-mono font-black text-slate-900 bg-slate-50/50">
+                        {fmt(stats.availableToPack)}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-center">
+                        {stats.arrivedFromChecking === 0 ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                            Awaiting Checking
+                          </span>
+                        ) : stats.availableToPack > 0 ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleOpenBatchModal(it)}
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs px-3 py-1 flex items-center gap-1 mx-auto"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Pack Batch</span>
+                          </Button>
+                        ) : stats.totalPacked > 0 ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Fully Packed</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {/* TABLE 2: Recorded Packing Batches & Quality Output */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                Recorded Packing Batches & Carton Output
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Packaging batches generated with Section D box specifications and carton numbers.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+            {batches.length} Batches
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                <th className="py-3 px-4">Batch #</th>
+                <th className="py-3 px-3">Date</th>
+                <th className="py-3 px-4">Product Name</th>
+                <th className="py-3 px-4">Color / Size</th>
+                <th className="py-3 px-3 text-right">Packed Qty</th>
+                <th className="py-3 px-3 text-right">Units / Box</th>
+                <th className="py-3 px-3 text-right">Boxes</th>
+                <th className="py-3 px-3 text-right">Cartons</th>
+                <th className="py-3 px-3 text-center">Status</th>
+                <th className="py-3 px-3 text-center">Proof Photos</th>
+                <th className="py-3 px-4 text-center">Cartons</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-xs text-slate-700">
+              {batches.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="py-8 text-center text-slate-400">
+                    No packing batches recorded yet for this order. Click "+ Pack Batch" above to pack garments.
+                  </td>
+                </tr>
+              ) : (
+                batches.map(b => {
+                  const matchingItem = items.find(
+                    it => it.id === b.production_order_item_id || it.active_packing_item_id === b.production_order_item_id
+                  );
+                  const isTransferred = (b.status || '').toLowerCase().includes('dispatch') || (b.status || '').toLowerCase().includes('transferred');
+
+                  return (
+                    <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                        {b.batch_number}
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
+                        {b.packing_date}
+                      </td>
+                      <td className="py-3 px-4 font-bold text-slate-800">
+                        {matchingItem?.product_name || 'Garment Product'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-medium text-slate-800">{matchingItem?.color || 'Standard'}</span>
+                        <span className="text-slate-400 text-[11px] block font-mono">Size: {matchingItem?.size || 'M'}</span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-black text-amber-600">
+                        {fmt(b.packed_quantity)}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-700">
+                        {b.units_per_box} pcs
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                        {b.number_of_boxes}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-black text-emerald-700">
+                        {b.number_of_master_cartons}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {isTransferred ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                            In Dispatch
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            Packed
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        {Array.isArray(b.photo_urls) && b.photo_urls.length > 0 ? (
+                          <div className="flex items-center justify-center gap-1">
+                            {b.photo_urls.slice(0, 2).map((pUrl, pIdx) => (
+                              <img
+                                key={pIdx}
+                                src={pUrl}
+                                alt="Proof"
+                                onClick={() => setPreviewImage(pUrl)}
+                                className="w-6 h-6 rounded object-cover cursor-pointer hover:ring-2 hover:ring-amber-500"
+                              />
+                            ))}
+                            {b.photo_urls.length > 2 && (
+                              <span className="text-[10px] text-slate-400">+{b.photo_urls.length - 2}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">None</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className="text-xs font-mono font-bold text-slate-600">
+                          {b.number_of_master_cartons} Cartons
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SECTION 3: Generated Master Cartons & Barcode Serials */}
+      {cartons.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <QrCode className="w-4 h-4 text-slate-600" />
+              <h3 className="text-sm font-bold text-slate-900">
+                Generated Master Cartons & Barcode Serials ({cartons.length} Cartons)
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 font-mono">
+              Click any carton to inspect serial specifications
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+            {cartons.map(c => (
+              <div
+                key={c.id || c.carton_serial_number}
+                onClick={() => setSelectedCarton(c)}
+                className="p-3 bg-slate-50 hover:bg-amber-50/60 border border-slate-200 hover:border-amber-300 rounded-xl cursor-pointer transition text-xs space-y-1 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono font-bold text-slate-800 group-hover:text-amber-800 text-[11px]">
+                    {c.carton_serial_number}
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                    {c.is_full ? 'Full' : 'Partial'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-600 font-medium">
+                  {fmt(c.items_count)} pcs
+                </div>
+                <div className="text-[10px] text-slate-400 truncate">
+                  {c.product_name || 'Master Carton'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Record Packing Batch Modal */}
       <Modal
@@ -982,6 +1292,25 @@ export default function PackingOrderDetail() {
           </div>
         </div>
       </Modal>
+
+      {/* Proof Photo Preview Modal */}
+      {previewImage && (
+        <Modal
+          isOpen={!!previewImage}
+          onClose={() => setPreviewImage(null)}
+          title="Inspection / Packing Evidence Photo"
+          size="lg"
+        >
+          <div className="flex flex-col items-center">
+            <img src={previewImage} alt="Packing Proof" className="max-h-[70vh] rounded-xl object-contain shadow-lg" />
+            <div className="mt-4 flex justify-end w-full">
+              <Button variant="secondary" size="sm" onClick={() => setPreviewImage(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

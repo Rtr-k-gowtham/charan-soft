@@ -782,6 +782,7 @@ export interface PackingBatch {
   product_code?: string;
   color?: string;
   size?: string;
+  status?: string;
   created_at?: string;
 }
 

@@ -139,6 +139,7 @@ try {
         // ---------------- STAGE 09: PACKING & CARTON MANAGEMENT ----------------
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->packingOrders(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createPackingBatch(),
+        $r0 === 'production' && $r1 === 'packing' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferPackingOutput(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'cartons' && $method === 'GET' => (new ProductionController)->packingCartons(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'carton' && isset($segments[3]) && $method === 'GET' => (new ProductionController)->getCartonBySerial($segments[3]),
         $r0 === 'production' && $r1 === 'packing' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->packingOrderDetails((int)$r2),
