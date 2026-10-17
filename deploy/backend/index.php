@@ -133,6 +133,7 @@ try {
         // ---------------- STAGE 08: CHECKING / QC ----------------
         $r0 === 'production' && $r1 === 'checking' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->checkingOrders(),
         $r0 === 'production' && $r1 === 'checking' && $r2 === 'inspect' && $method === 'POST' => (new ProductionController)->recordQualityInspection(),
+        $r0 === 'production' && $r1 === 'checking' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferCheckingOutput(),
         $r0 === 'production' && $r1 === 'checking' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->checkingOrderDetails((int)$r2),
 
         // ---------------- STAGE 09: PACKING & CARTON MANAGEMENT ----------------

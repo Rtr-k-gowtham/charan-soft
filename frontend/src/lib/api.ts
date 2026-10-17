@@ -211,6 +211,8 @@ export const api = {
     request<any>('/production/checking/inspect', 'POST', data),
   getQualityInspections: (productionOrderId?: number | string) =>
     request<any[]>(`/production/checking/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
+  transferCheckingOutput: (data: any) =>
+    request<any>('/production/checking/transfer', 'POST', data),
 
   // Stage 09: Packing & Master Carton Management
   getPackingOrders: (productionOrderId?: number | string) =>

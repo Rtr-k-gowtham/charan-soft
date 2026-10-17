@@ -2579,8 +2579,50 @@ class ProductionController {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
 
-            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
-            $inspections = $pdo->query("SELECT * FROM quality_inspections WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $ord = $pdo->query("SELECT po.*, cu.name as customer_name, cu.code as customer_code, cu.avatar_style as customer_avatar_style, cu.avatar_seed as customer_avatar_seed, cu.avatar_config as customer_avatar_config FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
+            if (!$ord) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            // All base items
+            $iStmt = $pdo->prepare("
+                SELECT poi.*, 
+                       COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                       COALESCE(bp.product_code, p.code, 'PRD') as product_code
+                FROM production_order_items poi 
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id 
+                LEFT JOIN products p ON poi.product_id = p.id 
+                WHERE poi.production_order_id = ?
+            ");
+            $iStmt->execute([$orderId]);
+            $rawItems = $iStmt->fetchAll();
+
+            // Stitching batches (to know accepted stitching output)
+            $sbStmt = $pdo->prepare("
+                SELECT sb.*, poi.color 
+                FROM stitching_batches sb 
+                LEFT JOIN production_order_items poi ON sb.production_order_item_id = poi.id 
+                WHERE sb.production_order_id = ?
+            ");
+            $sbStmt->execute([$orderId]);
+            $stitchingBatches = $sbStmt->fetchAll();
+
+            // Quality inspections
+            $qiStmt = $pdo->prepare("
+                SELECT qi.*, 
+                       COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                       COALESCE(bp.product_code, p.code, 'PRD') as product_code,
+                       poi.color
+                FROM quality_inspections qi
+                LEFT JOIN production_order_items poi ON qi.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
+                WHERE qi.production_order_id = ?
+                ORDER BY qi.id DESC
+            ");
+            $qiStmt->execute([$orderId]);
+            $inspections = $qiStmt->fetchAll();
             foreach ($inspections as &$ins) {
                 if (isset($ins['photo_urls']) && is_string($ins['photo_urls'])) {
                     $ins['photo_urls'] = json_decode($ins['photo_urls'], true) ?: [];
@@ -2588,11 +2630,92 @@ class ProductionController {
             }
             unset($ins);
 
-            $iStmt = $pdo->prepare("SELECT poi.*, COALESCE(bp.product_name, p.name) as product_name FROM production_order_items poi LEFT JOIN buyer_products bp ON poi.product_id = bp.id LEFT JOIN products p ON poi.product_id = p.id WHERE poi.production_order_id = ?");
-            $iStmt->execute([$orderId]);
-            $items = $iStmt->fetchAll();
+            // Group items by product_id and color
+            $groupedItems = [];
+            foreach ($rawItems as $rawIt) {
+                $grpKey = $rawIt['product_id'] . '_' . trim((string)($rawIt['color'] ?? ''));
+                if (!isset($groupedItems[$grpKey])) {
+                    $groupedItems[$grpKey] = $rawIt;
+                    $groupedItems[$grpKey]['order_quantity'] = (float)$rawIt['total_quantity'];
+                    $groupedItems[$grpKey]['active_checking_item_id'] = (int)$rawIt['id'];
+                    $groupedItems[$grpKey]['current_stage_quantity'] = ((int)$rawIt['current_stage_id'] === 8) ? (float)$rawIt['current_stage_quantity'] : 0.0;
+                } else {
+                    $groupedItems[$grpKey]['order_quantity'] += (float)$rawIt['total_quantity'];
+                    if ((int)$rawIt['current_stage_id'] === 8) {
+                        $groupedItems[$grpKey]['current_stage_quantity'] += (float)$rawIt['current_stage_quantity'];
+                        $groupedItems[$grpKey]['active_checking_item_id'] = (int)$rawIt['id'];
+                    }
+                }
+            }
 
-            Response::success(['order' => $ord, 'items' => $items, 'inspections' => $inspections]);
+            // Ledger transfers into Stage 8
+            $lStmt = $pdo->prepare("
+                SELECT production_order_item_id, SUM(quantity) as qty 
+                FROM production_quantity_ledger 
+                WHERE production_order_id = ? AND stage_id = 8 AND transaction_type = 'TRANSFER_IN' 
+                GROUP BY production_order_item_id
+            ");
+            $lStmt->execute([$orderId]);
+            $ledgerIn = $lStmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            // Calculate arriving quantities from Stitching and inspection totals
+            foreach ($groupedItems as &$gIt) {
+                $pId = (int)$gIt['product_id'];
+                $color = trim((string)($gIt['color'] ?? ''));
+                $itemId = (int)$gIt['active_checking_item_id'];
+
+                // 1. Arrived from Stitching
+                $fromStitching = 0.0;
+                foreach ($stitchingBatches as $sb) {
+                    $cMatch = trim((string)($sb['color'] ?? ''));
+                    if ($cMatch === $color || (int)$sb['production_order_item_id'] === $itemId) {
+                        $fromStitching += (float)($sb['accepted_quantity'] ?? 0);
+                    }
+                }
+
+                if (isset($ledgerIn[$itemId])) {
+                    $fromStitching = max($fromStitching, (float)$ledgerIn[$itemId]);
+                }
+                if ($gIt['current_stage_quantity'] > 0) {
+                    $fromStitching = max($fromStitching, (float)$gIt['current_stage_quantity']);
+                }
+
+                // 2. Tally quality inspections
+                $checked = 0.0;
+                $passed = 0.0;
+                $rejected = 0.0;
+                $rework = 0.0;
+                foreach ($inspections as $ins) {
+                    $cMatch = trim((string)($ins['color'] ?? ''));
+                    if ($cMatch === $color || (int)$ins['production_order_item_id'] === $itemId) {
+                        $checked += (float)($ins['checked_quantity'] ?? $ins['submitted_quantity'] ?? 0);
+                        $passed += (float)($ins['passed_quantity'] ?? 0);
+                        $rejected += (float)($ins['rejected_quantity'] ?? 0);
+                        $rework += (float)($ins['rework_quantity'] ?? 0);
+                    }
+                }
+
+                $gIt['arrived_from_stitching'] = $fromStitching;
+                $gIt['total_arrived'] = $fromStitching;
+                $gIt['checked_quantity'] = $checked;
+                $gIt['passed_quantity'] = $passed;
+                $gIt['rejected_quantity'] = $rejected;
+                $gIt['rework_quantity'] = $rework;
+                $gIt['failed_quantity'] = $rejected + $rework;
+                $gIt['available_to_inspect'] = max(0.0, $fromStitching - $checked);
+                $gIt['pending_inspection'] = max(0.0, $fromStitching - $checked);
+                $gIt['ready_to_pack'] = max(0.0, $passed);
+                $gIt['pass_rate'] = $checked > 0 ? round(($passed / $checked) * 100, 1) : 100.0;
+            }
+            unset($gIt);
+
+            $items = array_values($groupedItems);
+
+            Response::success([
+                'order' => $ord,
+                'items' => $items,
+                'inspections' => $inspections
+            ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
 
@@ -2605,22 +2728,140 @@ class ProductionController {
             $pId = (int)($data['production_order_id'] ?? 0);
             $itemId = (int)($data['production_order_item_id'] ?? 0);
             $sub = (float)($data['submitted_quantity'] ?? 0);
-            $passed = (float)($data['passed_quantity'] ?? 0);
-            $failed = (float)($data['failed_quantity'] ?? 0);
-            $rwk = (float)($data['rework_quantity'] ?? 0);
+            $checked = (float)($data['checked_quantity'] ?? $sub);
             $rej = (float)($data['rejected_quantity'] ?? 0);
-
-            $batchNo = 'CHK-' . rand(1000, 9999);
-            $stmt = $pdo->prepare("INSERT INTO quality_inspections (production_order_id, production_order_item_id, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, defect_category, defect_description, inspector, inspection_date, remarks, photo_urls) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([$pId, $itemId, $batchNo, $sub, $sub, $passed, $failed, $rwk, $rej, $data['defect_category'] ?? 'Finishing', $data['defect_description'] ?? '', $data['inspector'] ?? 'QC Inspector', $data['inspection_date'] ?? date('Y-m-d'), $data['remarks'] ?? '', json_encode($data['photo_urls'] ?? [])]);
-
-            if ($passed > 0) {
-                $upd = $pdo->prepare("UPDATE production_order_items SET current_stage_id = 9, current_stage_quantity = ? WHERE id = ?");
-                $upd->execute([$passed, $itemId]);
+            $rwk = (float)($data['rework_quantity'] ?? 0);
+            $failed = (float)($data['failed_quantity'] ?? ($rej + $rwk));
+            $passed = (float)($data['passed_quantity'] ?? 0);
+            if ($passed <= 0 && $checked > 0) {
+                $passed = max(0.0, $checked - $rej - $rwk);
             }
 
-            Response::success(['batch_number' => $batchNo, 'passed' => $passed], "Inspection recorded successfully", 201);
+            if ($checked <= 0) {
+                Response::error("Checked quantity must be greater than zero", 422);
+                return;
+            }
+
+            $batchNo = 'CHK-' . rand(1000, 9999);
+            $stmt = $pdo->prepare("
+                INSERT INTO quality_inspections 
+                (production_order_id, production_order_item_id, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, defect_category, defect_description, inspector, inspection_date, remarks, photo_urls) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $pId, 
+                $itemId, 
+                $batchNo, 
+                $sub > 0 ? $sub : $checked, 
+                $checked, 
+                $passed, 
+                $failed, 
+                $rwk, 
+                $rej, 
+                $data['defect_category'] ?? 'Finishing & Seams', 
+                $data['defect_description'] ?? '', 
+                $data['inspector'] ?? 'Lead QC Inspector', 
+                $data['inspection_date'] ?? date('Y-m-d'), 
+                $data['remarks'] ?? '', 
+                json_encode($data['photo_urls'] ?? [])
+            ]);
+            $insId = (int)$pdo->lastInsertId();
+
+            // Log to quantity ledger
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 8, 'CHK', 'INSPECTED', ?, ?, '', ?, 'Quality Inspection', ?, ?)
+            ");
+            $lStmt->execute([$pId, $itemId, $checked, $batchNo, $data['inspector'] ?? 'Inspector', (string)$insId, $data['remarks'] ?? '']);
+
+            if ($passed > 0) {
+                $lStmtPass = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 8, 'CHK', 'PASSED', ?, ?, '', ?, 'Quality Passed', ?, 'Passed quality audit')
+                ");
+                $lStmtPass->execute([$pId, $itemId, $passed, $batchNo, $data['inspector'] ?? 'Inspector', (string)$insId]);
+            }
+
+            Response::success([
+                'id' => $insId,
+                'batch_number' => $batchNo,
+                'checked' => $checked,
+                'passed' => $passed,
+                'rejected' => $rej,
+                'rework' => $rwk
+            ], "Quality inspection recorded successfully", 201);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function transferCheckingOutput(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $itemId = (int)($data['item_id'] ?? 0);
+            $qty = (float)($data['transfer_quantity'] ?? 0);
+            $remarks = trim($data['remarks'] ?? 'Transferred passed inspection output to Stage 09: Packing');
+
+            if ($pId <= 0 || $qty <= 0) {
+                Response::error("Production order ID and positive transfer quantity are required", 422);
+                return;
+            }
+
+            $pdo->beginTransaction();
+
+            if ($itemId > 0) {
+                $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ?");
+                $iStmt->execute([$itemId]);
+                $item = $iStmt->fetch();
+            } else {
+                $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND current_stage_id = 8 LIMIT 1");
+                $iStmt->execute([$pId]);
+                $item = $iStmt->fetch();
+            }
+
+            if ($item) {
+                $pckStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = 9");
+                $pckStmt->execute([$pId, $item['product_id'], $item['color']]);
+                $packingItem = $pckStmt->fetch();
+
+                if ($packingItem) {
+                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ? WHERE id = ?")
+                        ->execute([$qty, $qty, $packingItem['id']]);
+                } else {
+                    $ins = $pdo->prepare("INSERT INTO production_order_items 
+                        (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                        VALUES (?, ?, ?, ?, 9, ?, 0, 0, 0, 'In Progress')");
+                    $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                }
+            }
+
+            $tStmt = $pdo->prepare("INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks) VALUES (?, 8, 9, ?, ?)");
+            $tStmt->execute([$itemId ?: ($item['id'] ?? 0), $qty, $remarks]);
+
+            $lStmtOut = $pdo->prepare("INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 8, 'CHK', 'TRANSFER_OUT', ?, '', '', '', 'Checking Transfer', '9', ?)");
+            $lStmtOut->execute([$pId, $itemId ?: ($item['id'] ?? 0), $qty, "Transferred to Stage 09: Packing"]);
+
+            $lStmtIn = $pdo->prepare("INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, 9, 'PCK', 'TRANSFER_IN', ?, '', '', '', 'Checking Transfer', '9', ?)");
+            $lStmtIn->execute([$pId, $itemId ?: ($item['id'] ?? 0), $qty, "Received from Checking"]);
+
+            $pdo->commit();
+            Response::success([
+                'transferred_quantity' => $qty,
+                'destination_stage_id' => 9,
+                'destination_stage_name' => 'Packing'
+            ], "Successfully transferred {$qty} pcs to Stage 09: Packing");
+        } catch (Exception $e) {
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            Response::error($e->getMessage(), 500);
+        }
     }
 
     public function packingOrders(): void {
