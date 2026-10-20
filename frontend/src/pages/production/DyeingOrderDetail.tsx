@@ -19,6 +19,7 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import { 
   lookupPantone, 
   VERIFIED_PANTONE_LIBRARY 
@@ -839,6 +840,11 @@ export default function DyeingOrderDetail() {
     const totalToReceive = receivingItems.reduce((sum, it) => sum + (Number(it.received_quantity) || 0), 0);
     if (totalToReceive <= 0) {
       setReceiveError('Please enter a received quantity greater than 0 for at least one color item.');
+      return;
+    }
+
+    if (!photoUrl) {
+      setReceiveError('Real-time camera photograph with live GPS coordinates is mandatory before confirming dyed fabric receipt.');
       return;
     }
 
@@ -2260,94 +2266,18 @@ export default function DyeingOrderDetail() {
             </div>
           </div>
 
-          {/* Photo Proof Capture Section */}
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-brand-600" />
-                  Dyed Fabric Photo Proof
-                </h4>
-                <p className="text-[11px] text-slate-500">
-                  Take a photo of the received dyed fabric swatches against Pantone swatch for quality verification.
-                </p>
-              </div>
-
-              {photoUrl && (
-                <button
-                  type="button"
-                  onClick={() => setPhotoUrl(null)}
-                  className="text-xs font-semibold text-red-600 hover:text-red-700 flex items-center gap-1"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remove
-                </button>
-              )}
-            </div>
-
-            {/* Hidden native inputs for mobile camera and gallery upload */}
-            <input
-              type="file"
-              ref={cameraInputRef}
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhotoFile}
-              className="hidden"
-            />
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={handlePhotoFile}
-              className="hidden"
-            />
-
-            {!photoUrl ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  disabled={isProcessingPhoto}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-brand-300 bg-brand-50/50 hover:bg-brand-100/50 text-brand-700 text-xs font-bold transition cursor-pointer"
-                >
-                  <Camera className="w-4 h-4 text-brand-600" />
-                  <span>Take Live Photo (Camera)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isProcessingPhoto}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-xl border-2 border-dashed border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
-                >
-                  <Upload className="w-4 h-4 text-slate-600" />
-                  <span>Upload Image File</span>
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-4 pt-1">
-                <img
-                  src={photoUrl}
-                  alt="Captured fabric proof"
-                  onClick={() => setZoomedPhoto(photoUrl)}
-                  className="w-20 h-20 rounded-xl object-cover border border-slate-300 cursor-pointer shadow-xs hover:opacity-95"
-                />
-                <div>
-                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Dyed Fabric Photo Attached
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setZoomedPhoto(photoUrl)}
-                    className="text-xs text-brand-600 hover:text-brand-800 font-semibold underline mt-1 block"
-                  >
-                    View full size preview
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Dyed Fabric Swatch & Roll Physical Photo"
+            required={true}
+            photo={photoUrl}
+            onPhotoChange={setPhotoUrl}
+            stageName="Dyeing Fabric Inward (Stage 04)"
+            orderNumber={order?.order_number || selectedDyeingOrder?.dyeing_order_no}
+            error={receiveError && !photoUrl ? 'Real-time camera photograph with live GPS coordinates is mandatory before receiving fabric.' : undefined}
+            helperText="Photograph of received dyed fabric roll swatches against Pantone standards must be captured live via camera. File upload from device storage is disabled."
+            buttonText="Take Real-Time Fabric Photo"
+          />
 
           {/* Advance to Cutting Checkbox */}
           <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-100 border border-slate-200">

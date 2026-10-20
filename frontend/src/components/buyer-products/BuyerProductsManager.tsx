@@ -18,6 +18,7 @@ import {
   Eye,
   Pencil,
   Trash2,
+  Scissors,
 } from 'lucide-react';
 
 interface Props {
@@ -94,6 +95,7 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
           `BPRD-${String(p.id || idx + 1).padStart(3, '0')}`,
         uom: p.uom || 'Pieces',
         dimensions: p.dimensions || null,
+        cutting_size: p.cutting_size || null,
         components: p.components || [],
         boxes: p.boxes || [],
       }));
@@ -343,6 +345,34 @@ export default function BuyerProductsManager({ buyer, onBack }: Props) {
               {primaryBox.items_per_box} pcs/box • {primaryBox.length}×{primaryBox.width}×{primaryBox.height}{' '}
               {primaryBox.dimension_unit}
             </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'cutting_size',
+      label: 'Cutting Size',
+      render: (r: BuyerProduct) => {
+        if (!r.cutting_size || (!r.cutting_size.cutting_length && !r.cutting_size.cutting_width)) {
+          return <span className="text-slate-400 text-[11px] italic">Not set</span>;
+        }
+        return (
+          <div className="flex flex-col">
+            <span className="font-mono text-xs text-slate-800 flex items-center gap-1 font-semibold">
+              <Scissors className="w-3 h-3 text-emerald-600 shrink-0" />
+              {r.cutting_size.cutting_length}×{r.cutting_size.cutting_width}
+              {r.cutting_size.cutting_height ? `×${r.cutting_size.cutting_height}` : ''}{' '}
+              <span className="text-[10px] text-slate-400 font-normal">{r.cutting_size.unit || 'cm'}</span>
+            </span>
+            {r.cutting_size.notes ? (
+              <span className="text-[10px] text-slate-500 truncate max-w-[160px]" title={r.cutting_size.notes}>
+                {r.cutting_size.notes}
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-mono">
+                {r.cutting_size.cutting_height ? '3D Gusset Cut' : 'Flat Piece'}
+              </span>
+            )}
           </div>
         );
       },

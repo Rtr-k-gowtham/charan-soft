@@ -574,16 +574,17 @@ class DyeingController {
             $totalOutward = (float)$fabOutwardStmt->fetchColumn();
 
             $balanceAvailable = max(0.0, round($totalInwarded - $totalOutward, 2));
+            $allowAdditional = !empty($data['allow_overdraft']) || !empty($data['is_additional_lot']) || !empty($data['force_create']) || !empty($data['is_redyeing']);
 
-            if ($balanceAvailable <= 0) {
+            if ($balanceAvailable <= 0 && !$allowAdditional) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted)", 422);
+                Response::error("Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted). Enable 'Additional Lot / Re-dyeing' to authorize outward.", 422);
                 return;
             }
 
-            if ($totalFabricQty > $balanceAvailable) {
+            if ($balanceAvailable > 0 && $totalFabricQty > $balanceAvailable && !$allowAdditional) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Requested outward quantity ({$totalFabricQty} {$uom}) exceeds available inward fabric balance ({$balanceAvailable} {$uom})", 422);
+                Response::error("Requested outward quantity ({$totalFabricQty} {$uom}) exceeds available inward fabric balance ({$balanceAvailable} {$uom}). Enable 'Additional Lot / Re-dyeing' to authorize.", 422);
                 return;
             }
 

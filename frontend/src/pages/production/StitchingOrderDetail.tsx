@@ -14,6 +14,7 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
   Activity,
@@ -263,6 +264,11 @@ export default function StitchingOrderDetail() {
 
     if (rej + rwk > comp) {
       setBatchError('The sum of rejected and rework quantities cannot exceed the completed quantity.');
+      return;
+    }
+
+    if (!photoUrls || photoUrls.length === 0) {
+      setBatchError('Real-time camera photograph with live GPS coordinates of stitching line quality & seam proof is mandatory.');
       return;
     }
 
@@ -985,40 +991,17 @@ export default function StitchingOrderDetail() {
             />
           </div>
 
-          {/* Seam Proof Photos */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-              <Camera className="w-3.5 h-3.5 text-blue-600" />
-              <span>Stitching Line Quality & Seam Proof Photos (Optional)</span>
-            </label>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <label className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-50 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-100 hover:border-slate-400 transition text-xs text-slate-600 font-semibold shadow-xs">
-                <Camera className="w-4 h-4 text-blue-600" />
-                <span>Upload Seam Photos</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handlePhotoUpload}
-                  className="hidden"
-                />
-              </label>
-
-              {photoUrls.map((url, idx) => (
-                <div key={idx} className="relative w-12 h-12 rounded-lg border border-slate-200 overflow-hidden group shadow-xs">
-                  <img src={url} alt="Seam Proof" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setPhotoUrls(prev => prev.filter((_, i) => i !== idx))}
-                    className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                    title="Remove photo"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-300" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Stitching Line Quality & Seam Proof Photographs"
+            required={true}
+            photos={photoUrls}
+            onPhotosChange={setPhotoUrls}
+            stageName="Stitching (Stage 08)"
+            orderNumber={order?.order_number}
+            error={batchError && photoUrls.length === 0 ? 'Real-time camera photograph with live GPS coordinates is mandatory before recording stitching batch.' : undefined}
+            buttonText="Take Real-Time Stitching Photo"
+          />
 
           <div className="flex items-center justify-end gap-3 pt-3.5 border-t border-slate-200">
             <Button

@@ -179,6 +179,11 @@ export default function ProductionBoard() {
           }
         }
 
+        // Skip zero-quantity ghost items
+        if ((it.current_stage_quantity || 0) <= 0 && (it.total_quantity || 0) <= 0) {
+          return;
+        }
+
         // Place in corresponding stage
         const stageId = it.current_stage_id;
         if (map.has(stageId)) {

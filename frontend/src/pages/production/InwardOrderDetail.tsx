@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
   PackageOpen,
@@ -374,6 +375,11 @@ export default function InwardOrderDetail() {
 
     if (!hasQuantityToReceive) {
       setReceiveError('Please enter a receive quantity greater than 0 for at least one item.');
+      return;
+    }
+
+    if (!photoProof) {
+      setReceiveError('Real-time camera photograph with live GPS coordinates is mandatory before confirming material inward receipt.');
       return;
     }
 
@@ -1296,72 +1302,21 @@ export default function InwardOrderDetail() {
               />
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                Delivery Proof Photo (Camera / Upload)
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                ref={cameraInputRef}
-                onChange={handlePhotoUpload}
-                className="hidden"
-              />
-              <input
-                type="file"
-                accept="image/*"
-                ref={fileInputRef}
-                onChange={handlePhotoUpload}
-                className="hidden"
-              />
-
-              {!photoProof ? (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => cameraInputRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition shadow-2xs"
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Camera</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 px-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold transition"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-2 bg-white p-1.5 px-2.5 rounded-lg border border-emerald-300">
-                  <span className="text-[11px] font-bold text-emerald-800 truncate flex items-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    {photoName || 'Proof Photo Attached'}
-                  </span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewPhoto({ url: photoProof, title: 'Inward Proof Photo', dcNo: dcNumber })}
-                      className="p-1 text-slate-500 hover:text-brand-600 rounded"
-                      title="Preview"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setPhotoProof(null); setPhotoName(''); }}
-                      className="p-1 text-slate-400 hover:text-red-600 rounded"
-                      title="Remove"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Mandatory Live Camera Photo Proof */}
+            <LivePhotoCaptureField
+              label="Delivery Challan & Material Inward Physical Proof Photo"
+              required={true}
+              photo={photoProof}
+              onPhotoChange={(url) => {
+                setPhotoProof(url);
+                setPhotoName(url ? 'Real-Time Inward Proof' : '');
+              }}
+              stageName="Material Inward (Stage 03)"
+              orderNumber={selectedPO?.po_number}
+              error={receiveError && !photoProof ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming material inward receipt.' : undefined}
+              buttonText="Take Real-Time Inward Photo"
+              helperText="Physical proof of delivery challan and received materials must be captured live via device camera. File upload is disabled."
+            />
           </div>
         </div>
       </Modal>

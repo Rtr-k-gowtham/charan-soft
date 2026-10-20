@@ -1254,6 +1254,10 @@ const server = http.createServer(async (req, res) => {
         return sendError(res, 'Cannot receive materials against a Draft Purchase Order. Please confirm and order the PO first.', 422);
       }
 
+      if (!body.photo_url && !body.photo_proof && !body.photo) {
+        return sendError(res, 'Real-time camera photograph proof with live GPS coordinates is mandatory for material inward.', 422);
+      }
+
       const rItems = body.items || [];
 
       // Validate all items against remaining limits before making updates
@@ -1903,6 +1907,10 @@ const server = http.createServer(async (req, res) => {
       if (!dyeOrder) return sendError(res, 'Dyeing order not found', 404);
       const dyeId = dyeOrder.id;
 
+      if (!body.photo_url) {
+        return sendError(res, 'Real-time camera photograph proof with live GPS coordinates is mandatory before receiving dyed fabric.', 422);
+      }
+
       if (!dyeOrder.items) dyeOrder.items = [];
       const items = body.items || [];
       let batchRec = 0;
@@ -2400,6 +2408,10 @@ const server = http.createServer(async (req, res) => {
 
       if (actual <= 0) return sendError(res, 'Actual cut quantity must be greater than zero', 422);
 
+      if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates is mandatory before confirming cutting batch.', 422);
+      }
+
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
@@ -2551,6 +2563,10 @@ const server = http.createServer(async (req, res) => {
 
       if (!items || !items.length) return sendError(res, 'At least one product item is required for job order', 422);
 
+      if (!attachments || !Array.isArray(attachments) || attachments.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates of the delivery challan / dispatch bundle is mandatory.', 422);
+      }
+
       if (!db.embroideryJobOrders) db.embroideryJobOrders = [];
       const jobNo = `EMB-JOB-${1000 + db.embroideryJobOrders.length + 1}`;
 
@@ -2619,6 +2635,10 @@ const server = http.createServer(async (req, res) => {
       if (!job) return sendError(res, 'Job order not found', 404);
 
       if (!items || !items.length) return sendError(res, 'Item inward quantities are required', 422);
+
+      if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates of received embroidery pieces & QC inspection is mandatory.', 422);
+      }
 
       if (!db.embroideryReceipts) db.embroideryReceipts = [];
       const recNo = `EMB-INW-${1000 + db.embroideryReceipts.length + 1}`;
@@ -2892,6 +2912,10 @@ const server = http.createServer(async (req, res) => {
 
       if (comp <= 0) return sendError(res, 'Completed quantity must be greater than zero', 422);
 
+      if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates of stitching line quality is mandatory.', 422);
+      }
+
       if (!db.stitchingBatches) db.stitchingBatches = [];
       const batchNo = `STI-${ord.order_number}-${item.id}-${db.stitchingBatches.length + 1}`;
 
@@ -3110,6 +3134,10 @@ const server = http.createServer(async (req, res) => {
 
       if (chk <= 0) return sendError(res, 'Checked quantity must be greater than zero', 422);
 
+      if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates of inspected pieces / defect audit is mandatory.', 422);
+      }
+
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
@@ -3297,6 +3325,10 @@ const server = http.createServer(async (req, res) => {
 
       if (packed <= 0) return sendError(res, 'Packed quantity must be greater than zero', 422);
 
+      if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph with live GPS coordinates of packed master cartons is mandatory.', 422);
+      }
+
       const ord = (db.productionOrders || []).find(o => o.id === pId);
       if (!ord) return sendError(res, 'Production order not found', 404);
 
@@ -3480,6 +3512,14 @@ const server = http.createServer(async (req, res) => {
       if (!ord) return sendError(res, 'Production order not found', 404);
 
       if (!vehicle_number) return sendError(res, 'Vehicle / truck registration number is required', 422);
+
+      if (!truck_photo_urls || !Array.isArray(truck_photo_urls) || truck_photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph of transport vehicle & registration number plate with live GPS coordinates is mandatory.', 422);
+      }
+
+      if (!loaded_cartons_photo_urls || !Array.isArray(loaded_cartons_photo_urls) || loaded_cartons_photo_urls.length === 0) {
+        return sendError(res, 'Real-time camera photograph of loaded cartons & container security seal with live GPS coordinates is mandatory.', 422);
+      }
 
       // Check for Duplicate Delivery Challan
       if (delivery_challan_number && (db.dispatchRecords || []).some(d => d.production_order_id === pId && (d.delivery_challan_number || '').trim().toLowerCase() === delivery_challan_number.trim().toLowerCase())) {

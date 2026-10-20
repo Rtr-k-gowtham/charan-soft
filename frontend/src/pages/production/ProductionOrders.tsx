@@ -325,9 +325,14 @@ export default function ProductionOrders() {
                           >
                             {ord.title}
                           </span>
-                          <span className="text-[10px] text-slate-400 block font-mono">
-                            {ord.items?.length || 0} Products
-                          </span>
+                          {(() => {
+                            const uCount = (ord as any).unique_products_count || new Set((ord.items || []).filter(i => (i.total_quantity || 0) > 0 || (i.current_stage_quantity || 0) > 0).map(i => `${i.product_id}_${i.color}`)).size || ord.items?.length || 0;
+                            return (
+                              <span className="text-[10px] text-slate-400 block font-mono">
+                                {uCount} {uCount === 1 ? 'Product' : 'Products'}
+                              </span>
+                            );
+                          })()}
                         </td>
 
                         <td className="px-2.5 py-2.5">

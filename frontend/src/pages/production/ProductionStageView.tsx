@@ -65,6 +65,7 @@ type StageItem = ProductionOrderItem & {
   stage_code?: string;
   priority?: string;
   target_delivery_date?: string;
+  total_order_quantity?: number;
 };
 
 interface OrderGroup {
@@ -204,6 +205,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               priority: ord.priority,
               target_delivery_date: ord.target_delivery_date,
               stage_code: (it as { stage_code?: string }).stage_code || '',
+              total_order_quantity: ord.total_quantity || 0,
             });
           });
         });
@@ -352,7 +354,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       const group = map.get(key)!;
       group.items.push(it);
       group.total_stage_quantity += (it.current_stage_quantity || it.total_quantity || 0);
-      group.total_order_quantity += (it.total_quantity || 0);
+      group.total_order_quantity = (it as any).total_order_quantity || Math.max(group.total_order_quantity, it.total_quantity || 0);
     });
 
     // Compute unique product names

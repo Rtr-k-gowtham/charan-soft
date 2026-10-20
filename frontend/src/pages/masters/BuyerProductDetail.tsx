@@ -12,6 +12,7 @@ import {
   Package,
   Layers,
   Ruler,
+  Scissors,
   Box,
   CheckCircle2,
   AlertCircle,
@@ -90,6 +91,7 @@ export default function BuyerProductDetail() {
           uom: foundProduct.uom || 'Pieces',
           components: foundProduct.components || [],
           boxes: foundProduct.boxes || [],
+          cutting_size: foundProduct.cutting_size || null,
           dimensions: foundProduct.dimensions || {
             length: 0,
             width: 0,
@@ -400,17 +402,21 @@ export default function BuyerProductDetail() {
               <thead className="bg-slate-50/90 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
                 <tr>
                   <th className="py-2.5 px-3 w-10 text-center">#</th>
-                  <th className="py-2.5 px-3 min-w-[220px]">Material Name</th>
-                  <th className="py-2.5 px-3 min-w-[150px]">Category</th>
-                  <th className="py-2.5 px-3 min-w-[90px] text-center">UOM</th>
-                  <th className="py-2.5 px-3 min-w-[120px] text-right">Qty / Finished Unit</th>
-                  <th className="py-2.5 px-3 min-w-[180px]">Notes</th>
+                  <th className="py-2.5 px-3 min-w-[200px]">Material Name</th>
+                  <th className="py-2.5 px-3 min-w-[130px]">Category</th>
+                  <th className="py-2.5 px-3 min-w-[80px] text-center">UOM</th>
+                  <th className="py-2.5 px-3 min-w-[80px]">Size</th>
+                  <th className="py-2.5 px-3 min-w-[80px]">Model</th>
+                  <th className="py-2.5 px-3 min-w-[80px]">Length</th>
+                  <th className="py-2.5 px-3 min-w-[80px]">Thickness</th>
+                  <th className="py-2.5 px-3 min-w-[110px] text-right">Qty / Finished Unit</th>
+                  <th className="py-2.5 px-3 min-w-[160px]">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {!product.components || product.components.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={10} className="py-8 text-center text-slate-400">
                       <p className="text-xs font-medium">No raw materials or components configured in this BOM.</p>
                       <button
                         type="button"
@@ -442,6 +448,18 @@ export default function BuyerProductDetail() {
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700">
                         {comp.uom || '—'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700 font-mono text-xs">
+                        {comp.size || <span className="text-slate-300 font-sans">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700 text-xs">
+                        {comp.model || <span className="text-slate-300 font-sans">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700 text-xs">
+                        {comp.length || <span className="text-slate-300 font-sans">—</span>}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-700 text-xs">
+                        {comp.thickness || <span className="text-slate-300 font-sans">—</span>}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-brand-700 text-xs">
                         {comp.quantity_per_product != null ? comp.quantity_per_product.toFixed(3) : '1.000'}{' '}
@@ -615,6 +633,88 @@ export default function BuyerProductDetail() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Section E — Pattern & Cutting Size Specifications */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs">
+          <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Scissors className="w-4 h-4 text-brand-600" />
+              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                Section E &mdash; Pattern & Cutting Size Specifications
+              </h4>
+            </div>
+            {product.cutting_size && (
+              <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {product.cutting_size.cutting_length}×{product.cutting_size.cutting_width} {product.cutting_size.unit || 'cm'}
+              </span>
+            )}
+          </div>
+
+          {!product.cutting_size || (!product.cutting_size.cutting_length && !product.cutting_size.cutting_width) ? (
+            <div className="py-6 text-center text-slate-400">
+              <p className="text-xs font-medium">No pattern cutting dimensions configured for this product yet.</p>
+              <button
+                type="button"
+                onClick={() => setEditModalOpen(true)}
+                className="mt-1.5 text-brand-600 text-xs font-semibold hover:underline cursor-pointer"
+              >
+                + Configure Pattern Cutting Size & Lay Rules
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {/* Cutting Dimensions Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cutting Length</span>
+                  <span className="text-sm font-bold text-slate-900 font-mono mt-0.5 block">
+                    {product.cutting_size.cutting_length}{' '}
+                    <span className="text-[10px] text-slate-500 font-normal">{product.cutting_size.unit || 'cm'}</span>
+                  </span>
+                  {product.dimensions?.length ? (
+                    <span className="text-[10px] text-emerald-600 font-medium font-mono block mt-0.5">
+                      +{Math.round((Number(product.cutting_size.cutting_length) - Number(product.dimensions.length)) * 10) / 10} vs finished
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cutting Width</span>
+                  <span className="text-sm font-bold text-slate-900 font-mono mt-0.5 block">
+                    {product.cutting_size.cutting_width}{' '}
+                    <span className="text-[10px] text-slate-500 font-normal">{product.cutting_size.unit || 'cm'}</span>
+                  </span>
+                  {product.dimensions?.width ? (
+                    <span className="text-[10px] text-emerald-600 font-medium font-mono block mt-0.5">
+                      +{Math.round((Number(product.cutting_size.cutting_width) - Number(product.dimensions.width)) * 10) / 10} vs finished
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 text-center">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cutting Height / Gusset</span>
+                  <span className="text-sm font-bold text-slate-900 font-mono mt-0.5 block">
+                    {product.cutting_size.cutting_height || 0}{' '}
+                    <span className="text-[10px] text-slate-500 font-normal">{product.cutting_size.unit || 'cm'}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal block mt-0.5">
+                    {product.cutting_size.cutting_height ? '3D Gusset Cut' : 'Flat panel'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Cutting Room Notes & Lay Instructions */}
+              {product.cutting_size.notes && (
+                <div className="p-3 bg-slate-50/70 border border-slate-200/60 rounded-lg text-xs flex flex-col gap-1">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Cutting Notes & Lay Guidelines</span>
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap">
+                    {product.cutting_size.notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

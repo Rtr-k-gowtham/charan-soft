@@ -402,7 +402,30 @@ export default function ProductionOrderDetail() {
   const groupedProducts = useMemo(() => {
     if (!order?.items) return {};
     const groups: Record<string, ProductionOrderItem[]> = {};
+    
+    // Deduplicate split stage items by product_id and color so each distinct product line is rendered once
+    const consolidatedMap = new Map<string, ProductionOrderItem>();
+
     order.items.forEach(item => {
+      if ((item.total_quantity || 0) <= 0 && (item.current_stage_quantity || 0) <= 0) return;
+      const key = `${item.product_id}_${item.color || ''}`;
+      if (!consolidatedMap.has(key)) {
+        consolidatedMap.set(key, { ...item });
+      } else {
+        const existing = consolidatedMap.get(key)!;
+        existing.total_quantity = (existing.total_quantity || 0) + (item.total_quantity || 0);
+        existing.completed_quantity = (existing.completed_quantity || 0) + (item.completed_quantity || 0);
+        existing.current_stage_quantity = (existing.current_stage_quantity || 0) + (item.current_stage_quantity || 0);
+        if (((item as any).stage_sequence || 0) > ((existing as any).stage_sequence || 0) && (item.current_stage_quantity || 0) > 0) {
+          existing.current_stage_id = item.current_stage_id;
+          existing.current_stage_name = item.current_stage_name;
+          (existing as any).stage_sequence = (item as any).stage_sequence;
+          (existing as any).color_badge = (item as any).color_badge;
+        }
+      }
+    });
+
+    consolidatedMap.forEach(item => {
       const cat = item.category_name || order.category_name || 'General';
       if (!groups[cat]) groups[cat] = [];
       groups[cat].push(item);
@@ -945,7 +968,7 @@ export default function ProductionOrderDetail() {
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
 
-              Products Ordered ({items.length})
+              Products Ordered ({Object.values(groupedProducts).flat().length})
             </h3>
             <span className="text-xs text-slate-500 font-mono">
               Total Order Qty: <strong className="text-slate-800">{totalQty.toLocaleString()} pcs</strong>

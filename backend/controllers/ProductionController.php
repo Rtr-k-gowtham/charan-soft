@@ -54,11 +54,18 @@ class ProductionController {
                     LEFT JOIN products p ON poi.product_id = p.id
                     JOIN production_stages ps ON poi.current_stage_id = ps.id
                     LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
-                    WHERE poi.production_order_id = ?
+                    WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
                     ORDER BY poi.id ASC
                 ");
                 $iStmt->execute([$ord['id']]);
                 $ord['items'] = $iStmt->fetchAll();
+
+                // Compute unique products count
+                $uSet = [];
+                foreach ($ord['items'] as $it) {
+                    $uSet[$it['product_id'] . '_' . trim((string)$it['color'])] = true;
+                }
+                $ord['unique_products_count'] = count($uSet);
 
                 $items = $ord['items'];
                 $orderStageName = 'Requirement Gathering';
@@ -139,7 +146,7 @@ class ProductionController {
                 LEFT JOIN categories cat ON p.category_id = cat.id
                 JOIN production_stages ps ON poi.current_stage_id = ps.id
                 LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
-                WHERE poi.production_order_id = ?
+                WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
                 ORDER BY poi.id ASC
             ");
             $iStmt->execute([$id]);
@@ -1706,7 +1713,7 @@ class ProductionController {
                     $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
                     $remTotal = max(0.0, (float)$item['total_quantity'] - $qty);
                     if ($remQty <= 0.001) {
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = 0, total_quantity = 0 WHERE id = ?")->execute([$itemId]);
+                        $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$itemId]);
                     } else {
                         $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")->execute([$remQty, $remTotal, $itemId]);
                     }
@@ -2571,14 +2578,39 @@ class ProductionController {
                 $chkStmt->execute([$pId, $item['product_id'], $item['color']]);
                 $checkingItem = $chkStmt->fetch();
 
+                $curQty = (float)$item['current_stage_quantity'];
+                $isFullMove = ($curQty <= $qty + 0.001);
+
                 if ($checkingItem) {
+                    // Add moved quantity to existing checking item
                     $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ? WHERE id = ?")
                         ->execute([$qty, $qty, $checkingItem['id']]);
+
+                    if ($isFullMove) {
+                        $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
+                    } else {
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+                    }
                 } else {
-                    $ins = $pdo->prepare("INSERT INTO production_order_items 
-                        (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
-                        VALUES (?, ?, ?, ?, 8, ?, 0, 0, 0, 'In Progress')");
-                    $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                    if ($isFullMove) {
+                        // Advance the existing item to Stage 8
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_id = 8, current_stage_quantity = ?, status = 'In Progress' WHERE id = ?")
+                            ->execute([$qty, $item['id']]);
+                    } else {
+                        // Partial move: deduct from source and insert new row for destination
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+
+                        $ins = $pdo->prepare("INSERT INTO production_order_items 
+                            (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                            VALUES (?, ?, ?, ?, 8, ?, 0, 0, 0, 'In Progress')");
+                        $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                    }
                 }
             }
 
@@ -2926,14 +2958,36 @@ class ProductionController {
                 $pckStmt->execute([$pId, $item['product_id'], $item['color']]);
                 $packingItem = $pckStmt->fetch();
 
+                $curQty = (float)$item['current_stage_quantity'];
+                $isFullMove = ($curQty <= $qty + 0.001);
+
                 if ($packingItem) {
                     $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ? WHERE id = ?")
                         ->execute([$qty, $qty, $packingItem['id']]);
+
+                    if ($isFullMove) {
+                        $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
+                    } else {
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+                    }
                 } else {
-                    $ins = $pdo->prepare("INSERT INTO production_order_items 
-                        (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
-                        VALUES (?, ?, ?, ?, 9, ?, 0, 0, 0, 'In Progress')");
-                    $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                    if ($isFullMove) {
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_id = 9, current_stage_quantity = ?, status = 'In Progress' WHERE id = ?")
+                            ->execute([$qty, $item['id']]);
+                    } else {
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+
+                        $ins = $pdo->prepare("INSERT INTO production_order_items 
+                            (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                            VALUES (?, ?, ?, ?, 9, ?, 0, 0, 0, 'In Progress')");
+                        $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                    }
                 }
             }
 
@@ -3230,14 +3284,36 @@ class ProductionController {
                 $compStmt->execute([$pId, $item['product_id'], $item['color']]);
                 $compItem = $compStmt->fetch();
 
+                $curQty = (float)$item['current_stage_quantity'];
+                $isFullMove = ($curQty <= $qty + 0.001);
+
                 if ($compItem) {
-                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ? WHERE id = ?")
-                        ->execute([$qty, $qty, $compItem['id']]);
+                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = current_stage_quantity + ?, total_quantity = total_quantity + ?, completed_quantity = completed_quantity + ? WHERE id = ?")
+                        ->execute([$qty, $qty, $qty, $compItem['id']]);
+
+                    if ($isFullMove) {
+                        $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
+                    } else {
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+                    }
                 } else {
-                    $ins = $pdo->prepare("INSERT INTO production_order_items 
-                        (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
-                        VALUES (?, ?, ?, ?, 10, ?, ?, 0, 0, 'Completed')");
-                    $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty, $qty]);
+                    if ($isFullMove) {
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_id = 10, current_stage_quantity = ?, completed_quantity = ?, status = 'Completed' WHERE id = ?")
+                            ->execute([$qty, $qty, $item['id']]);
+                    } else {
+                        $remQty = $curQty - $qty;
+                        $remTotal = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotal, $item['id']]);
+
+                        $ins = $pdo->prepare("INSERT INTO production_order_items 
+                            (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                            VALUES (?, ?, ?, ?, 10, ?, ?, 0, 0, 'Completed')");
+                        $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty, $qty]);
+                    }
                 }
             }
 

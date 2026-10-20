@@ -541,11 +541,19 @@ class MastersController {
                 notes TEXT NULL,
                 image_url LONGTEXT NULL,
                 dimensions_json LONGTEXT NULL,
+                cutting_size_json LONGTEXT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_buyer_id (buyer_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
+
+        try {
+            $bpCols = $pdo->query("DESCRIBE buyer_products")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('cutting_size_json', $bpCols)) {
+                $pdo->exec("ALTER TABLE buyer_products ADD COLUMN cutting_size_json LONGTEXT NULL AFTER dimensions_json;");
+            }
+        } catch (Exception $e) {}
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS buyer_product_components (
@@ -556,6 +564,10 @@ class MastersController {
                 name VARCHAR(150) NOT NULL,
                 category VARCHAR(100) NOT NULL,
                 uom VARCHAR(30) DEFAULT 'Meters',
+                size VARCHAR(100) NULL,
+                model VARCHAR(100) NULL,
+                length VARCHAR(100) NULL,
+                thickness VARCHAR(100) NULL,
                 quantity_per_product DECIMAL(12,4) DEFAULT 1.0000,
                 wastage_percent DECIMAL(5,2) DEFAULT 0.00,
                 notes VARCHAR(255) NULL,
@@ -567,6 +579,18 @@ class MastersController {
             $cols = $pdo->query("DESCRIBE buyer_product_components")->fetchAll(PDO::FETCH_COLUMN);
             if (!in_array('material_id', $cols)) {
                 $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN material_id INT NULL AFTER buyer_product_id;");
+            }
+            if (!in_array('size', $cols)) {
+                $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN size VARCHAR(100) NULL AFTER uom;");
+            }
+            if (!in_array('model', $cols)) {
+                $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN model VARCHAR(100) NULL AFTER size;");
+            }
+            if (!in_array('length', $cols)) {
+                $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN length VARCHAR(100) NULL AFTER model;");
+            }
+            if (!in_array('thickness', $cols)) {
+                $pdo->exec("ALTER TABLE buyer_product_components ADD COLUMN thickness VARCHAR(100) NULL AFTER length;");
             }
         } catch (Exception $e) {}
 
@@ -586,6 +610,30 @@ class MastersController {
                 INDEX idx_bp_box_id (buyer_product_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
+    }
+
+    private function sanitizeCuttingSize($raw): ?array {
+        if (!$raw || !is_array($raw)) return null;
+        $l = isset($raw['cutting_length']) ? floatval($raw['cutting_length']) : 0;
+        $w = isset($raw['cutting_width']) ? floatval($raw['cutting_width']) : 0;
+        $h = isset($raw['cutting_height']) ? floatval($raw['cutting_height']) : 0;
+        $unit = trim($raw['unit'] ?? 'cm');
+        if (!in_array($unit, ['cm', 'inch', 'mm', 'm'])) {
+            $unit = 'cm';
+        }
+        $notes = trim($raw['notes'] ?? '');
+
+        if ($l <= 0 && $w <= 0 && $h <= 0 && empty($notes)) {
+            return null;
+        }
+
+        return [
+            'cutting_length' => $l,
+            'cutting_width' => $w,
+            'cutting_height' => $h,
+            'unit' => $unit,
+            'notes' => $notes,
+        ];
     }
 
     public function getBuyerProducts(int $buyerId): void {
@@ -613,6 +661,10 @@ class MastersController {
                         'name' => $c['name'],
                         'category' => $c['category'],
                         'uom' => $c['uom'] ?? 'Meters',
+                        'size' => $c['size'] ?? '',
+                        'model' => $c['model'] ?? '',
+                        'length' => $c['length'] ?? '',
+                        'thickness' => $c['thickness'] ?? '',
                         'quantity_per_product' => (float)$c['quantity_per_product'],
                         'wastage_percent' => (float)$c['wastage_percent'],
                         'notes' => $c['notes'] ?? ''
@@ -639,6 +691,7 @@ class MastersController {
                 }, $boxRows);
 
                 $dimensions = !empty($r['dimensions_json']) ? json_decode($r['dimensions_json'], true) : null;
+                $cuttingSize = $this->sanitizeCuttingSize(!empty($r['cutting_size_json']) ? json_decode($r['cutting_size_json'], true) : null);
 
                 $products[] = [
                     'id' => $prodId,
@@ -649,6 +702,7 @@ class MastersController {
                     'notes' => $r['notes'] ?? '',
                     'image_url' => $r['image_url'] ?? '',
                     'dimensions' => $dimensions,
+                    'cutting_size' => $cuttingSize,
                     'components' => $components,
                     'boxes' => $boxes,
                     'status' => (!empty($components) && !empty($boxes)) ? 'Ready' : 'Incomplete',
@@ -693,6 +747,10 @@ class MastersController {
                     'name' => $c['name'],
                     'category' => $c['category'],
                     'uom' => $c['uom'] ?? 'Meters',
+                    'size' => $c['size'] ?? '',
+                    'model' => $c['model'] ?? '',
+                    'length' => $c['length'] ?? '',
+                    'thickness' => $c['thickness'] ?? '',
                     'quantity_per_product' => (float)$c['quantity_per_product'],
                     'wastage_percent' => (float)$c['wastage_percent'],
                     'notes' => $c['notes'] ?? ''
@@ -719,6 +777,7 @@ class MastersController {
             }, $boxRows);
 
             $dimensions = !empty($r['dimensions_json']) ? json_decode($r['dimensions_json'], true) : null;
+            $cuttingSize = $this->sanitizeCuttingSize(!empty($r['cutting_size_json']) ? json_decode($r['cutting_size_json'], true) : null);
 
             $product = [
                 'id' => (int)$r['id'],
@@ -729,6 +788,7 @@ class MastersController {
                 'notes' => $r['notes'] ?? '',
                 'image_url' => $r['image_url'] ?? '',
                 'dimensions' => $dimensions,
+                'cutting_size' => $cuttingSize,
                 'components' => $components,
                 'boxes' => $boxes,
                 'status' => (!empty($components) && !empty($boxes)) ? 'Ready' : 'Incomplete',
@@ -775,20 +835,22 @@ class MastersController {
             $notes = trim($data['notes'] ?? '');
             $imageUrl = trim($data['image_url'] ?? '');
             $dimensionsJson = isset($data['dimensions']) ? json_encode($data['dimensions']) : null;
+            $cleanCuttingSize = isset($data['cutting_size']) ? $this->sanitizeCuttingSize($data['cutting_size']) : null;
+            $cuttingSizeJson = $cleanCuttingSize ? json_encode($cleanCuttingSize) : null;
 
             $stmt = $pdo->prepare("
-                INSERT INTO buyer_products (buyer_id, product_name, product_code, uom, notes, image_url, dimensions_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO buyer_products (buyer_id, product_name, product_code, uom, notes, image_url, dimensions_json, cutting_size_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ");
-            $stmt->execute([$buyerId, $productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson]);
+            $stmt->execute([$buyerId, $productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson, $cuttingSizeJson]);
             $newId = (int)$pdo->lastInsertId();
 
             // Insert BOM components
             $savedComponents = [];
             if (!empty($data['components']) && is_array($data['components'])) {
                 $compIns = $pdo->prepare("
-                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, size, model, length, thickness, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 foreach ($data['components'] as $c) {
                     $cName = trim($c['name'] ?? '');
@@ -797,12 +859,20 @@ class MastersController {
                     $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
                     $cat = trim($c['category'] ?? 'Raw Material');
                     $cUom = trim($c['uom'] ?? 'Meters');
+                    $size = trim($c['size'] ?? '');
+                    $model = trim($c['model'] ?? '');
+                    $length = trim($c['length'] ?? '');
+                    $thickness = trim($c['thickness'] ?? '');
                     $qty = (float)($c['quantity_per_product'] ?? 1);
                     $wastage = (float)($c['wastage_percent'] ?? 0);
                     $cNotes = trim($c['notes'] ?? '');
-                    $compIns->execute([$newId, $matId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $compIns->execute([$newId, $matId, $catId, $cName, $cat, $cUom, $size, $model, $length, $thickness, $qty, $wastage, $cNotes]);
                     $c['id'] = (string)$pdo->lastInsertId();
                     $c['material_id'] = $matId;
+                    $c['size'] = $size;
+                    $c['model'] = $model;
+                    $c['length'] = $length;
+                    $c['thickness'] = $thickness;
                     $savedComponents[] = $c;
                 }
             }
@@ -840,6 +910,7 @@ class MastersController {
                 'notes' => $notes,
                 'image_url' => $imageUrl,
                 'dimensions' => $data['dimensions'] ?? null,
+                'cutting_size' => $cleanCuttingSize,
                 'components' => $savedComponents,
                 'boxes' => $savedBoxes,
                 'status' => (!empty($savedComponents) && !empty($savedBoxes)) ? 'Ready' : 'Incomplete',
@@ -879,21 +950,23 @@ class MastersController {
             $notes = trim($data['notes'] ?? '');
             $imageUrl = trim($data['image_url'] ?? '');
             $dimensionsJson = isset($data['dimensions']) ? json_encode($data['dimensions']) : null;
+            $cleanCuttingSize = isset($data['cutting_size']) ? $this->sanitizeCuttingSize($data['cutting_size']) : null;
+            $cuttingSizeJson = $cleanCuttingSize ? json_encode($cleanCuttingSize) : null;
 
             $stmt = $pdo->prepare("
                 UPDATE buyer_products
-                SET product_name = ?, product_code = ?, uom = ?, notes = ?, image_url = ?, dimensions_json = ?
+                SET product_name = ?, product_code = ?, uom = ?, notes = ?, image_url = ?, dimensions_json = ?, cutting_size_json = ?
                 WHERE id = ? AND buyer_id = ?
             ");
-            $stmt->execute([$productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson, $productId, $buyerId]);
+            $stmt->execute([$productName, $productCode, $uom, $notes, $imageUrl, $dimensionsJson, $cuttingSizeJson, $productId, $buyerId]);
 
             // Replace BOM components
             $pdo->prepare("DELETE FROM buyer_product_components WHERE buyer_product_id = ?")->execute([$productId]);
             $savedComponents = [];
             if (!empty($data['components']) && is_array($data['components'])) {
                 $compIns = $pdo->prepare("
-                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, quantity_per_product, wastage_percent, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO buyer_product_components (buyer_product_id, material_id, category_id, name, category, uom, size, model, length, thickness, quantity_per_product, wastage_percent, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 foreach ($data['components'] as $c) {
                     $cName = trim($c['name'] ?? '');
@@ -902,12 +975,20 @@ class MastersController {
                     $catId = !empty($c['category_id']) ? (int)$c['category_id'] : null;
                     $cat = trim($c['category'] ?? 'Raw Material');
                     $cUom = trim($c['uom'] ?? 'Meters');
+                    $size = trim($c['size'] ?? '');
+                    $model = trim($c['model'] ?? '');
+                    $length = trim($c['length'] ?? '');
+                    $thickness = trim($c['thickness'] ?? '');
                     $qty = (float)($c['quantity_per_product'] ?? 1);
                     $wastage = (float)($c['wastage_percent'] ?? 0);
                     $cNotes = trim($c['notes'] ?? '');
-                    $compIns->execute([$productId, $matId, $catId, $cName, $cat, $cUom, $qty, $wastage, $cNotes]);
+                    $compIns->execute([$productId, $matId, $catId, $cName, $cat, $cUom, $size, $model, $length, $thickness, $qty, $wastage, $cNotes]);
                     $c['id'] = (string)$pdo->lastInsertId();
                     $c['material_id'] = $matId;
+                    $c['size'] = $size;
+                    $c['model'] = $model;
+                    $c['length'] = $length;
+                    $c['thickness'] = $thickness;
                     $savedComponents[] = $c;
                 }
             }
@@ -946,6 +1027,7 @@ class MastersController {
                 'notes' => $notes,
                 'image_url' => $imageUrl,
                 'dimensions' => $data['dimensions'] ?? null,
+                'cutting_size' => $cleanCuttingSize,
                 'components' => $savedComponents,
                 'boxes' => $savedBoxes,
                 'status' => (!empty($savedComponents) && !empty($savedBoxes)) ? 'Ready' : 'Incomplete'

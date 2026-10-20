@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
   Truck,
@@ -294,6 +295,16 @@ export default function DispatchOrderDetail() {
     const selectedCartons = cartons.filter(c => selectedCartonIds.includes(c.id || 0));
     const totalPcs = selectedCartons.reduce((sum, c) => sum + Number(c.items_count || 0), 0);
     const totalBoxesCount = selectedCartons.length * 5; // Section D ratio
+
+    if (!truckPhotos || truckPhotos.length === 0) {
+      setDispatchError('Real-time camera photograph with live GPS coordinates of the transport vehicle & registration number plate is mandatory.');
+      return;
+    }
+
+    if (!cartonPhotos || cartonPhotos.length === 0) {
+      setDispatchError('Real-time camera photograph with live GPS coordinates of the loaded cartons & security seal is mandatory.');
+      return;
+    }
 
     try {
       setSavingDispatch(true);
@@ -798,61 +809,29 @@ export default function DispatchOrderDetail() {
             />
           </FormField>
 
-          {/* Photo Proof Uploads */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Truck photo */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Truck & Number Plate Photo
-              </label>
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-2.5 flex items-center gap-2 text-xs text-slate-600 transition">
-                  <Camera className="w-4 h-4 text-emerald-600" />
-                  <span>Upload Truck</span>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleTruckPhotoUpload} />
-                </label>
+          {/* Mandatory Live Camera Photo Proofs */}
+          <div className="space-y-4 pt-1">
+            <LivePhotoCaptureField
+              label="Truck & Vehicle Registration Plate Photo"
+              required={true}
+              photos={truckPhotos}
+              onPhotosChange={setTruckPhotos}
+              stageName="Dispatch — Transport Vehicle (Stage 11)"
+              orderNumber={order?.order_number}
+              error={dispatchError && truckPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the transport vehicle is mandatory.' : undefined}
+              buttonText="Take Real-Time Truck Photo"
+            />
 
-                {truckPhotos.map((url, idx) => (
-                  <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-300 group">
-                    <img src={url} alt="Truck" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setTruckPhotos(prev => prev.filter((_, i) => i !== idx))}
-                      className="absolute top-0.5 right-0.5 p-0.5 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Loaded Cartons photo */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Loaded Cartons & Seal Photo
-              </label>
-              <div className="flex items-center gap-2 flex-wrap">
-                <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-xl p-2.5 flex items-center gap-2 text-xs text-slate-600 transition">
-                  <Camera className="w-4 h-4 text-emerald-600" />
-                  <span>Upload Cartons</span>
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleCartonPhotoUpload} />
-                </label>
-
-                {cartonPhotos.map((url, idx) => (
-                  <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-300 group">
-                    <img src={url} alt="Cartons" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setCartonPhotos(prev => prev.filter((_, i) => i !== idx))}
-                      className="absolute top-0.5 right-0.5 p-0.5 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <Trash2 className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <LivePhotoCaptureField
+              label="Loaded Cartons & Container Security Seal Photo"
+              required={true}
+              photos={cartonPhotos}
+              onPhotosChange={setCartonPhotos}
+              stageName="Dispatch — Loaded Cartons (Stage 11)"
+              orderNumber={order?.order_number}
+              error={dispatchError && cartonPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the loaded cartons & seal is mandatory.' : undefined}
+              buttonText="Take Real-Time Carton Load Photo"
+            />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

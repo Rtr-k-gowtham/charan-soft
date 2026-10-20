@@ -85,6 +85,10 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
       category_id: undefined,
       category: '',
       uom: '',
+      size: '',
+      model: '',
+      length: '',
+      thickness: '',
       quantity_per_product: 1,
       notes: '',
     };
@@ -160,8 +164,12 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
     }
   };
 
-  // Update non-material fields (quantity, notes)
-  const updateField = (id: string, field: 'quantity_per_product' | 'notes', value: any) => {
+  // Update non-material fields (size, model, length, thickness, quantity, notes)
+  const updateField = (
+    id: string,
+    field: 'size' | 'model' | 'length' | 'thickness' | 'quantity_per_product' | 'notes',
+    value: any
+  ) => {
     onChange(
       components.map((c) => {
         if (c.id !== id) return c;
@@ -219,23 +227,27 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
         </div>
       )}
 
-      {/* Components Table */}
-      <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white shadow-2xs">
-        <table className="w-full text-xs text-left">
+      {/* Components Table - Fixed Layout, No Horizontal Scroll */}
+      <div className="w-full border border-slate-200 rounded-lg bg-white shadow-2xs overflow-hidden">
+        <table className="w-full table-fixed text-xs text-left">
           <thead className="bg-slate-50/80 text-[11px] font-semibold text-slate-600 border-b border-slate-200">
             <tr>
-              <th className="py-2.5 px-3 min-w-[280px]">Material Name *</th>
-              <th className="py-2.5 px-2.5 min-w-[170px]">Category (Auto)</th>
-              <th className="py-2.5 px-2.5 min-w-[100px] text-center">UOM (Auto)</th>
-              <th className="py-2.5 px-2.5 min-w-[110px] text-right">Qty / Unit *</th>
-              <th className="py-2.5 px-2.5 min-w-[160px]">Notes</th>
-              <th className="py-2.5 px-2 text-center w-16">Actions</th>
+              <th className="py-2.5 px-3 w-[25%]">Material Name *</th>
+              <th className="py-2.5 px-2 w-[13%]">Category (Auto)</th>
+              <th className="py-2.5 px-1.5 w-[6%] text-center">UOM</th>
+              <th className="py-2.5 px-1.5 w-[8%]">Size</th>
+              <th className="py-2.5 px-1.5 w-[8.5%]">Model</th>
+              <th className="py-2.5 px-1.5 w-[8%]">Length</th>
+              <th className="py-2.5 px-1.5 w-[8%]">Thickness</th>
+              <th className="py-2.5 px-1.5 w-[8%] text-right">Qty / Unit *</th>
+              <th className="py-2.5 px-2 w-[11.5%]">Notes</th>
+              <th className="py-2.5 px-1.5 text-center w-[4%]">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {components.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-slate-400">
+                <td colSpan={10} className="py-8 text-center text-slate-400">
                   <p className="text-xs">No materials or components added to this BOM yet.</p>
                   <button
                     type="button"
@@ -263,78 +275,111 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                 return (
                   <tr key={comp.id} className="hover:bg-slate-50/60 transition-colors">
                     {/* Material Name: Searchable Dropdown */}
-                    <td className="py-2 px-3 align-middle">
+                    <td className="py-2 px-2.5 align-middle">
                       <SearchableSelect
                         value={selectedVal}
                         onChange={(val) => handleMaterialSelect(comp.id, val)}
                         options={rowOptions}
                         placeholder={
                           loadingMaterials
-                            ? 'Loading Material Master...'
-                            : '— Select Material from Master —'
+                            ? 'Loading...'
+                            : '— Select Material —'
                         }
-                        searchPlaceholder="Type to search materials by name, code or UOM..."
+                        searchPlaceholder="Search material by name, code or UOM..."
                         disabled={loadingMaterials}
                         clearable={true}
                       />
                     </td>
 
                     {/* Category: Read-only auto-populated field */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-1.5 align-middle">
                       <div
-                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-between min-h-[34px] cursor-not-allowed select-none"
+                        className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-between min-h-[34px] min-w-0 cursor-not-allowed select-none"
                         title={
                           comp.category
                             ? `Category: ${comp.category} (Automatically populated from Material Master)`
                             : 'Select a material to automatically set category'
                         }
                       >
-                        <span className="truncate font-medium">
+                        <span className="truncate font-medium text-[11px]">
                           {comp.category ? (
                             comp.category
                           ) : comp.material_id ? (
                             <span className="text-amber-600 font-normal italic text-[11px]">
-                              No category assigned
+                              None
                             </span>
                           ) : (
-                            <span className="text-slate-400 font-normal italic">
-                              Auto from material
+                            <span className="text-slate-400 font-normal italic text-[11px]">
+                              Auto
                             </span>
                           )}
                         </span>
-                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider bg-slate-200/60 px-1 py-0.5 rounded ml-1 shrink-0 flex items-center gap-0.5">
-                          <Lock className="w-2.5 h-2.5 text-slate-400" />
-                          Read-only
-                        </span>
+                        <Lock className="w-2.5 h-2.5 text-slate-400 shrink-0 ml-1" />
                       </div>
                     </td>
 
                     {/* UOM: Read-only auto-populated field */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-1 align-middle">
                       <div
-                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-center min-h-[34px] cursor-not-allowed select-none"
+                        className="w-full px-1 py-1.5 text-xs bg-slate-50 border border-slate-200/90 rounded text-slate-700 flex items-center justify-center min-h-[34px] min-w-0 cursor-not-allowed select-none"
                         title={
                           comp.uom
-                            ? `Unit of Measurement: ${comp.uom} (Automatically populated from Material Master)`
-                            : 'Select a material to automatically set UOM'
+                            ? `Unit of Measurement: ${comp.uom} (Auto populated)`
+                            : 'Select material to auto set UOM'
                         }
                       >
-                        <span className="truncate font-mono font-semibold">
-                          {comp.uom ? (
-                            comp.uom
-                          ) : comp.material_id ? (
-                            <span className="text-amber-600 font-sans text-[11px] font-normal italic">
-                              No UOM
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 font-sans font-normal italic">—</span>
-                          )}
+                        <span className="truncate font-mono font-bold text-[11px] text-slate-700">
+                          {comp.uom || (comp.material_id ? '—' : '—')}
                         </span>
                       </div>
                     </td>
 
+                    {/* Size: Editable text input */}
+                    <td className="py-2 px-1 align-middle">
+                      <input
+                        type="text"
+                        placeholder="Size"
+                        value={comp.size || ''}
+                        onChange={(e) => updateField(comp.id, 'size', e.target.value)}
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-700 bg-white"
+                      />
+                    </td>
+
+                    {/* Model: Editable text input */}
+                    <td className="py-2 px-1 align-middle">
+                      <input
+                        type="text"
+                        placeholder="Model"
+                        value={comp.model || ''}
+                        onChange={(e) => updateField(comp.id, 'model', e.target.value)}
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-700 bg-white"
+                      />
+                    </td>
+
+                    {/* Length: Editable text input */}
+                    <td className="py-2 px-1 align-middle">
+                      <input
+                        type="text"
+                        placeholder="Length"
+                        value={comp.length || ''}
+                        onChange={(e) => updateField(comp.id, 'length', e.target.value)}
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-700 bg-white"
+                      />
+                    </td>
+
+                    {/* Thickness: Editable text input */}
+                    <td className="py-2 px-1 align-middle">
+                      <input
+                        type="text"
+                        placeholder="Thick"
+                        value={comp.thickness || ''}
+                        onChange={(e) => updateField(comp.id, 'thickness', e.target.value)}
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-700 bg-white"
+                      />
+                    </td>
+
                     {/* Qty per Product: Editable numeric input */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-1 align-middle">
                       <input
                         type="number"
                         step="0.001"
@@ -349,29 +394,29 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                           )
                         }
                         placeholder="1.00"
-                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded font-mono font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-right bg-white"
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded font-mono font-medium focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-right bg-white"
                       />
                     </td>
 
                     {/* Notes: Editable text input */}
-                    <td className="py-2 px-2.5 align-middle">
+                    <td className="py-2 px-1.5 align-middle">
                       <input
                         type="text"
-                        placeholder="e.g. Body & sleeves / Trims"
+                        placeholder="Placement / notes"
                         value={comp.notes || ''}
                         onChange={(e) => updateField(comp.id, 'notes', e.target.value)}
-                        className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-600 bg-white"
+                        className="w-full min-w-0 px-2 py-1.5 text-xs border border-slate-200 rounded focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none text-slate-600 bg-white"
                       />
                     </td>
 
                     {/* Actions: Duplicate & Delete */}
-                    <td className="py-2 px-2 text-center align-middle">
+                    <td className="py-2 px-1 text-center align-middle">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
                           onClick={() => duplicateRow(comp)}
                           title="Duplicate row"
-                          className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition cursor-pointer"
+                          className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition cursor-pointer"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -379,7 +424,7 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                           type="button"
                           onClick={() => removeRow(comp.id)}
                           title="Remove row"
-                          className="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
+                          className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -443,6 +488,14 @@ export default function RawMaterialsTable({ components, onChange }: Props) {
                         {comp.category || 'No category'}
                       </span>
                     </div>
+                    {(comp.size || comp.model || comp.length || comp.thickness) ? (
+                      <div className="flex flex-wrap gap-1 mt-1 text-[9px] text-slate-500">
+                        {comp.size ? <span className="bg-slate-50 border border-slate-200 px-1 py-0.2 rounded font-mono">Size: {comp.size}</span> : null}
+                        {comp.model ? <span className="bg-slate-50 border border-slate-200 px-1 py-0.2 rounded font-mono">Mod: {comp.model}</span> : null}
+                        {comp.length ? <span className="bg-slate-50 border border-slate-200 px-1 py-0.2 rounded font-mono">Len: {comp.length}</span> : null}
+                        {comp.thickness ? <span className="bg-slate-50 border border-slate-200 px-1 py-0.2 rounded font-mono">Thk: {comp.thickness}</span> : null}
+                      </div>
+                    ) : null}
                     <div className="mt-2 flex items-baseline justify-between pt-1 border-t border-slate-100">
                       <div className="text-[10px] text-slate-400">Total Req:</div>
                       <div className="text-right">

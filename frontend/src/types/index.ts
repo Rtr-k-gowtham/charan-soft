@@ -120,6 +120,10 @@ export interface BuyerProductComponent {
   name: string;
   category: MaterialCategory;
   uom: string;
+  size?: string;
+  model?: string;
+  length?: string;
+  thickness?: string;
   quantity_per_product: number;
   wastage_percent?: number;
   notes?: string;
@@ -157,6 +161,14 @@ export interface BoxPackingConfig {
   notes?: string;
 }
 
+export interface ProductCuttingSize {
+  cutting_length: number;
+  cutting_width: number;
+  cutting_height: number;
+  unit: DimensionUnit;
+  notes?: string;
+}
+
 export interface BuyerProduct {
   id: number | string;
   buyer_id: number;
@@ -166,6 +178,7 @@ export interface BuyerProduct {
   notes?: string;
   image_url?: string;
   dimensions: ProductDimensions;
+  cutting_size?: ProductCuttingSize | null;
   variants?: ProductVariantSpec[];
   components: BuyerProductComponent[];
   boxes: BoxPackingConfig[];

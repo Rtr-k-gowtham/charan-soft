@@ -1,16 +1,24 @@
 // frontend/src/components/buyer-products/BuyerProductModal.tsx
 import React, { useState, useEffect } from 'react';
-import { BuyerProduct, BuyerProductComponent, BoxPackingConfig, ProductDimensions } from '../../types';
+import {
+  BuyerProduct,
+  BuyerProductComponent,
+  BoxPackingConfig,
+  ProductDimensions,
+  ProductCuttingSize,
+} from '../../types';
 import Button from '../ui/Button';
 import FormField from '../ui/FormField';
 import ProductImageUploader from './ProductImageUploader';
 import ProductDimensionsForm from './ProductDimensionsForm';
 import RawMaterialsTable from './RawMaterialsTable';
 import BoxConfigSection from './BoxConfigSection';
+import ProductCuttingSizeForm from './ProductCuttingSizeForm';
 import {
   Layers,
   Package,
   Ruler,
+  Scissors,
   FileText,
   AlertCircle,
   ArrowLeft,
@@ -27,7 +35,7 @@ interface Props {
   onSave: (product: Partial<BuyerProduct>) => Promise<void>;
 }
 
-type TabId = 'general' | 'bom' | 'dimensions' | 'boxes';
+type TabId = 'general' | 'bom' | 'dimensions' | 'boxes' | 'cutting';
 
 const COMMON_UOMS = ['Pieces', 'Sets', 'Pairs', 'Dozens', 'Rolls'];
 
@@ -39,6 +47,14 @@ const defaultDimensions: ProductDimensions = {
   calculated_volume_cm3: 1200,
   calculated_volume_m3: 0.0012,
   weight_grams: 180,
+};
+
+const defaultCuttingSize: ProductCuttingSize = {
+  cutting_length: 34,
+  cutting_width: 24,
+  cutting_height: 2,
+  unit: 'cm',
+  notes: '',
 };
 
 const defaultBoxes: BoxPackingConfig[] = [
@@ -77,6 +93,7 @@ export default function BuyerProductModal({
   const [notes, setNotes] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [dimensions, setDimensions] = useState<ProductDimensions>(defaultDimensions);
+  const [cuttingSize, setCuttingSize] = useState<ProductCuttingSize>(defaultCuttingSize);
   const [components, setComponents] = useState<BuyerProductComponent[]>([]);
   const [boxes, setBoxes] = useState<BoxPackingConfig[]>(defaultBoxes);
 
@@ -87,9 +104,32 @@ export default function BuyerProductModal({
       setUom(initialProduct.uom || 'Pieces');
       setNotes(initialProduct.notes || '');
       setImageUrl(initialProduct.image_url || '');
-      setDimensions(initialProduct.dimensions || defaultDimensions);
+      const loadedDims = initialProduct.dimensions || defaultDimensions;
+      setDimensions(loadedDims);
       setComponents(initialProduct.components || []);
       setBoxes(initialProduct.boxes && initialProduct.boxes.length > 0 ? initialProduct.boxes : defaultBoxes);
+
+      // Initialize cutting size from product or auto-calculate defaults
+      if (initialProduct.cutting_size) {
+        setCuttingSize({
+          cutting_length: Number(initialProduct.cutting_size.cutting_length) || 0,
+          cutting_width: Number(initialProduct.cutting_size.cutting_width) || 0,
+          cutting_height: Number(initialProduct.cutting_size.cutting_height) || 0,
+          unit: initialProduct.cutting_size.unit || loadedDims.unit || 'cm',
+          notes: initialProduct.cutting_size.notes || '',
+        });
+      } else {
+        const finL = Number(loadedDims.length || 30);
+        const finW = Number(loadedDims.width || 20);
+        const finH = Number(loadedDims.height || 0);
+        setCuttingSize({
+          cutting_length: Math.round((finL + 4) * 10) / 10,
+          cutting_width: Math.round((finW + 4) * 10) / 10,
+          cutting_height: finH > 0 ? finH : 0,
+          unit: loadedDims.unit || 'cm',
+          notes: '',
+        });
+      }
     } else {
       setProductName('');
       setProductCode('');
@@ -97,6 +137,7 @@ export default function BuyerProductModal({
       setNotes('');
       setImageUrl('');
       setDimensions(defaultDimensions);
+      setCuttingSize(defaultCuttingSize);
       setComponents([]);
       setBoxes(defaultBoxes);
     }
@@ -111,6 +152,7 @@ export default function BuyerProductModal({
     { id: 'bom', label: '2. Raw Materials & Components (BOM)', icon: Layers, count: components.length },
     { id: 'dimensions', label: '3. Dimensions & Volume', icon: Ruler, count: null },
     { id: 'boxes', label: '4. Box Packing & Simulator', icon: Package, count: boxes.length },
+    { id: 'cutting', label: '5. Cutting Size', icon: Scissors, count: null },
   ];
 
   const currentStepIndex = tabs.findIndex((t) => t.id === activeTab);
@@ -151,12 +193,16 @@ export default function BuyerProductModal({
       setActiveTab('dimensions');
     } else if (activeTab === 'dimensions') {
       setActiveTab('boxes');
+    } else if (activeTab === 'boxes') {
+      setActiveTab('cutting');
     }
   };
 
   const handleBack = () => {
     setError('');
-    if (activeTab === 'boxes') {
+    if (activeTab === 'cutting') {
+      setActiveTab('boxes');
+    } else if (activeTab === 'boxes') {
       setActiveTab('dimensions');
     } else if (activeTab === 'dimensions') {
       setActiveTab('bom');
@@ -198,6 +244,7 @@ export default function BuyerProductModal({
         notes: notes.trim(),
         image_url: imageUrl,
         dimensions,
+        cutting_size: cuttingSize,
         components,
         boxes,
       });
@@ -279,13 +326,13 @@ export default function BuyerProductModal({
           })}
         </div>
         <div className="hidden md:flex items-center gap-2 text-xs text-slate-400">
-          <span>Step {currentStepIndex + 1} of 4</span>
+          <span>Step {currentStepIndex + 1} of 5</span>
         </div>
       </div>
 
       {/* 3. Full Page Workspace Content Area */}
       <div className="flex-1 overflow-y-auto p-6 bg-slate-50/60">
-        <div className="max-w-6xl mx-auto flex flex-col gap-5">
+        <div className="max-w-[1400px] w-full mx-auto flex flex-col gap-5">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -369,13 +416,24 @@ export default function BuyerProductModal({
               />
             </div>
           )}
+
+          {/* Tab 5: Cutting Size & Pattern Specifications */}
+          {activeTab === 'cutting' && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-2xs">
+              <ProductCuttingSizeForm
+                cuttingSize={cuttingSize}
+                onChange={setCuttingSize}
+                productDimensions={dimensions}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* 4. Bottom Sticky Action Bar */}
       <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between">
         <span className="text-xs text-slate-500">
-          Buyer: <strong className="text-slate-800">{buyerName}</strong> &bull; Step {currentStepIndex + 1} of 4: <span className="font-medium text-slate-700">{tabs[currentStepIndex].label}</span>
+          Buyer: <strong className="text-slate-800">{buyerName}</strong> &bull; Step {currentStepIndex + 1} of 5: <span className="font-medium text-slate-700">{tabs[currentStepIndex].label}</span>
         </span>
         <div className="flex items-center gap-2">
           <Button variant="secondary" onClick={onClose} disabled={saving}>
@@ -393,7 +451,7 @@ export default function BuyerProductModal({
             </Button>
           )}
 
-          {currentStepIndex < 3 ? (
+          {currentStepIndex < 4 ? (
             <Button
               variant="primary"
               onClick={handleNext}

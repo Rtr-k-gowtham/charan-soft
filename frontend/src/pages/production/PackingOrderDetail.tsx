@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
   Package,
@@ -419,6 +420,11 @@ export default function PackingOrderDetail() {
     }
     if (packed > maxAllowed) {
       setBatchError(`Packed quantity (${packed}) cannot exceed available quantity from Checking (${maxAllowed}).`);
+      return;
+    }
+
+    if (!photoUrls || photoUrls.length === 0) {
+      setBatchError('Real-time camera photograph with live GPS coordinates of packed boxes & master cartons is mandatory.');
       return;
     }
 
@@ -1399,40 +1405,17 @@ export default function PackingOrderDetail() {
             />
           </FormField>
 
-          {/* Row 4: Evidence Photos */}
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                <Camera className="w-4 h-4 text-amber-600" />
-                <span>Packed Boxes & Master Carton Evidence Photographs</span>
-              </label>
-              <span className="text-[10px] text-slate-500 font-mono">
-                {photoUrls.length} photo{photoUrls.length === 1 ? '' : 's'} attached
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <label className="cursor-pointer border-2 border-dashed border-slate-300 hover:border-amber-500 hover:bg-amber-50/30 rounded-xl px-4 py-3 flex items-center gap-2 text-xs font-medium text-slate-600 transition bg-white">
-                <Camera className="w-4 h-4 text-amber-600" />
-                <span>Upload Photos</span>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
-              </label>
-
-              {photoUrls.map((url, idx) => (
-                <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-300 group shadow-2xs">
-                  <img src={url} alt={`Packing ${idx + 1}`} className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setPhotoUrls(prev => prev.filter((_, i) => i !== idx))}
-                    className="absolute top-0.5 right-0.5 p-1 bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition shadow-sm"
-                    title="Remove photo"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Packed Boxes & Master Carton Evidence Photographs"
+            required={true}
+            photos={photoUrls}
+            onPhotosChange={setPhotoUrls}
+            stageName="Packing & Cartons (Stage 10)"
+            orderNumber={order?.order_number}
+            error={batchError && photoUrls.length === 0 ? 'Real-time camera photograph with live GPS coordinates of packed boxes & master cartons is mandatory.' : undefined}
+            buttonText="Take Real-Time Packing Photo"
+          />
         </form>
       </Modal>
 

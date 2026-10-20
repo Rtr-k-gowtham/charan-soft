@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
   Scissors,
@@ -227,6 +228,10 @@ export default function CuttingOrderDetail() {
     }
     if (rej + rwk > actual) {
       setBatchError(`Rejected (${rej}) + Rework (${rwk}) cannot exceed actual cut quantity (${actual})`);
+      return;
+    }
+    if (!photoUrls || photoUrls.length === 0) {
+      setBatchError('Real-time camera photograph with live GPS coordinates is mandatory before confirming cutting batch.');
       return;
     }
 
@@ -766,39 +771,17 @@ export default function CuttingOrderDetail() {
             />
           </FormField>
 
-          {/* Photo Proof Upload */}
-          <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-              Cutting Lay & Bundle Photograph Evidence
-            </label>
-            <div className="flex items-center gap-3">
-              <label className="cursor-pointer flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 transition">
-                <Camera className="w-4 h-4 text-brand-600" />
-                <span>Upload Photos</span>
-                <input type="file" multiple accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-              </label>
-              <span className="text-[11px] text-slate-400">
-                {photoUrls.length} {photoUrls.length === 1 ? 'photo selected' : 'photos selected'}
-              </span>
-            </div>
-
-            {photoUrls.length > 0 && (
-              <div className="flex items-center gap-2 mt-2 overflow-x-auto p-1">
-                {photoUrls.map((url, idx) => (
-                  <div key={idx} className="relative w-14 h-14 rounded border border-slate-200 overflow-hidden shrink-0 group">
-                    <img src={url} alt="Proof" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setPhotoUrls(photoUrls.filter((_, i) => i !== idx))}
-                      className="absolute inset-0 bg-red-900/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Cutting Lay & Bundle Photograph Evidence"
+            required={true}
+            photos={photoUrls}
+            onPhotosChange={setPhotoUrls}
+            stageName="Cutting (Stage 06)"
+            orderNumber={order?.order_number}
+            error={batchError && photoUrls.length === 0 ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming cutting batch.' : undefined}
+            buttonText="Take Real-Time Cutting Photo"
+          />
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
             <Button variant="secondary" onClick={() => setBatchModalOpen(false)}>
