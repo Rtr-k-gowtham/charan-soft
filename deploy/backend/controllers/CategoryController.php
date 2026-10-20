@@ -22,7 +22,8 @@ class CategoryController {
             $stmt->execute($params);
             $categories = $stmt->fetchAll();
 
-            // Fetch dynamic fields for each category safely
+            // Fetch dynamic fields and terms for each category safely
+            $this->ensureTermsTable($pdo);
             try {
                 $fStmt = $pdo->prepare("SELECT * FROM category_fields WHERE category_id = :cat_id ORDER BY sort_order ASC");
                 foreach ($categories as &$cat) {
@@ -34,10 +35,12 @@ class CategoryController {
                         }
                     }
                     $cat['fields'] = $catFields;
+                    $cat['terms'] = $this->fetchCategoryTerms($pdo, (int)$cat['id']);
                 }
             } catch (Exception $cfErr) {
                 foreach ($categories as &$cat) {
                     $cat['fields'] = [];
+                    $cat['terms'] = [];
                 }
             }
 
@@ -68,6 +71,8 @@ class CategoryController {
                 }
             }
             $category['fields'] = $catFields;
+            $this->ensureTermsTable($pdo);
+            $category['terms'] = $this->fetchCategoryTerms($pdo, $id);
 
             Response::success($category);
         } catch (Exception $e) {
@@ -145,6 +150,27 @@ class CategoryController {
                         ':req' => !empty($f['is_required']) ? 1 : 0,
                         ':vis' => isset($f['is_visible']) ? ($f['is_visible'] ? 1 : 0) : 1,
                         ':sort' => $idx + 1
+                    ]);
+                }
+            }
+
+            $this->ensureTermsTable($pdo);
+            if (!empty($data['terms']) && is_array($data['terms'])) {
+                $tStmt = $pdo->prepare("
+                    INSERT INTO category_terms (category_id, term_key, title, content, display_order, is_active)
+                    VALUES (:cat_id, :term_key, :title, :content, :display_order, :is_active)
+                ");
+                foreach ($data['terms'] as $tIdx => $t) {
+                    $tTitle = trim((string)($t['title'] ?? ''));
+                    if (empty($tTitle)) continue;
+                    $tKey = !empty($t['term_key']) ? trim((string)$t['term_key']) : strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $tTitle)) . '_' . ($tIdx + 1);
+                    $tStmt->execute([
+                        ':cat_id' => $categoryId,
+                        ':term_key' => $tKey,
+                        ':title' => $tTitle,
+                        ':content' => trim((string)($t['content'] ?? '')),
+                        ':display_order' => isset($t['display_order']) ? (int)$t['display_order'] : ($tIdx + 1),
+                        ':is_active' => isset($t['is_active']) ? ($t['is_active'] ? 1 : 0) : 1
                     ]);
                 }
             }
@@ -242,4 +268,120 @@ class CategoryController {
             Response::error($e->getMessage(), 500);
         }
     }
+
+    public function getTerms(int $categoryId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureTermsTable($pdo);
+            $terms = $this->fetchCategoryTerms($pdo, $categoryId);
+            Response::success($terms);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function saveTerms(int $categoryId): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $terms = $data['terms'] ?? $data;
+        if (!is_array($terms)) {
+            Response::error("Terms must be an array", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureTermsTable($pdo);
+            $pdo->beginTransaction();
+
+            $catStmt = $pdo->prepare("SELECT id, name FROM categories WHERE id = ?");
+            $catStmt->execute([$categoryId]);
+            $category = $catStmt->fetch();
+            if (!$category) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                Response::error("Category not found", 404);
+                return;
+            }
+
+            // Remove existing terms
+            $delStmt = $pdo->prepare("DELETE FROM category_terms WHERE category_id = ?");
+            $delStmt->execute([$categoryId]);
+
+            $insStmt = $pdo->prepare("
+                INSERT INTO category_terms (category_id, term_key, title, content, display_order, is_active)
+                VALUES (:cat_id, :term_key, :title, :content, :display_order, :is_active)
+            ");
+
+            foreach ($terms as $idx => $t) {
+                $title = trim((string)($t['title'] ?? ''));
+                if (empty($title)) continue;
+                $content = trim((string)($t['content'] ?? ''));
+                $termKey = trim((string)($t['term_key'] ?? ''));
+                if (empty($termKey)) {
+                    $termKey = strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $title)) . '_' . ($idx + 1);
+                }
+                $displayOrder = isset($t['display_order']) ? (int)$t['display_order'] : ($idx + 1);
+                $isActive = isset($t['is_active']) ? ($t['is_active'] ? 1 : 0) : 1;
+
+                $insStmt->execute([
+                    ':cat_id' => $categoryId,
+                    ':term_key' => $termKey,
+                    ':title' => $title,
+                    ':content' => $content,
+                    ':display_order' => $displayOrder,
+                    ':is_active' => $isActive
+                ]);
+            }
+
+            $pdo->commit();
+            $saved = $this->fetchCategoryTerms($pdo, $categoryId);
+            AuditLogger::log('CategoryTerms', 'UPDATE', $categoryId, null, [
+                'category_id' => $categoryId,
+                'category_name' => $category['name'],
+                'terms_count' => count($saved)
+            ]);
+
+            Response::success($saved, "Category Terms & Conditions saved successfully");
+        } catch (Exception $e) {
+            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    private function ensureTermsTable(PDO $pdo): void {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS category_terms (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    category_id INT NOT NULL,
+                    term_key VARCHAR(50) NOT NULL,
+                    title VARCHAR(150) NOT NULL,
+                    content TEXT NOT NULL,
+                    display_order INT NOT NULL DEFAULT 0,
+                    is_active TINYINT(1) NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_ct_category_id (category_id),
+                    CONSTRAINT fk_category_terms_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        } catch (Exception $e) {}
+    }
+
+    private function fetchCategoryTerms(PDO $pdo, int $categoryId): array {
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM category_terms WHERE category_id = :cat_id ORDER BY display_order ASC, id ASC");
+            $stmt->execute([':cat_id' => $categoryId]);
+            $terms = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($terms as &$t) {
+                $t['id'] = (int)$t['id'];
+                $t['category_id'] = (int)$t['category_id'];
+                $t['display_order'] = (int)$t['display_order'];
+                $t['is_active'] = (int)$t['is_active'];
+            }
+            return $terms;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
 }
+

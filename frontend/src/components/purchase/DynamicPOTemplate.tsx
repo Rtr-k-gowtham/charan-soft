@@ -305,10 +305,22 @@ export default function DynamicPOTemplate({
   }
 
 
+  // Terms & Conditions resolution priority:
+  // 1. PO-specific saved snapshot (poData?.terms or po.terms)
+  // 2. Category-specific Terms & Conditions (currentCat?.terms)
+  // 3. Fallback to global PO Template terms (terms)
+  const poTermsSnapshot = (poData?.terms && Array.isArray(poData.terms) && poData.terms.length > 0)
+    ? poData.terms
+    : (((po as any)?.terms && Array.isArray((po as any).terms) && (po as any).terms.length > 0)
+      ? (po as any).terms
+      : ((currentCat?.terms && Array.isArray(currentCat.terms) && currentCat.terms.length > 0)
+        ? currentCat.terms
+        : (terms || [])));
+
   // Active terms sorted
-  const activeTerms = (terms || [])
-    .filter(t => t.is_active == 1 || t.is_active === true)
-    .sort((a, b) => a.display_order - b.display_order);
+  const activeTerms: POTemplateTerm[] = (poTermsSnapshot || [])
+    .filter((t: POTemplateTerm) => t.is_active == 1 || t.is_active === true)
+    .sort((a: POTemplateTerm, b: POTemplateTerm) => a.display_order - b.display_order);
 
   // Signatures sorted
   const activeSignatures = (signatures || [])
@@ -755,7 +767,7 @@ export default function DynamicPOTemplate({
             TERMS & CONDITIONS
           </p>
           <ol className={`list-decimal list-inside space-y-0.5 text-slate-600 leading-snug ${activeTerms.length > 4 ? 'grid grid-cols-2 gap-x-4' : ''}`}>
-            {activeTerms.map(term => (
+            {activeTerms.map((term: POTemplateTerm) => (
               <li key={term.term_key || term.id}>
                 <strong>{term.title}:</strong> {term.content}
               </li>

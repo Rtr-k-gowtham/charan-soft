@@ -1,7 +1,7 @@
 // src/pages/masters/Categories.tsx
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { Category, CategoryField } from '../../types';
+import { Category, CategoryField, POTemplateTerm } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -19,6 +19,11 @@ import {
   CheckCircle2,
   ListPlus,
   AlertCircle,
+  FileText,
+  ChevronUp,
+  ChevronDown,
+  Edit2,
+  Save,
   Grid3X3,
   Repeat,
   Droplets,
@@ -221,6 +226,178 @@ export default function Categories() {
     is_required: false,
     is_visible: true,
   });
+
+  // Terms & Conditions State
+  const [categoryTerms, setCategoryTerms] = useState<POTemplateTerm[]>([]);
+  const [termsDirty, setTermsDirty] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [termsSaving, setTermsSaving] = useState(false);
+  const [termsSuccess, setTermsSuccess] = useState('');
+  const [termsError, setTermsError] = useState('');
+
+  // Add/Edit Term Modal State
+  const [termModalOpen, setTermModalOpen] = useState(false);
+  const [editingTermIndex, setEditingTermIndex] = useState<number | null>(null);
+  const [termModalError, setTermModalError] = useState('');
+  const [termForm, setTermForm] = useState({
+    title: '',
+    content: '',
+    is_active: 1,
+  });
+
+  // Load terms when selectedCategory changes
+  useEffect(() => {
+    if (!selectedCategory) {
+      setCategoryTerms([]);
+      setTermsDirty(false);
+      setTermsSuccess('');
+      setTermsError('');
+      return;
+    }
+
+    if (selectedCategory.terms && selectedCategory.terms.length > 0) {
+      setCategoryTerms(selectedCategory.terms);
+      setTermsDirty(false);
+    } else {
+      setTermsLoading(true);
+      api.getCategoryTerms(selectedCategory.id)
+        .then((terms: any) => {
+          const list = Array.isArray(terms) ? terms : [];
+          setCategoryTerms(list);
+          setTermsDirty(false);
+        })
+        .catch(err => {
+          console.warn('Failed to fetch category terms:', err);
+          setCategoryTerms([]);
+        })
+        .finally(() => setTermsLoading(false));
+    }
+  }, [selectedCategory?.id]);
+
+  const handleOpenAddTerm = () => {
+    setEditingTermIndex(null);
+    setTermModalError('');
+    setTermForm({
+      title: '',
+      content: '',
+      is_active: 1,
+    });
+    setTermModalOpen(true);
+  };
+
+  const handleOpenEditTerm = (idx: number) => {
+    const term = categoryTerms[idx];
+    if (!term) return;
+    setEditingTermIndex(idx);
+    setTermModalError('');
+    setTermForm({
+      title: term.title || '',
+      content: term.content || '',
+      is_active: term.is_active ? 1 : 0,
+    });
+    setTermModalOpen(true);
+  };
+
+  const handleSaveTermFromModal = () => {
+    const title = termForm.title.trim();
+    if (!title) {
+      setTermModalError('Term title is required (e.g., Payment Terms, Delivery Terms)');
+      return;
+    }
+    const content = termForm.content.trim();
+    if (!content) {
+      setTermModalError('Clause description/condition text is required');
+      return;
+    }
+
+    setCategoryTerms(prev => {
+      const next = [...prev];
+      if (editingTermIndex !== null && editingTermIndex >= 0 && editingTermIndex < next.length) {
+        next[editingTermIndex] = {
+          ...next[editingTermIndex],
+          title,
+          content,
+          is_active: termForm.is_active ? 1 : 0,
+        };
+      } else {
+        const newOrder = next.length + 1;
+        const termKey = strtolower(title.replace(/[^a-zA-Z0-9]+/g, '_')) + '_' + Date.now();
+        next.push({
+          term_key: termKey,
+          title,
+          content,
+          display_order: newOrder,
+          is_active: termForm.is_active ? 1 : 0,
+        });
+      }
+      return next.map((t, i) => ({ ...t, display_order: i + 1 }));
+    });
+
+    setTermsDirty(true);
+    setTermModalOpen(false);
+  };
+
+  const handleToggleTerm = (idx: number) => {
+    setCategoryTerms(prev => {
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        is_active: next[idx].is_active ? 0 : 1,
+      };
+      return next;
+    });
+    setTermsDirty(true);
+  };
+
+  const handleDeleteTerm = (idx: number) => {
+    if (!confirm('Are you sure you want to remove this term & condition clause?')) return;
+    setCategoryTerms(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.map((t, i) => ({ ...t, display_order: i + 1 }));
+    });
+    setTermsDirty(true);
+  };
+
+  const handleMoveTerm = (idx: number, direction: -1 | 1) => {
+    const targetIdx = idx + direction;
+    if (targetIdx < 0 || targetIdx >= categoryTerms.length) return;
+    setCategoryTerms(prev => {
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next.map((t, i) => ({ ...t, display_order: i + 1 }));
+    });
+    setTermsDirty(true);
+  };
+
+  const handleSaveTerms = async () => {
+    if (!selectedCategory) return;
+    setTermsSaving(true);
+    setTermsSuccess('');
+    setTermsError('');
+    try {
+      const saved: any = await api.saveCategoryTerms(selectedCategory.id, categoryTerms);
+      const updatedTerms = Array.isArray(saved) ? saved : categoryTerms;
+      setCategoryTerms(updatedTerms);
+      setTermsDirty(false);
+      setTermsSuccess(`Terms & Conditions for "${selectedCategory.name}" saved successfully!`);
+
+      // Update in selectedCategory and global category list
+      setSelectedCategory(prev => prev ? ({ ...prev, terms: updatedTerms }) : null);
+      setData(prev => prev.map(c => c.id === selectedCategory.id ? { ...c, terms: updatedTerms } : c));
+
+      setTimeout(() => setTermsSuccess(''), 4000);
+    } catch (e: any) {
+      setTermsError(e.message || 'Failed to save terms & conditions');
+    } finally {
+      setTermsSaving(false);
+    }
+  };
+
+  function strtolower(s: string): string {
+    return s.toLowerCase();
+  }
 
   const loadCategories = async () => {
     setLoading(true);
@@ -487,10 +664,10 @@ export default function Categories() {
     const fieldsList = selectedCategory.fields || [];
 
     return (
-      <div className="flex flex-col h-full bg-slate-50/50">
+      <div className="flex flex-col h-full bg-slate-50/50 overflow-y-auto">
         <PageHeader
           title={selectedCategory.name}
-          subtitle={`Manage items and specifications for category code ${selectedCategory.code}`}
+          subtitle={`Manage items, fields, and default terms & conditions for category code ${selectedCategory.code}`}
           breadcrumb={[
             { label: 'Masters' },
             { label: 'Categories Master' },
@@ -509,6 +686,7 @@ export default function Categories() {
                 onClick={loadCategories}
                 disabled={loading}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 bg-white"
+                title="Refresh Category"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -522,8 +700,8 @@ export default function Categories() {
           }
         />
 
-        {/* Category Details Banner */}
-        <div className="p-4 pb-2">
+        <div className="p-4 space-y-4">
+          {/* Category Details Banner */}
           {(() => {
             const visual = getCategoryVisual(selectedCategory);
             const IconComponent = visual.Icon;
@@ -551,6 +729,10 @@ export default function Categories() {
                     <span className="text-lg font-bold text-slate-800">{fieldsList.length}</span>
                   </div>
                   <div className="text-right">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Configured Terms</span>
+                    <span className="text-lg font-bold text-brand-600">{categoryTerms.length}</span>
+                  </div>
+                  <div className="text-right">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold block">Required Items</span>
                     <span className="text-lg font-bold text-red-600">{fieldsList.filter(f => f.is_required).length}</span>
                   </div>
@@ -558,11 +740,9 @@ export default function Categories() {
               </div>
             );
           })()}
-        </div>
 
-        {/* Items Table */}
-        <div className="flex-1 overflow-hidden p-4 pt-2">
-          <div className="bg-white rounded-lg border border-slate-200 flex flex-col h-full shadow-xs">
+          {/* Section 1: Category Items & Field Definitions Table */}
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Category Items & Field Definitions</h3>
@@ -576,12 +756,174 @@ export default function Categories() {
                 Add Item
               </Button>
             </div>
-            <div className="flex-1 overflow-hidden p-2">
+            <div className="p-2">
               <DataTable
                 data={fieldsList}
                 columns={itemColumns}
                 rowKey="id"
               />
+            </div>
+          </div>
+
+          {/* Section 2: Terms & Conditions */}
+          <div className="bg-white rounded-lg border border-slate-200 shadow-xs overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-brand-600">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Terms & Conditions</h3>
+                    <span className="px-2 py-0.5 text-[10px] font-bold bg-slate-100 text-slate-600 rounded">
+                      {categoryTerms.length} {categoryTerms.length === 1 ? 'Term' : 'Terms'}
+                    </span>
+                    {termsDirty && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 rounded animate-pulse">
+                        Unsaved Changes
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Default contractual clauses loaded automatically when a Purchase Order is created for this category.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={handleOpenAddTerm}
+                >
+                  Add Term
+                </Button>
+                <Button
+                  size="sm"
+                  loading={termsSaving}
+                  disabled={!termsDirty}
+                  icon={<Save className="w-3.5 h-3.5" />}
+                  onClick={handleSaveTerms}
+                  className="bg-brand-600 hover:bg-brand-700 text-white"
+                >
+                  Save Terms
+                </Button>
+              </div>
+            </div>
+
+            {termsSuccess && (
+              <div className="m-3 p-2.5 bg-emerald-50 text-emerald-800 text-xs rounded-md flex items-center gap-2 border border-emerald-200">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{termsSuccess}</span>
+              </div>
+            )}
+
+            {termsError && (
+              <div className="m-3 p-2.5 bg-red-50 text-red-700 text-xs rounded-md flex items-center gap-2 border border-red-200">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{termsError}</span>
+              </div>
+            )}
+
+            <div className="p-4">
+              {termsLoading ? (
+                <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-brand-600" />
+                  Loading category terms...
+                </div>
+              ) : categoryTerms.length === 0 ? (
+                <div className="py-10 text-center border-2 border-dashed border-slate-200 rounded-lg p-6">
+                  <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <h4 className="text-sm font-bold text-slate-700">No Terms & Conditions Configured</h4>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto mt-1 mb-4">
+                    This category currently has no configured terms. When creating purchase orders for this category, the global PO template defaults will be used.
+                  </p>
+                  <Button
+                    size="sm"
+                    icon={<Plus className="w-3.5 h-3.5" />}
+                    onClick={handleOpenAddTerm}
+                  >
+                    Add First Term & Condition
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {categoryTerms.map((term, idx) => (
+                    <div
+                      key={term.id || term.term_key || idx}
+                      className={`p-3.5 rounded-lg border transition-all ${
+                        term.is_active ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700" title={term.is_active ? 'Active' : 'Disabled'}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(term.is_active)}
+                              onChange={() => handleToggleTerm(idx)}
+                              className="w-4 h-4 accent-brand-600 rounded"
+                            />
+                          </label>
+                          <span className="font-mono text-xs text-slate-400 font-bold px-1.5 py-0.5 bg-slate-100 rounded">
+                            #{idx + 1}
+                          </span>
+                          <span className="font-bold text-xs text-slate-800 truncate">
+                            {term.title}
+                          </span>
+                          {!term.is_active && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-200 text-slate-600 rounded">
+                              Disabled
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => handleMoveTerm(idx, -1)}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded hover:bg-slate-100"
+                            title="Move Up"
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx === categoryTerms.length - 1}
+                            onClick={() => handleMoveTerm(idx, 1)}
+                            className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded hover:bg-slate-100"
+                            title="Move Down"
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditTerm(idx)}
+                            className="p-1 text-slate-400 hover:text-brand-600 rounded hover:bg-brand-50"
+                            title="Edit Term"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTerm(idx)}
+                            className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50"
+                            title="Delete Term"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 whitespace-pre-wrap pl-7 leading-relaxed">
+                        {term.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -658,6 +1000,63 @@ export default function Categories() {
               </Button>
               <Button onClick={handleAddItem} disabled={itemSaving}>
                 {itemSaving ? 'Saving...' : 'Add Item'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Add / Edit Category Term Modal */}
+        <Modal
+          open={termModalOpen}
+          onClose={() => setTermModalOpen(false)}
+          title={editingTermIndex !== null ? `Edit Term & Condition` : `Add Term & Condition to "${selectedCategory.name}"`}
+        >
+          <div className="space-y-4">
+            {termModalError && (
+              <div className="p-3 bg-red-50 text-red-700 text-xs rounded-md flex items-center gap-2 border border-red-200">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {termModalError}
+              </div>
+            )}
+
+            <FormField
+              label="Term Title"
+              required
+              value={termForm.title}
+              onChange={e => setTermForm(f => ({ ...f, title: e.target.value }))}
+              placeholder="e.g. Payment Terms, Delivery Terms, Quality Terms"
+              hint="Descriptive clause title shown as the heading"
+            />
+
+            <FormField
+              as="textarea"
+              label="Clause Description / Condition Text"
+              required
+              value={termForm.content}
+              onChange={e => setTermForm(f => ({ ...f, content: e.target.value }))}
+              rows={4}
+              placeholder="Enter the full contractual clause text..."
+              hint="Specify timelines, requirements, penalties, acceptance criteria, etc."
+            />
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-md">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(termForm.is_active)}
+                  onChange={e => setTermForm(f => ({ ...f, is_active: e.target.checked ? 1 : 0 }))}
+                  className="w-4 h-4 accent-brand-600 rounded"
+                />
+                Active (Include in POs created for this category)
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button variant="secondary" onClick={() => setTermModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveTermFromModal}>
+                {editingTermIndex !== null ? 'Update Term' : 'Add Term'}
               </Button>
             </div>
           </div>

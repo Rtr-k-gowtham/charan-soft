@@ -106,6 +106,7 @@ class PurchaseOrderController {
                 }
 
                 $this->enrichPaymentStatus($po);
+                $po['terms'] = $this->fetchPOTerms($pdo, (int)$po['id']);
             }
 
             Response::success($orders);
@@ -330,6 +331,21 @@ class PurchaseOrderController {
                 }
             }
 
+            // Save PO Terms snapshot
+            $this->ensurePOTermsTable($pdo);
+            $poTerms = $data['terms'] ?? null;
+            if (!empty($poTerms) && is_array($poTerms)) {
+                $this->savePOTerms($pdo, $poId, $poTerms);
+            } else {
+                // If no specific terms were passed in payload, snapshot category defaults
+                $catTermsStmt = $pdo->prepare("SELECT term_key, title, content, display_order, is_active FROM category_terms WHERE category_id = ? AND is_active = 1 ORDER BY display_order ASC");
+                $catTermsStmt->execute([$categoryId]);
+                $catTerms = $catTermsStmt->fetchAll(PDO::FETCH_ASSOC);
+                if (!empty($catTerms)) {
+                    $this->savePOTerms($pdo, $poId, $catTerms);
+                }
+            }
+
             $pdo->commit();
             AuditLogger::log('PurchaseOrders', 'CREATE', $poId, null, ['po_number' => $poNumber, 'status' => $poStatus, 'net_amount' => $netTotal]);
             Response::success(['id' => $poId, 'po_number' => $poNumber, 'status' => $poStatus], "Purchase Order created successfully", 201);
@@ -482,6 +498,11 @@ class PurchaseOrderController {
 
                 $itemStmt = $pdo->prepare("INSERT INTO purchase_order_items (" . implode(', ', $rCols) . ") VALUES (" . implode(', ', $rPlaceholders) . ")");
                 $itemStmt->execute($rParams);
+            }
+
+            // Save PO Terms snapshot if provided in update payload
+            if (array_key_exists('terms', $data) && is_array($data['terms'])) {
+                $this->savePOTerms($pdo, $poId, $data['terms']);
             }
 
             $pdo->commit();
@@ -962,6 +983,7 @@ class PurchaseOrderController {
             }
 
             $this->enrichPaymentStatus($po);
+            $po['terms'] = $this->fetchPOTerms($pdo, (int)$po['id']);
 
             Response::success($po);
         } catch (Exception $e) {
@@ -1064,6 +1086,75 @@ class PurchaseOrderController {
         } catch (Exception $e) {
             if (isset($pdo) && $pdo && $pdo->inTransaction()) $pdo->rollBack();
             Response::error($e->getMessage(), 500);
+        }
+    }
+
+    private function ensurePOTermsTable(PDO $pdo): void {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS purchase_order_terms (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    purchase_order_id INT NOT NULL,
+                    term_key VARCHAR(50) NOT NULL,
+                    title VARCHAR(150) NOT NULL,
+                    content TEXT NOT NULL,
+                    display_order INT NOT NULL DEFAULT 0,
+                    is_active TINYINT(1) NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_pot_po_id (purchase_order_id),
+                    CONSTRAINT fk_po_terms_po FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        } catch (Exception $e) {}
+    }
+
+    private function fetchPOTerms(PDO $pdo, int $poId): array {
+        try {
+            $this->ensurePOTermsTable($pdo);
+            $stmt = $pdo->prepare("SELECT * FROM purchase_order_terms WHERE purchase_order_id = :po_id ORDER BY display_order ASC, id ASC");
+            $stmt->execute([':po_id' => $poId]);
+            $terms = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($terms as &$t) {
+                $t['id'] = (int)$t['id'];
+                $t['purchase_order_id'] = (int)$t['purchase_order_id'];
+                $t['display_order'] = (int)$t['display_order'];
+                $t['is_active'] = (int)$t['is_active'];
+            }
+            return $terms;
+        } catch (Exception $e) {
+            return [];
+        }
+    }
+
+    private function savePOTerms(PDO $pdo, int $poId, array $terms): void {
+        $this->ensurePOTermsTable($pdo);
+        $delStmt = $pdo->prepare("DELETE FROM purchase_order_terms WHERE purchase_order_id = ?");
+        $delStmt->execute([$poId]);
+
+        if (empty($terms)) return;
+
+        $insStmt = $pdo->prepare("
+            INSERT INTO purchase_order_terms (purchase_order_id, term_key, title, content, display_order, is_active)
+            VALUES (:po_id, :term_key, :title, :content, :display_order, :is_active)
+        ");
+
+        foreach ($terms as $idx => $t) {
+            $title = trim((string)($t['title'] ?? ''));
+            if (empty($title)) continue;
+            $termKey = !empty($t['term_key']) ? trim((string)$t['term_key']) : strtolower(preg_replace('/[^a-zA-Z0-9]+/', '_', $title)) . '_' . ($idx + 1);
+            $content = trim((string)($t['content'] ?? ''));
+            $order = isset($t['display_order']) ? (int)$t['display_order'] : ($idx + 1);
+            $active = isset($t['is_active']) ? ($t['is_active'] ? 1 : 0) : 1;
+
+            $insStmt->execute([
+                ':po_id' => $poId,
+                ':term_key' => $termKey,
+                ':title' => $title,
+                ':content' => $content,
+                ':display_order' => $order,
+                ':is_active' => $active
+            ]);
         }
     }
 }

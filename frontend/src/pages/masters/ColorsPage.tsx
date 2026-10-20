@@ -144,11 +144,8 @@ export default function ColorsPage() {
     if (!trimmed) {
       setLookupLoading(false);
       setLookupMessage('');
-      setColorName('');
-      setHexCode('#0F2042');
-      setRgb({ r: 15, g: 32, b: 66 });
       setIsVerified(false);
-      setIsCustomMode(false);
+      setIsCustomMode(true);
       return;
     }
 
@@ -206,7 +203,7 @@ export default function ColorsPage() {
     setRgb({ r: 15, g: 32, b: 66 });
     setColorSystem('PMS Coated');
     setIsVerified(false);
-    setIsCustomMode(!!prefillCode);
+    setIsCustomMode(true);
     setLookupLoading(false);
     setLookupMessage(
       prefillCode
@@ -240,10 +237,6 @@ export default function ColorsPage() {
   const handleSave = async () => {
     setFormError('');
 
-    if (!pantoneInput.trim()) {
-      setFormError('Pantone Color Code is required');
-      return;
-    }
     if (!colorName.trim()) {
       setFormError('Color Name is required');
       return;
@@ -254,7 +247,8 @@ export default function ColorsPage() {
     }
 
     setSaving(true);
-    const finalCode = normalizePantoneInput(pantoneInput) || pantoneInput.trim();
+    const trimmedInput = pantoneInput.trim();
+    const finalCode = trimmedInput ? (normalizePantoneInput(trimmedInput) || trimmedInput) : '';
 
     try {
       if (editingItem) {
@@ -464,13 +458,17 @@ export default function ColorsPage() {
 
                       {/* Pantone Code */}
                       <td className="py-2.5 px-3.5 font-mono font-bold text-amber-900">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-md shadow-2xs">
-                          <span
-                            className="w-2.5 h-2.5 rounded-xs shrink-0 border border-amber-300"
-                            style={{ backgroundColor: item.hex_code }}
-                          />
-                          {item.pantone_code}
-                        </span>
+                        {item.pantone_code ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 border border-amber-200 rounded-md shadow-2xs">
+                            <span
+                              className="w-2.5 h-2.5 rounded-xs shrink-0 border border-amber-300"
+                              style={{ backgroundColor: item.hex_code }}
+                            />
+                            {item.pantone_code}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-normal">—</span>
+                        )}
                       </td>
 
                       {/* Pantone Name */}
@@ -553,7 +551,7 @@ export default function ColorsPage() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono font-bold text-amber-950 text-sm truncate">
-                              {item.pantone_code}
+                              {item.pantone_code || '—'}
                             </span>
                           </div>
                           <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">
@@ -687,14 +685,14 @@ export default function ColorsPage() {
           {/* 1. Pantone Color Code Input */}
           <div>
             <label className="text-xs font-semibold text-slate-700 block mb-1">
-              Pantone Color Code <span className="text-red-500">*</span>
+              Pantone Color Code <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
             </label>
             <div className="relative">
               <input
                 type="text"
                 value={pantoneInput}
                 onChange={(e) => setPantoneInput(e.target.value)}
-                placeholder="Enter Pantone code (e.g., 19-4052 TCX, 100 C, or CUSTOM-NAVY)"
+                placeholder="Enter Pantone code (optional, e.g., 19-4052 TCX, 100 C)"
                 className={`w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border transition-all duration-150 pr-9 ${
                   isVerified
                     ? 'border-emerald-400 bg-emerald-50/20 text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200'

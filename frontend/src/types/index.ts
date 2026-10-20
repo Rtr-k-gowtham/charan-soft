@@ -20,6 +20,7 @@ export interface Category {
   status: string;
   sort_order: number;
   fields?: CategoryField[];
+  terms?: POTemplateTerm[];
 }
 
 export interface CategoryField {
@@ -246,6 +247,7 @@ export interface PurchaseOrder {
   items?: PurchaseOrderItem[];
   payments?: PurchasePayment[];
   receipts?: any[];
+  terms?: POTemplateTerm[];
 }
 
 export interface Color {

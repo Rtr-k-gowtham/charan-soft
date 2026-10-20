@@ -1234,10 +1234,6 @@ class MastersController {
         $system = trim($data['color_system'] ?? 'PMS Coated');
         $uniqueCode = trim($data['unique_code'] ?? ('CUST-' . rand(1000, 9999)));
 
-        if (empty($pantoneCode)) {
-            Response::error("Pantone code is required", 422);
-            return;
-        }
         if (empty($pantoneName)) {
             Response::error("Pantone color name is required", 422);
             return;
@@ -1256,8 +1252,13 @@ class MastersController {
 
             // Also keep legacy colors table in sync
             try {
-                $chk = $pdo->prepare("SELECT id FROM colors WHERE pantone_code = ? OR name = ? LIMIT 1");
-                $chk->execute([$pantoneCode, $pantoneName]);
+                if (!empty($pantoneCode)) {
+                    $chk = $pdo->prepare("SELECT id FROM colors WHERE pantone_code = ? OR name = ? LIMIT 1");
+                    $chk->execute([$pantoneCode, $pantoneName]);
+                } else {
+                    $chk = $pdo->prepare("SELECT id FROM colors WHERE name = ? LIMIT 1");
+                    $chk->execute([$pantoneName]);
+                }
                 if (!$chk->fetch()) {
                     $internalCode = 'CLR-' . str_pad((string)$newId, 4, '0', STR_PAD_LEFT);
                     $ins = $pdo->prepare("INSERT INTO colors (code, name, hex_code, pantone_code) VALUES (?, ?, ?, ?)");
@@ -1296,8 +1297,8 @@ class MastersController {
         $blue = isset($data['blue']) ? (int)$data['blue'] : 0;
         $system = trim($data['color_system'] ?? 'PMS Coated');
 
-        if (empty($pantoneCode) || empty($pantoneName)) {
-            Response::error("Pantone code and name are required", 422);
+        if (empty($pantoneName)) {
+            Response::error("Pantone color name is required", 422);
             return;
         }
 
@@ -1312,8 +1313,13 @@ class MastersController {
 
             // Sync with legacy colors table
             try {
-                $updColors = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ? WHERE pantone_code = ?");
-                $updColors->execute([$pantoneName, $hex, $pantoneCode]);
+                if (!empty($pantoneCode)) {
+                    $updColors = $pdo->prepare("UPDATE colors SET name = ?, hex_code = ? WHERE pantone_code = ?");
+                    $updColors->execute([$pantoneName, $hex, $pantoneCode]);
+                } else {
+                    $updColors = $pdo->prepare("UPDATE colors SET hex_code = ? WHERE name = ?");
+                    $updColors->execute([$hex, $pantoneName]);
+                }
             } catch (Exception $e) {}
 
             AuditLogger::log('PantoneColors', 'UPDATE', $id, null, $data);

@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { PurchaseOrder, PurchasePayment } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
+import { getCalendarDaysDiff, getPaymentCountdown, CountdownBadge } from '../../lib/dateUtils';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
@@ -184,6 +185,14 @@ export default function SupplierPayments() {
       }
     },
     {
+      key: 'order_received_date',
+      label: 'Order Received Date',
+      sortable: true,
+      render: (r: PurchaseOrder) => (
+        <span className="text-slate-500 text-xs font-mono">{(r as any).order_received_date || '—'}</span>
+      )
+    },
+    {
       key: 'payment_due_date',
       label: 'Payment Due Date',
       sortable: true,
@@ -200,6 +209,15 @@ export default function SupplierPayments() {
             {dueDate}
           </span>
         );
+      }
+    },
+    {
+      key: 'payment_due_in',
+      label: 'Payment Due In',
+      sortable: true,
+      render: (r: PurchaseOrder) => {
+        const isSettled = getDerivedPaymentStatus(r) === 'Settled';
+        return <CountdownBadge info={getPaymentCountdown(r.payment_due_date, isSettled)} />;
       }
     },
     {
@@ -422,18 +440,14 @@ export default function SupplierPayments() {
                       </div>
                     </div>
 
-                    {/* Due Date info */}
+                    {/* Due Date info & Countdown */}
                     <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50/70 p-2.5 rounded-xl">
                       <span className="flex items-center gap-1.5 text-slate-500">
                         <Calendar className="w-3.5 h-3.5 text-slate-400" />
                         <span>Due Date:</span>
-                        <strong className="text-slate-800 font-mono">{r.payment_due_date || r.delivery_due_date || '—'}</strong>
+                        <strong className="text-slate-800 font-mono">{r.payment_due_date || '—'}</strong>
                       </span>
-                      {(r as any).payment_terms && (
-                        <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-500">
-                          {(r as any).payment_terms}
-                        </span>
-                      )}
+                      <CountdownBadge info={getPaymentCountdown(r.payment_due_date, isSettled)} />
                     </div>
 
                     {/* 3-Column Financial Stat Grid */}
@@ -486,7 +500,15 @@ export default function SupplierPayments() {
             {/* Desktop Obligations Table (sm+) */}
             <div className="hidden sm:block">
               <DataTable
-                data={pos}
+                data={pos.map(p => {
+                  const isSettled = getDerivedPaymentStatus(p) === 'Settled';
+                  const daysDiff = isSettled ? -999999 : (getCalendarDaysDiff(p.payment_due_date) ?? 999999);
+                  return {
+                    ...p,
+                    order_received_date: (p as any).order_received_date || '',
+                    payment_due_in: daysDiff
+                  };
+                })}
                 columns={obligationsColumns}
                 rowKey="id"
                 actions={(r: PurchaseOrder) => {

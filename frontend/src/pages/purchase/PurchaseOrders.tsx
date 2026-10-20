@@ -3,9 +3,10 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
-import { PurchaseOrder, Supplier, Category, PurchaseOrderItem, Material } from '../../types';
+import { PurchaseOrder, Supplier, Category, PurchaseOrderItem, Material, POTemplateTerm } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
+import { getCalendarDaysDiff, getDeliveryCountdown, CountdownBadge } from '../../lib/dateUtils';
 import Drawer from '../../components/ui/Drawer';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
@@ -34,7 +35,10 @@ import {
   Pencil,
   Lock,
   Save,
-  Send
+  Send,
+  FileText,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
@@ -96,6 +100,204 @@ function calcItem(item: any): any {
   };
 }
 
+// Subcomponent: Terms & Conditions Editor for PO Create and Edit views
+interface POTermsEditorProps {
+  terms: POTemplateTerm[];
+  onChange: (terms: POTemplateTerm[]) => void;
+  onDirty?: () => void;
+  categoryName?: string;
+  isReadOnly?: boolean;
+}
+
+function POTermsEditor({ terms, onChange, onDirty, categoryName, isReadOnly }: POTermsEditorProps) {
+  const [open, setOpen] = useState(true);
+
+  const handleAddTerm = () => {
+    const newIdx = terms.length + 1;
+    const newTerm: POTemplateTerm = {
+      term_key: `term_${Date.now()}`,
+      title: `Custom Condition ${newIdx}`,
+      content: '',
+      display_order: newIdx,
+      is_active: 1,
+    };
+    onChange([...terms, newTerm]);
+    if (onDirty) onDirty();
+  };
+
+  const handleUpdate = (idx: number, field: keyof POTemplateTerm, val: any) => {
+    const next = [...terms];
+    next[idx] = { ...next[idx], [field]: val };
+    onChange(next);
+    if (onDirty) onDirty();
+  };
+
+  const handleDelete = (idx: number) => {
+    const next = terms.filter((_, i) => i !== idx).map((t, i) => ({ ...t, display_order: i + 1 }));
+    onChange(next);
+    if (onDirty) onDirty();
+  };
+
+  const handleMove = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= terms.length) return;
+    const next = [...terms];
+    const temp = next[idx];
+    next[idx] = next[target];
+    next[target] = temp;
+    onChange(next.map((t, i) => ({ ...t, display_order: i + 1 })));
+    if (onDirty) onDirty();
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div className="flex items-center gap-2.5">
+          <FileText className="w-4 h-4 text-brand-600" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Purchase Order Terms & Conditions
+              </h3>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-brand-50 text-brand-700 border border-brand-200 rounded">
+                {terms.filter(t => t.is_active == 1 || t.is_active === true).length} of {terms.length} Active
+              </span>
+              {categoryName && (
+                <span className="text-[11px] text-slate-400 font-normal">
+                  (Category: <strong className="text-slate-600">{categoryName}</strong>)
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Contractual terms that will be printed on the official PO document. You can modify clauses specifically for this PO.
+            </p>
+          </div>
+        </div>
+
+        {!isReadOnly && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAddTerm}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add Clause
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(o => !o)}
+              className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 cursor-pointer"
+            >
+              {open ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <div className="p-4 space-y-3">
+          {terms.length === 0 ? (
+            <div className="text-center py-6 border border-dashed border-slate-200 rounded-lg">
+              <FileText className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+              <p className="text-xs text-slate-500 font-medium">No terms & conditions loaded for this category.</p>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={handleAddTerm}
+                  className="mt-2 text-xs text-brand-600 hover:underline font-bold cursor-pointer"
+                >
+                  + Add a custom clause
+                </button>
+              )}
+            </div>
+          ) : (
+            terms.map((term, idx) => (
+              <div
+                key={term.id || term.term_key || idx}
+                className={`p-3 rounded-lg border transition-all ${
+                  (term.is_active == 1 || term.is_active === true) ? 'bg-white border-slate-200 shadow-2xs' : 'bg-slate-50 border-slate-200 opacity-60'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {!isReadOnly && (
+                      <input
+                        type="checkbox"
+                        checked={Boolean(term.is_active == 1 || term.is_active === true)}
+                        onChange={e => handleUpdate(idx, 'is_active', e.target.checked ? 1 : 0)}
+                        className="w-4 h-4 accent-brand-600 rounded cursor-pointer"
+                        title={term.is_active ? 'Active on PO' : 'Disabled'}
+                      />
+                    )}
+                    <span className="font-mono text-xs text-slate-400 font-bold px-1.5 py-0.5 bg-slate-100 rounded">
+                      #{idx + 1}
+                    </span>
+                    {!isReadOnly ? (
+                      <input
+                        type="text"
+                        value={term.title}
+                        onChange={e => handleUpdate(idx, 'title', e.target.value)}
+                        placeholder="Term Title (e.g. Payment Terms)"
+                        className="flex-1 max-w-sm px-2.5 py-1 text-xs font-bold border border-slate-200 rounded focus:outline-none focus:border-brand-500 bg-white"
+                      />
+                    ) : (
+                      <span className="font-bold text-xs text-slate-800">{term.title}</span>
+                    )}
+                  </div>
+
+                  {!isReadOnly && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => handleMove(idx, -1)}
+                        className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded hover:bg-slate-100 cursor-pointer"
+                        title="Move Up"
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === terms.length - 1}
+                        onClick={() => handleMove(idx, 1)}
+                        className="p-1 text-slate-400 hover:text-slate-700 disabled:opacity-30 rounded hover:bg-slate-100 cursor-pointer"
+                        title="Move Down"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(idx)}
+                        className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                        title="Delete Clause"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {!isReadOnly ? (
+                  <textarea
+                    value={term.content}
+                    onChange={e => handleUpdate(idx, 'content', e.target.value)}
+                    rows={2}
+                    placeholder="Enter contractual clause details..."
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:border-brand-500 text-slate-700 font-sans"
+                  />
+                ) : (
+                  <p className="text-xs text-slate-600 whitespace-pre-wrap pl-6">{term.content}</p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PurchaseOrders() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -145,6 +347,12 @@ export default function PurchaseOrders() {
     { order_no: 'ORD-001', item_description: '', quantity: 0, uom: 'KG', rate: 0, tax_percent: 5, taxable_amount: 0, tax_amount: 0, net_amount: 0 }
   ]);
 
+  // Category Terms state for Create PO
+  const [poTerms, setPoTerms] = useState<POTemplateTerm[]>([]);
+  const [poTermsDirty, setPoTermsDirty] = useState(false);
+  const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
+  const [confirmCatChangeOpen, setConfirmCatChangeOpen] = useState(false);
+
   // Edit mode state (Task 2)
   const [editPO, setEditPO] = useState<PurchaseOrder | null>(null);
   const [editForm, setEditForm] = useState({ 
@@ -156,6 +364,7 @@ export default function PurchaseOrders() {
     remarks: '' 
   });
   const [editItems, setEditItems] = useState<any[]>([]);
+  const [editPOTerms, setEditPOTerms] = useState<POTemplateTerm[]>([]);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
   const [editCategoryFieldsLoading, setEditCategoryFieldsLoading] = useState(false);
@@ -578,13 +787,63 @@ export default function PurchaseOrders() {
     });
   };
 
+  const handleCategoryChange = (newCatId: string) => {
+    if (newCatId === form.category_id) return;
+    if (poTermsDirty && poTerms.length > 0) {
+      setPendingCategoryId(newCatId);
+      setConfirmCatChangeOpen(true);
+      return;
+    }
+    applyCategorySelection(newCatId);
+  };
+
+  const applyCategorySelection = (catId: string) => {
+    setForm(f => ({ ...f, category_id: catId }));
+    setPendingCategoryId(null);
+    setConfirmCatChangeOpen(false);
+
+    if (!catId) {
+      setPoTerms([]);
+      setPoTermsDirty(false);
+      return;
+    }
+
+    const cat = categories.find(c => String(c.id) === String(catId));
+    if (cat && cat.terms && cat.terms.length > 0) {
+      const activeCatTerms = cat.terms
+        .filter(t => t.is_active == 1 || t.is_active === true)
+        .map((t, i) => ({ ...t, display_order: i + 1 }));
+      setPoTerms(activeCatTerms);
+      setPoTermsDirty(false);
+    } else {
+      api.getCategoryTerms(Number(catId))
+        .then((terms: any) => {
+          if (Array.isArray(terms) && terms.length > 0) {
+            const activeCatTerms = terms
+              .filter((t: any) => t.is_active == 1 || t.is_active === true)
+              .map((t: any, i: number) => ({ ...t, display_order: i + 1 }));
+            setPoTerms(activeCatTerms);
+          } else {
+            setPoTerms([]);
+          }
+          setPoTermsDirty(false);
+        })
+        .catch(() => {
+          setPoTerms([]);
+          setPoTermsDirty(false);
+        });
+    }
+  };
+
   const handleOpenCreate = () => {
     const state = location.state as any;
+    let initialCatId = '';
     if (state && (state.materials || state.production_order_id)) {
+      initialCatId = state.category_id ? String(state.category_id) : (form.category_id || (categories.length > 0 ? String(categories[0].id) : ''));
       setForm(prev => ({
         ...prev,
         supplier_id: state.supplier_id ? String(state.supplier_id) : (prev.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : '')),
-        category_id: state.category_id ? String(state.category_id) : (prev.category_id || (categories.length > 0 ? String(categories[0].id) : '')),
+        category_id: initialCatId,
         production_order_id: state.production_order_id ? String(state.production_order_id) : prev.production_order_id,
         delivery_due_date: state.target_delivery_date || prev.delivery_due_date || '',
         remarks: state.remarks || prev.remarks || '',
@@ -611,12 +870,22 @@ export default function PurchaseOrders() {
         setItems(prefilled);
       }
     } else {
+      initialCatId = form.category_id || (categories.length > 0 ? String(categories[0].id) : '');
       setForm(prev => ({
         ...prev,
         supplier_id: prev.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : ''),
-        category_id: prev.category_id || (categories.length > 0 ? String(categories[0].id) : ''),
+        category_id: initialCatId,
       }));
     }
+
+    // Load category terms for the initial category
+    if (initialCatId) {
+      applyCategorySelection(initialCatId);
+    } else {
+      setPoTerms([]);
+      setPoTermsDirty(false);
+    }
+
     setError('');
     setCreateOpen(true);
   };
@@ -659,7 +928,8 @@ export default function PurchaseOrders() {
         category_id: finalCategoryId,
         production_order_id: form.production_order_id || null,
         status: poStatus,
-        items: preparedItems
+        items: preparedItems,
+        terms: poTerms,
       });
       const createdPO = (res as any)?.data || res;
 
@@ -668,6 +938,7 @@ export default function PurchaseOrders() {
       }
 
       setCreateOpen(false);
+      setPoTermsDirty(false);
       setForm({ 
         supplier_id: suppliers.length > 0 ? String(suppliers[0].id) : '', 
         category_id: categories.length > 0 ? String(categories[0].id) : '', 
@@ -688,7 +959,7 @@ export default function PurchaseOrders() {
         return;
       }
     } catch (e: unknown) {
-      setError((e as Error).message || 'Failed to create PO');
+      setError((e as Error).message || 'Failed to create Purchase Order');
     } finally {
       setSaving(false);
     }
@@ -898,6 +1169,28 @@ export default function PurchaseOrders() {
       ]);
     }
 
+    // Load saved terms snapshot belonging to this individual PO
+    if (po.terms && Array.isArray(po.terms) && po.terms.length > 0) {
+      setEditPOTerms(po.terms.map((t, i) => ({ ...t, display_order: t.display_order || (i + 1) })));
+    } else {
+      try {
+        const fullPO: any = await api.getPurchaseOrder(po.id);
+        if (fullPO && fullPO.terms && Array.isArray(fullPO.terms) && fullPO.terms.length > 0) {
+          setEditPOTerms(fullPO.terms.map((t: any, i: number) => ({ ...t, display_order: t.display_order || (i + 1) })));
+        } else {
+          // Backward compatibility fallback
+          const cat = categories.find(c => c.id === po.category_id);
+          if (cat?.terms && cat.terms.length > 0) {
+            setEditPOTerms(cat.terms.filter(t => t.is_active == 1).map((t, i) => ({ ...t, display_order: i + 1 })));
+          } else {
+            setEditPOTerms([]);
+          }
+        }
+      } catch {
+        setEditPOTerms([]);
+      }
+    }
+
     const catId = Number(po.category_id);
     if (catId) {
       const existing = categories.find(c => c.id === catId);
@@ -950,7 +1243,8 @@ export default function PurchaseOrders() {
         po_date: editForm.po_date,
         delivery_due_date: editForm.delivery_due_date,
         remarks: editForm.remarks,
-        items: preparedEditItems
+        items: preparedEditItems,
+        terms: editPOTerms,
       });
 
       await load();
@@ -1045,6 +1339,13 @@ export default function PurchaseOrders() {
       sortable: true, 
       width: '95px',
       render: (r: PurchaseOrder) => <span className="text-slate-500 whitespace-nowrap">{r.delivery_due_date || '—'}</span> 
+    },
+    {
+      key: 'delivery_due_in',
+      label: 'Delivery Due In',
+      sortable: true,
+      width: '120px',
+      render: (r: PurchaseOrder) => <CountdownBadge info={getDeliveryCountdown(r.delivery_due_date)} />
     },
     {
       key: 'status',
@@ -1172,7 +1473,7 @@ export default function PurchaseOrders() {
                 label="PO Category"
                 required
                 value={form.category_id}
-                onChange={val => setForm(f => ({ ...f, category_id: val }))}
+                onChange={val => handleCategoryChange(val)}
                 options={categoryOptions}
                 placeholder="— Select Category with Search —"
                 searchPlaceholder="Search category..."
@@ -1638,6 +1939,14 @@ export default function PurchaseOrders() {
             )}
           </div>
 
+          {/* Category Terms & Conditions Editor */}
+          <POTermsEditor
+            terms={poTerms}
+            onChange={setPoTerms}
+            onDirty={() => setPoTermsDirty(true)}
+            categoryName={selectedCategoryObj?.name}
+          />
+
           {/* Section 3: Bottom Summary & Submit Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
             <div className="text-xs text-slate-500">
@@ -1674,6 +1983,52 @@ export default function PurchaseOrders() {
             </div>
           </div>
         </div>
+
+        {/* Category Change Warning Modal */}
+        <Modal
+          open={confirmCatChangeOpen}
+          onClose={() => {
+            setConfirmCatChangeOpen(false);
+            setPendingCategoryId(null);
+          }}
+          title="Replace Custom Terms & Conditions?"
+        >
+          <div className="space-y-4">
+            <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded-lg border border-amber-200 flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">You have modified the Terms & Conditions for the current category.</p>
+                <p className="mt-1 text-amber-700">
+                  Switching category will discard your custom terms and automatically load the default terms configured for the newly selected category.
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600">
+              Are you sure you want to proceed and switch category to <strong className="text-slate-800">{categories.find(c => String(c.id) === String(pendingCategoryId))?.name || 'the new category'}</strong>?
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setConfirmCatChangeOpen(false);
+                  setPendingCategoryId(null);
+                }}
+              >
+                Cancel (Keep Current Terms)
+              </Button>
+              <Button
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                onClick={() => {
+                  if (pendingCategoryId) {
+                    applyCategorySelection(pendingCategoryId);
+                  }
+                }}
+              >
+                Confirm & Replace Terms
+              </Button>
+            </div>
+          </div>
+        </Modal>
       </div>
     );
   }
@@ -2242,6 +2597,13 @@ export default function PurchaseOrders() {
               </div>
             )}
           </div>
+
+          {/* Terms & Conditions Editor */}
+          <POTermsEditor
+            terms={editPOTerms}
+            onChange={setEditPOTerms}
+            categoryName={categories.find(c => String(c.id) === String(editForm.category_id))?.name}
+          />
 
           {/* Section 3: Bottom Summary & Submit Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-white border border-slate-200 rounded-xl shadow-sm">
@@ -2859,6 +3221,16 @@ export default function PurchaseOrders() {
             </div>
           </div>
 
+          {/* View Terms & Conditions Snapshot */}
+          {viewPO.terms && viewPO.terms.length > 0 && (
+            <POTermsEditor
+              terms={viewPO.terms}
+              onChange={() => {}}
+              categoryName={viewPO.category_name}
+              isReadOnly={true}
+            />
+          )}
+
           {/* Section 3: Bottom Summary & Approval Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 sm:p-5 bg-white border-0 rounded-2xl shadow-xs">
             <div className="text-xs text-slate-500 text-center sm:text-left">
@@ -3184,7 +3556,10 @@ export default function PurchaseOrders() {
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Delivery Due</span>
-                  <span className="font-mono text-slate-700 text-[11px]">{r.delivery_due_date || '—'}</span>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className="font-mono text-slate-700 text-[11px]">{r.delivery_due_date || '—'}</span>
+                    <CountdownBadge info={getDeliveryCountdown(r.delivery_due_date)} />
+                  </div>
                 </div>
               </div>
 
@@ -3244,7 +3619,10 @@ export default function PurchaseOrders() {
       {/* Desktop PO List Table (sm+) */}
       <div className="hidden sm:block flex-1 overflow-x-auto lg:overflow-x-hidden p-4 min-w-0">
         <DataTable
-          data={pos}
+          data={pos.map(p => ({
+            ...p,
+            delivery_due_in: getCalendarDaysDiff(p.delivery_due_date) ?? 999999
+          }))}
           columns={columns}
           rowKey="id"
           onRowClick={(r: PurchaseOrder) => setViewPO(r)}

@@ -56,6 +56,9 @@ export const api = {
     request<unknown>(`/categories/${categoryId}/fields`, 'POST', data),
   deleteCategoryField: (categoryId: number, fieldId: number) =>
     request<unknown>(`/categories/${categoryId}/fields/${fieldId}`, 'DELETE'),
+  getCategoryTerms: (categoryId: number) => request<any[]>(`/categories/${categoryId}/terms`),
+  saveCategoryTerms: (categoryId: number, terms: any[]) =>
+    request<any[]>(`/categories/${categoryId}/terms`, 'PUT', { terms }),
   deleteCategory: (id: number) => request<unknown>(`/categories/${id}`, 'DELETE'),
 
   // Materials
