@@ -454,6 +454,31 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
   const currentStage = stages.find(s => s.code === activeCode || s.name === stageName);
   const nextStages = stages.filter(s => s.sequence_order > (currentStage?.sequence_order || 0));
 
+  const stageNumber = currentStage?.sequence_order || (
+    activeCode === 'REQ' ? 1 :
+    activeCode === 'PO' ? 2 :
+    activeCode === 'INW' ? 3 :
+    activeCode === 'DYE' ? 4 :
+    activeCode === 'CUT' ? 5 :
+    activeCode === 'EMB' ? 6 :
+    activeCode === 'STI' ? 7 :
+    activeCode === 'CHK' ? 8 :
+    activeCode === 'PCK' ? 9 :
+    activeCode === 'COMP' ? 10 : 1
+  );
+
+  const { mainStageTitle, subStageTitle } = useMemo(() => {
+    if (stageName.includes(' — ')) {
+      const [main, sub] = stageName.split(' — ');
+      return { mainStageTitle: main.trim(), subStageTitle: sub.trim() };
+    }
+    if (stageName.includes(' - ')) {
+      const [main, sub] = stageName.split(' - ');
+      return { mainStageTitle: main.trim(), subStageTitle: sub.trim() };
+    }
+    return { mainStageTitle: stageName, subStageTitle: '' };
+  }, [stageName]);
+
   // Stage Move Handler for Single Product Item
   const handleMove = async () => {
     if (!moveForm.next_stage_id || !moveForm.quantity) {
@@ -709,7 +734,8 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 onClick={() => navigate('/production/orders/create')}
                 className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs"
               >
-                <span>New Production Order</span>
+                <span className="hidden sm:inline">New Production Order</span>
+                <span className="sm:hidden">New Order</span>
               </Button>
             )}
             {activeCode === 'PO' && (
@@ -757,47 +783,74 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
 
       {/* Stage Summary Statistics Cards */}
       <div className="px-3 sm:px-4 pt-3 pb-2 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Orders in Stage</p>
-            <p className="text-lg font-bold text-slate-800 mt-0.5">{orderGroups.length}</p>
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+          <div className="min-w-0 flex-1 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Orders in Stage</p>
+            <p className="text-base sm:text-lg font-bold text-slate-800 mt-0.5">{orderGroups.length}</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
             <Package className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Garments in Stage</p>
-            <p className="text-lg font-bold text-brand-600 mt-0.5">
-              {fmt(orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0))} <span className="text-xs font-normal text-slate-400">pcs</span>
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+          <div className="min-w-0 flex-1 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Garments in Stage</p>
+            <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
+              {fmt(orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0))} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs</span>
             </p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 shrink-0">
             <Layers className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Product Line Items</p>
-            <p className="text-lg font-bold text-slate-800 mt-0.5">{items.length}</p>
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+          <div className="min-w-0 flex-1 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Product Line Items</p>
+            <p className="text-base sm:text-lg font-bold text-slate-800 mt-0.5">{items.length}</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
             <CheckCheck className="w-4 h-4" />
           </div>
         </div>
 
-        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Current Pipeline</p>
-            <p className="text-xs font-bold text-slate-800 truncate mt-1">
-              Step {currentStage?.sequence_order || 1}: {stageName}
-            </p>
+        <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between min-w-0 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1 sm:pr-2">
+            <div className="flex items-center justify-between gap-1">
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider truncate">
+                Current Pipeline
+              </p>
+              {/* Badge on mobile in top row to preserve full card width for stage title */}
+              <div
+                className="sm:hidden px-1.5 py-0.5 rounded text-white font-bold text-[9px] shadow-2xs shrink-0 uppercase tracking-wider"
+                style={{ backgroundColor: activeCode === 'DYE' ? '#2563eb' : (currentStage?.color_badge || '#2563eb') }}
+              >
+                {activeCode}
+              </div>
+            </div>
+
+            {/* Mobile View: Full Width for Stage Title & Step without any icon squeeze */}
+            <div className="sm:hidden mt-1 space-y-0.5">
+              <span className="text-[9px] font-bold text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200 inline-block font-mono leading-none">
+                Step {stageNumber}
+              </span>
+              <p className="text-xs font-bold text-slate-800 leading-snug break-words" title={stageName}>
+                {stageName}
+              </p>
+            </div>
+
+            {/* Desktop View: Full Single-Line Breadcrumb */}
+            <div className="hidden sm:block">
+              <p className="text-xs font-bold text-slate-800 truncate mt-1" title={`Step ${stageNumber}: ${stageName}`}>
+                Step {stageNumber}: {stageName}
+              </p>
+            </div>
           </div>
+
+          {/* Desktop Right Badge */}
           <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-2xs"
+            className="hidden sm:flex w-9 h-9 rounded-lg items-center justify-center text-white font-bold text-xs shadow-2xs shrink-0"
             style={{ backgroundColor: activeCode === 'DYE' ? '#2563eb' : (currentStage?.color_badge || '#2563eb') }}
           >
             {activeCode}
