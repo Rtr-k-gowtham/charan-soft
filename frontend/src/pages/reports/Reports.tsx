@@ -17,7 +17,8 @@ import {
   Clock,
   Layers,
   Building2,
-  Info
+  Info,
+  ArrowLeftRight
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
@@ -412,9 +413,15 @@ export default function Reports() {
                     Product-Wise Production Progress & Stage Output Report
                   </h3>
                 </div>
-                <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
-                  10-Stage Granular Output
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-medium text-slate-500 hidden xl:inline">
+                    10-Stage Granular Output
+                  </span>
+                  <span className="text-[11px] font-medium text-indigo-700 hidden sm:inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-md">
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                    Scroll horizontally to view all stages
+                  </span>
+                </div>
               </div>
 
               {loadingProd ? (
@@ -428,68 +435,51 @@ export default function Reports() {
                 </div>
               ) : (
                 <>
-                  {/* A. DESKTOP VIEW: Fixed-Width Table (No Horizontal Scrolling) */}
-                  <div className="hidden lg:block w-full overflow-hidden">
-                    <table className="w-full table-fixed text-[11px] text-left border-collapse">
-                      <colgroup>
-                        <col className="w-[7.0%]" />  {/* 1. Order ID */}
-                        <col className="w-[11.0%]" /> {/* 2. Order Title */}
-                        <col className="w-[9.0%]" />  {/* 3. Buyer */}
-                        <col className="w-[6.5%]" />  {/* 4. 01. REQ */}
-                        <col className="w-[5.5%]" />  {/* 5. 02. PO */}
-                        <col className="w-[6.5%]" />  {/* 6. 03. Inward */}
-                        <col className="w-[7.0%]" />  {/* 7. 04. Dyeing */}
-                        <col className="w-[6.5%]" />  {/* 8. 05. Cutting */}
-                        <col className="w-[7.0%]" />  {/* 9. 06. Embroidery */}
-                        <col className="w-[6.5%]" />  {/* 10. 07. Stitching */}
-                        <col className="w-[7.0%]" />  {/* 11. 08. Checking */}
-                        <col className="w-[6.5%]" />  {/* 12. 09. Packing */}
-                        <col className="w-[6.5%]" />  {/* 13. 10. Completed */}
-                        <col className="w-[7.5%]" />  {/* 14. Overall Progress */}
-                        <col className="w-[9.5%]" />  {/* 15. Current Status */}
-                      </colgroup>
-                      <thead className="bg-slate-50/90 text-slate-700 border-b border-slate-200 font-bold text-[10px] uppercase tracking-wider">
+                  {/* A. DESKTOP VIEW: Horizontally Scrollable Table with Full Visibility for All 10 Stages */}
+                  <div className="hidden lg:block w-full overflow-x-auto overflow-y-hidden border-t border-slate-100 table-scrollbar">
+                    <table className="w-full text-xs text-left border-collapse min-w-[2050px]">
+                      <thead className="bg-slate-50/90 text-slate-700 border-b border-slate-200 font-bold text-[11px] uppercase tracking-wider sticky top-0 z-10 shadow-2xs">
                         <tr>
-                          <th className="p-2 truncate" title="1. Order ID">Order ID</th>
-                          <th className="p-2 truncate" title="2. Order Title">Order Title</th>
-                          <th className="p-2 truncate" title="3. Buyer">Buyer</th>
-                          <th className="p-2 text-center truncate" title="4. 01. Requirement Gathering">01. REQ</th>
-                          <th className="p-2 text-center truncate" title="5. 02. Purchase Order (PO)">02. PO</th>
-                          <th className="p-2 text-center truncate" title="6. 03. Inward">03. Inward</th>
-                          <th className="p-2 text-center truncate" title="7. 04. Dyeing">04. Dyeing</th>
-                          <th className="p-2 text-center truncate" title="8. 05. Cutting — Product-wise">05. Cutting</th>
-                          <th className="p-2 text-center truncate" title="9. 06. Embroidery — Outward / Inward">06. Embroidery</th>
-                          <th className="p-2 text-center truncate" title="10. 07. Stitching — Color-wise Tracking">07. Stitching</th>
-                          <th className="p-2 text-center truncate" title="11. 08. Checking">08. Checking</th>
-                          <th className="p-2 text-center truncate" title="12. 09. Packing">09. Packing</th>
-                          <th className="p-2 text-center truncate" title="13. 10. Completed">10. Completed</th>
-                          <th className="p-2 text-center truncate" title="14. Overall Progress">Progress</th>
-                          <th className="p-2 text-center truncate" title="15. Current Status">Current Status</th>
+                          <th className="py-3 px-3.5 sticky left-0 bg-slate-50 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)] min-w-[110px]" title="1. Order ID">Order ID</th>
+                          <th className="py-3 px-3 min-w-[180px]" title="2. Order Title">Order Title</th>
+                          <th className="py-3 px-3 min-w-[160px]" title="3. Buyer">Buyer</th>
+                          <th className="py-3 px-3 text-center min-w-[140px]" title="4. 01. Requirement Gathering">01. Requirement Gathering</th>
+                          <th className="py-3 px-3 text-center min-w-[110px]" title="5. 02. Purchase Order (PO)">02. PO</th>
+                          <th className="py-3 px-3 text-center min-w-[120px]" title="6. 03. Inward">03. Inward</th>
+                          <th className="py-3 px-3 text-center min-w-[170px]" title="7. 04. Dyeing">04. Dyeing</th>
+                          <th className="py-3 px-3 text-center min-w-[140px]" title="8. 05. Cutting — Product-wise">05. Cutting</th>
+                          <th className="py-3 px-3 text-center min-w-[170px]" title="9. 06. Embroidery — Outward / Inward">06. Embroidery</th>
+                          <th className="py-3 px-3 text-center min-w-[140px]" title="10. 07. Stitching — Color-wise Tracking">07. Stitching</th>
+                          <th className="py-3 px-3 text-center min-w-[150px]" title="11. 08. Checking">08. Checking</th>
+                          <th className="py-3 px-3 text-center min-w-[130px]" title="12. 09. Packing">09. Packing</th>
+                          <th className="py-3 px-3 text-center min-w-[130px]" title="13. 10. Completed">10. Completed</th>
+                          <th className="py-3 px-3 text-center min-w-[130px]" title="14. Overall Progress">Overall Progress</th>
+                          <th className="py-3 px-3 text-center min-w-[180px]" title="15. Current Status">Current Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {filteredProdReports.map((r, idx) => {
                           const m = resolveStageMetrics(r);
                           return (
-                            <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
+                            <tr key={idx} className="hover:bg-indigo-50/30 transition-colors group">
                               {/* 1. Order ID */}
-                              <td className="p-2 font-mono font-bold text-indigo-700 truncate" title={r.order_number}>
+                              <td className="py-2.5 px-3.5 font-mono font-bold text-indigo-700 whitespace-nowrap sticky left-0 bg-white group-hover:bg-slate-50/90 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">
                                 {r.order_number}
                               </td>
 
                               {/* 2. Order Title */}
-                              <td className="p-2 font-medium text-slate-800 truncate" title={r.title}>
+                              <td className="py-2.5 px-3 font-semibold text-slate-800 whitespace-normal min-w-[180px]">
                                 {r.title}
                               </td>
 
                               {/* 3. Buyer */}
-                              <td className="p-2 text-slate-600 truncate" title={r.buyer_name}>
+                              <td className="py-2.5 px-3 text-slate-600 whitespace-normal min-w-[160px]">
                                 {r.buyer_name || '—'}
                               </td>
 
                               {/* 4. 01. Requirement Gathering */}
-                              <td className="p-2 text-center" title={`01. Requirement Gathering: ${m.s01Status}`}>
-                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border ${
                                   m.s01Status === 'Completed'
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                     : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -499,58 +489,58 @@ export default function Reports() {
                               </td>
 
                               {/* 5. 02. Purchase Order (PO) */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s02Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s02Tip}>
                                 {m.s02}
                               </td>
 
                               {/* 6. 03. Inward */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s03Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s03Tip}>
                                 {m.s03}
                               </td>
 
                               {/* 7. 04. Dyeing */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s04Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s04Tip}>
                                 {m.s04}
                               </td>
 
                               {/* 8. 05. Cutting — Product-wise */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s05Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s05Tip}>
                                 {m.s05}
                               </td>
 
                               {/* 9. 06. Embroidery — Outward / Inward */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s06Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s06Tip}>
                                 {m.s06}
                               </td>
 
                               {/* 10. 07. Stitching — Color-wise Tracking */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s07Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s07Tip}>
                                 {m.s07}
                               </td>
 
                               {/* 11. 08. Checking */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s08Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s08Tip}>
                                 {m.s08}
                               </td>
 
                               {/* 12. 09. Packing */}
-                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s09Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s09Tip}>
                                 {m.s09}
                               </td>
 
                               {/* 13. 10. Completed */}
-                              <td className="p-2 text-center font-mono font-bold text-slate-900 truncate" title={m.s10Tip}>
+                              <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-900 whitespace-nowrap" title={m.s10Tip}>
                                 {m.s10}
                               </td>
 
                               {/* 14. Overall Progress */}
-                              <td className="p-2 text-center" title={`Overall Progress: ${m.progressPct !== null ? `${m.progressPct}%` : '—'}`}>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap" title={`Overall Progress: ${m.progressPct !== null ? `${m.progressPct}%` : '—'}`}>
                                 {m.progressPct !== null ? (
-                                  <div className="flex items-center justify-center gap-1.5">
-                                    <span className="text-[10px] font-bold text-slate-700 font-mono w-7 text-right">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <span className="text-[11px] font-bold text-slate-700 font-mono w-8 text-right">
                                       {m.progressPct}%
                                     </span>
-                                    <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                                    <div className="w-14 h-2 bg-slate-100 rounded-full overflow-hidden shrink-0">
                                       <div
                                         className={`h-full rounded-full transition-all duration-300 ${
                                           m.progressPct === 100
@@ -569,7 +559,7 @@ export default function Reports() {
                               </td>
 
                               {/* 15. Current Status */}
-                              <td className="p-2 text-center">
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
                                 <StatusBadge status={m.currentStatus} size="xs" />
                               </td>
                             </tr>
