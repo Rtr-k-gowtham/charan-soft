@@ -2,6 +2,7 @@
 // Stage 03: Material Inward & Receive Management Workspace with Proof Photo Capture
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, PurchaseOrder } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -95,6 +96,7 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
 export default function InwardOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/inward');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [stages, setStages] = useState<ProductionStage[]>([]);
@@ -489,7 +491,7 @@ export default function InwardOrderDetail() {
         <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
         <h3 className="text-sm font-bold text-slate-800">Order Not Found</h3>
         <p className="text-xs text-slate-500 mt-1">Unable to locate production order #{id}.</p>
-        <Button onClick={() => navigate('/production/inward')} className="mt-4 text-xs">
+        <Button onClick={handleBack} className="mt-4 text-xs">
           Return to Inward Stage
         </Button>
       </div>
@@ -518,7 +520,7 @@ export default function InwardOrderDetail() {
         actions={
           <div className="flex items-center gap-1.5 sm:gap-2">
             <button
-              onClick={() => navigate('/production/inward')}
+              onClick={handleBack}
               className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />

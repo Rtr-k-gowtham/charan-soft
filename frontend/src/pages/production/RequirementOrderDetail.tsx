@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrderBOMReport, OrderMaterialRequirementItem, ProductionStage } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -53,6 +54,7 @@ const fmtCurrency = (n: number) =>
 export default function RequirementOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/requirement');
 
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
   const [stages, setStages] = useState<ProductionStage[]>([]);
@@ -386,7 +388,7 @@ export default function RequirementOrderDetail() {
           <div>
             <h4 className="font-bold text-sm">Failed to Load Requirement Details</h4>
             <p className="text-xs mt-1">{error || 'Order not found'}</p>
-            <Button onClick={() => navigate('/production/requirement')} className="mt-3 text-xs">
+            <Button onClick={handleBack} className="mt-3 text-xs">
               Back to Requirement Gathering
             </Button>
           </div>
@@ -420,7 +422,7 @@ export default function RequirementOrderDetail() {
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => navigate('/production/requirement')}
+              onClick={handleBack}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

@@ -2,6 +2,7 @@
 // Stage 10: Completed / Dispatch — Multi-dispatch Logistics, Photo Proof (Truck, Loaded Cartons, Signed DC) & Completion Rules
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, DispatchRecord, PackingCarton } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -92,6 +93,7 @@ function parsePhotos(urls: any): string[] {
 export default function DispatchOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/completed');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -363,7 +365,7 @@ export default function DispatchOrderDetail() {
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
             <p className="text-sm font-medium">{error || 'Order not found.'}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => navigate('/production/completed')}>
+          <Button variant="secondary" size="sm" onClick={handleBack}>
             Back to Completed Stage
           </Button>
         </div>
@@ -385,7 +387,7 @@ export default function DispatchOrderDetail() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs">
         <div className="flex items-start gap-4">
           <button
-            onClick={() => navigate('/production/completed')}
+            onClick={handleBack}
             className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
             title="Return to Stage 10 Board"
           >

@@ -2,6 +2,7 @@
 // Stage 09: Packing & Carton Management — Automated Box Calculation (Sections C & D specs), Carton Serial Generation & Traceability
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, PackingBatch, PackingCarton } from '../../types';
 import Button from '../../components/ui/Button';
@@ -77,6 +78,7 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
 export default function PackingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/packing');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -512,7 +514,7 @@ export default function PackingOrderDetail() {
             <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
             <p className="text-sm font-medium">{error || 'Order not found.'}</p>
           </div>
-          <Button variant="secondary" size="sm" onClick={() => navigate('/production/packing')}>
+          <Button variant="secondary" size="sm" onClick={handleBack}>
             Back to Packing Stage
           </Button>
         </div>
@@ -539,7 +541,7 @@ export default function PackingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/production/packing')}
+              onClick={handleBack}
               className="flex items-center gap-1.5 text-slate-700 hover:text-slate-900 border-slate-200 hover:bg-slate-50 shrink-0 h-9 px-3"
             >
               <ArrowLeft className="w-4 h-4 text-slate-500" />

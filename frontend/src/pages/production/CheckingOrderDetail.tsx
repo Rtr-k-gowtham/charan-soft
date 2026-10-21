@@ -8,6 +8,7 @@
 // - Direct stage transfer to Stage 09: Packing
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, QualityInspection } from '../../types';
 import Button from '../../components/ui/Button';
@@ -105,6 +106,7 @@ const DEFECT_CATEGORIES = [
 export default function CheckingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/checking');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -413,7 +415,7 @@ export default function CheckingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/production/checking')}
+              onClick={handleBack}
               className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-300"
             >
               <ArrowLeft className="w-4 h-4" />

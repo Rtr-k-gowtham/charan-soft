@@ -4,6 +4,7 @@
 // dynamic fabric material dropdown, and Total Outward Fabric field removed from Create form.
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { 
   ProductionOrder, 
@@ -126,6 +127,7 @@ function processImageFile(file: File, maxDimension = 1200, quality = 0.85): Prom
 export default function DyeingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/dyeing');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [stages, setStages] = useState<ProductionStage[]>([]);
@@ -952,7 +954,7 @@ export default function DyeingOrderDetail() {
           <div>
             <h4 className="font-bold text-sm">Failed to Load Dyeing Workspace</h4>
             <p className="text-xs mt-1">{error || 'Order not found'}</p>
-            <Button onClick={() => navigate('/production/dyeing')} className="mt-3 text-xs" variant="secondary">
+            <Button onClick={handleBack} className="mt-3 text-xs" variant="secondary">
               Back to Dyeing Stage
             </Button>
           </div>
@@ -1442,7 +1444,7 @@ export default function DyeingOrderDetail() {
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => navigate('/production/dyeing')}
+              onClick={handleBack}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

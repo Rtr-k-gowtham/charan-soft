@@ -5,6 +5,7 @@
 // proper item tracking from Cutting arrival to Outward Dispatch, Inward QC, and Transfer to Stitching.
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, EmbroideryJobOrder, EmbroideryReceipt } from '../../types';
 import Button from '../../components/ui/Button';
@@ -121,6 +122,7 @@ export interface EmbroideryLineRow {
 export default function EmbroideryOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/embroidery');
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [order, setOrder] = useState<any | null>(null);
@@ -1236,7 +1238,7 @@ export default function EmbroideryOrderDetail() {
               variant="ghost"
               size="sm"
               icon={<ArrowLeft className="w-4 h-4 text-slate-600" />}
-              onClick={() => navigate('/production/orders')}
+              onClick={handleBack}
               className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
             >
               Back

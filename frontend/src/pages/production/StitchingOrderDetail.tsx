@@ -8,6 +8,7 @@
 // - Direct transfer to Stage 08 Checking
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, StitchingBatch } from '../../types';
 import Button from '../../components/ui/Button';
@@ -100,6 +101,7 @@ function parsePhotos(urls: any): string[] {
 export default function StitchingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/stitching');
 
   const [order, setOrder] = useState<any | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -379,7 +381,7 @@ export default function StitchingOrderDetail() {
               variant="ghost"
               size="sm"
               icon={<ArrowLeft className="w-4 h-4 text-slate-600" />}
-              onClick={() => navigate('/production/orders')}
+              onClick={handleBack}
               className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
             >
               Back

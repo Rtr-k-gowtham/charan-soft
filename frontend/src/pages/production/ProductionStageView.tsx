@@ -2,7 +2,7 @@
 // Production Stage Workspace for the 10 Core Production Pipeline Stages
 // Optimized Order-First and Product-Breakdown view for Requirement Gathering & Pipeline
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionOrderItem, ProductionStage, OrderMaterialRequirementItem, PurchaseOrder } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -147,6 +147,12 @@ function OrderPOIssuerWrapper({
 
 export default function ProductionStageView({ stageName, stageCode, breadcrumb }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const openDetail = (url: string) => {
+    navigate(url, { state: { from: location.pathname + location.search } });
+  };
+
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [allItems, setAllItems] = useState<StageItem[]>([]);
   const [stagePOs, setStagePOs] = useState<PurchaseOrder[]>([]);
@@ -721,7 +727,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 onClick={() => {
                   const targetOrd = filteredOrderGroups[0] || orderGroups[0];
                   if (targetOrd) {
-                    navigate(`/production/dyeing/${targetOrd.order_id}?create=true`);
+                    openDetail(`/production/dyeing/${targetOrd.order_id}?create=true`);
                   } else {
                     alert('Please select or create an order with fabric inwarded in Stage 03 first.');
                   }
@@ -818,7 +824,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               onClick={() => {
                 const target = filteredOrderGroups[0] || orderGroups[0];
                 if (target) {
-                  navigate(`/production/dyeing/${target.order_id}?create=true`);
+                  openDetail(`/production/dyeing/${target.order_id}?create=true`);
                 } else {
                   alert('Please select or create an order with fabric inwarded in Stage 03 first.');
                 }
@@ -1060,7 +1066,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                       return (
                         <tr
                           key={group.order_number}
-                          onClick={() => navigate(targetUrl)}
+                          onClick={() => openDetail(targetUrl)}
                           className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                         >
                             <td className="px-2.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
@@ -1227,7 +1233,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'REQ' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md shadow-2xs transition hover:text-brand-700"
                                   >
                                     <Eye className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -1238,7 +1244,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'PO' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition hover:text-indigo-900"
                                   >
                                     <ShoppingCart className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
@@ -1249,7 +1255,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'INW' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition hover:text-emerald-900"
                                   >
                                     <PackageOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1261,7 +1267,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                   <div className="flex items-center gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={() => navigate(`/production/dyeing/${group.order_id}?create=true`)}
+                                      onClick={() => openDetail(`/production/dyeing/${group.order_id}?create=true`)}
                                       className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-md shadow-2xs transition"
                                       title="Create Dyeing Order in full page"
                                     >
@@ -1270,7 +1276,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => navigate(targetUrl)}
+                                      onClick={() => openDetail(targetUrl)}
                                       className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
                                     >
                                       <Droplets className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -1282,7 +1288,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'CUT' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition hover:text-indigo-900"
                                   >
                                     <Scissors className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
@@ -1293,7 +1299,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'EMB' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition hover:text-brand-900"
                                   >
                                     <Sparkles className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -1304,7 +1310,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'STI' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-md shadow-2xs transition hover:text-teal-900"
                                   >
                                     <Activity className="w-3.5 h-3.5 text-teal-600 shrink-0" />
@@ -1315,7 +1321,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'CHK' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-md shadow-2xs transition hover:text-sky-900"
                                   >
                                     <CheckCircle className="w-3.5 h-3.5 text-sky-600 shrink-0" />
@@ -1326,7 +1332,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'PCK' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md shadow-2xs transition hover:text-amber-900"
                                   >
                                     <Box className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -1337,7 +1343,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode === 'COMP' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition hover:text-emerald-900"
                                   >
                                     <Truck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -1348,7 +1354,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                                 {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && activeCode !== 'CUT' && activeCode !== 'EMB' && activeCode !== 'STI' && activeCode !== 'CHK' && activeCode !== 'PCK' && activeCode !== 'COMP' && (
                                   <button
                                     type="button"
-                                    onClick={() => navigate(targetUrl)}
+                                    onClick={() => openDetail(targetUrl)}
                                     className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-md shadow-2xs transition hover:text-brand-700"
                                   >
                                     <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
@@ -1358,7 +1364,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
 
                                 <button
                                   type="button"
-                                  onClick={() => navigate(`/production/orders/${group.order_id}`)}
+                                  onClick={() => openDetail(`/production/orders/${group.order_id}`)}
                                   title="Open full production order"
                                   className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-slate-100 rounded-lg transition"
                                 >

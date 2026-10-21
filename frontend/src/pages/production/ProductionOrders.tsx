@@ -1,7 +1,7 @@
 // src/pages/production/ProductionOrders.tsx
 // Phase 2 Production Dashboard & Product-Wise Order Tracking Workspace
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionDashboardStats } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -57,6 +57,7 @@ const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
 export default function ProductionOrders() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [dashboardStats, setDashboardStats] = useState<ProductionDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -305,7 +306,7 @@ export default function ProductionOrders() {
                     return (
                       <tr
                         key={ord.id}
-                        onClick={() => navigate(`/production/orders/${ord.id}`)}
+                        onClick={() => navigate(`/production/orders/${ord.id}`, { state: { from: location.pathname + location.search } })}
                         className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
                         <td className="px-2.5 py-2.5 text-center text-slate-400 font-mono text-[11px]">
@@ -398,7 +399,7 @@ export default function ProductionOrders() {
                             size="xs"
                             variant="secondary"
                             icon={<Eye className="w-3.5 h-3.5 text-brand-600" />}
-                            onClick={() => navigate(`/production/orders/${ord.id}`)}
+                            onClick={() => navigate(`/production/orders/${ord.id}`, { state: { from: location.pathname + location.search } })}
                             className="text-[11px] font-semibold text-slate-700 hover:text-brand-700 shadow-2xs px-2.5 py-1"
                           >
                             <span>Manage</span>

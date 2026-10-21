@@ -2,6 +2,7 @@
 // Stage 05: Product-wise Cutting Batches, Yield Reconciliation & Stage Transfer
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionStage, CuttingBatch } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -87,6 +88,7 @@ function parsePhotos(urls: any): string[] {
 export default function CuttingOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/cutting');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -349,7 +351,7 @@ export default function CuttingOrderDetail() {
   if (error || !order) {
     return (
       <div className="p-6 max-w-2xl mx-auto text-center space-y-4">
-        <Button variant="secondary" icon={<ArrowLeft className="w-4 h-4" />} onClick={() => navigate('/production/cutting')}>
+        <Button variant="secondary" icon={<ArrowLeft className="w-4 h-4" />} onClick={handleBack}>
           Back to Cutting Orders
         </Button>
         <div className="p-6 bg-red-50 border border-red-200 rounded-xl">
@@ -380,7 +382,7 @@ export default function CuttingOrderDetail() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="secondary" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={() => navigate('/production/cutting')}>
+            <Button variant="secondary" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={handleBack}>
               Back
             </Button>
             <button

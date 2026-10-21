@@ -2,6 +2,7 @@
 // Production Order Workspace with Clean Specifications and Automated Material Requirements (BOM) Calculator
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionOrderItem, ProductionStage, ProductionOrderBOMReport, OrderMaterialRequirementItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -62,6 +63,7 @@ const fmtCurrency = (n: number) =>
 export default function ProductionOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/orders');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [stages, setStages] = useState<ProductionStage[]>([]);
@@ -474,7 +476,7 @@ export default function ProductionOrderDetail() {
         <Button
           variant="secondary"
           icon={<ArrowLeft className="w-4 h-4" />}
-          onClick={() => navigate('/production/orders')}
+          onClick={handleBack}
         >
           Back to Production Orders
         </Button>
@@ -522,7 +524,7 @@ export default function ProductionOrderDetail() {
             <Button
               variant="secondary"
               icon={<ArrowLeft className="w-3.5 h-3.5" />}
-              onClick={() => navigate('/production/orders')}
+              onClick={handleBack}
             >
               Back
             </Button>

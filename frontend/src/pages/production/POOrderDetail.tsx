@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionOrderBOMReport, ProductionStage, PurchaseOrder } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
@@ -49,6 +50,7 @@ const fmtCurrency = (n: number) =>
 export default function POOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const handleBack = useStageBackNavigation('/production/po');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
@@ -181,7 +183,7 @@ export default function POOrderDetail() {
         <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
         <h3 className="text-sm font-bold text-slate-800">Order Not Found</h3>
         <p className="text-xs text-slate-500 mt-1">Unable to locate production order #{id}.</p>
-        <Button onClick={() => navigate('/production/po')} className="mt-4 text-xs">
+        <Button onClick={handleBack} className="mt-4 text-xs">
           Return to PO Stage
         </Button>
       </div>
@@ -210,7 +212,7 @@ export default function POOrderDetail() {
         actions={
           <div className="flex items-center gap-1.5 sm:gap-2">
             <button
-              onClick={() => navigate('/production/po')}
+              onClick={handleBack}
               className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
