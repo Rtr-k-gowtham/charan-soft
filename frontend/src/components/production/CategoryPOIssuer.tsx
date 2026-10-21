@@ -235,6 +235,7 @@ export default function CategoryPOIssuer({
         supplier_id: selectedSupId ? Number(selectedSupId) : (selectedSup?.id || ''),
         target_delivery_date: targetDeliveryDate,
         remarks: `PO for ${categoryName} - Production Order ${orderNumber}`,
+        status: 'Ordered',
         materials: catMaterials.map((m, idx) => ({
           material_id: m.material_id || undefined,
           material_code: m.material_code || undefined,
@@ -251,7 +252,7 @@ export default function CategoryPOIssuer({
           tax_percent: 5,
           order_no: orderNumber || `ORD-${idx + 1}`,
         })),
-        from: `/production/po/${orderId}`,
+        from: location.pathname || `/production/po/${orderId}`,
       }
     });
   };
@@ -315,6 +316,7 @@ export default function CategoryPOIssuer({
         po_date: new Date().toISOString().split('T')[0],
         delivery_due_date: targetDeliveryDate || undefined,
         remarks: `PO issued from Production Order ${orderNumber} for ${categoryName} materials`,
+        status: 'Ordered',
         items: itemsPayload,
       };
 
@@ -322,8 +324,8 @@ export default function CategoryPOIssuer({
       const createdPO = (res as any)?.data || res;
       const poNum = createdPO?.po_number || 'New PO';
 
-      // Immediately mark the newly created PO as Ordered (Issued & Locked)
-      if (createdPO?.id) {
+      // Immediately mark the newly created PO as Ordered (Issued & Locked) if not already Ordered
+      if (createdPO?.id && createdPO?.status !== 'Ordered') {
         await api.updatePurchaseOrderStatus(createdPO.id, 'Ordered').catch(() => null);
       }
 
@@ -699,7 +701,7 @@ export default function CategoryPOIssuer({
                                 <button
                                   key={p.id}
                                   type="button"
-                                  onClick={() => navigate(`/purchase/orders/${p.id}`)}
+                                  onClick={() => navigate(`/purchase/orders/${p.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
                                   className="font-mono font-bold text-xs text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 px-2 py-0.5 rounded border border-brand-200 shadow-2xs transition inline-flex items-center gap-1 text-left truncate max-w-full"
                                   title={`Click to view PO ${p.po_number}`}
                                 >
@@ -810,7 +812,7 @@ export default function CategoryPOIssuer({
                           {hasOrderedPO ? (
                             <button
                               type="button"
-                              onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`)}
+                              onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
                               title="View PO Details"
                             >
@@ -818,24 +820,58 @@ export default function CategoryPOIssuer({
                               <span>View PO</span>
                             </button>
                           ) : hasDraftPO && draftPO ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${draftPO.id}`)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title="View & Edit Draft PO"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-amber-700" />
-                              <span>View PO</span>
-                            </button>
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                type="button"
+                                disabled={updatingPOStatus[draftPO.id]}
+                                onClick={() => handleMarkPOAsIssued(draftPO)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-md shadow-2xs transition whitespace-nowrap"
+                                title="Directly Issue & Order this Draft PO"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>{updatingPOStatus[draftPO.id] ? 'Issuing...' : 'Issue PO'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/purchase/orders/${draftPO.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md shadow-2xs transition whitespace-nowrap"
+                                title="View & Edit Draft PO"
+                              >
+                                <Eye className="w-3 h-3 text-amber-700" />
+                                <span>View</span>
+                              </button>
+                            </div>
+                          ) : selectedSupId ? (
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-md shadow-2xs transition whitespace-nowrap"
+                                title={`Directly issue PO for ${categoryName}`}
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>{isSaving ? 'Issuing...' : 'Issue PO'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
+                                title="Review and customize order details before issuing"
+                              >
+                                <Eye className="w-3 h-3 text-slate-500" />
+                                <span>Review</span>
+                              </button>
+                            </div>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title={`View PO creation with materials for ${categoryName}`}
+                              title={`Proceed to Issue PO for ${categoryName}`}
                             >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View PO</span>
+                              <Send className="w-3.5 h-3.5 text-brand-600" />
+                              <span>Issue PO</span>
                             </button>
                           )}
                         </td>

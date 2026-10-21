@@ -225,8 +225,12 @@ class PurchaseOrderController {
                 $nextSeq = $maxSeq + 1;
                 $poNumber = $prefix . str_pad((string)$nextSeq, 2, '0', STR_PAD_LEFT);
 
-                // Per Task 3.B: Initial status of newly created purchase orders must strictly be Draft
-                $poStatus = 'Draft';
+                // When created/issued from PO stage or requested as Ordered, directly create as 'Ordered'
+                $rawStatus = !empty($data['status']) ? trim((string)$data['status']) : 'Draft';
+                $poStatus = in_array(strtolower($rawStatus), ['ordered', 'issued']) ? 'Ordered' : 'Draft';
+                $now = date('Y-m-d H:i:s');
+                $orderedAt = ($poStatus === 'Ordered') ? $now : null;
+                $paymentDueDate = ($poStatus === 'Ordered') ? date('Y-m-d', strtotime('+15 days')) : null;
 
                 $poCandidates = [
                     'po_number' => $poNumber,
@@ -242,6 +246,8 @@ class PurchaseOrderController {
                     'balance_amount' => $netTotal,
                     'payment_status' => 'Not Paid',
                     'status' => $poStatus,
+                    'ordered_at' => $orderedAt,
+                    'payment_due_date' => $paymentDueDate,
                     'remarks' => $data['remarks'] ?? null
                 ];
 
