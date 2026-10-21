@@ -15,12 +15,14 @@ import FormField from '../../components/ui/FormField';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import { lookupPantone, VERIFIED_PANTONE_LIBRARY } from '../../lib/pantoneService';
+import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
 import {
   ArrowLeft,
   Sparkles,
   RefreshCw,
   Plus,
   ArrowRight,
+  Printer,
   CheckCircle2,
   AlertTriangle,
   Layers,
@@ -140,6 +142,18 @@ export default function EmbroideryOrderDetail() {
   // Filter tabs: 'ALL' | 'EMBROIDERY'
   const [activeTab, setActiveTab] = useState<'ALL' | 'EMBROIDERY'>('ALL');
 
+  // Document Print / Preview Modal State
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printDocType, setPrintDocType] = useState<JobWorkDocType>('EMBROIDERY_OUTWARD');
+  const [printDocItem, setPrintDocItem] = useState<any>(null);
+  const [companySettings, setCompanySettings] = useState<any>(null);
+
+  const handleOpenPrintModal = (type: JobWorkDocType, item: any) => {
+    setPrintDocType(type);
+    setPrintDocItem(item);
+    setPrintModalOpen(true);
+  };
+
   // Full Page Create Embroidery Job Order State (matching DyeingOrderDetail)
   const [showCreatePage, setShowCreatePage] = useState<boolean>(() => searchParams.get('create') === 'true');
   const [creating, setCreating] = useState(false);
@@ -193,12 +207,16 @@ export default function EmbroideryOrderDetail() {
     try {
       setLoading(true);
       setError('');
-      const [embRes, stagesRes, unitsRes, supRes] = await Promise.all([
+      const [embRes, stagesRes, unitsRes, supRes, compRes] = await Promise.all([
         api.getEmbroideryOrderDetails(Number(id)),
         api.getProductionStages(),
         api.getEmbroideryWorks().catch(() => []),
-        api.getSuppliers().catch(() => [])
+        api.getSuppliers().catch(() => []),
+        api.getCompanySettings().catch(() => null),
       ]);
+
+      const comp = (compRes as any)?.data || compRes;
+      if (comp) setCompanySettings(comp);
 
       const embData = (embRes as any)?.data || embRes;
       const orderData = embData.order || null;
@@ -1653,6 +1671,15 @@ export default function EmbroideryOrderDetail() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition shadow-2xs"
+                              title="Print / Download Embroidery Job Order & Outward Challan"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-purple-600" />
+                              <span>Challan</span>
+                            </button>
                             {out > 0.01 ? (
                               <Button
                                 id={`btn-receive-inward-${job.id}`}
@@ -1677,6 +1704,114 @@ export default function EmbroideryOrderDetail() {
                               </Button>
                             )}
                           </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Table 3: Recorded Embroidery Inward Receipts & Quality Inspection Reports */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden mt-6">
+          <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-teal-600" />
+              <h3 className="font-bold text-slate-800 text-sm">
+                Recorded Inward Receipts & Quality Inspection Reports
+              </h3>
+            </div>
+            <span className="text-xs font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+              {receipts.length} {receipts.length === 1 ? 'Inward Receipt' : 'Inward Receipts'}
+            </span>
+          </div>
+
+          {receipts.length === 0 ? (
+            <div className="p-8 text-center text-slate-400">
+              <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+              <p className="font-semibold text-xs text-slate-700">No Inward Receipts Recorded</p>
+              <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                Once embroidered pieces are received from the vendor, click "Receive Inward" on any active job order above to log received pieces, QC inspection, and photo proof.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-3 px-4">Receipt Number</th>
+                    <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-4">Vendor</th>
+                    <th className="py-3 px-3 font-mono">Job Order Ref</th>
+                    <th className="py-3 px-3 text-right">Received</th>
+                    <th className="py-3 px-3 text-right">Accepted</th>
+                    <th className="py-3 px-3 text-right">Rej / Rework</th>
+                    <th className="py-3 px-3">QC Inspector</th>
+                    <th className="py-3 px-3 text-center">Photo Proof</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                  {receipts.map((rec, rIdx) => {
+                    const photos = parsePhotos(rec.photo_urls);
+                    return (
+                      <tr key={rec.id || rIdx} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 px-4">
+                          <span className="font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 block w-fit">
+                            {rec.receipt_number}
+                          </span>
+                          {rec.vendor_challan_no && (
+                            <span className="text-[10px] text-slate-400 block mt-0.5">
+                              DC: {rec.vendor_challan_no}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 font-sans">{rec.receipt_date}</td>
+                        <td className="py-3 px-4 font-sans font-medium text-slate-800">{rec.vendor_name}</td>
+                        <td className="py-3 px-3 font-semibold text-slate-600">
+                          {rec.job_order_number || `EMB-JOB-${rec.job_order_id}`}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-emerald-700">{fmt(rec.total_received_qty)}</td>
+                        <td className="py-3 px-3 text-right font-bold text-green-700">{fmt(rec.total_accepted_qty)}</td>
+                        <td className="py-3 px-3 text-right text-slate-600 font-semibold">
+                          <span className="text-red-600">{fmt(rec.total_rejected_qty)}</span> / <span className="text-amber-600">{fmt(rec.total_rework_qty)}</span>
+                        </td>
+                        <td className="py-3 px-3 font-sans text-slate-600 text-[10px]">{rec.received_by}</td>
+                        <td className="py-3 px-3 text-center">
+                          {photos.length > 0 ? (
+                            <div className="flex items-center justify-center gap-1">
+                              {photos.slice(0, 2).map((url, pIdx) => (
+                                <button
+                                  key={pIdx}
+                                  type="button"
+                                  onClick={() => setPreviewImage(url)}
+                                  className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
+                                >
+                                  <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                                </button>
+                              ))}
+                              {photos.length > 2 && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
+                                  +{photos.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-sans italic">None</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
+                            title="Print / Download Embroidery Inward QC Receipt"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Print Receipt</span>
+                          </button>
                         </td>
                       </tr>
                     );
@@ -2055,6 +2190,22 @@ export default function EmbroideryOrderDetail() {
           </div>
         </div>
       )}
+
+      {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}
+      <JobWorkDocumentModal
+        isOpen={printModalOpen}
+        onClose={() => setPrintModalOpen(false)}
+        docType={printDocType}
+        order={order}
+        itemData={printDocItem}
+        receiptList={receipts}
+        supplier={suppliers.find((s: any) =>
+          (s.name || '').toLowerCase() === (printDocItem?.vendor_name || '').toLowerCase()
+        ) || embroideryUnits.find((u: any) =>
+          (u.name || '').toLowerCase() === (printDocItem?.vendor_name || '').toLowerCase()
+        )}
+        companySettings={companySettings}
+      />
     </div>
   );
 }

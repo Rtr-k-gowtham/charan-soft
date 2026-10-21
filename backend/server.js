@@ -1925,6 +1925,17 @@ const server = http.createServer(async (req, res) => {
         return sendError(res, `Requested outward quantity (${totalFabricQty} ${body.uom || 'MTR'}) exceeds available inward fabric balance (${balanceAvailable} ${body.uom || 'MTR'}). Enable "Additional Lot / Re-dyeing" to authorize.`, 422);
       }
 
+      const processedItems = items.map((it, idx) => ({
+        id: idx + 1,
+        color_name: it.color_name || 'Standard Color',
+        pantone_code: it.pantone_code || '',
+        hex_code: it.hex_code || '#6366f1',
+        planned_quantity: Number(it.planned_quantity || it.quantity || 0),
+        received_quantity: 0,
+        rate_per_unit: Number(it.rate_per_unit || 0),
+        notes: it.notes || ''
+      }));
+
       const newDye = {
         id: (db.dyeingOrders || []).length + 1,
         dyeing_order_no: `DYE-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1933,6 +1944,7 @@ const server = http.createServer(async (req, res) => {
         total_received_quantity: 0,
         created_at: new Date().toISOString(),
         ...body,
+        items: processedItems,
       };
       if (!db.dyeingOrders) db.dyeingOrders = [];
       db.dyeingOrders.push(newDye);
@@ -1973,7 +1985,7 @@ const server = http.createServer(async (req, res) => {
         });
       } else {
         (dyeOrder.items || []).forEach(it => {
-          const matching = items.find(i => (i.item_id || i.id) === it.id);
+          const matching = items.find(i => (i.item_id || i.id) === it.id || (i.color_name && it.color_name && String(i.color_name).toLowerCase() === String(it.color_name).toLowerCase()));
           if (matching) {
             const q = Number(matching.received_quantity || 0);
             it.received_quantity = (it.received_quantity || 0) + q;
@@ -1984,21 +1996,39 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      dyeOrder.total_received_quantity = (dyeOrder.total_received_quantity || 0) + batchRec;
+      const totalCalculatedRec = batchRec > 0 ? batchRec : items.reduce((s, it) => s + Number(it.received_quantity || 0), 0);
+      dyeOrder.total_received_quantity = (dyeOrder.total_received_quantity || 0) + totalCalculatedRec;
       dyeOrder.status = dyeOrder.total_received_quantity >= dyeOrder.total_fabric_quantity ? 'Received' : 'Partially Received';
 
       const rec = {
         id: (db.dyeingReceipts || []).length + 1,
         receipt_no: `DYE-GRN-${Math.floor(1000 + Math.random() * 9000)}`,
         dyeing_order_id: dyeId,
+        dyeing_order_no: dyeOrder.dyeing_order_no,
+        dyeing_mill_name: dyeOrder.dyeing_mill_name || dyeOrder.supplier_name || 'Dyeing Mill',
+        fabric_name: dyeOrder.fabric_name || 'Dyed Fabric Material',
+        fabric_code: dyeOrder.fabric_code || '',
+        uom: dyeOrder.uom || 'MTR',
         production_order_id: dyeOrder.production_order_id || body.production_order_id || 1,
         receipt_date: body.receipt_date || new Date().toISOString().split('T')[0],
         delivery_challan_no: body.delivery_challan_no || '',
         received_by: body.received_by || 'Stores & QC Inward',
-        total_received_quantity: batchRec,
+        total_received_quantity: totalCalculatedRec,
         photo_url: body.photo_url || null,
         shade_condition: body.shade_condition || 'Approved - Pantone Matched',
         remarks: body.remarks || '',
+        items_data: items.map(it => ({
+          item_id: it.item_id || it.id,
+          color_name: it.color_name || dyeOrder.fabric_name || 'Color',
+          pantone_code: it.pantone_code || '',
+          hex_code: it.hex_code || '#6366f1',
+          planned_quantity: Number(it.planned_quantity || 0),
+          already_received: Number(it.already_received || 0),
+          received_quantity: Number(it.received_quantity || 0),
+          shrinkage_loss_percent: Number(it.shrinkage_loss_percent || 0),
+          shade_match_status: it.shade_match_status || 'Approved - Pantone Matched',
+          notes: it.notes || ''
+        })),
         created_at: new Date().toISOString(),
       };
       if (!dyeOrder.receipts) dyeOrder.receipts = [];
@@ -2007,6 +2037,14 @@ const server = http.createServer(async (req, res) => {
       db.dyeingReceipts.unshift(rec);
       saveDB();
       return sendSuccess(res, { receipt: rec, dyeing_status: dyeOrder.status }, 'Dyed fabric received successfully');
+    }
+
+    const dyeDetailMatch = pathname.match(/^\/dyeing\/orders\/([^/]+)$/);
+    if (dyeDetailMatch && method === 'GET') {
+      const dyeKey = decodeURIComponent(dyeDetailMatch[1]);
+      const dyeOrder = (db.dyeingOrders || []).find(d => String(d.id) === String(dyeKey) || String(d.dyeing_order_no) === String(dyeKey));
+      if (!dyeOrder) return sendError(res, 'Dyeing order not found', 404);
+      return sendSuccess(res, dyeOrder);
     }
 
     if (pathname === '/dyeing/fabric-stock' && method === 'GET') {
@@ -3992,6 +4030,9 @@ const server = http.createServer(async (req, res) => {
         saveDB();
         return sendSuccess(res, newStg, 'Production stage created', 201);
       }
+    }
+    if (pathname === '/settings/company' && method === 'GET') {
+      return sendSuccess(res, db.companySettings || {});
     }
     if (pathname === '/settings/company' && method === 'POST') {
       db.companySettings = { ...db.companySettings, ...body };

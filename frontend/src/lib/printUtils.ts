@@ -89,13 +89,15 @@ export function printHtmlElement(element: HTMLElement, title = 'Cheran ERP - Pur
         print-color-adjust: exact !important;
         font-family: 'Poppins', sans-serif !important;
       }
-      .po-template-container, .po-template-container * {
+      .po-template-container, .po-template-container *,
+      .job-work-doc-container, .job-work-doc-container * {
         font-family: 'Poppins', sans-serif !important;
       }
       .no-print, button, nav, header, aside, .modal-backdrop {
         display: none !important;
       }
-      .po-template-container {
+      .po-template-container,
+      .job-work-doc-container {
         width: 100% !important;
         max-width: 100% !important;
         min-height: auto !important;

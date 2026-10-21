@@ -707,6 +707,7 @@ export interface EmbroideryReceipt {
   id?: number;
   receipt_number: string;
   job_order_id: number;
+  job_order_number?: string;
   production_order_id: number;
   vendor_name: string;
   receipt_date: string;
