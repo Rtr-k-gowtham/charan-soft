@@ -815,55 +815,21 @@ export default function CategoryPOIssuer({
                               <span>View PO</span>
                             </button>
                           ) : hasDraftPO && draftPO ? (
-                            <div className="inline-flex items-center gap-1.5 justify-end">
-                              <button
-                                type="button"
-                                disabled={updatingPOStatus[draftPO.id]}
-                                onClick={() => handleMarkPOAsIssued(draftPO)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-md shadow-2xs transition whitespace-nowrap"
-                                title="Directly Issue & Order this Draft PO"
-                              >
-                                <Check className="w-3 h-3" />
-                                <span>{updatingPOStatus[draftPO.id] ? 'Issuing...' : 'Issue PO'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/purchase/orders/${draftPO.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md shadow-2xs transition whitespace-nowrap"
-                                title="View & Edit Draft PO"
-                              >
-                                <Eye className="w-3 h-3 text-amber-700" />
-                                <span>View</span>
-                              </button>
-                            </div>
-                          ) : selectedSupId ? (
-                            <div className="inline-flex items-center gap-1.5 justify-end">
-                              <button
-                                type="button"
-                                disabled={isSaving}
-                                onClick={() => handleIssuePOForCategory(categoryName, catMaterials)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-md shadow-2xs transition whitespace-nowrap"
-                                title={`Directly issue PO for ${categoryName}`}
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>{isSaving ? 'Issuing...' : 'Issue PO'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
-                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
-                                title="Review and customize order details before issuing"
-                              >
-                                <Eye className="w-3 h-3 text-slate-500" />
-                                <span>Review</span>
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${draftPO.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                              title="View Draft PO"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View PO</span>
+                            </button>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title={`Review materials & issue PO for ${categoryName}`}
+                              title={`View PO & materials for ${categoryName}`}
                             >
                               <Eye className="w-3.5 h-3.5 text-brand-600" />
                               <span>View PO</span>
