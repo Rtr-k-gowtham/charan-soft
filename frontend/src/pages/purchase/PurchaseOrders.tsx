@@ -762,24 +762,25 @@ export default function PurchaseOrders() {
     };
   }, [viewPO]);
 
-  // Handle PO Approval (Draft -> Ordered)
-  const handleApprovePO = async () => {
+  // Handle PO Issuance (Draft -> Ordered)
+  const handleIssuePO = async () => {
     if (!viewPO) return;
     setApproving(true);
     setApprovalError('');
     try {
       const res: any = await api.updatePurchaseOrderStatus(viewPO.id, 'Ordered');
-      const updatedStatus = res?.status || 'Ordered';
-      setViewPO(prev => prev ? ({ ...prev, status: updatedStatus }) : null);
-      setApprovalSuccess(`Purchase Order ${viewPO.po_number} has been approved successfully! Status changed to ${updatedStatus}.`);
+      const updatedStatus = res?.data?.status || res?.status || 'Ordered';
+      setViewPO(prev => prev ? ({ ...prev, status: updatedStatus, ordered_at: res?.data?.ordered_at || res?.ordered_at || prev.ordered_at }) : null);
+      setApprovalSuccess(`Purchase Order ${viewPO.po_number} has been issued successfully as ${updatedStatus}!`);
       setApproveModalOpen(false);
-      load();
+      await load();
     } catch (err: unknown) {
-      setApprovalError((err as Error).message || 'Failed to approve Purchase Order');
+      setApprovalError((err as Error).message || 'Failed to issue Purchase Order');
     } finally {
       setApproving(false);
     }
   };
+  const handleApprovePO = handleIssuePO;
 
   const createBlankItem = (targetIndex?: number) => {
     const idx = targetIndex !== undefined ? targetIndex : items.length;
@@ -983,10 +984,6 @@ export default function PurchaseOrders() {
         terms: poTerms,
       });
       const createdPO = (res as any)?.data || res;
-
-      if (poStatus === 'Ordered' && createdPO?.id && createdPO?.status !== 'Ordered') {
-        await api.updatePurchaseOrderStatus(createdPO.id, 'Ordered').catch(() => null);
-      }
 
       setCreateOpen(false);
       setPoTermsDirty(false);
@@ -2954,10 +2951,11 @@ export default function PurchaseOrders() {
               {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
                 <Button
                   size="xs"
-                  icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                  icon={<Send className="w-3.5 h-3.5" />}
                   onClick={() => setApproveModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
                 >
-                  Approve
+                  Issue PO
                 </Button>
               )}
             </div>
@@ -3021,10 +3019,11 @@ export default function PurchaseOrders() {
             </div>
             {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
               <Button
-                icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+                icon={<Send className="w-3.5 h-3.5" />}
                 onClick={() => setApproveModalOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
               >
-                Approve PO
+                Issue Purchase Order
               </Button>
             )}
           </div>
@@ -3523,28 +3522,29 @@ export default function PurchaseOrders() {
               )}
               {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
                 <Button
-                  icon={<CheckCircle2 className="w-4 h-4" />}
+                  icon={<Send className="w-4 h-4" />}
                   onClick={() => setApproveModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
                 >
-                  Approve PO
+                  Issue Purchase Order
                 </Button>
               )}
               {(viewPO.status || '').toLowerCase() === 'ordered' && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Order Confirmed & Approved
+                  Order Issued & Confirmed
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        {/* Approval Confirmation Dialog Modal */}
+        {/* Issue PO Confirmation Dialog Modal */}
         <Modal
           open={approveModalOpen}
           onClose={() => { if (!approving) setApproveModalOpen(false); }}
-          title="Approve Purchase Order"
-          subtitle={`Confirm approval for PO: ${viewPO.po_number}`}
+          title="Issue Purchase Order"
+          subtitle={`Confirm issuance for PO: ${viewPO.po_number}`}
           size="md"
           footer={
             <div className="flex items-center justify-end gap-2 w-full">
@@ -3557,19 +3557,20 @@ export default function PurchaseOrders() {
               </Button>
               <Button
                 loading={approving}
-                icon={<CheckCircle2 className="w-4 h-4" />}
-                onClick={handleApprovePO}
+                icon={<Send className="w-4 h-4" />}
+                onClick={handleIssuePO}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
               >
-                Confirm & Approve
+                Confirm & Issue PO
               </Button>
             </div>
           }
         >
           <div className="space-y-3 py-2 text-xs text-slate-600">
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 leading-relaxed">
-              <p className="font-semibold text-amber-950 mb-1">Are you sure you want to approve this Purchase Order?</p>
-              <p>Approving will change the status from <strong className="text-amber-800">Draft</strong> to <strong className="text-emerald-800">Ordered</strong>.</p>
-              <p className="mt-1 text-[11px] text-amber-700">Once approved, this PO will become active and available for Material Receipts and Supplier Payments.</p>
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-950 leading-relaxed">
+              <p className="font-semibold text-indigo-950 mb-1">Are you sure you want to issue this Purchase Order?</p>
+              <p>Issuing will change the status directly from <strong className="text-amber-800">Draft</strong> to <strong className="text-emerald-800">Ordered</strong>.</p>
+              <p className="mt-1 text-[11px] text-indigo-700">Once issued, this PO will be confirmed, locked against edits, and active for Material Receipts and Supplier Payments.</p>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 font-mono text-[11px]">

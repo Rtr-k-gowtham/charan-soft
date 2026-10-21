@@ -324,11 +324,6 @@ export default function CategoryPOIssuer({
       const createdPO = (res as any)?.data || res;
       const poNum = createdPO?.po_number || 'New PO';
 
-      // Immediately mark the newly created PO as Ordered (Issued & Locked) if not already Ordered
-      if (createdPO?.id && createdPO?.status !== 'Ordered') {
-        await api.updatePurchaseOrderStatus(createdPO.id, 'Ordered').catch(() => null);
-      }
-
       // Ensure order items are at least moved from Stage 01 (REQ) to Stage 02 (PO)
       try {
         const prodOrderRes = await api.getProductionOrder(Number(orderId));
@@ -868,10 +863,10 @@ export default function CategoryPOIssuer({
                               type="button"
                               onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title={`Proceed to Issue PO for ${categoryName}`}
+                              title={`Review materials & issue PO for ${categoryName}`}
                             >
-                              <Send className="w-3.5 h-3.5 text-brand-600" />
-                              <span>Issue PO</span>
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View PO</span>
                             </button>
                           )}
                         </td>

@@ -1044,7 +1044,7 @@ class PurchaseOrderController {
 
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT id, status, po_number, ordered_at, payment_due_date, production_order_id FROM purchase_orders WHERE id = ? FOR UPDATE");
             $stmt->execute([$poId]);
             $po = $stmt->fetch();
 
@@ -1063,7 +1063,7 @@ class PurchaseOrderController {
 
             if ($canonicalStatus === 'Ordered' && $currentStatus !== 'draft') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Only Draft purchase orders can be approved", 422);
+                Response::error("Only Draft purchase orders can be approved and issued", 422);
                 return;
             }
 
@@ -1083,6 +1083,19 @@ class PurchaseOrderController {
 
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ?, ordered_at = ?, payment_due_date = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $orderedAt, $dueDate, $poId]);
+
+                // Ensure linked production order items are at least at Stage 02: PO
+                if (!empty($po['production_order_id'])) {
+                    try {
+                        $pOrdId = (int)$po['production_order_id'];
+                        $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE code = 'PO' OR name LIKE '%Purchase Order%' ORDER BY sequence_order ASC LIMIT 1");
+                        $poStageId = $stgStmt ? $stgStmt->fetchColumn() : null;
+                        if ($poStageId) {
+                            $updatePoi = $pdo->prepare("UPDATE production_order_items SET current_stage_id = ? WHERE production_order_id = ? AND (current_stage_id = 1 OR current_stage_id IN (SELECT id FROM production_stages WHERE sequence_order < 2))");
+                            $updatePoi->execute([$poStageId, $pOrdId]);
+                        }
+                    } catch (\Throwable $exIgnore) {}
+                }
             } else {
                 $uStmt = $pdo->prepare("UPDATE purchase_orders SET status = ? WHERE id = ?");
                 $uStmt->execute([$canonicalStatus, $poId]);
