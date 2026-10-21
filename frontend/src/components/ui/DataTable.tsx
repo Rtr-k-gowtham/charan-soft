@@ -7,6 +7,7 @@ export interface Column<T = any> {
   label: string;
   sortable?: boolean;
   width?: string;
+  align?: 'left' | 'center' | 'right';
   render?: (row: T, idx: number) => React.ReactNode;
 }
 
@@ -21,6 +22,8 @@ export interface DataTableProps<T = any> {
   onRowClick?: (row: T) => void;
   actions?: (row: T) => React.ReactNode;
   compact?: boolean;
+  fixedLayout?: boolean;
+  actionsWidth?: string;
 }
 
 export default function DataTable<T extends Record<string, any>>({
@@ -34,6 +37,8 @@ export default function DataTable<T extends Record<string, any>>({
   onRowClick,
   actions,
   compact = true,
+  fixedLayout = false,
+  actionsWidth,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -161,28 +166,28 @@ export default function DataTable<T extends Record<string, any>>({
       )}
 
       {/* Desktop Table View */}
-      <div className="hidden sm:block overflow-x-auto touch-scroll flex-1 rounded-md border border-slate-200 bg-white shadow-2xs">
-        <table className="w-full min-w-full border-collapse table-dense">
+      <div className={`hidden sm:block ${fixedLayout ? 'overflow-hidden' : 'overflow-x-auto touch-scroll'} flex-1 rounded-md border border-slate-200 bg-white shadow-2xs`}>
+        <table className={`w-full border-collapse ${fixedLayout ? 'table-fixed' : 'min-w-full'} ${fixedLayout ? 'table-dense-fixed' : 'table-dense'}`}>
           <thead>
             <tr>
               {columns.map((col: Column<T>) => (
                 <th
                   key={String(col.key)}
                   style={{ width: col.width }}
-                  className={col.sortable ? 'cursor-pointer select-none hover:bg-slate-100' : ''}
+                  className={`${col.sortable ? 'cursor-pointer select-none hover:bg-slate-100' : ''} ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                   onClick={() => col.sortable && handleSort(String(col.key))}
                 >
-                  <span className="flex items-center gap-1">
-                    {col.label}
+                  <span className={`flex items-center gap-1 ${col.align === 'right' ? 'justify-end' : col.align === 'center' ? 'justify-center' : 'justify-start'}`}>
+                    <span className="truncate">{col.label}</span>
                     {col.sortable && (
                       sortKey === String(col.key)
-                        ? (sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)
-                        : <ChevronsUpDown className="w-3 h-3 text-slate-300" />
+                        ? (sortDir === 'asc' ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />)
+                        : <ChevronsUpDown className="w-3 h-3 text-slate-300 shrink-0" />
                     )}
                   </span>
                 </th>
               ))}
-              {actions && <th style={{ width: '80px' }}>Actions</th>}
+              {actions && <th style={{ width: actionsWidth || (fixedLayout ? '72px' : '80px') }} className="text-center">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -203,14 +208,14 @@ export default function DataTable<T extends Record<string, any>>({
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((col: Column<T>) => (
-                    <td key={String(col.key)}>
+                    <td key={String(col.key)} className={col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}>
                       {col.render
                         ? col.render(row, (currentPage - 1) * pageSize + idx)
                         : String(getValue(row, String(col.key)) ?? '—')}
                     </td>
                   ))}
                   {actions && (
-                    <td onClick={e => e.stopPropagation()}>{actions(row)}</td>
+                    <td onClick={e => e.stopPropagation()} className="text-center">{actions(row)}</td>
                   )}
                 </tr>
               ))

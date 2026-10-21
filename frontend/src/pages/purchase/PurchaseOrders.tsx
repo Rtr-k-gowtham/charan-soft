@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import { PurchaseOrder, Supplier, Category, PurchaseOrderItem, Material, POTemplateTerm } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
-import DataTable from '../../components/ui/DataTable';
+import DataTable, { Column } from '../../components/ui/DataTable';
 import { getCalendarDaysDiff, getDeliveryCountdown, CountdownBadge } from '../../lib/dateUtils';
 import Drawer from '../../components/ui/Drawer';
 import Button from '../../components/ui/Button';
@@ -1298,15 +1298,15 @@ export default function PurchaseOrders() {
     }
   }, [routeId, searchParams, location.pathname, location.state]);
 
-  // PO List Columns with clear Status badges (Draft / Ordered) - balanced for zero horizontal scroll
-  const columns = [
+  // PO List Columns with clear Status badges (Draft / Ordered) - fixed table layout, zero horizontal scroll
+  const columns: Column<PurchaseOrder>[] = [
     { 
       key: 'po_number', 
       label: 'PO Number', 
       sortable: true, 
-      width: '125px',
+      width: '105px',
       render: (r: PurchaseOrder) => (
-        <span className="font-semibold text-brand-700 hover:underline cursor-pointer font-mono text-xs whitespace-nowrap" onClick={() => setViewPO(r)}>
+        <span className="font-semibold text-brand-700 hover:underline cursor-pointer font-mono text-xs whitespace-nowrap block truncate" onClick={() => setViewPO(r)} title={r.po_number}>
           {r.po_number}
         </span>
       ) 
@@ -1316,7 +1316,7 @@ export default function PurchaseOrders() {
       label: 'Supplier', 
       sortable: true,
       render: (r: PurchaseOrder) => (
-        <span className="font-medium text-slate-800 truncate block max-w-[170px] xl:max-w-[210px]" title={r.supplier_name}>
+        <span className="font-medium text-slate-800 truncate block text-xs" title={r.supplier_name}>
           {r.supplier_name}
         </span>
       )
@@ -1325,41 +1325,48 @@ export default function PurchaseOrders() {
       key: 'category_name', 
       label: 'Category', 
       sortable: true, 
-      width: '120px',
+      width: '115px',
       render: (r: PurchaseOrder) => (
-        <span className="text-slate-600 text-xs font-medium truncate block max-w-[120px]" title={r.category_name}>
+        <span className="text-slate-600 text-xs font-medium truncate block" title={r.category_name}>
           {r.category_name}
         </span>
       )
     },
-    { key: 'po_date', label: 'PO Date', sortable: true, width: '90px' },
+    { 
+      key: 'po_date', 
+      label: 'PO Date', 
+      sortable: true, 
+      width: '85px',
+      render: (r: PurchaseOrder) => <span className="text-slate-600 text-xs whitespace-nowrap block truncate">{r.po_date}</span>
+    },
     { 
       key: 'delivery_due_date', 
       label: 'Delivery Due', 
       sortable: true, 
-      width: '95px',
-      render: (r: PurchaseOrder) => <span className="text-slate-500 whitespace-nowrap">{r.delivery_due_date || '—'}</span> 
+      width: '88px',
+      render: (r: PurchaseOrder) => <span className="text-slate-500 whitespace-nowrap text-xs block truncate">{r.delivery_due_date || '—'}</span> 
     },
     {
       key: 'delivery_due_in',
       label: 'Delivery Due In',
       sortable: true,
-      width: '120px',
+      width: '105px',
       render: (r: PurchaseOrder) => <CountdownBadge info={getDeliveryCountdown(r.delivery_due_date)} />
     },
     {
       key: 'status',
       label: 'Status',
       sortable: true,
-      width: '80px',
+      width: '72px',
+      align: 'center',
       render: (r: PurchaseOrder) => {
         const isDraft = (r.status || '').toLowerCase() === 'draft';
         return isDraft ? (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
             Draft
           </span>
         ) : (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Ordered
           </span>
         );
@@ -1368,7 +1375,8 @@ export default function PurchaseOrders() {
     {
       key: 'items_count',
       label: 'Items',
-      width: '65px',
+      width: '48px',
+      align: 'center',
       render: (r: PurchaseOrder) => (
         <span className="text-xs bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
           {r.items?.length || 0}
@@ -1379,22 +1387,25 @@ export default function PurchaseOrders() {
       key: 'subtotal', 
       label: 'Taxable Amt', 
       sortable: true, 
-      width: '100px',
-      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap">{fmtCur(r.subtotal)}</span> 
+      width: '88px',
+      align: 'right',
+      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap text-xs truncate">{fmtCur(r.subtotal)}</span> 
     },
     { 
       key: 'tax_amount', 
       label: 'Tax Amt', 
       sortable: true, 
-      width: '90px',
-      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap">{fmtCur(r.tax_amount)}</span> 
+      width: '72px',
+      align: 'right',
+      render: (r: PurchaseOrder) => <span className="font-mono text-slate-600 text-right block whitespace-nowrap text-xs truncate">{fmtCur(r.tax_amount)}</span> 
     },
     { 
       key: 'net_amount', 
       label: 'Net Total', 
       sortable: true, 
-      width: '105px',
-      render: (r: PurchaseOrder) => <span className="font-mono font-bold text-slate-900 text-right block whitespace-nowrap">{fmtCur(r.net_amount)}</span> 
+      width: '88px',
+      align: 'right',
+      render: (r: PurchaseOrder) => <span className="font-mono font-bold text-slate-900 text-right block whitespace-nowrap text-xs truncate">{fmtCur(r.net_amount)}</span> 
     },
   ];
 
@@ -3616,9 +3627,11 @@ export default function PurchaseOrders() {
         })}
       </div>
 
-      {/* Desktop PO List Table (sm+) */}
-      <div className="hidden sm:block flex-1 overflow-x-auto lg:overflow-x-hidden p-4 min-w-0">
+      {/* Desktop PO List Table (sm+) - Fixed Table Layout without horizontal roller */}
+      <div className="hidden sm:block flex-1 overflow-hidden p-4 min-w-0">
         <DataTable
+          fixedLayout={true}
+          actionsWidth="72px"
           data={pos.map(p => ({
             ...p,
             delivery_due_in: getCalendarDaysDiff(p.delivery_due_date) ?? 999999
@@ -3629,10 +3642,10 @@ export default function PurchaseOrders() {
           actions={(r: PurchaseOrder) => {
             const isDraft = (r.status || '').toLowerCase() === 'draft';
             return (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 justify-center">
                 <button 
                   onClick={(e) => { e.stopPropagation(); setViewPO(r); }} 
-                  className="p-1.5 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-100"
+                  className="p-1 text-slate-400 hover:text-brand-600 rounded hover:bg-slate-100"
                   title="View PO Details"
                 >
                   <Eye className="w-3.5 h-3.5" />
@@ -3640,7 +3653,7 @@ export default function PurchaseOrders() {
                 {isDraft ? (
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleOpenEdit(r); }} 
-                    className="p-1.5 text-slate-400 hover:text-amber-600 rounded hover:bg-slate-100"
+                    className="p-1 text-slate-400 hover:text-amber-600 rounded hover:bg-slate-100"
                     title="Edit Purchase Order (Draft)"
                   >
                     <Pencil className="w-3.5 h-3.5" />
@@ -3648,7 +3661,7 @@ export default function PurchaseOrders() {
                 ) : (
                   <button 
                     disabled
-                    className="p-1.5 text-slate-300 cursor-not-allowed rounded"
+                    className="p-1 text-slate-300 cursor-not-allowed rounded"
                     title="Ordered PO is locked from editing"
                   >
                     <Lock className="w-3.5 h-3.5" />
@@ -3656,7 +3669,7 @@ export default function PurchaseOrders() {
                 )}
                 <button 
                   onClick={(e) => { e.stopPropagation(); setPrintPO(r); }} 
-                  className="p-1.5 text-slate-400 hover:text-emerald-600 rounded hover:bg-slate-100"
+                  className="p-1 text-slate-400 hover:text-emerald-600 rounded hover:bg-slate-100"
                   title="Print PO Document"
                 >
                   <Printer className="w-3.5 h-3.5" />
