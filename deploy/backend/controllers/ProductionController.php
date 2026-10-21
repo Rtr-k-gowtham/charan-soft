@@ -804,6 +804,11 @@ class ProductionController {
                     $stock = isset($c['current_stock']) ? (float)$c['current_stock'] : 0.0;
                     $matCode = $c['material_code'] ?? null;
 
+                    $size = trim((string)($c['size'] ?? ''));
+                    $model = trim((string)($c['model'] ?? ''));
+                    $length = trim((string)($c['length'] ?? ''));
+                    $thickness = trim((string)($c['thickness'] ?? ''));
+
                     // Required quantity with wastage percentage calculation
                     $lineRequired = round($itemQty * $perPiece * (1 + ($wastage / 100)), 3);
                     $productLineComps[] = [
@@ -812,13 +817,21 @@ class ProductionController {
                         'name' => $matName,
                         'category' => $category,
                         'uom' => $uom,
+                        'size' => $size ?: null,
+                        'model' => $model ?: null,
+                        'length' => $length ?: null,
+                        'thickness' => $thickness ?: null,
                         'quantity_per_product' => $perPiece,
                         'wastage_percent' => $wastage,
                         'required_quantity' => $lineRequired,
                     ];
 
-                    // Aggregation key
-                    $aggKey = $matId ? "id_{$matId}" : "name_" . strtolower($matName . '_' . $uom);
+                    // Aggregation key considering specifications
+                    $specKey = trim(($size ? "s:{$size}" : '') . ';' . ($model ? "m:{$model}" : '') . ';' . ($length ? "l:{$length}" : '') . ';' . ($thickness ? "t:{$thickness}" : ''));
+                    $aggKey = $matId 
+                        ? ($specKey ? "id_{$matId}_{$specKey}" : "id_{$matId}") 
+                        : "name_" . strtolower($matName . '_' . $uom . ($specKey ? '_' . $specKey : ''));
+
                     if (!isset($materialsMap[$aggKey])) {
                         $materialsMap[$aggKey] = [
                             'material_id' => $matId,
@@ -826,6 +839,10 @@ class ProductionController {
                             'name' => $matName,
                             'category' => $category,
                             'uom' => $uom,
+                            'size' => $size ?: null,
+                            'model' => $model ?: null,
+                            'length' => $length ?: null,
+                            'thickness' => $thickness ?: null,
                             'unit_cost' => $rate,
                             'current_stock' => $stock,
                             'total_required_qty' => 0.0,
@@ -839,6 +856,10 @@ class ProductionController {
                         'product_name' => $item['product_name'],
                         'product_code' => $item['product_code'],
                         'color' => $item['color'],
+                        'size' => $size ?: null,
+                        'model' => $model ?: null,
+                        'length' => $length ?: null,
+                        'thickness' => $thickness ?: null,
                         'garment_qty' => $itemQty,
                         'per_piece_qty' => $perPiece,
                         'wastage_percent' => $wastage,
@@ -888,6 +909,24 @@ class ProductionController {
                     unset($sm);
                 }
 
+                // Enrich saved materials with size, model, length, thickness from buyer product components if missing
+                foreach ($totalMaterialsList as &$sm) {
+                    if (empty($sm['model']) && empty($sm['length']) && empty($sm['thickness']) && empty($sm['size'])) {
+                        foreach ($materialsMap as $mappedMat) {
+                            $match = (!empty($sm['material_id']) && $mappedMat['material_id'] == $sm['material_id']) ||
+                                     (strtolower(trim($sm['name'])) === strtolower(trim($mappedMat['name'])));
+                            if ($match) {
+                                if (!empty($mappedMat['size'])) $sm['size'] = $mappedMat['size'];
+                                if (!empty($mappedMat['model'])) $sm['model'] = $mappedMat['model'];
+                                if (!empty($mappedMat['length'])) $sm['length'] = $mappedMat['length'];
+                                if (!empty($mappedMat['thickness'])) $sm['thickness'] = $mappedMat['thickness'];
+                                break;
+                            }
+                        }
+                    }
+                }
+                unset($sm);
+
                 $summary = $savedBom['summary'] ?? [
                     'total_products_count' => count($productsBreakdown),
                     'total_order_garments' => $totalGarments,
@@ -935,6 +974,10 @@ class ProductionController {
                     'name' => $m['name'],
                     'category' => $m['category'],
                     'uom' => $m['uom'],
+                    'size' => $m['size'] ?? null,
+                    'model' => $m['model'] ?? null,
+                    'length' => $m['length'] ?? null,
+                    'thickness' => $m['thickness'] ?? null,
                     'total_required_qty' => $req,
                     'current_stock' => $stk,
                     'shortage_qty' => $shortage,

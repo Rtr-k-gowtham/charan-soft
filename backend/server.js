@@ -1517,18 +1517,28 @@ const server = http.createServer(async (req, res) => {
           const rate = Number(mat?.purchase_rate || 120);
           const stock = Number(mat?.current_stock || 150);
 
+          const size = c.size || null;
+          const model = c.model || null;
+          const length = c.length || null;
+          const thickness = c.thickness || null;
+
           productComps.push({
             material_id: mat?.id || c.material_id || null,
             material_code: mat?.code || '',
             name: matName,
             category: cat,
             uom,
+            size,
+            model,
+            length,
+            thickness,
             quantity_per_product: perPiece,
             wastage_percent: wastage,
             required_quantity: lineReq,
           });
 
-          const aggKey = mat?.id ? `id_${mat.id}` : `name_${matName}_${uom}`.toLowerCase();
+          const specKey = [size ? `s:${size}` : '', model ? `m:${model}` : '', length ? `l:${length}` : '', thickness ? `t:${thickness}` : ''].filter(Boolean).join(';');
+          const aggKey = (mat?.id ? `id_${mat.id}` : `name_${matName}_${uom}`) + (specKey ? `_${specKey}` : '');
           if (!materialsMap[aggKey]) {
             materialsMap[aggKey] = {
               material_id: mat?.id || null,
@@ -1536,6 +1546,10 @@ const server = http.createServer(async (req, res) => {
               name: matName,
               category: cat,
               uom,
+              size,
+              model,
+              length,
+              thickness,
               unit_cost: rate,
               current_stock: stock,
               total_required_qty: 0,
@@ -1549,6 +1563,10 @@ const server = http.createServer(async (req, res) => {
             product_name: item.product_name || bp?.product_name || 'Garment Product',
             product_code: item.product_code || bp?.product_code || '',
             color: item.color,
+            size,
+            model,
+            length,
+            thickness,
             garment_qty: itemQty,
             per_piece_qty: perPiece,
             wastage_percent: wastage,

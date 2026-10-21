@@ -538,6 +538,10 @@ export interface OrderMaterialRequirementItem {
   name: string;
   category: string;
   uom: string;
+  size?: string;
+  model?: string;
+  length?: string;
+  thickness?: string;
   total_required_qty: number;
   current_stock: number;
   shortage_qty: number;
@@ -549,6 +553,10 @@ export interface OrderMaterialRequirementItem {
     product_name: string;
     product_code?: string;
     color?: string;
+    size?: string;
+    model?: string;
+    length?: string;
+    thickness?: string;
     garment_qty: number;
     per_piece_qty: number;
     wastage_percent: number;
@@ -573,6 +581,10 @@ export interface ProductionOrderBOMReport {
       name: string;
       category: string;
       uom: string;
+      size?: string;
+      model?: string;
+      length?: string;
+      thickness?: string;
       quantity_per_product: number;
       wastage_percent: number;
       required_quantity: number;

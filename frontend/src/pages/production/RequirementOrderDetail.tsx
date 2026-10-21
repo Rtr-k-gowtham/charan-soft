@@ -189,6 +189,10 @@ export default function RequirementOrderDetail() {
         name: 'New Material',
         category: 'Fabric',
         uom: 'MTR',
+        size: '',
+        model: '',
+        length: '',
+        thickness: '',
         total_required_qty: 100,
         current_stock: 0,
         shortage_qty: 100,
@@ -654,13 +658,17 @@ export default function RequirementOrderDetail() {
                     <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
                       <tr>
                         <th className="py-2.5 px-3 w-10 text-center">#</th>
-                        <th className="py-2.5 px-3 min-w-[200px]">Material Name & Code</th>
-                        <th className="py-2.5 px-3 w-36">Category</th>
-                        <th className="py-2.5 px-3 w-28">UOM</th>
-                        <th className="py-2.5 px-3 w-32 text-right">Required Qty</th>
-                        <th className="py-2.5 px-3 w-32 text-right">Unit Rate (₹)</th>
-                        <th className="py-2.5 px-3 w-32 text-right">Total Cost</th>
-                        <th className="py-2.5 px-3 w-16 text-center">Action</th>
+                        <th className="py-2.5 px-3 min-w-[180px]">Material Name & Code</th>
+                        <th className="py-2.5 px-3 w-32">Category</th>
+                        <th className="py-2.5 px-3 w-24">UOM</th>
+                        <th className="py-2.5 px-2 w-20">Size</th>
+                        <th className="py-2.5 px-2 w-24">Model</th>
+                        <th className="py-2.5 px-2 w-20">Length</th>
+                        <th className="py-2.5 px-2 w-24">Thickness</th>
+                        <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
+                        <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
+                        <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
+                        <th className="py-2.5 px-3 w-14 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -725,6 +733,46 @@ export default function RequirementOrderDetail() {
                               </select>
                             </td>
 
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={m.size || ''}
+                                onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                placeholder="Size"
+                              />
+                            </td>
+
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={m.model || ''}
+                                onChange={e => handleUpdateEditedRow(idx, 'model', e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                placeholder="Model"
+                              />
+                            </td>
+
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={m.length || ''}
+                                onChange={e => handleUpdateEditedRow(idx, 'length', e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                placeholder="Length"
+                              />
+                            </td>
+
+                            <td className="py-2 px-2">
+                              <input
+                                type="text"
+                                value={m.thickness || ''}
+                                onChange={e => handleUpdateEditedRow(idx, 'thickness', e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                placeholder="Thickness"
+                              />
+                            </td>
+
                             <td className="py-2 px-3 text-right">
                               <input
                                 type="number"
@@ -774,17 +822,21 @@ export default function RequirementOrderDetail() {
                       <tr>
                         <th className="py-3 px-4 w-12 text-center">#</th>
                         <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
-                        <th className="py-3 px-3">Category</th>
-                        <th className="py-3 px-3">UOM</th>
-                        <th className="py-3 px-3 text-right">Total Req. Qty</th>
-                        <th className="py-3 px-3 text-right">Unit Rate</th>
-                        <th className="py-3 px-4 text-right">Total Cost</th>
+                        <th className="py-3 px-3 min-w-[140px]">Category</th>
+                        <th className="py-3 px-3 min-w-[70px]">UOM</th>
+                        <th className="py-3 px-3 min-w-[70px]">Size</th>
+                        <th className="py-3 px-3 min-w-[80px]">Model</th>
+                        <th className="py-3 px-3 min-w-[80px]">Length</th>
+                        <th className="py-3 px-3 min-w-[90px]">Thickness</th>
+                        <th className="py-3 px-3 text-right min-w-[110px]">Total Req. Qty</th>
+                        <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
+                        <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredMaterials.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-10 text-center text-slate-400">
+                          <td colSpan={11} className="py-10 text-center text-slate-400">
                             <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
                             <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
                             <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
@@ -797,7 +849,7 @@ export default function RequirementOrderDetail() {
                       ) : (
                         filteredMaterials.map((m, idx) => {
                           return (
-                            <tr key={m.material_id ? `id_${m.material_id}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                            <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
                               <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
                                 {idx + 1}
                               </td>
@@ -815,6 +867,22 @@ export default function RequirementOrderDetail() {
                               </td>
 
                               <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+
+                              <td className="py-3 px-3 text-slate-700 font-mono text-xs">
+                                {m.size || <span className="text-slate-300 font-sans">—</span>}
+                              </td>
+
+                              <td className="py-3 px-3 text-slate-700 text-xs">
+                                {m.model || <span className="text-slate-300 font-sans">—</span>}
+                              </td>
+
+                              <td className="py-3 px-3 text-slate-700 text-xs">
+                                {m.length || <span className="text-slate-300 font-sans">—</span>}
+                              </td>
+
+                              <td className="py-3 px-3 text-slate-700 text-xs">
+                                {m.thickness || <span className="text-slate-300 font-sans">—</span>}
+                              </td>
 
                               <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
                                 {fmt(m.total_required_qty, 2)}
@@ -900,6 +968,10 @@ export default function RequirementOrderDetail() {
                                   <tr>
                                     <th className="py-2 px-2.5">Component Material</th>
                                     <th className="py-2 px-2">Category</th>
+                                    <th className="py-2 px-2">Size</th>
+                                    <th className="py-2 px-2">Model</th>
+                                    <th className="py-2 px-2">Length</th>
+                                    <th className="py-2 px-2">Thickness</th>
                                     <th className="py-2 px-2 text-right">Per Garment</th>
                                     <th className="py-2 px-2 text-right">Wastage %</th>
                                     <th className="py-2 px-2 text-right">Total for Line</th>
@@ -910,6 +982,10 @@ export default function RequirementOrderDetail() {
                                     <tr key={idx}>
                                       <td className="py-2 px-2.5 font-medium text-slate-800">{c.name}</td>
                                       <td className="py-2 px-2 text-slate-600">{c.category}</td>
+                                      <td className="py-2 px-2 font-mono text-slate-700">{c.size || '—'}</td>
+                                      <td className="py-2 px-2 text-slate-700">{c.model || '—'}</td>
+                                      <td className="py-2 px-2 text-slate-700">{c.length || '—'}</td>
+                                      <td className="py-2 px-2 text-slate-700">{c.thickness || '—'}</td>
                                       <td className="py-2 px-2 text-right font-mono">{c.quantity_per_product} {c.uom}</td>
                                       <td className="py-2 px-2 text-right font-mono text-slate-500">{c.wastage_percent}%</td>
                                       <td className="py-2 px-2 text-right font-mono font-bold text-brand-700">
