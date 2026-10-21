@@ -3738,12 +3738,95 @@ const server = http.createServer(async (req, res) => {
         const qInspections = (db.qualityInspections || []).filter(b => b.production_order_id === ord.id);
         const pBatches = (db.packingBatches || []).filter(b => b.production_order_id === ord.id);
         const dispatches = (db.dispatchRecords || []).filter(b => b.production_order_id === ord.id);
+        const pos = (db.purchaseOrders || []).filter(p => p.production_order_id === ord.id);
+        const dyeOrders = (db.dyeingOrders || []).filter(d => d.production_order_id === ord.id);
+        const embOrders = (db.embroideryJobOrders || []).filter(e => e.production_order_id === ord.id);
 
         const totalCut = cBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
         const totalStitched = sBatches.reduce((s, b) => s + Number(b.completed_quantity || 0), 0);
         const totalPassed = qInspections.reduce((s, b) => s + Number(b.passed_quantity || 0), 0);
+        const totalInspected = qInspections.reduce((s, b) => s + Number(b.checked_quantity || b.submitted_quantity || b.passed_quantity || 0), 0);
         const totalPacked = pBatches.reduce((s, b) => s + Number(b.packed_quantity || 0), 0);
         const totalDispatched = dispatches.reduce((s, b) => s + Number(b.total_dispatched_quantity || 0), 0);
+        const totalQty = Number(ord.total_quantity || 0);
+        const doneQty = Math.max(Number(ord.completed_quantity || 0), totalDispatched);
+        const pendingQty = Math.max(0, totalQty - doneQty);
+
+        // Stage 01: Requirement Gathering (Draft / Completed)
+        const items = ord.items || [];
+        const hasMovedPastReq = items.some(it => (it.current_stage_id && it.current_stage_id > 1) || (it.stage_code && it.stage_code !== 'REQ'));
+        const isReqCompleted = hasMovedPastReq || pos.length > 0 || (ord.status === 'IN PRODUCTION') || (ord.status === 'COMPLETED');
+        const stage01Display = isReqCompleted ? 'Completed' : 'Draft';
+
+        // Stage 02: PO (Issued / Total or —)
+        const activePOs = pos.filter(p => !['CANCELLED', 'VOID'].includes((p.status || '').toUpperCase()));
+        const totalPOs = activePOs.length;
+        const issuedPOs = activePOs.filter(p => (p.status || '').toUpperCase() !== 'DRAFT').length;
+        const stage02Display = totalPOs > 0 ? `${issuedPOs} / ${totalPOs}` : '—';
+        const stage02Tooltip = totalPOs > 0 ? `Total POs: ${totalPOs}, Issued: ${issuedPOs}, Draft: ${totalPOs - issuedPOs}` : 'No applicable purchase orders';
+
+        // Stage 03: Inward
+        let stage03Display = '—';
+        let stage03Tooltip = 'No issued purchase orders to receive';
+        if (issuedPOs > 0) {
+          const receivedPOs = activePOs.filter(p => (p.status || '').toUpperCase() === 'RECEIVED' || ((p.receipts || []).length > 0)).length;
+          stage03Display = `${receivedPOs} / ${issuedPOs} POs`;
+          stage03Tooltip = `Received POs: ${receivedPOs}, Pending: ${Math.max(0, issuedPOs - receivedPOs)} POs`;
+        }
+
+        // Stage 04: Dyeing
+        let stage04Display = '—';
+        let stage04Tooltip = 'Dyeing not applicable or not started';
+        if (dyeOrders.length > 0) {
+          const sent = dyeOrders.reduce((s, d) => s + Number(d.total_fabric_quantity || 0), 0);
+          const rcvd = dyeOrders.reduce((s, d) => s + Number(d.total_received_quantity || 0), 0);
+          const uom = dyeOrders[0]?.uom || 'MTR';
+          stage04Display = `${rcvd} / ${sent} ${uom} received`;
+          stage04Tooltip = `Sent: ${sent} ${uom}, Received: ${rcvd} ${uom}, Pending: ${Math.max(0, sent - rcvd)} ${uom}`;
+        }
+
+        // Stage 05: Cutting
+        const stage05Display = `${totalCut} / ${totalQty} pcs`;
+        const stage05Tooltip = `Cut: ${totalCut} pcs, Required: ${totalQty} pcs`;
+
+        // Stage 06: Embroidery
+        let stage06Display = '—';
+        let stage06Tooltip = 'Embroidery not applicable or not started';
+        if (embOrders.length > 0) {
+          const sent = embOrders.reduce((s, e) => s + Number(e.total_quantity_sent || 0), 0);
+          const rcvd = embOrders.reduce((s, e) => s + Number(e.total_quantity_received || 0), 0);
+          const acc = embOrders.reduce((s, e) => s + Number(e.total_quantity_accepted || 0), 0);
+          const rej = embOrders.reduce((s, e) => s + Number(e.total_quantity_rejected || 0), 0);
+          stage06Display = `${rcvd} / ${sent} pcs received`;
+          stage06Tooltip = `Sent: ${sent} pcs, Received: ${rcvd} pcs (Passed: ${acc}, Rej: ${rej}), Pending: ${Math.max(0, sent - rcvd)} pcs`;
+        }
+
+        // Stage 07: Stitching
+        const stage07Display = `${totalStitched} / ${totalQty} pcs`;
+        const stage07Tooltip = `Stitched: ${totalStitched} pcs, Required: ${totalQty} pcs`;
+
+        // Stage 08: Checking
+        const stage08Display = `${totalInspected} / ${totalQty} inspected`;
+        const stage08Tooltip = `Inspected: ${totalInspected} pcs, Passed: ${totalPassed} pcs`;
+
+        // Stage 09: Packing
+        const stage09Display = `${totalPacked} / ${totalQty} pcs`;
+        const stage09Tooltip = `Packed: ${totalPacked} pcs, Target: ${totalQty} pcs`;
+
+        // Stage 10: Completed
+        const stage10Display = `${doneQty} / ${totalQty} pcs`;
+        const stage10Tooltip = `Completed: ${doneQty} pcs, Target: ${totalQty} pcs`;
+
+        // Current Status
+        let curStage = 'Requirement Gathering';
+        if (ord.current_stage_name) curStage = ord.current_stage_name;
+        else if (ord.status === 'COMPLETED') curStage = 'Completed';
+        else if (items.length > 0) {
+          const sorted = [...items].sort((a, b) => (a.current_stage_id || 1) - (b.current_stage_id || 1));
+          curStage = sorted[0]?.current_stage_name || 'Requirement Gathering';
+        }
+
+        const compPct = ord.status === 'COMPLETED' ? 100 : (totalQty > 0 ? Math.min(100, Math.round((doneQty / totalQty) * 100)) : 0);
 
         return {
           order_id: ord.id,
@@ -3751,15 +3834,28 @@ const server = http.createServer(async (req, res) => {
           title: ord.title,
           buyer_name: ord.customer_name,
           target_delivery_date: ord.target_delivery_date,
-          total_quantity: ord.total_quantity,
+          total_quantity: totalQty,
           cut_quantity: totalCut,
           stitched_quantity: totalStitched,
           checked_passed_quantity: totalPassed,
+          checked_inspected_quantity: totalInspected,
           packed_quantity: totalPacked,
           dispatched_quantity: totalDispatched,
-          pending_quantity: Math.max(0, Number(ord.total_quantity || 0) - totalDispatched),
-          status: ord.status,
-          completion_percent: ord.total_quantity > 0 ? Math.min(100, Math.round((totalDispatched / ord.total_quantity) * 100)) : 0
+          completed_quantity: doneQty,
+          pending_quantity: pendingQty,
+          status: curStage,
+          current_stage_name: curStage,
+          completion_percent: compPct,
+          stage_01_requirement: { status: stage01Display, display: stage01Display },
+          stage_02_po: { issued_count: issuedPOs, total_count: totalPOs, display: stage02Display, tooltip: stage02Tooltip },
+          stage_03_inward: { display: stage03Display, tooltip: stage03Tooltip },
+          stage_04_dyeing: { display: stage04Display, tooltip: stage04Tooltip },
+          stage_05_cutting: { cut_quantity: totalCut, display: stage05Display, tooltip: stage05Tooltip },
+          stage_06_embroidery: { display: stage06Display, tooltip: stage06Tooltip },
+          stage_07_stitching: { stitched_quantity: totalStitched, display: stage07Display, tooltip: stage07Tooltip },
+          stage_08_checking: { inspected_quantity: totalInspected, passed_quantity: totalPassed, display: stage08Display, tooltip: stage08Tooltip },
+          stage_09_packing: { packed_quantity: totalPacked, display: stage09Display, tooltip: stage09Tooltip },
+          stage_10_completed: { completed_quantity: doneQty, display: stage10Display, tooltip: stage10Tooltip }
         };
       });
 
@@ -3768,8 +3864,9 @@ const server = http.createServer(async (req, res) => {
         generated_at: new Date().toISOString(),
         total_orders_analyzed: reportData.length,
         summary: {
+          total_orders_analyzed: reportData.length,
           total_order_qty: reportData.reduce((s, r) => s + r.total_quantity, 0),
-          total_dispatched_qty: reportData.reduce((s, r) => s + r.dispatched_quantity, 0),
+          total_dispatched_qty: reportData.reduce((s, r) => s + r.completed_quantity, 0),
           total_pending_qty: reportData.reduce((s, r) => s + r.pending_quantity, 0)
         },
         items: reportData

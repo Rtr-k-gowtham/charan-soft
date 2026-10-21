@@ -6,7 +6,6 @@ import Button from '../../components/ui/Button';
 import { api } from '../../lib/api';
 import {
   BarChart2,
-  TrendingDown,
   Package,
   Factory,
   CreditCard,
@@ -14,17 +13,14 @@ import {
   Download,
   RefreshCw,
   Search,
-  Filter,
-  CheckCheck,
-  Scissors,
-  Sparkles,
-  Activity,
-  CheckCircle,
-  Boxes,
-  Truck
+  CheckCircle2,
+  Clock,
+  Layers,
+  Building2,
+  Info
 } from 'lucide-react';
 
-const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n || 0);
+const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
 const fmtCur = (n: number) => '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
 
 const REPORT_TABS = [
@@ -52,6 +48,86 @@ const PAYMENT_DATA = [
   { receipt: 'PAY-REC-002', po: 'PO-00046', supplier: 'Apex Trims & Accessories', date: '2026-10-04', amount: 33630, mode: 'NEFT', ref: 'SBI99218201' },
 ];
 
+// Helper to compute / extract standardized values for all 10 stages
+export function resolveStageMetrics(r: any) {
+  const totalQty = Number(r.total_quantity || 0);
+
+  // 01. Requirement Gathering (Draft / Completed)
+  const s01Status: 'Draft' | 'Completed' = r.stage_01_requirement?.status
+    ? r.stage_01_requirement.status
+    : (r.status === 'COMPLETED' || r.status === 'IN PRODUCTION' || (totalQty > 0 && Number(r.cut_quantity || 0) > 0) ? 'Completed' : 'Draft');
+
+  // 02. Purchase Order (PO) ("Issued / Total" or "—")
+  const s02 = r.stage_02_po?.display ?? (r.po_total ? `${r.po_issued || 0} / ${r.po_total}` : '—');
+  const s02Tip = r.stage_02_po?.tooltip ?? (s02 !== '—' ? `${s02} purchase orders issued` : 'No purchase orders applicable');
+
+  // 03. Inward
+  const s03 = r.stage_03_inward?.display ?? '—';
+  const s03Tip = r.stage_03_inward?.tooltip ?? (s03 !== '—' ? `${s03} material inward progress` : 'No issued purchase orders to receive');
+
+  // 04. Dyeing
+  const s04 = r.stage_04_dyeing?.display ?? '—';
+  const s04Tip = r.stage_04_dyeing?.tooltip ?? (s04 !== '—' ? `${s04} fabric dyeing receipt` : 'Dyeing not applicable or not started');
+
+  // 05. Cutting — Product-wise
+  const cutQty = Number(r.cut_quantity || 0);
+  const s05 = r.stage_05_cutting?.display ?? `${fmt(cutQty)} / ${fmt(totalQty)} pcs`;
+  const s05Tip = r.stage_05_cutting?.tooltip ?? `Cut: ${fmt(cutQty)} pcs, Target: ${fmt(totalQty)} pcs`;
+
+  // 06. Embroidery — Outward / Inward
+  const s06 = r.stage_06_embroidery?.display ?? '—';
+  const s06Tip = r.stage_06_embroidery?.tooltip ?? (s06 !== '—' ? `${s06} embroidery outward/inward` : 'Embroidery not applicable or not started');
+
+  // 07. Stitching — Color-wise Tracking
+  const stitchedQty = Number(r.stitched_quantity || 0);
+  const s07 = r.stage_07_stitching?.display ?? `${fmt(stitchedQty)} / ${fmt(totalQty)} pcs`;
+  const s07Tip = r.stage_07_stitching?.tooltip ?? `Stitched: ${fmt(stitchedQty)} pcs, Target: ${fmt(totalQty)} pcs`;
+
+  // 08. Checking
+  const inspectedQty = Number(r.checked_inspected_quantity ?? r.checked_passed_quantity ?? 0);
+  const passedQty = Number(r.checked_passed_quantity || 0);
+  const s08 = r.stage_08_checking?.display ?? `${fmt(inspectedQty)} / ${fmt(totalQty)} inspected`;
+  const s08Tip = r.stage_08_checking?.tooltip ?? `Inspected: ${fmt(inspectedQty)} pcs, Passed: ${fmt(passedQty)} pcs`;
+
+  // 09. Packing
+  const packedQty = Number(r.packed_quantity || 0);
+  const s09 = r.stage_09_packing?.display ?? `${fmt(packedQty)} / ${fmt(totalQty)} pcs`;
+  const s09Tip = r.stage_09_packing?.tooltip ?? `Packed: ${fmt(packedQty)} pcs, Target: ${fmt(totalQty)} pcs`;
+
+  // 10. Completed
+  const completedQty = Number(r.completed_quantity ?? r.dispatched_quantity ?? 0);
+  const s10 = r.stage_10_completed?.display ?? `${fmt(completedQty)} / ${fmt(totalQty)} pcs`;
+  const s10Tip = r.stage_10_completed?.tooltip ?? `Completed: ${fmt(completedQty)} pcs, Target: ${fmt(totalQty)} pcs`;
+
+  // Overall Progress (0-100% or "—")
+  let progressPct: number | null = null;
+  if (typeof r.completion_percent === 'number') {
+    progressPct = Math.max(0, Math.min(100, r.completion_percent));
+  } else if (totalQty > 0) {
+    progressPct = Math.max(0, Math.min(100, Math.round((completedQty / totalQty) * 100)));
+  }
+
+  // Current Status
+  const currentStatus = r.current_stage_name || r.status || 'In Production';
+
+  return {
+    s01Status,
+    s02, s02Tip,
+    s03, s03Tip,
+    s04, s04Tip,
+    s05, s05Tip,
+    s06, s06Tip,
+    s07, s07Tip,
+    s08, s08Tip,
+    s09, s09Tip,
+    s10, s10Tip,
+    progressPct,
+    currentStatus,
+    totalQty,
+    completedQty
+  };
+}
+
 export default function Reports() {
   const [tab, setTab] = useState('production');
   const [productionReports, setProductionReports] = useState<any[]>([]);
@@ -78,9 +154,10 @@ export default function Reports() {
     }
   }, [tab]);
 
+  // Search filter across Order ID, Title, and Buyer
   const filteredProdReports = useMemo(() => {
     if (!prodSearch.trim()) return productionReports;
-    const q = prodSearch.toLowerCase();
+    const q = prodSearch.toLowerCase().trim();
     return productionReports.filter(r =>
       (r.order_number || '').toLowerCase().includes(q) ||
       (r.title || '').toLowerCase().includes(q) ||
@@ -88,29 +165,53 @@ export default function Reports() {
     );
   }, [productionReports, prodSearch]);
 
+  // Export CSV adhering to section 8 specifications
   const exportCSV = () => {
     if (filteredProdReports.length === 0) return;
-    const headers = ['Order Number', 'Title', 'Buyer', 'Total Qty', 'Cut Qty', 'Stitched Qty', 'Passed Qty', 'Packed Qty', 'Dispatched Qty', 'Pending Qty', 'Completion %', 'Status'];
-    const rows = filteredProdReports.map(r => [
-      `"${r.order_number || ''}"`,
-      `"${(r.title || '').replace(/"/g, '""')}"`,
-      `"${(r.buyer_name || '').replace(/"/g, '""')}"`,
-      r.total_quantity || 0,
-      r.cut_quantity || 0,
-      r.stitched_quantity || 0,
-      r.checked_passed_quantity || 0,
-      r.packed_quantity || 0,
-      r.dispatched_quantity || 0,
-      r.pending_quantity || 0,
-      `${r.completion_percent || 0}%`,
-      `"${r.status || ''}"`
-    ]);
+    const headers = [
+      'Order ID',
+      'Order Title',
+      'Buyer',
+      '01. Requirement Gathering',
+      '02. Purchase Order (PO)',
+      '03. Inward',
+      '04. Dyeing',
+      '05. Cutting — Product-wise',
+      '06. Embroidery — Outward / Inward',
+      '07. Stitching — Color-wise Tracking',
+      '08. Checking',
+      '09. Packing',
+      '10. Completed',
+      'Overall Progress',
+      'Current Status'
+    ];
+
+    const rows = filteredProdReports.map(r => {
+      const m = resolveStageMetrics(r);
+      return [
+        `"${(r.order_number || '').replace(/"/g, '""')}"`,
+        `"${(r.title || '').replace(/"/g, '""')}"`,
+        `"${(r.buyer_name || '').replace(/"/g, '""')}"`,
+        `"${m.s01Status}"`,
+        `"${m.s02}"`,
+        `"${m.s03}"`,
+        `"${m.s04}"`,
+        `"${m.s05}"`,
+        `"${m.s06}"`,
+        `"${m.s07}"`,
+        `"${m.s08}"`,
+        `"${m.s09}"`,
+        `"${m.s10}"`,
+        m.progressPct !== null ? `"${m.progressPct}%"` : '"—"',
+        `"${m.currentStatus}"`
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `production_workflow_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `production_stages_report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -129,7 +230,7 @@ export default function Reports() {
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingProd ? 'animate-spin' : ''}`} />
                 <span className="ml-1.5 hidden sm:inline">Refresh</span>
               </Button>
-              <Button size="sm" variant="primary" onClick={exportCSV} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Button size="sm" variant="primary" onClick={exportCSV} className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs">
                 <Download className="w-3.5 h-3.5 mr-1.5" />
                 <span>Export CSV</span>
               </Button>
@@ -156,7 +257,8 @@ export default function Reports() {
         })}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 max-w-7xl mx-auto w-full space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 max-w-7xl mx-auto w-full space-y-4">
+        {/* PURCHASE TAB */}
         {tab === 'purchase' && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -166,7 +268,7 @@ export default function Reports() {
                 { label: 'Total Paid', value: fmtCur(PURCHASE_DATA.reduce((s, r) => s + r.paid, 0)), color: 'text-green-700 bg-green-50' },
                 { label: 'Balance Due', value: fmtCur(PURCHASE_DATA.reduce((s, r) => s + r.balance, 0)), color: 'text-red-700 bg-red-50' },
               ].map(c => (
-                <div key={c.label} className={`p-3 rounded-xl border border-slate-200 bg-white shadow-2xs`}>
+                <div key={c.label} className="p-3 rounded-xl border border-slate-200 bg-white shadow-2xs">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
                   <p className="text-lg font-bold mt-0.5 text-slate-800">{c.value}</p>
                 </div>
@@ -174,7 +276,7 @@ export default function Reports() {
             </div>
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
               <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
-                <BarChart2 className="w-3.5 h-3.5 text-brand-500" />
+                <BarChart2 className="w-3.5 h-3.5 text-indigo-600" />
                 <h3 className="text-xs font-semibold text-slate-700">Purchase Order Report</h3>
               </div>
               <div className="overflow-x-auto">
@@ -185,7 +287,7 @@ export default function Reports() {
                   <tbody className="divide-y divide-slate-100">
                     {PURCHASE_DATA.map(r => (
                       <tr key={r.po_number} className="hover:bg-slate-50">
-                        <td className="p-3 font-semibold text-brand-700">{r.po_number}</td>
+                        <td className="p-3 font-semibold text-indigo-700">{r.po_number}</td>
                         <td className="p-3">{r.supplier}</td>
                         <td className="p-3 text-[10px] text-slate-400">{r.category}</td>
                         <td className="p-3 text-slate-400">{r.date}</td>
@@ -203,6 +305,7 @@ export default function Reports() {
           </div>
         )}
 
+        {/* INVENTORY TAB */}
         {tab === 'inventory' && (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
             <div className="px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
@@ -233,132 +336,429 @@ export default function Reports() {
           </div>
         )}
 
+        {/* PRODUCTION TAB */}
         {tab === 'production' && (
           <div className="space-y-4">
-            {/* KPI Summary Cards */}
+            {/* 1. Summary Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Orders Analyzed</div>
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center justify-between">
+                  <span>Orders Analyzed</span>
+                  <Layers className="w-3.5 h-3.5 text-slate-400" />
+                </div>
                 <div className="text-xl font-black text-slate-800">{filteredProdReports.length}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Active production runs</div>
               </div>
-              <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 mb-1">Total Ordered</div>
+
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 mb-1 flex items-center justify-between">
+                  <span>Total Ordered</span>
+                  <Factory className="w-3.5 h-3.5 text-indigo-500" />
+                </div>
                 <div className="text-xl font-black text-indigo-700 font-mono">
-                  {fmt(filteredProdReports.reduce((s, r) => s + (r.total_quantity || 0), 0))} pcs
+                  {fmt(filteredProdReports.reduce((s, r) => s + (Number(r.total_quantity) || 0), 0))} pcs
                 </div>
+                <div className="text-[10px] text-indigo-400 mt-0.5">Sum of required quantities</div>
               </div>
-              <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1">Total Dispatched</div>
+
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1 flex items-center justify-between">
+                  <span>Total Dispatched</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                </div>
                 <div className="text-xl font-black text-emerald-700 font-mono">
-                  {fmt(filteredProdReports.reduce((s, r) => s + (r.dispatched_quantity || 0), 0))} pcs
+                  {fmt(filteredProdReports.reduce((s, r) => s + (Number(r.completed_quantity ?? r.dispatched_quantity) || 0), 0))} pcs
                 </div>
+                <div className="text-[10px] text-emerald-500 mt-0.5">Completed output batches</div>
               </div>
-              <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1">Pending Pipeline</div>
-                <div className="text-xl font-black text-amber-700 font-mono">
-                  {fmt(filteredProdReports.reduce((s, r) => s + (r.pending_quantity || 0), 0))} pcs
+
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700 mb-1 flex items-center justify-between">
+                  <span>Pending Pipeline</span>
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
                 </div>
+                <div className="text-xl font-black text-amber-700 font-mono">
+                  {fmt(filteredProdReports.reduce((s, r) => s + (Number(r.pending_quantity) || 0), 0))} pcs
+                </div>
+                <div className="text-[10px] text-amber-500 mt-0.5">Remaining in production</div>
               </div>
             </div>
 
-            {/* Filter Bar */}
-            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-3">
-              <div className="relative w-full sm:w-80">
+            {/* 2. Filter Bar */}
+            <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              <div className="relative flex-1 max-w-md">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Filter by order #, title, or buyer..."
+                  placeholder="Search by Order ID (ORD-5516), Order Title, or Buyer..."
                   value={prodSearch}
                   onChange={e => setProdSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white transition"
                 />
               </div>
-              <span className="text-xs text-slate-500 font-medium">
-                {filteredProdReports.length} records found
-              </span>
+              <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-slate-500 font-medium px-1 sm:px-0">
+                <span>
+                  Showing <strong className="text-slate-800">{filteredProdReports.length}</strong> of {productionReports.length} orders
+                </span>
+              </div>
             </div>
 
-            {/* Comprehensive Stage Output Table */}
+            {/* 3. Report Container */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-2">
                   <Factory className="w-4 h-4 text-indigo-600" />
                   <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                     Product-Wise Production Progress & Stage Output Report
                   </h3>
                 </div>
+                <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
+                  10-Stage Granular Output
+                </span>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3">Order #</th>
-                      <th className="p-3">Title & Buyer</th>
-                      <th className="p-3 text-right">Order Qty</th>
-                      <th className="p-3 text-right text-violet-700">Cut Output</th>
-                      <th className="p-3 text-right text-teal-700">Stitched</th>
-                      <th className="p-3 text-right text-sky-700">QA Passed</th>
-                      <th className="p-3 text-right text-amber-700">Packed</th>
-                      <th className="p-3 text-right text-emerald-700">Dispatched</th>
-                      <th className="p-3 text-right text-indigo-700">Pending</th>
-                      <th className="p-3 text-center">Progress</th>
-                      <th className="p-3 text-center">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-mono">
-                    {loadingProd ? (
-                      <tr>
-                        <td colSpan={11} className="p-12 text-center text-slate-400 font-sans">
-                          <RefreshCw className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
-                          <span>Generating production reports...</span>
-                        </td>
-                      </tr>
-                    ) : filteredProdReports.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} className="p-12 text-center text-slate-400 font-sans">
-                          No production order data available for report criteria.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredProdReports.map((r, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70 transition">
-                          <td className="p-3 font-bold text-indigo-700">{r.order_number}</td>
-                          <td className="p-3 font-sans">
-                            <div className="font-semibold text-slate-800">{r.title}</div>
-                            <div className="text-[10px] text-slate-400">{r.buyer_name}</div>
-                          </td>
-                          <td className="p-3 text-right font-bold text-slate-900">{fmt(r.total_quantity)}</td>
-                          <td className="p-3 text-right font-semibold text-violet-700">{fmt(r.cut_quantity)}</td>
-                          <td className="p-3 text-right font-semibold text-teal-700">{fmt(r.stitched_quantity)}</td>
-                          <td className="p-3 text-right font-semibold text-sky-700">{fmt(r.checked_passed_quantity)}</td>
-                          <td className="p-3 text-right font-semibold text-amber-700">{fmt(r.packed_quantity)}</td>
-                          <td className="p-3 text-right font-bold text-emerald-700">{fmt(r.dispatched_quantity)}</td>
-                          <td className="p-3 text-right font-semibold text-indigo-700">{fmt(r.pending_quantity)}</td>
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5 font-sans">
-                              <span className="text-[10px] font-bold text-slate-600">{r.completion_percent}%</span>
-                              <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              {loadingProd ? (
+                <div className="p-12 text-center text-slate-400 font-sans">
+                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
+                  <span>Loading production stage metrics...</span>
+                </div>
+              ) : filteredProdReports.length === 0 ? (
+                <div className="p-12 text-center text-slate-400 font-sans">
+                  No production order records match your search criteria.
+                </div>
+              ) : (
+                <>
+                  {/* A. DESKTOP VIEW: Fixed-Width Table (No Horizontal Scrolling) */}
+                  <div className="hidden lg:block w-full overflow-hidden">
+                    <table className="w-full table-fixed text-[11px] text-left border-collapse">
+                      <colgroup>
+                        <col className="w-[7.0%]" />  {/* 1. Order ID */}
+                        <col className="w-[11.0%]" /> {/* 2. Order Title */}
+                        <col className="w-[9.0%]" />  {/* 3. Buyer */}
+                        <col className="w-[6.5%]" />  {/* 4. 01. REQ */}
+                        <col className="w-[5.5%]" />  {/* 5. 02. PO */}
+                        <col className="w-[6.5%]" />  {/* 6. 03. Inward */}
+                        <col className="w-[7.0%]" />  {/* 7. 04. Dyeing */}
+                        <col className="w-[6.5%]" />  {/* 8. 05. Cutting */}
+                        <col className="w-[7.0%]" />  {/* 9. 06. Embroidery */}
+                        <col className="w-[6.5%]" />  {/* 10. 07. Stitching */}
+                        <col className="w-[7.0%]" />  {/* 11. 08. Checking */}
+                        <col className="w-[6.5%]" />  {/* 12. 09. Packing */}
+                        <col className="w-[6.5%]" />  {/* 13. 10. Completed */}
+                        <col className="w-[7.5%]" />  {/* 14. Overall Progress */}
+                        <col className="w-[9.5%]" />  {/* 15. Current Status */}
+                      </colgroup>
+                      <thead className="bg-slate-50/90 text-slate-700 border-b border-slate-200 font-bold text-[10px] uppercase tracking-wider">
+                        <tr>
+                          <th className="p-2 truncate" title="1. Order ID">Order ID</th>
+                          <th className="p-2 truncate" title="2. Order Title">Order Title</th>
+                          <th className="p-2 truncate" title="3. Buyer">Buyer</th>
+                          <th className="p-2 text-center truncate" title="4. 01. Requirement Gathering">01. REQ</th>
+                          <th className="p-2 text-center truncate" title="5. 02. Purchase Order (PO)">02. PO</th>
+                          <th className="p-2 text-center truncate" title="6. 03. Inward">03. Inward</th>
+                          <th className="p-2 text-center truncate" title="7. 04. Dyeing">04. Dyeing</th>
+                          <th className="p-2 text-center truncate" title="8. 05. Cutting — Product-wise">05. Cutting</th>
+                          <th className="p-2 text-center truncate" title="9. 06. Embroidery — Outward / Inward">06. Embroidery</th>
+                          <th className="p-2 text-center truncate" title="10. 07. Stitching — Color-wise Tracking">07. Stitching</th>
+                          <th className="p-2 text-center truncate" title="11. 08. Checking">08. Checking</th>
+                          <th className="p-2 text-center truncate" title="12. 09. Packing">09. Packing</th>
+                          <th className="p-2 text-center truncate" title="13. 10. Completed">10. Completed</th>
+                          <th className="p-2 text-center truncate" title="14. Overall Progress">Progress</th>
+                          <th className="p-2 text-center truncate" title="15. Current Status">Current Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredProdReports.map((r, idx) => {
+                          const m = resolveStageMetrics(r);
+                          return (
+                            <tr key={idx} className="hover:bg-indigo-50/20 transition-colors">
+                              {/* 1. Order ID */}
+                              <td className="p-2 font-mono font-bold text-indigo-700 truncate" title={r.order_number}>
+                                {r.order_number}
+                              </td>
+
+                              {/* 2. Order Title */}
+                              <td className="p-2 font-medium text-slate-800 truncate" title={r.title}>
+                                {r.title}
+                              </td>
+
+                              {/* 3. Buyer */}
+                              <td className="p-2 text-slate-600 truncate" title={r.buyer_name}>
+                                {r.buyer_name || '—'}
+                              </td>
+
+                              {/* 4. 01. Requirement Gathering */}
+                              <td className="p-2 text-center" title={`01. Requirement Gathering: ${m.s01Status}`}>
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                  m.s01Status === 'Completed'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {m.s01Status}
+                                </span>
+                              </td>
+
+                              {/* 5. 02. Purchase Order (PO) */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s02Tip}>
+                                {m.s02}
+                              </td>
+
+                              {/* 6. 03. Inward */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s03Tip}>
+                                {m.s03}
+                              </td>
+
+                              {/* 7. 04. Dyeing */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s04Tip}>
+                                {m.s04}
+                              </td>
+
+                              {/* 8. 05. Cutting — Product-wise */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s05Tip}>
+                                {m.s05}
+                              </td>
+
+                              {/* 9. 06. Embroidery — Outward / Inward */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s06Tip}>
+                                {m.s06}
+                              </td>
+
+                              {/* 10. 07. Stitching — Color-wise Tracking */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s07Tip}>
+                                {m.s07}
+                              </td>
+
+                              {/* 11. 08. Checking */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s08Tip}>
+                                {m.s08}
+                              </td>
+
+                              {/* 12. 09. Packing */}
+                              <td className="p-2 text-center font-mono font-medium text-slate-700 truncate" title={m.s09Tip}>
+                                {m.s09}
+                              </td>
+
+                              {/* 13. 10. Completed */}
+                              <td className="p-2 text-center font-mono font-bold text-slate-900 truncate" title={m.s10Tip}>
+                                {m.s10}
+                              </td>
+
+                              {/* 14. Overall Progress */}
+                              <td className="p-2 text-center" title={`Overall Progress: ${m.progressPct !== null ? `${m.progressPct}%` : '—'}`}>
+                                {m.progressPct !== null ? (
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-slate-700 font-mono w-7 text-right">
+                                      {m.progressPct}%
+                                    </span>
+                                    <div className="w-10 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0">
+                                      <div
+                                        className={`h-full rounded-full transition-all duration-300 ${
+                                          m.progressPct === 100
+                                            ? 'bg-emerald-500'
+                                            : m.progressPct > 50
+                                            ? 'bg-indigo-600'
+                                            : 'bg-amber-500'
+                                        }`}
+                                        style={{ width: `${m.progressPct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 font-mono">—</span>
+                                )}
+                              </td>
+
+                              {/* 15. Current Status */}
+                              <td className="p-2 text-center">
+                                <StatusBadge status={m.currentStatus} size="xs" />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* B. MOBILE & TABLET RESPONSIVE CARDS VIEW (< 1024px) */}
+                  <div className="block lg:hidden p-3 space-y-3 bg-slate-50/60">
+                    {filteredProdReports.map((r, idx) => {
+                      const m = resolveStageMetrics(r);
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-2xs space-y-3 hover:border-indigo-200 transition"
+                        >
+                          {/* Card Header */}
+                          <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2.5">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-black text-sm text-indigo-700">
+                                  {r.order_number}
+                                </span>
+                                <StatusBadge status={m.currentStatus} size="xs" />
+                              </div>
+                              <h4 className="font-bold text-xs text-slate-800 mt-1 line-clamp-1" title={r.title}>
+                                {r.title}
+                              </h4>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                                <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                                <span className="truncate">{r.buyer_name || 'No Buyer Assigned'}</span>
+                              </div>
+                            </div>
+
+                            {/* Overall Progress Mini Metric */}
+                            <div className="text-right shrink-0">
+                              <span className="text-xs font-black text-slate-800 font-mono">
+                                {m.progressPct !== null ? `${m.progressPct}%` : '—'}
+                              </span>
+                              <div className="text-[10px] text-slate-400">Progress</div>
+                            </div>
+                          </div>
+
+                          {/* Progress Bar */}
+                          {m.progressPct !== null && (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                                <span>Production Progress</span>
+                                <span className="font-mono">{m.progressPct}%</span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                                 <div
-                                  className="h-full bg-emerald-500 rounded-full"
-                                  style={{ width: `${r.completion_percent}%` }}
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    m.progressPct === 100
+                                      ? 'bg-emerald-500'
+                                      : m.progressPct > 50
+                                      ? 'bg-indigo-600'
+                                      : 'bg-amber-500'
+                                  }`}
+                                  style={{ width: `${m.progressPct}%` }}
                                 />
                               </div>
                             </div>
-                          </td>
-                          <td className="p-3 text-center font-sans">
-                            <StatusBadge status={r.status || 'In Production'} />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                          )}
+
+                          {/* 10 Production Stages Grid */}
+                          <div className="space-y-1 pt-1">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Stage-Wise Status & Output
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+                              {/* 01. Requirement Gathering */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  01 Requirement Gathering
+                                </span>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                  m.s01Status === 'Completed'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}>
+                                  {m.s01Status}
+                                </span>
+                              </div>
+
+                              {/* 02. Purchase Order */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  02 Purchase Order
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s02 !== '—' ? `${m.s02} issued` : '—'}
+                                </span>
+                              </div>
+
+                              {/* 03. Inward */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  03 Inward
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s03 !== '—' ? `${m.s03} received` : '—'}
+                                </span>
+                              </div>
+
+                              {/* 04. Dyeing */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  04 Dyeing
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s04}
+                                </span>
+                              </div>
+
+                              {/* 05. Cutting */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  05 Cutting
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s05}
+                                </span>
+                              </div>
+
+                              {/* 06. Embroidery */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  06 Embroidery
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s06}
+                                </span>
+                              </div>
+
+                              {/* 07. Stitching */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  07 Stitching
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s07}
+                                </span>
+                              </div>
+
+                              {/* 08. Checking */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  08 Checking
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s08}
+                                </span>
+                              </div>
+
+                              {/* 09. Packing */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  09 Packing
+                                </span>
+                                <span className="font-mono font-semibold text-slate-800 text-[11px]">
+                                  {m.s09}
+                                </span>
+                              </div>
+
+                              {/* 10. Completed */}
+                              <div className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-slate-600 truncate">
+                                  10 Completed
+                                </span>
+                                <span className="font-mono font-bold text-slate-900 text-[11px]">
+                                  {m.s10}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
 
+        {/* PAYMENTS TAB */}
         {tab === 'payments' && (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -367,7 +767,7 @@ export default function Reports() {
                 { label: 'Total Disbursed', value: fmtCur(PAYMENT_DATA.reduce((s, r) => s + r.amount, 0)), color: 'bg-green-50 text-green-700' },
                 { label: 'This Month', value: fmtCur(83630), color: 'bg-indigo-50 text-indigo-700' },
               ].map(c => (
-                <div key={c.label} className={`p-3 rounded-xl border border-slate-200 bg-white shadow-2xs`}>
+                <div key={c.label} className="p-3 rounded-xl border border-slate-200 bg-white shadow-2xs">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{c.label}</p>
                   <p className="text-lg font-bold mt-0.5 text-slate-800">{c.value}</p>
                 </div>
@@ -386,7 +786,7 @@ export default function Reports() {
                   <tbody className="divide-y divide-slate-100">
                     {PAYMENT_DATA.map(r => (
                       <tr key={r.receipt} className="hover:bg-slate-50">
-                        <td className="p-3 font-semibold text-brand-700">{r.receipt}</td>
+                        <td className="p-3 font-semibold text-indigo-700">{r.receipt}</td>
                         <td className="p-3 text-slate-500">{r.po}</td>
                         <td className="p-3">{r.supplier}</td>
                         <td className="p-3 text-slate-400">{r.date}</td>

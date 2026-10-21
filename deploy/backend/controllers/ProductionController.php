@@ -3645,12 +3645,285 @@ class ProductionController {
             $this->ensureWorkflowTables($pdo);
 
             $stmt = $pdo->query("SELECT po.*, cu.name as buyer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.deleted_at IS NULL ORDER BY po.id DESC");
-            $orders = $stmt->fetchAll();
+            $orders = $stmt ? $stmt->fetchAll() : [];
+
+            // Load all items for these orders to determine canonical stage and requirement gathering status
+            $itemsByOrder = [];
+            try {
+                $itemStmt = $pdo->query("
+                    SELECT poi.*, ps.name as current_stage_name, ps.code as stage_code, ps.sequence_order as stage_sequence
+                    FROM production_order_items poi
+                    LEFT JOIN production_stages ps ON poi.current_stage_id = ps.id
+                    WHERE (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
+                    ORDER BY poi.id ASC
+                ");
+                $allItems = $itemStmt ? $itemStmt->fetchAll() : [];
+                foreach ($allItems as $it) {
+                    $itemsByOrder[(int)$it['production_order_id']][] = $it;
+                }
+            } catch (Exception $e) {}
+
+            // Load all POs
+            $posByOrder = [];
+            try {
+                $poStmt = $pdo->query("
+                    SELECT p.id, p.production_order_id, p.po_number, p.status, p.net_amount, p.remarks,
+                           (SELECT COUNT(*) FROM purchase_receipts pr WHERE pr.purchase_order_id = p.id) as receipts_count
+                    FROM purchase_orders p
+                    WHERE p.deleted_at IS NULL
+                ");
+                $allPOs = $poStmt ? $poStmt->fetchAll() : [];
+                foreach ($allPOs as $p) {
+                    $pId = (int)($p['production_order_id'] ?? 0);
+                    if ($pId > 0) {
+                        $posByOrder[$pId][] = $p;
+                    }
+                }
+            } catch (Exception $e) {}
+
+            // Load Dyeing Orders
+            $dyeByOrder = [];
+            try {
+                $dyeStmt = $pdo->query("
+                    SELECT id, production_order_id, dyeing_order_no, total_fabric_quantity, total_received_quantity, uom, status 
+                    FROM dyeing_orders 
+                    WHERE deleted_at IS NULL
+                ");
+                $allDye = $dyeStmt ? $dyeStmt->fetchAll() : [];
+                foreach ($allDye as $d) {
+                    $pId = (int)($d['production_order_id'] ?? 0);
+                    if ($pId > 0) $dyeByOrder[$pId][] = $d;
+                }
+            } catch (Exception $e) {}
+
+            // Load Cutting Batches
+            $cutByOrder = [];
+            try {
+                $cutStmt = $pdo->query("
+                    SELECT production_order_id, SUM(actual_cut_quantity) as total_cut, SUM(accepted_output_quantity) as total_accepted 
+                    FROM cutting_batches 
+                    GROUP BY production_order_id
+                ");
+                $allCut = $cutStmt ? $cutStmt->fetchAll() : [];
+                foreach ($allCut as $c) {
+                    $cutByOrder[(int)$c['production_order_id']] = $c;
+                }
+            } catch (Exception $e) {}
+
+            // Load Embroidery Job Orders
+            $embByOrder = [];
+            try {
+                $embStmt = $pdo->query("
+                    SELECT production_order_id, 
+                           SUM(total_quantity_sent) as total_sent, 
+                           SUM(total_quantity_received) as total_received,
+                           SUM(total_quantity_accepted) as total_accepted,
+                           SUM(total_quantity_rejected) as total_rejected,
+                           SUM(total_quantity_rework) as total_rework
+                    FROM embroidery_job_orders 
+                    GROUP BY production_order_id
+                ");
+                $allEmb = $embStmt ? $embStmt->fetchAll() : [];
+                foreach ($allEmb as $e) {
+                    $embByOrder[(int)$e['production_order_id']] = $e;
+                }
+            } catch (Exception $e) {}
+
+            // Load Stitching Batches
+            $stiByOrder = [];
+            try {
+                $stiStmt = $pdo->query("
+                    SELECT production_order_id, SUM(completed_quantity) as total_completed, SUM(accepted_quantity) as total_accepted 
+                    FROM stitching_batches 
+                    GROUP BY production_order_id
+                ");
+                $allSti = $stiStmt ? $stiStmt->fetchAll() : [];
+                foreach ($allSti as $s) {
+                    $stiByOrder[(int)$s['production_order_id']] = $s;
+                }
+            } catch (Exception $e) {}
+
+            // Load Checking Inspections
+            $chkByOrder = [];
+            try {
+                $chkStmt = $pdo->query("
+                    SELECT production_order_id, 
+                           SUM(COALESCE(checked_quantity, submitted_quantity, 0)) as total_inspected,
+                           SUM(passed_quantity) as total_passed,
+                           SUM(COALESCE(rejected_quantity, failed_quantity, 0)) as total_rejected,
+                           SUM(rework_quantity) as total_rework
+                    FROM quality_inspections 
+                    GROUP BY production_order_id
+                ");
+                $allChk = $chkStmt ? $chkStmt->fetchAll() : [];
+                foreach ($allChk as $k) {
+                    $chkByOrder[(int)$k['production_order_id']] = $k;
+                }
+            } catch (Exception $e) {}
+
+            // Load Packing Batches
+            $pckByOrder = [];
+            try {
+                $pckStmt = $pdo->query("
+                    SELECT production_order_id, SUM(packed_quantity) as total_packed 
+                    FROM packing_batches 
+                    GROUP BY production_order_id
+                ");
+                $allPck = $pckStmt ? $pckStmt->fetchAll() : [];
+                foreach ($allPck as $pk) {
+                    $pckByOrder[(int)$pk['production_order_id']] = $pk;
+                }
+            } catch (Exception $e) {}
+
+            // Load Dispatches
+            $dspByOrder = [];
+            try {
+                $dspStmt = $pdo->query("
+                    SELECT production_order_id, SUM(total_dispatched_quantity) as total_dispatched 
+                    FROM dispatch_records 
+                    GROUP BY production_order_id
+                ");
+                $allDsp = $dspStmt ? $dspStmt->fetchAll() : [];
+                foreach ($allDsp as $dp) {
+                    $dspByOrder[(int)$dp['production_order_id']] = (float)$dp['total_dispatched'];
+                }
+            } catch (Exception $e) {}
 
             $reportData = [];
             foreach ($orders as $ord) {
+                $oId = (int)$ord['id'];
                 $totalQty = (float)$ord['total_quantity'];
-                $doneQty = (float)$ord['completed_quantity'];
+                $dispatchedQty = (float)($dspByOrder[$oId] ?? 0.0);
+                $doneQty = max((float)$ord['completed_quantity'], $dispatchedQty);
+                $pendingQty = max(0.0, $totalQty - $doneQty);
+
+                $items = $itemsByOrder[$oId] ?? [];
+                
+                // Determine Current Canonical Stage
+                $orderStageName = 'Requirement Gathering';
+                if (!empty($items)) {
+                    $allComp = true;
+                    $incomplete = [];
+                    foreach ($items as $it) {
+                        $isC = ($it['status'] === 'Completed' || (int)$it['current_stage_id'] === 10 || strtolower((string)($it['current_stage_name'] ?? '')) === 'completed');
+                        if (!$isC) {
+                            $allComp = false;
+                            $incomplete[] = $it;
+                        }
+                    }
+                    if ($allComp) {
+                        $orderStageName = 'Completed';
+                    } else {
+                        usort($incomplete, fn($a, $b) => ((int)($a['stage_sequence'] ?? 1)) <=> ((int)($b['stage_sequence'] ?? 1)));
+                        $orderStageName = $incomplete[0]['current_stage_name'] ?? 'Requirement Gathering';
+                    }
+                } elseif (strtoupper((string)($ord['status'] ?? '')) === 'COMPLETED') {
+                    $orderStageName = 'Completed';
+                }
+
+                // Stage 01: Requirement Gathering (Only "Draft" or "Completed")
+                $hasMovedPastReq = false;
+                foreach ($items as $it) {
+                    if ((int)($it['current_stage_id'] ?? 1) > 1 || ((string)($it['stage_code'] ?? '')) !== 'REQ') {
+                        $hasMovedPastReq = true;
+                        break;
+                    }
+                }
+                $pos = $posByOrder[$oId] ?? [];
+                $hasPOs = count($pos) > 0;
+                $isReqCompleted = $hasMovedPastReq || $hasPOs || (strtoupper((string)($ord['status'] ?? '')) === 'IN PRODUCTION');
+                $stage01Display = $isReqCompleted ? 'Completed' : 'Draft';
+
+                // Stage 02: Purchase Order (PO) ("Issued / Total" or "—")
+                $activePOs = array_values(array_filter($pos, fn($p) => !in_array(strtoupper((string)($p['status'] ?? '')), ['CANCELLED', 'VOID'])));
+                $totalPOs = count($activePOs);
+                $issuedPOs = count(array_filter($activePOs, fn($p) => strtoupper((string)($p['status'] ?? '')) !== 'DRAFT'));
+                $stage02Display = $totalPOs > 0 ? "{$issuedPOs} / {$totalPOs}" : '—';
+                $stage02Tooltip = $totalPOs > 0 ? "Total POs: {$totalPOs}, Issued: {$issuedPOs}, Draft: " . ($totalPOs - $issuedPOs) : 'No applicable purchase orders';
+
+                // Stage 03: Inward (Received POs / Total Issued POs or "—")
+                if ($issuedPOs > 0) {
+                    $receivedPOs = count(array_filter($activePOs, function($p) {
+                        $st = strtoupper((string)($p['status'] ?? ''));
+                        return $st === 'RECEIVED' || ($st === 'ORDERED' && ((int)($p['receipts_count'] ?? 0)) > 0);
+                    }));
+                    $stage03Display = "{$receivedPOs} / {$issuedPOs} POs";
+                    $stage03Tooltip = "Received POs: {$receivedPOs}, Pending Receipt: " . max(0, $issuedPOs - $receivedPOs) . " POs";
+                } else {
+                    $stage03Display = '—';
+                    $stage03Tooltip = 'No issued purchase orders to receive';
+                }
+
+                // Stage 04: Dyeing
+                $dOrders = $dyeByOrder[$oId] ?? [];
+                if (!empty($dOrders)) {
+                    $dSent = 0.0;
+                    $dRcvd = 0.0;
+                    $dUom = $dOrders[0]['uom'] ?? 'MTR';
+                    foreach ($dOrders as $d) {
+                        $dSent += (float)($d['total_fabric_quantity'] ?? 0);
+                        $dRcvd += (float)($d['total_received_quantity'] ?? 0);
+                    }
+                    $stage04Display = (round($dRcvd) == $dRcvd ? (int)$dRcvd : round($dRcvd, 1)) . " / " . (round($dSent) == $dSent ? (int)$dSent : round($dSent, 1)) . " {$dUom} received";
+                    $stage04Tooltip = "Sent: {$dSent} {$dUom}, Received: {$dRcvd} {$dUom}, Pending: " . max(0.0, $dSent - $dRcvd) . " {$dUom}";
+                } else {
+                    $stage04Display = '—';
+                    $stage04Tooltip = 'Dyeing not applicable or not started';
+                }
+
+                // Stage 05: Cutting — Product-wise
+                $cutRec = $cutByOrder[$oId] ?? null;
+                $cutQty = $cutRec ? (float)$cutRec['total_cut'] : 0.0;
+                $cutAcc = $cutRec ? (float)$cutRec['total_accepted'] : 0.0;
+                $stage05Display = round($cutQty) . " / " . round($totalQty) . " pcs";
+                $stage05Tooltip = "Cut: {$cutQty} pcs, Accepted: {$cutAcc} pcs, Required: {$totalQty} pcs";
+
+                // Stage 06: Embroidery — Outward / Inward
+                $embRec = $embByOrder[$oId] ?? null;
+                if ($embRec && ((float)$embRec['total_sent'] > 0 || (float)$embRec['total_received'] > 0)) {
+                    $eSent = (float)$embRec['total_sent'];
+                    $eRcvd = (float)$embRec['total_received'];
+                    $eAcc = (float)$embRec['total_accepted'];
+                    $eRej = (float)$embRec['total_rejected'];
+                    $eRwk = (float)$embRec['total_rework'];
+                    $stage06Display = round($eRcvd) . " / " . round($eSent) . " pcs received";
+                    $stage06Tooltip = "Sent: {$eSent} pcs, Received: {$eRcvd} pcs (Passed: {$eAcc}, Rej: {$eRej}, Rework: {$eRwk}), Pending: " . max(0.0, $eSent - $eRcvd) . " pcs";
+                } else {
+                    $stage06Display = '—';
+                    $stage06Tooltip = 'Embroidery not applicable or not started';
+                }
+
+                // Stage 07: Stitching — Color-wise Tracking
+                $stiRec = $stiByOrder[$oId] ?? null;
+                $stiQty = $stiRec ? (float)$stiRec['total_completed'] : 0.0;
+                $stage07Display = round($stiQty) . " / " . round($totalQty) . " pcs";
+                $stage07Tooltip = "Completed Stitched: {$stiQty} pcs, Required: {$totalQty} pcs";
+
+                // Stage 08: Checking
+                $chkRec = $chkByOrder[$oId] ?? null;
+                $chkInsp = $chkRec ? (float)$chkRec['total_inspected'] : 0.0;
+                $chkPassed = $chkRec ? (float)$chkRec['total_passed'] : 0.0;
+                $chkRej = $chkRec ? (float)$chkRec['total_rejected'] : 0.0;
+                $chkRwk = $chkRec ? (float)$chkRec['total_rework'] : 0.0;
+                $stage08Display = round($chkInsp) . " / " . round($totalQty) . " inspected";
+                $stage08Tooltip = "Inspected: {$chkInsp} pcs, Passed: {$chkPassed} pcs, Rejected: {$chkRej} pcs, Rework: {$chkRwk} pcs";
+
+                // Stage 09: Packing
+                $pckRec = $pckByOrder[$oId] ?? null;
+                $pckQty = $pckRec ? (float)$pckRec['total_packed'] : 0.0;
+                $stage09Display = round($pckQty) . " / " . round($totalQty) . " pcs";
+                $stage09Tooltip = "Packed: {$pckQty} pcs, Target: {$totalQty} pcs";
+
+                // Stage 10: Completed
+                $stage10Display = round($doneQty) . " / " . round($totalQty) . " pcs";
+                $stage10Tooltip = "Completed: {$doneQty} pcs, Target: {$totalQty} pcs";
+
+                // Overall Progress
+                $completionPercent = $totalQty > 0 ? min(100, (int)round(($doneQty / $totalQty) * 100)) : 0;
+                if (strtoupper((string)($ord['status'] ?? '')) === 'COMPLETED') {
+                    $completionPercent = 100;
+                }
+
                 $reportData[] = [
                     'order_id' => $ord['id'],
                     'order_number' => $ord['order_number'],
@@ -3658,16 +3931,78 @@ class ProductionController {
                     'buyer_name' => $ord['buyer_name'],
                     'target_delivery_date' => $ord['target_delivery_date'],
                     'total_quantity' => $totalQty,
-                    'dispatched_quantity' => $doneQty,
-                    'pending_quantity' => max(0.0, $totalQty - $doneQty),
-                    'status' => $ord['status'],
-                    'completion_percent' => $totalQty > 0 ? min(100, round(($doneQty / $totalQty) * 100)) : 0,
+                    'cut_quantity' => $cutQty,
+                    'stitched_quantity' => $stiQty,
+                    'checked_passed_quantity' => $chkPassed,
+                    'checked_inspected_quantity' => $chkInsp,
+                    'packed_quantity' => $pckQty,
+                    'dispatched_quantity' => $dispatchedQty,
+                    'completed_quantity' => $doneQty,
+                    'pending_quantity' => $pendingQty,
+                    'status' => $orderStageName,
+                    'current_stage_name' => $orderStageName,
+                    'raw_status' => $ord['status'],
+                    'completion_percent' => $completionPercent,
+                    'stage_01_requirement' => [
+                        'status' => $stage01Display,
+                        'display' => $stage01Display
+                    ],
+                    'stage_02_po' => [
+                        'issued_count' => $issuedPOs,
+                        'total_count' => $totalPOs,
+                        'display' => $stage02Display,
+                        'tooltip' => $stage02Tooltip
+                    ],
+                    'stage_03_inward' => [
+                        'display' => $stage03Display,
+                        'tooltip' => $stage03Tooltip
+                    ],
+                    'stage_04_dyeing' => [
+                        'display' => $stage04Display,
+                        'tooltip' => $stage04Tooltip
+                    ],
+                    'stage_05_cutting' => [
+                        'cut_quantity' => $cutQty,
+                        'display' => $stage05Display,
+                        'tooltip' => $stage05Tooltip
+                    ],
+                    'stage_06_embroidery' => [
+                        'display' => $stage06Display,
+                        'tooltip' => $stage06Tooltip
+                    ],
+                    'stage_07_stitching' => [
+                        'stitched_quantity' => $stiQty,
+                        'display' => $stage07Display,
+                        'tooltip' => $stage07Tooltip
+                    ],
+                    'stage_08_checking' => [
+                        'inspected_quantity' => $chkInsp,
+                        'passed_quantity' => $chkPassed,
+                        'display' => $stage08Display,
+                        'tooltip' => $stage08Tooltip
+                    ],
+                    'stage_09_packing' => [
+                        'packed_quantity' => $pckQty,
+                        'display' => $stage09Display,
+                        'tooltip' => $stage09Tooltip
+                    ],
+                    'stage_10_completed' => [
+                        'completed_quantity' => $doneQty,
+                        'display' => $stage10Display,
+                        'tooltip' => $stage10Tooltip
+                    ],
                 ];
             }
 
             Response::success([
                 'generated_at' => date('Y-m-d H:i:s'),
                 'total_orders_analyzed' => count($reportData),
+                'summary' => [
+                    'total_orders_analyzed' => count($reportData),
+                    'total_order_qty' => array_sum(array_column($reportData, 'total_quantity')),
+                    'total_dispatched_qty' => array_sum(array_column($reportData, 'completed_quantity')),
+                    'total_pending_qty' => array_sum(array_column($reportData, 'pending_quantity')),
+                ],
                 'items' => $reportData
             ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
