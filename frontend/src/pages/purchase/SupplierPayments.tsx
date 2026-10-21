@@ -303,13 +303,13 @@ export default function SupplierPayments() {
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full w-full pb-8">
       <PageHeader
         title="Supplier Payments"
         subtitle="Manage supplier payment due dates, track settlement status, and record disbursements"
         breadcrumb={[{ label: 'Purchase' }, { label: 'Supplier Payments' }]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={load}
               disabled={loading}
@@ -365,11 +365,11 @@ export default function SupplierPayments() {
 
       {/* Tab Navigation */}
       <div className="px-4 pt-2">
-        <div className="flex items-center gap-2 border-b border-slate-200">
+        <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto scrollbar-none pb-0.5">
           <button
             type="button"
             onClick={() => setActiveTab('obligations')}
-            className={`px-3 py-2 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+            className={`px-3 py-2 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'obligations'
                 ? 'border-brand-600 text-brand-700'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -384,7 +384,7 @@ export default function SupplierPayments() {
           <button
             type="button"
             onClick={() => setActiveTab('transactions')}
-            className={`px-3 py-2 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+            className={`px-3 py-2 text-xs font-semibold border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'transactions'
                 ? 'border-brand-600 text-brand-700'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -400,11 +400,11 @@ export default function SupplierPayments() {
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-hidden p-2 sm:p-4">
+      <div className="flex-1 p-2 sm:p-4">
         {activeTab === 'obligations' ? (
           <>
-            {/* Mobile Obligations Cards (< sm) */}
-            <div className="sm:hidden px-1 py-1 space-y-3">
+            {/* Mobile Obligations Cards (< md) */}
+            <div className="md:hidden px-1 py-1 space-y-3">
               {pos.length === 0 && !loading && (
                 <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
                   No payment obligations found.
@@ -497,8 +497,8 @@ export default function SupplierPayments() {
               })}
             </div>
 
-            {/* Desktop Obligations Table (sm+) */}
-            <div className="hidden sm:block">
+            {/* Desktop Obligations Table (md+) */}
+            <div className="hidden md:block">
               <DataTable
                 data={pos.map(p => {
                   const isSettled = getDerivedPaymentStatus(p) === 'Settled';
@@ -535,8 +535,8 @@ export default function SupplierPayments() {
           </>
         ) : (
           <>
-            {/* Mobile Transactions Cards (< sm) */}
-            <div className="sm:hidden px-1 py-1 space-y-3">
+            {/* Mobile Transactions Cards (< md) */}
+            <div className="md:hidden px-1 py-1 space-y-3">
               {payments.length === 0 && !loading && (
                 <div className="text-center py-12 bg-white rounded-2xl text-slate-400 text-xs shadow-xs border-0">
                   No payment transactions recorded.
@@ -586,8 +586,8 @@ export default function SupplierPayments() {
               ))}
             </div>
 
-            {/* Desktop Transactions Table (sm+) */}
-            <div className="hidden sm:block">
+            {/* Desktop Transactions Table (md+) */}
+            <div className="hidden md:block">
               <DataTable
                 data={payments}
                 columns={transactionsColumns}
@@ -663,7 +663,7 @@ export default function SupplierPayments() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField
               label="Amount to Pay (₹)"
               type="number"
@@ -683,7 +683,7 @@ export default function SupplierPayments() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField
               as="select"
               label="Payment Mode"

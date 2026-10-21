@@ -43,7 +43,7 @@ export default function Modal({ open, isOpen, onClose, title, subtitle, size = '
         onClick={onClose}
       />
       <div
-        className={`relative w-full ${sizes[size] || 'max-w-md'} ${className} bg-white rounded-t-2xl sm:rounded-xl shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[88vh] overflow-hidden transition-all`}
+        className={`relative w-full ${maxWidth || sizes[size] || 'max-w-md'} ${className} bg-white rounded-t-2xl sm:rounded-xl shadow-2xl flex flex-col max-h-[92vh] sm:max-h-[88vh] overflow-hidden transition-all`}
       >
         {/* Mobile drag handle indicator */}
         <div className="sm:hidden w-12 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 mb-1 shrink-0" />

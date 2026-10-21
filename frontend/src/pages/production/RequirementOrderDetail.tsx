@@ -559,7 +559,7 @@ export default function RequirementOrderDetail() {
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
               {!isEditingBOM ? (
                 <>
-                  <div className="flex items-center gap-2 flex-1 max-w-md">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 w-full sm:max-w-md">
                     <div className="relative flex-1">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -818,92 +818,164 @@ export default function RequirementOrderDetail() {
                   </table>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                      <tr>
-                        <th className="py-3 px-4 w-12 text-center">#</th>
-                        <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
-                        <th className="py-3 px-3 min-w-[140px]">Category</th>
-                        <th className="py-3 px-3 min-w-[70px]">UOM</th>
-                        <th className="py-3 px-3 min-w-[70px]">Size</th>
-                        <th className="py-3 px-3 min-w-[80px]">Model</th>
-                        <th className="py-3 px-3 min-w-[80px]">Length</th>
-                        <th className="py-3 px-3 min-w-[90px]">Thickness</th>
-                        <th className="py-3 px-3 text-right min-w-[110px]">Total Req. Qty</th>
-                        <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
-                        <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredMaterials.length === 0 ? (
+                <>
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
                         <tr>
-                          <td colSpan={11} className="py-10 text-center text-slate-400">
-                            <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
-                            <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
-                            <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                              {categoryFilter !== 'ALL' || searchQuery
-                                ? 'No materials match the current filter. Try clearing your search.'
-                                : 'Click "Generate BOM" in the header above to calculate material requirements from Buyer Product Master.'}
-                            </p>
-                          </td>
+                          <th className="py-3 px-4 w-12 text-center">#</th>
+                          <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
+                          <th className="py-3 px-3 min-w-[140px]">Category</th>
+                          <th className="py-3 px-3 min-w-[70px]">UOM</th>
+                          <th className="py-3 px-3 min-w-[70px]">Size</th>
+                          <th className="py-3 px-3 min-w-[80px]">Model</th>
+                          <th className="py-3 px-3 min-w-[80px]">Length</th>
+                          <th className="py-3 px-3 min-w-[90px]">Thickness</th>
+                          <th className="py-3 px-3 text-right min-w-[110px]">Total Req. Qty</th>
+                          <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
+                          <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
                         </tr>
-                      ) : (
-                        filteredMaterials.map((m, idx) => {
-                          return (
-                            <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
-                              <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
-                                {idx + 1}
-                              </td>
-                              <td className="py-3 px-4 font-medium text-slate-800">
-                                <span className="font-bold text-slate-800 block">{m.name}</span>
-                                {m.material_code && (
-                                  <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
-                                )}
-                              </td>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredMaterials.length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="py-10 text-center text-slate-400">
+                              <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                              <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
+                              <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                                {categoryFilter !== 'ALL' || searchQuery
+                                  ? 'No materials match the current filter. Try clearing your search.'
+                                  : 'Click "Generate BOM" in the header above to calculate material requirements from Buyer Product Master.'}
+                              </p>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredMaterials.map((m, idx) => {
+                            return (
+                              <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                                <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-3 px-4 font-medium text-slate-800">
+                                  <span className="font-bold text-slate-800 block">{m.name}</span>
+                                  {m.material_code && (
+                                    <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
+                                  )}
+                                </td>
 
-                              <td className="py-3 px-3">
-                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                  {m.category}
+                                <td className="py-3 px-3">
+                                  <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                    {m.category}
+                                  </span>
+                                </td>
+
+                                <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+
+                                <td className="py-3 px-3 text-slate-700 font-mono text-xs">
+                                  {m.size || <span className="text-slate-300 font-sans">—</span>}
+                                </td>
+
+                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                  {m.model || <span className="text-slate-300 font-sans">—</span>}
+                                </td>
+
+                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                  {m.length || <span className="text-slate-300 font-sans">—</span>}
+                                </td>
+
+                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                  {m.thickness || <span className="text-slate-300 font-sans">—</span>}
+                                </td>
+
+                                <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                                  {fmt(m.total_required_qty, 2)}
+                                </td>
+
+                                <td className="py-3 px-3 text-right font-mono text-slate-600">
+                                  {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                                </td>
+
+                                <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                                  {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards for BOM */}
+                  <div className="md:hidden space-y-3 p-3">
+                    {filteredMaterials.length === 0 ? (
+                      <div className="py-8 text-center text-slate-400">
+                        <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                        <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          {categoryFilter !== 'ALL' || searchQuery
+                            ? 'No materials match the current filter.'
+                            : 'Click "Generate BOM" in header above.'}
+                        </p>
+                      </div>
+                    ) : (
+                      filteredMaterials.map((m, idx) => (
+                        <div
+                          key={m.material_id ? `mob_id_${m.material_id}_${idx}` : `mob_name_${m.name}_${idx}`}
+                          className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs space-y-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                                <h4 className="font-bold text-slate-900 text-xs break-words">{m.name}</h4>
+                              </div>
+                              {m.material_code && (
+                                <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                                  {m.material_code}
                                 </span>
-                              </td>
+                              )}
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+                              {m.category}
+                            </span>
+                          </div>
 
-                              <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+                          {(m.size || m.model || m.length || m.thickness) && (
+                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded">
+                              {m.size && <span>Size: <strong className="font-mono">{m.size}</strong></span>}
+                              {m.model && <span>• Model: <strong>{m.model}</strong></span>}
+                              {m.length && <span>• Len: <strong>{m.length}</strong></span>}
+                              {m.thickness && <span>• Thk: <strong>{m.thickness}</strong></span>}
+                            </div>
+                          )}
 
-                              <td className="py-3 px-3 text-slate-700 font-mono text-xs">
-                                {m.size || <span className="text-slate-300 font-sans">—</span>}
-                              </td>
-
-                              <td className="py-3 px-3 text-slate-700 text-xs">
-                                {m.model || <span className="text-slate-300 font-sans">—</span>}
-                              </td>
-
-                              <td className="py-3 px-3 text-slate-700 text-xs">
-                                {m.length || <span className="text-slate-300 font-sans">—</span>}
-                              </td>
-
-                              <td className="py-3 px-3 text-slate-700 text-xs">
-                                {m.thickness || <span className="text-slate-300 font-sans">—</span>}
-                              </td>
-
-                              <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                                {fmt(m.total_required_qty, 2)}
-                              </td>
-
-                              <td className="py-3 px-3 text-right font-mono text-slate-600">
+                          <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Req. Qty</span>
+                              <span className="font-mono font-bold text-slate-900 text-xs">
+                                {fmt(m.total_required_qty, 2)}{' '}
+                                <span className="text-[10px] font-normal text-slate-500">{m.uom}</span>
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Rate</span>
+                              <span className="font-mono text-slate-700 text-xs">
                                 {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                              </td>
-
-                              <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
+                              <span className="font-mono font-bold text-emerald-700 text-xs">
                                 {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>

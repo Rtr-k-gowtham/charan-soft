@@ -147,7 +147,7 @@ export default function DataTable<T extends Record<string, any>>({
   }, [contentCols, titleCol, codeCol]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-0 w-full">
       {searchable && (
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2.5">
           <div className="relative w-full sm:max-w-xs">
@@ -165,8 +165,8 @@ export default function DataTable<T extends Record<string, any>>({
         </div>
       )}
 
-      {/* Desktop Table View */}
-      <div className={`hidden sm:block ${fixedLayout ? 'overflow-hidden' : 'overflow-x-auto touch-scroll'} flex-1 rounded-md border border-slate-200 bg-white shadow-2xs`}>
+      {/* Desktop Table View (md+) */}
+      <div className={`hidden md:block ${fixedLayout ? 'overflow-hidden' : 'overflow-x-auto touch-scroll'} flex-1 rounded-md border border-slate-200 bg-white shadow-2xs`}>
         <table className={`w-full border-collapse ${fixedLayout ? 'table-fixed' : 'min-w-full'} ${fixedLayout ? 'table-dense-fixed' : 'table-dense'}`}>
           <thead>
             <tr>
@@ -224,10 +224,10 @@ export default function DataTable<T extends Record<string, any>>({
         </table>
       </div>
 
-      {/* Mobile Responsive Cards View */}
-      <div className="sm:hidden flex-1 overflow-y-auto space-y-3 pb-3">
+      {/* Mobile Responsive Cards View (< md) */}
+      <div className="md:hidden flex-1 space-y-3 pb-4">
         {pageData.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center border-0 shadow-xs">
+          <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/80 shadow-xs">
             <p className="text-xs text-slate-400 font-medium">{emptyMessage}</p>
           </div>
         ) : (
@@ -237,7 +237,7 @@ export default function DataTable<T extends Record<string, any>>({
               <div
                 key={getKey(row, idx)}
                 onClick={() => onRowClick?.(row)}
-                className={`bg-white rounded-2xl p-4 border-0 shadow-xs hover:shadow-md transition-all active:scale-[0.99] flex flex-col gap-2.5 ${
+                className={`bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition-all active:scale-[0.99] flex flex-col gap-2.5 ${
                   onRowClick ? 'cursor-pointer hover:bg-slate-50/60' : ''
                 }`}
               >
@@ -246,7 +246,7 @@ export default function DataTable<T extends Record<string, any>>({
                   <div className="flex-1 min-w-0">
                     {codeCol && (
                       <div className="mb-1 flex items-center gap-1.5 flex-wrap">
-                        <span className="inline-block font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md border-0">
+                        <span className="inline-block font-mono text-[11px] font-semibold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200/60">
                           {codeCol.render
                             ? codeCol.render(row, actualIdx)
                             : String(getValue(row, String(codeCol.key)) ?? '—')}
@@ -254,7 +254,7 @@ export default function DataTable<T extends Record<string, any>>({
                       </div>
                     )}
                     {titleCol && (
-                      <div className="text-sm font-bold text-slate-900 leading-snug">
+                      <div className="text-sm font-bold text-slate-900 leading-snug break-words">
                         {titleCol.render
                           ? titleCol.render(row, actualIdx)
                           : String(getValue(row, String(titleCol.key)) ?? '—')}
@@ -286,19 +286,19 @@ export default function DataTable<T extends Record<string, any>>({
                       if (val === null || val === undefined || val === '') return null;
 
                       const k = String(col.key).toLowerCase();
-                      const isWide = k.includes('address') || k.includes('desc') || k.includes('remark') || k.includes('note');
+                      const isWide = k.includes('address') || k.includes('desc') || k.includes('remark') || k.includes('note') || k.includes('materials') || k.includes('reason');
 
                       return (
                         <div
                           key={String(col.key)}
-                          className={`bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center min-w-0 border-0 ${
+                          className={`bg-slate-50/80 rounded-xl p-2.5 flex flex-col justify-center min-w-0 border border-slate-100 ${
                             isWide ? 'col-span-2' : ''
                           }`}
                         >
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate">
                             {col.label}
                           </span>
-                          <div className="text-xs font-semibold text-slate-800 mt-0.5 truncate">
+                          <div className="text-xs font-semibold text-slate-800 mt-0.5 break-words">
                             {val}
                           </div>
                         </div>
@@ -310,7 +310,7 @@ export default function DataTable<T extends Record<string, any>>({
                 {/* Card Footer: Actions */}
                 {(actionsCol || actions) && (
                   <div
-                    className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 mt-0.5"
+                    className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100 mt-0.5 min-h-[38px]"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {actionsCol ? (
@@ -321,7 +321,7 @@ export default function DataTable<T extends Record<string, any>>({
                       </div>
                     ) : <div />}
                     {actions && (
-                      <div className="shrink-0 flex items-center gap-1.5">
+                      <div className="shrink-0 flex items-center gap-1.5 flex-wrap">
                         {actions(row)}
                       </div>
                     )}
@@ -342,7 +342,7 @@ export default function DataTable<T extends Record<string, any>>({
             <button
               disabled={currentPage <= 1}
               onClick={() => setPage(p => p - 1)}
-              className="px-2.5 py-1 text-xs min-h-[32px] border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium"
+              className="px-2.5 py-1 text-xs min-h-[36px] min-w-[36px] border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium flex items-center justify-center"
             >
               Prev
             </button>
@@ -353,9 +353,9 @@ export default function DataTable<T extends Record<string, any>>({
                 <button
                   key={pg}
                   onClick={() => setPage(pg)}
-                  className={`px-2.5 py-1 text-xs min-h-[32px] min-w-[32px] border rounded transition-colors font-medium ${
+                  className={`px-2.5 py-1 text-xs min-h-[36px] min-w-[36px] border rounded-lg transition-colors font-medium flex items-center justify-center ${
                     pg === currentPage
-                      ? 'bg-brand-600 text-white border-brand-600'
+                      ? 'bg-brand-600 text-white border-brand-600 shadow-2xs'
                       : 'border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -366,7 +366,7 @@ export default function DataTable<T extends Record<string, any>>({
             <button
               disabled={currentPage >= totalPages}
               onClick={() => setPage(p => p + 1)}
-              className="px-2.5 py-1 text-xs min-h-[32px] border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium"
+              className="px-2.5 py-1 text-xs min-h-[36px] min-w-[36px] border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50 transition-colors font-medium flex items-center justify-center"
             >
               Next
             </button>

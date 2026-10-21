@@ -265,7 +265,7 @@ export default function ProductionOrders() {
       {/* Production Orders Simple Table */}
       <div className="px-3 sm:px-4 md:px-6 py-2 w-full">
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left border-collapse table-auto">
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 <tr>
@@ -411,6 +411,112 @@ export default function ProductionOrders() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Cards for Production Orders */}
+          <div className="md:hidden space-y-3 p-3">
+            {loading ? (
+              <div className="py-12 text-center text-slate-400">
+                <RefreshCw className="w-6 h-6 animate-spin text-brand-600 mx-auto mb-2" />
+                <span>Loading production orders...</span>
+              </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 text-xs">
+                No production orders found matching your criteria.
+              </div>
+            ) : (
+              filteredOrders.map((ord, idx) => {
+                const totalQty = ord.total_quantity || 0;
+                const completedQty = ord.completed_quantity || 0;
+                const pendingQty = Math.max(0, totalQty - completedQty);
+                const pct = totalQty > 0 ? Math.min(100, Math.round((completedQty / totalQty) * 100)) : 0;
+                const uCount = (ord as any).unique_products_count || new Set((ord.items || []).filter(i => (i.total_quantity || 0) > 0 || (i.current_stage_quantity || 0) > 0).map(i => `${i.product_id}_${i.color}`)).size || ord.items?.length || 0;
+
+                return (
+                  <div
+                    key={`mob_ord_${ord.id}`}
+                    onClick={() => navigate(`/production/orders/${ord.id}`, { state: { from: location.pathname + location.search } })}
+                    className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3 cursor-pointer hover:border-brand-300 transition"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                            {ord.order_number}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {uCount} {uCount === 1 ? 'Product' : 'Products'}
+                          </span>
+                        </div>
+                        <h4 className="font-semibold text-slate-900 text-sm mt-1 leading-snug break-words">
+                          {ord.title}
+                        </h4>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <StatusBadge status={ord.priority} />
+                        <StatusBadge status={getProductionOrderStage(ord)} />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <BuyerAvatar buyer={ord} size="xs" shape="circle" className="shrink-0" />
+                      <div className="min-w-0">
+                        <span className="font-medium text-slate-800 text-xs block truncate">
+                          {ord.customer_name || 'Direct Order'}
+                        </span>
+                        {ord.customer_code && (
+                          <span className="text-[10px] font-mono text-slate-400 block truncate">
+                            {ord.customer_code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500 font-medium">Production Progress</span>
+                        <span className="font-mono font-bold text-slate-800">
+                          {pct}% ({fmt(completedQty)}/{fmt(totalQty)} pcs)
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-600 pt-1 border-t border-slate-200/80">
+                        <span className="flex items-center gap-1 font-mono">
+                          <Calendar className="w-3 h-3 text-slate-400" />
+                          Delivery: {ord.target_delivery_date || '—'}
+                        </span>
+                        <span className="text-amber-700 font-semibold font-mono">
+                          Pending: {fmt(pendingQty)} pcs
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-1 flex items-center justify-end">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon={<Eye className="w-3.5 h-3.5 text-brand-600" />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/production/orders/${ord.id}`, { state: { from: location.pathname + location.search } });
+                        }}
+                        className="w-full text-xs font-semibold justify-center py-2"
+                      >
+                        Manage Production Order
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           {/* Table Footer with record count */}

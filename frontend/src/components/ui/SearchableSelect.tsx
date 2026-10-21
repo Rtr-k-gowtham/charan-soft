@@ -67,7 +67,7 @@ export default function SearchableSelect({
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(typeof window !== 'undefined' && window.innerWidth < 640);
+      setIsMobile(typeof window !== 'undefined' && window.innerWidth < 768);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);

@@ -987,8 +987,9 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-              <div className="overflow-x-auto">
+            <>
+              <div className="hidden md:block bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left border-collapse table-auto">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                     <tr>
@@ -1379,7 +1380,153 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 </table>
               </div>
             </div>
-          )
+
+            {/* Mobile Cards View for Production Stage Orders */}
+            <div className="md:hidden space-y-3">
+              {filteredOrderGroups.map((group, idx) => {
+                const lineItemsCount = group.items.length;
+                const uniqueProducts = group.unique_products_count || lineItemsCount;
+
+                let targetUrl = `/production/orders/${group.order_id}`;
+                if (activeCode === 'REQ') targetUrl = `/production/requirement/${group.order_id}`;
+                if (activeCode === 'PO') targetUrl = `/production/po/${group.order_id}`;
+                if (activeCode === 'INW') targetUrl = `/production/inward/${group.order_id}`;
+                if (activeCode === 'DYE') targetUrl = `/production/dyeing/${group.order_id}`;
+                if (activeCode === 'CUT') targetUrl = `/production/cutting/${group.order_id}`;
+                if (activeCode === 'EMB') targetUrl = `/production/embroidery/${group.order_id}`;
+                if (activeCode === 'STI') targetUrl = `/production/stitching/${group.order_id}`;
+                if (activeCode === 'CHK') targetUrl = `/production/checking/${group.order_id}`;
+                if (activeCode === 'PCK') targetUrl = `/production/packing/${group.order_id}`;
+                if (activeCode === 'COMP') targetUrl = `/production/completed/${group.order_id}`;
+
+                const ordNum = group.order_number;
+                const poCount = stagePOs.filter(po => {
+                  if (po.production_order_id && String(po.production_order_id) === String(group.order_id)) return true;
+                  if (po.production_order_number && po.production_order_number === ordNum) return true;
+                  if (po.remarks && ordNum && po.remarks.includes(ordNum)) return true;
+                  if (Array.isArray(po.items) && ordNum && po.items.some((it: any) => it.order_no === ordNum)) return true;
+                  return false;
+                }).length;
+
+                return (
+                  <div
+                    key={group.order_number}
+                    className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                            {group.order_number}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                        </div>
+                        <h4 className="font-semibold text-slate-900 text-sm mt-1 leading-snug break-words">
+                          {group.order_title || 'Garment Production Order'}
+                        </h4>
+                      </div>
+                      <StatusBadge status={group.priority || 'Medium'} />
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <BuyerAvatar
+                        buyer={{
+                          id: group.customer_id,
+                          code: group.customer_code,
+                          name: group.customer_name,
+                          avatar_style: group.customer_avatar_style,
+                          avatar_seed: group.customer_avatar_seed,
+                          avatar_config: group.customer_avatar_config,
+                        }}
+                        size="xs"
+                        shape="circle"
+                        className="shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <span className="font-medium text-slate-800 text-xs block truncate">
+                          {group.customer_name || 'Direct Order'}
+                        </span>
+                        {group.customer_code && (
+                          <span className="text-[10px] font-mono text-slate-400 block truncate">
+                            {group.customer_code}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                          Delivery Date
+                        </span>
+                        <div className="flex items-center gap-1 text-slate-700 font-mono text-xs mt-0.5">
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{group.target_delivery_date || '—'}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                          Quantity
+                        </span>
+                        <div className="text-slate-900 font-mono font-bold text-xs mt-0.5">
+                          {fmt(activeCode === 'REQ' ? (group.total_order_quantity || group.total_stage_quantity) : group.total_stage_quantity)}{' '}
+                          <span className="text-[10px] font-normal text-slate-500">pcs</span>
+                        </div>
+                      </div>
+
+                      {activeCode === 'REQ' && (
+                        <div className="col-span-2 pt-1.5 border-t border-slate-200 flex items-center justify-between">
+                          <span className="text-slate-500 text-[11px]">
+                            {uniqueProducts} {uniqueProducts === 1 ? 'Product' : 'Products'} ({lineItemsCount} lines)
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
+                            <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                            <span>Generated</span>
+                          </span>
+                        </div>
+                      )}
+
+                      {activeCode === 'PO' && (
+                        <div className="col-span-2 pt-1.5 border-t border-slate-200 flex items-center justify-between">
+                          <span className="text-slate-500 text-[11px]">Purchase Orders:</span>
+                          {poCount > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <ShoppingCart className="w-2.5 h-2.5 text-indigo-600" />
+                              <span>{poCount} {poCount === 1 ? 'PO Issued' : 'POs Issued'}</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                              0 POs Issued
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-1 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openDetail(targetUrl)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg shadow-2xs transition"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Open Stage View</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openDetail(`/production/orders/${group.order_id}`)}
+                        title="Open full production order"
+                        className="p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )
         ) : (
           /* ========================================================================= */
           /* FLAT ITEMS VIEW: Flat tabular view of all order items                     */

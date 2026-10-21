@@ -595,7 +595,7 @@ export default function ProductionOrderDetail() {
           </div>
 
           {/* Right Group: Order Number, Title, Category, Priority, Status */}
-          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap min-w-0">
             {/* Reduced size Order Number badge */}
             <span className="font-mono text-brand-700 font-bold text-xs bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200 shadow-2xs">
               {order.order_number}
@@ -952,67 +952,119 @@ export default function ProductionOrderDetail() {
               No raw material requirements found for this order.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4 w-12 text-center">#</th>
-                    <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
-                    <th className="py-3 px-3 min-w-[140px]">Category</th>
-                    <th className="py-3 px-3 min-w-[70px]">UOM</th>
-                    <th className="py-3 px-3 min-w-[70px]">Size</th>
-                    <th className="py-3 px-3 min-w-[80px]">Model</th>
-                    <th className="py-3 px-3 min-w-[80px]">Length</th>
-                    <th className="py-3 px-3 min-w-[90px]">Thickness</th>
-                    <th className="py-3 px-3 text-right min-w-[110px]">Total Required</th>
-                    <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
-                    <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredMaterials.map((m, idx) => (
-                    <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
-                      <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
-                        {idx + 1}
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-800">
-                        <span className="font-bold text-slate-800 block">{m.name}</span>
+            <>
+              {/* Desktop Table View (md+) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4 w-12 text-center">#</th>
+                      <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
+                      <th className="py-3 px-3 min-w-[140px]">Category</th>
+                      <th className="py-3 px-3 min-w-[70px]">UOM</th>
+                      <th className="py-3 px-3 min-w-[70px]">Size</th>
+                      <th className="py-3 px-3 min-w-[80px]">Model</th>
+                      <th className="py-3 px-3 min-w-[80px]">Length</th>
+                      <th className="py-3 px-3 min-w-[90px]">Thickness</th>
+                      <th className="py-3 px-3 text-right min-w-[110px]">Total Required</th>
+                      <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
+                      <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredMaterials.map((m, idx) => (
+                      <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                          {idx + 1}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-800">
+                          <span className="font-bold text-slate-800 block">{m.name}</span>
+                          {m.material_code && (
+                            <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                            {m.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+                        <td className="py-3 px-3 text-slate-700 font-mono text-xs">
+                          {m.size || <span className="text-slate-300 font-sans">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 text-xs">
+                          {m.model || <span className="text-slate-300 font-sans">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 text-xs">
+                          {m.length || <span className="text-slate-300 font-sans">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-slate-700 text-xs">
+                          {m.thickness || <span className="text-slate-300 font-sans">—</span>}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                          {fmt(m.total_required_qty, 2)}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-slate-600">
+                          {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                          {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile BOM Cards (< md) */}
+              <div className="md:hidden p-3 space-y-3">
+                {filteredMaterials.map((m, idx) => (
+                  <div key={m.material_id ? `m_id_${m.material_id}_${idx}` : `m_name_${m.name}_${idx}`} className="bg-slate-50/70 rounded-xl p-3 space-y-2 border border-slate-200/80">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-slate-900 text-xs block">{m.name}</span>
                         {m.material_code && (
                           <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
                         )}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white text-slate-700 border border-slate-200">
                           {m.category}
                         </span>
-                      </td>
-                      <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
-                      <td className="py-3 px-3 text-slate-700 font-mono text-xs">
-                        {m.size || <span className="text-slate-300 font-sans">—</span>}
-                      </td>
-                      <td className="py-3 px-3 text-slate-700 text-xs">
-                        {m.model || <span className="text-slate-300 font-sans">—</span>}
-                      </td>
-                      <td className="py-3 px-3 text-slate-700 text-xs">
-                        {m.length || <span className="text-slate-300 font-sans">—</span>}
-                      </td>
-                      <td className="py-3 px-3 text-slate-700 text-xs">
-                        {m.thickness || <span className="text-slate-300 font-sans">—</span>}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
-                        {fmt(m.total_required_qty, 2)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono text-slate-600">
-                        {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
-                        {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <span className="px-1.5 py-0.5 rounded font-mono text-[10px] font-bold bg-slate-200/70 text-slate-700">
+                          {m.uom}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Specs chips */}
+                    {(m.size || m.model || m.length || m.thickness) && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5 text-[10px]">
+                        {m.size && <span className="bg-white px-2 py-0.5 rounded border border-slate-200 font-mono text-slate-700">Size: <strong>{m.size}</strong></span>}
+                        {m.model && <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">Model: <strong>{m.model}</strong></span>}
+                        {m.length && <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">Length: <strong>{m.length}</strong></span>}
+                        {m.thickness && <span className="bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">Thick: <strong>{m.thickness}</strong></span>}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 gap-2 pt-1 text-center bg-white p-2 rounded-lg border border-slate-100">
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Required</span>
+                        <span className="text-xs font-mono font-bold text-slate-900 block mt-0.5">{fmt(m.total_required_qty, 2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Rate</span>
+                        <span className="text-xs font-mono text-slate-700 block mt-0.5">{m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Cost</span>
+                        <span className="text-xs font-mono font-bold text-slate-900 block mt-0.5">{m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -1072,7 +1124,8 @@ export default function ProductionOrderDetail() {
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  {/* Desktop Products Table (md+) */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-xs text-left border-collapse table-auto min-w-[760px]">
                       <thead className="bg-slate-100/60 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                         <tr>
@@ -1199,6 +1252,106 @@ export default function ProductionOrderDetail() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Mobile Products Cards (< md) */}
+                  <div className="md:hidden p-3 space-y-3">
+                    {prods.map((item, idx) => {
+                      const itTotal = item.total_quantity || 0;
+                      const itDone = item.completed_quantity || 0;
+                      const itPending = Math.max(0, itTotal - itDone);
+                      const itPct = itTotal > 0 ? Math.min(100, Math.round((itDone / itTotal) * 100)) : 0;
+                      const pantone = item.color_pantone_code;
+
+                      return (
+                        <div key={item.id} className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3.5 space-y-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="font-bold text-slate-900 text-xs block">{item.product_name || 'Standard Product'}</span>
+                              {item.product_code && (
+                                <span className="text-[10px] font-mono text-slate-400 block">{item.product_code}</span>
+                              )}
+                            </div>
+                            <span
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold text-white shadow-2xs shrink-0"
+                              style={{ backgroundColor: item.color_badge || '#0284c7' }}
+                            >
+                              {item.current_stage_name || 'Requirement Gathering'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs bg-white p-2.5 rounded-lg border border-slate-100 flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              {item.color_hex_code && (
+                                <div
+                                  className="w-4 h-4 rounded-full border border-slate-300 shadow-2xs shrink-0"
+                                  style={{ backgroundColor: item.color_hex_code }}
+                                />
+                              )}
+                              <div>
+                                <span className="font-semibold text-slate-800 text-xs block">{item.color}</span>
+                                {pantone && (
+                                  <span className="text-[10px] font-mono text-slate-400 block">Pantone: {pantone}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Size</span>
+                              <span className="font-mono font-bold text-slate-800 text-xs">{item.size || '—'}</span>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 text-center bg-white p-2 rounded-lg border border-slate-100">
+                            <div>
+                              <span className="text-[9px] uppercase font-bold text-slate-400 block">Ordered</span>
+                              <span className="font-mono font-bold text-slate-900 text-xs mt-0.5">{itTotal.toLocaleString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] uppercase font-bold text-emerald-600 block">Done</span>
+                              <span className="font-mono font-semibold text-emerald-700 text-xs mt-0.5">{itDone.toLocaleString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] uppercase font-bold text-amber-600 block">Pending</span>
+                              <span className="font-mono font-semibold text-amber-700 text-xs mt-0.5">{itPending.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="w-full">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 mb-1">
+                              <span>Progress: {itPct}%</span>
+                              <span>{itDone} / {itTotal} pcs</span>
+                            </div>
+                            <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-300 ${itPct === 100 ? 'bg-emerald-500' : 'bg-brand-600'}`}
+                                style={{ width: `${itPct}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Row Actions */}
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200/80 gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => openMoveModal(item)}
+                              className="text-xs font-semibold px-3 py-1.5 flex-1 shadow-2xs justify-center"
+                            >
+                              Move Stage
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => openQCModal(item)}
+                              title="Quality Check"
+                              className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 bg-white border border-slate-200 rounded-lg transition shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center"
+                            >
+                              <ShieldCheck className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
