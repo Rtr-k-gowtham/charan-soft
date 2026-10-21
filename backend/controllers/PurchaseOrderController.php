@@ -65,7 +65,11 @@ class PurchaseOrderController {
                         if (!empty($poi['dynamic_data'])) {
                             $dyn = json_decode($poi['dynamic_data'], true);
                             if (is_array($dyn)) {
-                                $poi = array_merge($dyn, $poi);
+                                foreach ($dyn as $k => $v) {
+                                    if (!array_key_exists($k, $poi) || $poi[$k] === null || $poi[$k] === '') {
+                                        $poi[$k] = $v;
+                                    }
+                                }
                             }
                         }
                         if (empty($poi['accessory_name']) && !empty($poi['item_description'])) {
@@ -942,7 +946,11 @@ class PurchaseOrderController {
                     if (!empty($poi['dynamic_data'])) {
                         $dyn = json_decode($poi['dynamic_data'], true);
                         if (is_array($dyn)) {
-                            $poi = array_merge($dyn, $poi);
+                            foreach ($dyn as $k => $v) {
+                                if (!array_key_exists($k, $poi) || $poi[$k] === null || $poi[$k] === '') {
+                                    $poi[$k] = $v;
+                                }
+                            }
                         }
                     }
                     if (empty($poi['accessory_name']) && !empty($poi['item_description'])) {

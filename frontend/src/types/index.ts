@@ -198,6 +198,9 @@ export interface PurchaseOrderItem {
   design?: string;
   color?: string;
   size?: string;
+  model?: string;
+  length?: string;
+  thickness?: string;
   uom: string;
   quantity: number;
   weight_kg?: number;

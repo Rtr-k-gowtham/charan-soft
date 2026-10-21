@@ -911,17 +911,15 @@ class ProductionController {
 
                 // Enrich saved materials with size, model, length, thickness from buyer product components if missing
                 foreach ($totalMaterialsList as &$sm) {
-                    if (empty($sm['model']) && empty($sm['length']) && empty($sm['thickness']) && empty($sm['size'])) {
-                        foreach ($materialsMap as $mappedMat) {
-                            $match = (!empty($sm['material_id']) && $mappedMat['material_id'] == $sm['material_id']) ||
-                                     (strtolower(trim($sm['name'])) === strtolower(trim($mappedMat['name'])));
-                            if ($match) {
-                                if (!empty($mappedMat['size'])) $sm['size'] = $mappedMat['size'];
-                                if (!empty($mappedMat['model'])) $sm['model'] = $mappedMat['model'];
-                                if (!empty($mappedMat['length'])) $sm['length'] = $mappedMat['length'];
-                                if (!empty($mappedMat['thickness'])) $sm['thickness'] = $mappedMat['thickness'];
-                                break;
-                            }
+                    foreach ($materialsMap as $mappedMat) {
+                        $match = (!empty($sm['material_id']) && $mappedMat['material_id'] == $sm['material_id']) ||
+                                 (strtolower(trim((string)($sm['name'] ?? ''))) === strtolower(trim((string)($mappedMat['name'] ?? ''))));
+                        if ($match) {
+                            if (empty($sm['size']) && !empty($mappedMat['size'])) $sm['size'] = $mappedMat['size'];
+                            if (empty($sm['model']) && !empty($mappedMat['model'])) $sm['model'] = $mappedMat['model'];
+                            if (empty($sm['length']) && !empty($mappedMat['length'])) $sm['length'] = $mappedMat['length'];
+                            if (empty($sm['thickness']) && !empty($mappedMat['thickness'])) $sm['thickness'] = $mappedMat['thickness'];
+                            break;
                         }
                     }
                 }

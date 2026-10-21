@@ -489,6 +489,10 @@ export default function CategoryPOIssuer({
           id: it.id,
           material_id: it.material_id,
           item_description: it.item_description || it.description || '',
+          size: it.size || '',
+          model: it.model || '',
+          length: it.length || '',
+          thickness: it.thickness || '',
           uom: it.uom || 'PCS',
           quantity: Number(it.quantity) || 0,
           rate: Number(it.rate) || 0,
@@ -544,6 +548,10 @@ export default function CategoryPOIssuer({
         items: editItems.map((it, idx) => ({
           material_id: it.material_id || undefined,
           item_description: it.item_description,
+          size: it.size || undefined,
+          model: it.model || undefined,
+          length: it.length || undefined,
+          thickness: it.thickness || undefined,
           uom: it.uom,
           quantity: Number(it.quantity) || 0,
           rate: Number(it.rate) || 0,
@@ -928,12 +936,16 @@ export default function CategoryPOIssuer({
                   <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase">
                     <tr>
                       <th className="py-2 px-2.5 w-8 text-center">#</th>
-                      <th className="py-2 px-2.5 min-w-[180px]">Item Description</th>
-                      <th className="py-2 px-2.5 w-24">UOM</th>
-                      <th className="py-2 px-2.5 w-28 text-right">Quantity</th>
-                      <th className="py-2 px-2.5 w-28 text-right">Rate (₹)</th>
-                      <th className="py-2 px-2.5 w-20 text-right">Tax %</th>
-                      <th className="py-2 px-2.5 w-28 text-right">Net Amount</th>
+                      <th className="py-2 px-2.5 min-w-[160px]">Item Description</th>
+                      <th className="py-2 px-2 w-16">Size</th>
+                      <th className="py-2 px-2 w-16">Model</th>
+                      <th className="py-2 px-2 w-16">Length</th>
+                      <th className="py-2 px-2 w-16">Thick</th>
+                      <th className="py-2 px-2.5 w-20">UOM</th>
+                      <th className="py-2 px-2.5 w-24 text-right">Quantity</th>
+                      <th className="py-2 px-2.5 w-24 text-right">Rate (₹)</th>
+                      <th className="py-2 px-2.5 w-16 text-right">Tax %</th>
+                      <th className="py-2 px-2.5 w-24 text-right">Net Amount</th>
                       <th className="py-2 px-2 w-10 text-center"></th>
                     </tr>
                   </thead>
@@ -956,6 +968,42 @@ export default function CategoryPOIssuer({
                               value={it.item_description}
                               onChange={e => handleUpdateEditItem(idx, 'item_description', e.target.value)}
                               className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={it.size || ''}
+                              onChange={e => handleUpdateEditItem(idx, 'size', e.target.value)}
+                              placeholder="Size"
+                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={it.model || ''}
+                              onChange={e => handleUpdateEditItem(idx, 'model', e.target.value)}
+                              placeholder="Model"
+                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={it.length || ''}
+                              onChange={e => handleUpdateEditItem(idx, 'length', e.target.value)}
+                              placeholder="Length"
+                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
+                            />
+                          </td>
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={it.thickness || ''}
+                              onChange={e => handleUpdateEditItem(idx, 'thickness', e.target.value)}
+                              placeholder="Thick"
+                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
                             />
                           </td>
                           <td className="py-2 px-2.5">

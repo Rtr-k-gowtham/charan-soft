@@ -1472,6 +1472,28 @@ const server = http.createServer(async (req, res) => {
 
       // Return persisted BOM if already generated and not forced
       if (!isForced && ord.generated_bom && Array.isArray(ord.generated_bom.total_materials) && ord.generated_bom.total_materials.length > 0) {
+        // Enrich any missing size, model, length, thickness from product components
+        const bpcList = [];
+        (ord.items || []).forEach(item => {
+          const prod = (db.products || []).find(p => p.id === Number(item.product_id));
+          if (prod && Array.isArray(prod.components)) {
+            prod.components.forEach(c => bpcList.push(c));
+          }
+        });
+        ord.generated_bom.total_materials.forEach(sm => {
+          for (const c of bpcList) {
+            const match = (sm.material_id && c.material_id && Number(sm.material_id) === Number(c.material_id)) ||
+                          (sm.name && c.name && sm.name.trim().toLowerCase() === c.name.trim().toLowerCase());
+            if (match) {
+              if (!sm.size && c.size) sm.size = c.size;
+              if (!sm.model && c.model) sm.model = c.model;
+              if (!sm.length && c.length) sm.length = c.length;
+              if (!sm.thickness && c.thickness) sm.thickness = c.thickness;
+              break;
+            }
+          }
+        });
+
         return sendSuccess(res, {
           order: enrichedOrder,
           products: ord.generated_bom.products || [],

@@ -274,7 +274,7 @@ export default function DynamicPOTemplate({
           width = '90px'; alignment = 'left';
         } else if (key === 'item_description' || key === 'description' || key === 'accessory_name' || key === 'accessory' || key === 'material_name') {
           width = '200px'; alignment = 'left';
-        } else if (key === 'design' || key === 'color' || key === 'size') {
+        } else if (key === 'design' || key === 'color' || key === 'size' || key === 'model' || key === 'length' || key === 'thickness') {
           width = '80px'; alignment = 'left';
         } else if (key === 'uom') {
           width = '55px'; alignment = 'center';
@@ -586,6 +586,14 @@ export default function DynamicPOTemplate({
                   if (val === undefined || val === null || val === '') {
                     if (col.column_key === 's_no' || col.column_key === 'serial_no') {
                       val = rIdx + 1;
+                    } else if (col.column_key === 'size') {
+                      val = row.size || dyn.size;
+                    } else if (col.column_key === 'model') {
+                      val = row.model || dyn.model;
+                    } else if (col.column_key === 'length') {
+                      val = row.length || dyn.length;
+                    } else if (col.column_key === 'thickness') {
+                      val = row.thickness || dyn.thickness;
                     } else if (col.column_key === 'accessory_name' || col.column_key === 'accessory') {
                       val = row.accessory_name || row.accessory || dyn.accessory_name || dyn.accessory ||
                             row.item_description || dyn.item_description || row.description || dyn.description ||
