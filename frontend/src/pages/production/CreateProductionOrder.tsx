@@ -9,6 +9,7 @@ import FormField from '../../components/ui/FormField';
 import Modal from '../../components/ui/Modal';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
 import {
+  lookupPantone,
   lookupPantoneAsync,
   normalizePantoneInput,
   hexToRgb,
@@ -30,13 +31,11 @@ import {
   Loader2,
   Sliders,
   Sparkles,
-  UserPlus,
-  UserCheck,
   Dices,
 } from 'lucide-react';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import AvatarSelectorModal from '../../components/buyers/AvatarSelectorModal';
-import { getBuyerAvatarDataUri, AvatarStyle, AvatarConfig } from '../../lib/avatarService';
+import { AvatarStyle, AvatarConfig } from '../../lib/avatarService';
 
 interface ColorRecord {
   id: number;
@@ -46,10 +45,16 @@ interface ColorRecord {
   pantone_code?: string;
 }
 
-interface OrderItem {
-  product_id: string;
+export interface ColorVariant {
+  id: string;
   color: string;
-  total_quantity: number;
+  quantity: number;
+}
+
+export interface ProductGroup {
+  id: string;
+  product_id: string;
+  variants: ColorVariant[];
 }
 
 interface BuyerProductItem {
@@ -89,8 +94,15 @@ export default function CreateProductionOrder() {
     notes: '',
   });
 
-  const [orderItems, setOrderItems] = useState<OrderItem[]>([
-    { product_id: '', color: '', total_quantity: 100 },
+  // Product groups state: Each product group contains one product and multiple Pantone color variants
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>([
+    {
+      id: 'grp_init_1',
+      product_id: '',
+      variants: [
+        { id: 'var_init_1', color: '', quantity: 100 },
+      ],
+    },
   ]);
 
   const [saving, setSaving] = useState(false);
@@ -101,6 +113,9 @@ export default function CreateProductionOrder() {
   const [buyerAvatarModalOpen, setBuyerAvatarModalOpen] = useState(false);
   const [buyerSaving, setBuyerSaving] = useState(false);
   const [buyerError, setBuyerError] = useState('');
+  const [buyerAvatarStyle, setBuyerAvatarStyle] = useState<AvatarStyle>('lorelei');
+  const [buyerAvatarSeed, setBuyerAvatarSeed] = useState<string>('buyer-new');
+  const [buyerAvatarConfig, setBuyerAvatarConfig] = useState<AvatarConfig>({});
   const [buyerForm, setBuyerForm] = useState({
     name: '',
     contact_person: '',
@@ -109,12 +124,8 @@ export default function CreateProductionOrder() {
     billing_address: '',
     gstin: '',
   });
-  const [buyerAvatarStyle, setBuyerAvatarStyle] = useState<AvatarStyle>('lorelei');
-  const [buyerAvatarSeed, setBuyerAvatarSeed] = useState<string>('');
-  const [buyerAvatarConfig, setBuyerAvatarConfig] = useState<AvatarConfig>({ backgroundColor: 'b6e3f4' });
 
   const handleOpenNewBuyer = () => {
-    const nextCode = `BUY-${String(customers.length + 1).padStart(3, '0')}`;
     setBuyerForm({
       name: '',
       contact_person: '',
@@ -123,17 +134,16 @@ export default function CreateProductionOrder() {
       billing_address: '',
       gstin: '',
     });
+    const randomSeed = `buyer-${Math.random().toString(36).substring(2, 9)}`;
+    setBuyerAvatarSeed(randomSeed);
     setBuyerAvatarStyle('lorelei');
-    setBuyerAvatarSeed(`buyer-${nextCode}`);
-    setBuyerAvatarConfig({ backgroundColor: 'b6e3f4' });
+    setBuyerAvatarConfig({});
     setBuyerError('');
     setAddBuyerModalOpen(true);
   };
 
   const handleRandomizeBuyerAvatar = () => {
-    const prefixes = ['Avery', 'Bella', 'Caleb', 'Daphne', 'Ethan', 'Fiona', 'Gavin', 'Harper', 'Iris', 'Jasper', 'Keira', 'Liam', 'Maya', 'Noah', 'Olivia', 'Quinn', 'Rowan', 'Theo', 'Zoe'];
-    const randomSeed = `${prefixes[Math.floor(Math.random() * prefixes.length)]}-${Math.floor(100 + Math.random() * 900)}`;
-    setBuyerAvatarStyle('lorelei');
+    const randomSeed = `buyer-${Math.random().toString(36).substring(2, 9)}`;
     setBuyerAvatarSeed(randomSeed);
   };
 
@@ -182,7 +192,10 @@ export default function CreateProductionOrder() {
 
   // Add Color Modal State (Pantone lookup driven + Custom RGB/HEX fallback)
   const [addColorModalOpen, setAddColorModalOpen] = useState(false);
-  const [activeColorRowIndex, setActiveColorRowIndex] = useState<number | null>(null);
+  const [activeColorTarget, setActiveColorTarget] = useState<{
+    groupIndex: number;
+    variantIndex: number;
+  } | null>(null);
   const [colorSaving, setColorSaving] = useState(false);
   const [colorError, setColorError] = useState('');
   const [colorPantoneInput, setColorPantoneInput] = useState('');
@@ -253,50 +266,55 @@ export default function CreateProductionOrder() {
           setColorIsCustomMode(false);
           setColorName(res.name);
           setColorHexCode(res.hex_code);
-          const parsedRgb = hexToRgb(res.hex_code) || { r: res.red || 0, g: res.green || 0, b: res.blue || 0 };
-          setColorRgb(parsedRgb);
-          setColorLookupError('');
+          const parsedRgb = hexToRgb(res.hex_code);
+          if (parsedRgb) {
+            setColorRgb(parsedRgb);
+          } else if (res.red !== undefined && res.green !== undefined && res.blue !== undefined) {
+            setColorRgb({ r: res.red, g: res.green, b: res.blue });
+          }
           setColorVerifiedInfo({
             code: res.pantone_code || trimmed,
-            system: res.system || 'Pantone Reference',
-            category: res.category || 'Standard Library',
+            system: res.system || 'Textile / FHI',
+            category: res.category || 'Standard',
           });
+          setColorLookupError('');
         } else {
           setColorIsVerified(false);
           setColorIsCustomMode(true);
           setColorVerifiedInfo(null);
-          setColorLookupError('Pantone code not found in library. You can enter the color name and RGB / HEX values below.');
-          setColorName(prev => prev || '');
+          setColorLookupError(
+            res.error || 'Color code not in standard reference library. You can enter details manually.'
+          );
         }
-      } catch (err) {
+      } catch (err: unknown) {
         setColorLookupLoading(false);
         setColorIsVerified(false);
         setColorIsCustomMode(true);
-        setColorLookupError('Pantone lookup service unavailable. You can enter the color name and RGB / HEX values manually.');
+        setColorVerifiedInfo(null);
+        setColorLookupError('Lookup service unavailable. Enter details manually.');
       }
     }, 280);
 
     return () => clearTimeout(timer);
   }, [colorPantoneInput, addColorModalOpen, colorVerifiedInfo]);
 
-  // Load authoritative master data
+  // Load master data
   const loadMasterData = async () => {
-    setLoading(true);
     try {
-      const [custData, catData, pantoneData] = await Promise.all([
-        api.getCustomers(),
-        api.getCategories(),
-        api.getPantoneColors({ all: true }).catch(() => api.getColors()),
+      setLoading(true);
+      const [custs, cats, cols] = await Promise.all([
+        api.getCustomers().catch(() => []),
+        api.getCategories().catch(() => []),
+        api.getColors().catch(() => []),
       ]);
-      setCustomers((custData || []) as Customer[]);
-      setCategories((catData || []) as Category[]);
 
-      const raw = Array.isArray(pantoneData) ? pantoneData : (pantoneData as { items?: unknown[] })?.items || [];
-      const mapped: ColorRecord[] = (raw as Array<{ id: number; pantone_name?: string; name?: string; unique_code?: string; code?: string; hex_code?: string; pantone_code?: string }>).map((c) => ({
+      setCustomers((custs as Customer[]) || []);
+      setCategories((cats as Category[]) || []);
+      const mapped = ((cols as any[]) || []).map((c: any) => ({
         id: c.id,
-        name: c.pantone_name || c.name || '',
-        code: c.unique_code || c.code || '',
-        hex_code: c.hex_code || '#64748b',
+        name: c.name || c.color_name || 'Unnamed',
+        hex_code: c.hex_code || '#0F2042',
+        code: c.code || '',
         pantone_code: c.pantone_code || '',
       }));
       setColors(mapped);
@@ -380,8 +398,12 @@ export default function CreateProductionOrder() {
     if (!buyerId) {
       setBuyerProducts([]);
       // Clear product and color on all existing lines
-      setOrderItems((prev) =>
-        prev.map((it) => ({ ...it, product_id: '', color: '' }))
+      setProductGroups((prev) =>
+        prev.map((g) => ({
+          ...g,
+          product_id: '',
+          variants: g.variants.map((v) => ({ ...v, color: '' })),
+        }))
       );
       return;
     }
@@ -391,21 +413,29 @@ export default function CreateProductionOrder() {
       const prods = await fetchProductsForBuyer(buyerId);
       setBuyerProducts(prods);
 
-      // Validate every line against the newly selected buyer's product list
+      // Validate every group against the newly selected buyer's product list
       const validIds = new Set(prods.map((p) => String(p.id)));
-      setOrderItems((prev) =>
-        prev.map((it) => {
-          if (!it.product_id || !validIds.has(String(it.product_id))) {
-            return { ...it, product_id: '', color: '' };
+      setProductGroups((prev) =>
+        prev.map((g) => {
+          if (!g.product_id || !validIds.has(String(g.product_id))) {
+            return {
+              ...g,
+              product_id: '',
+              variants: g.variants.map((v) => ({ ...v, color: '' })),
+            };
           }
-          return it;
+          return g;
         })
       );
     } catch (err) {
       console.error('Failed to update buyer products:', err);
       setBuyerProducts([]);
-      setOrderItems((prev) =>
-        prev.map((it) => ({ ...it, product_id: '', color: '' }))
+      setProductGroups((prev) =>
+        prev.map((g) => ({
+          ...g,
+          product_id: '',
+          variants: g.variants.map((v) => ({ ...v, color: '' })),
+        }))
       );
     } finally {
       setLoadingBuyerProducts(false);
@@ -448,81 +478,181 @@ export default function CreateProductionOrder() {
   const customerOptions: SelectOption[] = useMemo(() => {
     return customers.map((c) => ({
       value: String(c.id),
-      label: `${c.name}${c.code ? ` (${c.code})` : ''}`,
-      sublabel: [c.code, c.contact_person, c.phone].filter(Boolean).join(' • ') || undefined,
-      avatarUri: getBuyerAvatarDataUri(c),
+      label: c.name,
+      sublabel: `${c.code || ''} ${c.phone ? `• ${c.phone}` : ''}`.trim(),
+      buyerAvatar: {
+        style: (c.avatar_style as AvatarStyle) || 'adventurer',
+        seed: c.avatar_seed || c.code || String(c.id),
+        config: c.avatar_config || {},
+      },
     }));
   }, [customers]);
 
-  // Selected buyer profile
-  const selectedCustomer = useMemo(() => {
-    return customers.find((c) => String(c.id) === String(form.customer_id)) || null;
-  }, [customers, form.customer_id]);
+  // Priority options
+  const priorityOptions: SelectOption[] = useMemo(
+    () => [
+      { value: 'Low', label: 'Low', sublabel: 'Standard lead-time' },
+      { value: 'Medium', label: 'Medium', sublabel: 'Normal production priority' },
+      { value: 'High', label: 'High', sublabel: 'Expedited production cycle' },
+      { value: 'Urgent', label: 'Urgent', sublabel: 'Immediate manufacturing dispatch' },
+    ],
+    []
+  );
 
-  // Priority options for SearchableSelect
-  const priorityOptions: SelectOption[] = [
-    { value: 'Low', label: 'Low Priority', sublabel: 'Standard lead time' },
-    { value: 'Medium', label: 'Medium Priority', sublabel: 'Normal scheduling' },
-    { value: 'High', label: 'High Priority', sublabel: 'Expedited production' },
-    { value: 'Urgent', label: 'Urgent Priority', sublabel: 'Immediate manufacturing' },
-  ];
+  // Helper to resolve color swatch and information
+  const getColorDetails = (colorValue: string) => {
+    if (!colorValue) return null;
+    const trimmed = colorValue.trim();
+    const found = colors.find(
+      (c) =>
+        c.pantone_code?.toLowerCase() === trimmed.toLowerCase() ||
+        c.name?.toLowerCase() === trimmed.toLowerCase() ||
+        `${c.pantone_code} — ${c.name}`.toLowerCase() === trimmed.toLowerCase() ||
+        c.code?.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (found) {
+      return {
+        name: found.name,
+        code: found.pantone_code || found.code || '',
+        hex: found.hex_code || '#0F2042',
+      };
+    }
+    const lookup = lookupPantone(trimmed);
+    return {
+      name: lookup.name || trimmed,
+      code: lookup.pantone_code || '',
+      hex: lookup.hex_code || '#0F2042',
+    };
+  };
 
-  // Item row operations
-  const handleAddItemRow = () => {
-    setOrderItems((prev) => [
+  // Helper to check if a color is already selected in another variant of the same product group
+  const isColorDuplicateInGroup = (groupIndex: number, variantIndex: number, colorVal: string) => {
+    const group = productGroups[groupIndex];
+    if (!group || !colorVal) return false;
+    const clean = colorVal.trim().toLowerCase();
+    return group.variants.some(
+      (v, idx) => idx !== variantIndex && v.color && v.color.trim().toLowerCase() === clean
+    );
+  };
+
+  // Product Group Handlers
+  const handleAddProductGroup = () => {
+    setProductGroups((prev) => [
       ...prev,
-      { product_id: '', color: '', total_quantity: 100 },
+      {
+        id: `grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        product_id: '',
+        variants: [
+          {
+            id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            color: '',
+            quantity: 100,
+          },
+        ],
+      },
     ]);
   };
 
-  const handleRemoveItemRow = (index: number) => {
-    if (orderItems.length <= 1) return;
-    setOrderItems((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleDuplicateItemRow = (index: number) => {
-    const itemToClone = orderItems[index];
-    if (!itemToClone) return;
-    const cloned = {
-      product_id: itemToClone.product_id,
-      color: itemToClone.color,
-      total_quantity: itemToClone.total_quantity || 100,
-    };
-    setOrderItems((prev) => {
-      const copy = [...prev];
-      copy.splice(index + 1, 0, cloned);
-      return copy;
+  const handleDuplicateProductGroup = (groupIndex: number) => {
+    setProductGroups((prev) => {
+      const target = prev[groupIndex];
+      if (!target) return prev;
+      const duplicated: ProductGroup = {
+        id: `grp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        product_id: target.product_id,
+        variants: target.variants.map((v) => ({
+          id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          color: v.color,
+          quantity: v.quantity,
+        })),
+      };
+      const next = [...prev];
+      next.splice(groupIndex + 1, 0, duplicated);
+      return next;
     });
   };
 
-  const handleProductChange = (index: number, newProductId: string) => {
-    setOrderItems((prev) => {
+  const handleRemoveProductGroup = (groupIndex: number) => {
+    if (productGroups.length <= 1) return;
+    setProductGroups((prev) => prev.filter((_, idx) => idx !== groupIndex));
+  };
+
+  const handleProductChange = (groupIndex: number, newProductId: string) => {
+    setProductGroups((prev) => {
       const copy = [...prev];
-      // Reset color variant when product selection changes
-      copy[index] = {
-        ...copy[index],
+      copy[groupIndex] = {
+        ...copy[groupIndex],
         product_id: newProductId,
-        color: '',
       };
       return copy;
     });
   };
 
-  const handleItemChange = <K extends keyof OrderItem>(
-    index: number,
-    field: K,
-    value: OrderItem[K]
-  ) => {
-    setOrderItems((prev) => {
+  // Color Variant Handlers within a Product Group
+  const handleAddColorVariant = (groupIndex: number) => {
+    setProductGroups((prev) => {
       const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
+      const group = copy[groupIndex];
+      if (!group) return prev;
+      copy[groupIndex] = {
+        ...group,
+        variants: [
+          ...group.variants,
+          {
+            id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            color: '',
+            quantity: 100,
+          },
+        ],
+      };
       return copy;
     });
   };
 
-  // Open Add Color Modal for a specific row
-  const handleOpenAddColor = (rowIndex: number) => {
-    setActiveColorRowIndex(rowIndex);
+  const handleRemoveColorVariant = (groupIndex: number, variantIndex: number) => {
+    setProductGroups((prev) => {
+      const copy = [...prev];
+      const group = copy[groupIndex];
+      if (!group) return prev;
+      if (group.variants.length <= 1) {
+        // Clear color instead of deleting the last variant row
+        copy[groupIndex] = {
+          ...group,
+          variants: [{ ...group.variants[0], color: '', quantity: 100 }],
+        };
+        return copy;
+      }
+      copy[groupIndex] = {
+        ...group,
+        variants: group.variants.filter((_, idx) => idx !== variantIndex),
+      };
+      return copy;
+    });
+  };
+
+  const handleVariantChange = (
+    groupIndex: number,
+    variantIndex: number,
+    field: 'color' | 'quantity',
+    value: string | number
+  ) => {
+    setProductGroups((prev) => {
+      const copy = [...prev];
+      const group = copy[groupIndex];
+      if (!group) return prev;
+      const variants = [...group.variants];
+      variants[variantIndex] = {
+        ...variants[variantIndex],
+        [field]: value,
+      };
+      copy[groupIndex] = { ...group, variants };
+      return copy;
+    });
+  };
+
+  // Open Add Color Modal for a specific variant in a group
+  const handleOpenAddColor = (groupIndex: number, variantIndex: number) => {
+    setActiveColorTarget({ groupIndex, variantIndex });
     setColorPantoneInput('');
     setColorName('');
     setColorHexCode('#0F2042');
@@ -536,7 +666,7 @@ export default function CreateProductionOrder() {
     setAddColorModalOpen(true);
   };
 
-  // Save New Color
+  // Save New Color and auto-select in target variant
   const handleSaveColor = async () => {
     if (!colorPantoneInput.trim()) {
       setColorError('Pantone Color Code is required');
@@ -558,7 +688,7 @@ export default function CreateProductionOrder() {
       : normalizePantoneInput(colorPantoneInput) || colorPantoneInput.trim();
 
     try {
-      const res = await api.createPantoneColor({
+      const res = (await api.createPantoneColor({
         pantone_code: finalPantone,
         pantone_name: colorName.trim(),
         hex_code: colorHexCode,
@@ -566,7 +696,7 @@ export default function CreateProductionOrder() {
         green: colorRgb.g,
         blue: colorRgb.b,
         color_system: 'PMS Coated',
-      }) as { id?: number; pantone_code?: string; pantone_name?: string; hex_code?: string };
+      })) as { id?: number; pantone_code?: string; pantone_name?: string; hex_code?: string };
 
       const newRecord: ColorRecord = {
         id: res?.id || Date.now(),
@@ -578,14 +708,19 @@ export default function CreateProductionOrder() {
       // Add to local colors list immediately
       setColors((prev) => [newRecord, ...prev]);
 
-      // Auto-select this newly created color in the initiating row
-      const selectedValue = finalPantone ? `${finalPantone} — ${colorName.trim()}` : colorName.trim();
-      if (activeColorRowIndex !== null && activeColorRowIndex >= 0) {
-        handleItemChange(activeColorRowIndex, 'color', selectedValue);
+      // Auto-select this newly created color in the initiating variant row
+      const selectedValue = finalPantone || colorName.trim();
+      if (activeColorTarget) {
+        handleVariantChange(
+          activeColorTarget.groupIndex,
+          activeColorTarget.variantIndex,
+          'color',
+          selectedValue
+        );
       }
 
       setAddColorModalOpen(false);
-      setActiveColorRowIndex(null);
+      setActiveColorTarget(null);
     } catch (e: unknown) {
       setColorError((e as Error).message || 'Failed to create color');
     } finally {
@@ -593,10 +728,21 @@ export default function CreateProductionOrder() {
     }
   };
 
-  // Total quantity calculation
+  // Computed Totals
   const totalPieces = useMemo(() => {
-    return orderItems.reduce((acc, it) => acc + (Number(it.total_quantity) || 0), 0);
-  }, [orderItems]);
+    return productGroups.reduce(
+      (acc, g) => acc + g.variants.reduce((s, v) => s + (Number(v.quantity) || 0), 0),
+      0
+    );
+  }, [productGroups]);
+
+  const totalVariantsCount = useMemo(() => {
+    return productGroups.reduce((acc, g) => acc + g.variants.length, 0);
+  }, [productGroups]);
+
+  const getGroupTotal = (group: ProductGroup) => {
+    return group.variants.reduce((acc, v) => acc + (Number(v.quantity) || 0), 0);
+  };
 
   // Submit Production Order
   const handleCreate = async () => {
@@ -612,24 +758,51 @@ export default function CreateProductionOrder() {
       return;
     }
 
-    if (orderItems.length === 0) {
+    if (productGroups.length === 0) {
       setError('At least one product line is required');
       return;
     }
 
-    for (let i = 0; i < orderItems.length; i++) {
-      const row = orderItems[i];
-      if (!row.product_id) {
-        setError(`Please select a Product for line #${i + 1}`);
+    // Comprehensive validation for each product group & its color variants
+    for (let gIdx = 0; gIdx < productGroups.length; gIdx++) {
+      const group = productGroups[gIdx];
+      const lineNum = gIdx + 1;
+
+      if (!group.product_id) {
+        setError(`Please select a Product for Product Line #${lineNum}`);
         return;
       }
-      if (!row.color.trim()) {
-        setError(`Please select a Color Variant for line #${i + 1}`);
+
+      if (!group.variants || group.variants.length === 0) {
+        setError(`Product Line #${lineNum} must have at least one color variant`);
         return;
       }
-      if (!row.total_quantity || row.total_quantity <= 0) {
-        setError(`Quantity for line #${i + 1} must be greater than 0`);
-        return;
+
+      const seenColors = new Set<string>();
+      for (let vIdx = 0; vIdx < group.variants.length; vIdx++) {
+        const variant = group.variants[vIdx];
+        const varNum = vIdx + 1;
+
+        if (!variant.color || !variant.color.trim()) {
+          setError(`Please select a Color Variant for Product Line #${lineNum}, color #${varNum}`);
+          return;
+        }
+
+        const normalized = variant.color.trim().toLowerCase();
+        if (seenColors.has(normalized)) {
+          const prodObj = buyerProducts.find((p) => String(p.id) === String(group.product_id));
+          const prodTitle = prodObj?.product_name || `Product Line #${lineNum}`;
+          setError(
+            `Duplicate color variant "${variant.color}" in "${prodTitle}". Each color variant for a product must be unique.`
+          );
+          return;
+        }
+        seenColors.add(normalized);
+
+        if (!variant.quantity || variant.quantity <= 0) {
+          setError(`Quantity for Product Line #${lineNum}, color "${variant.color}" must be greater than 0`);
+          return;
+        }
       }
     }
 
@@ -637,19 +810,24 @@ export default function CreateProductionOrder() {
     setError('');
 
     try {
+      // Flatten product groups and their color variants into items array for the existing API
+      const flatItems = productGroups.flatMap((group) =>
+        group.variants.map((v) => ({
+          product_id: parseInt(group.product_id, 10),
+          color: v.color.trim(),
+          total_quantity: Number(v.quantity),
+        }))
+      );
+
       const payload = {
         title: form.title.trim(),
-        customer_id: form.customer_id ? parseInt(form.customer_id) : null,
-        category_id: form.category_id ? parseInt(form.category_id) : 7,
+        customer_id: form.customer_id ? parseInt(form.customer_id, 10) : null,
+        category_id: form.category_id ? parseInt(form.category_id, 10) : 7,
         priority: form.priority,
         start_date: form.start_date,
         target_delivery_date: form.target_delivery_date,
         notes: form.notes.trim() || null,
-        items: orderItems.map((item) => ({
-          product_id: parseInt(item.product_id),
-          color: item.color,
-          total_quantity: Number(item.total_quantity),
-        })),
+        items: flatItems,
       };
 
       await api.createProductionOrder(payload);
@@ -668,7 +846,7 @@ export default function CreateProductionOrder() {
       {/* Page Header */}
       <PageHeader
         title="Create Production Order"
-        subtitle="Configure manufacturing order parameters and product line specifications"
+        subtitle="Configure manufacturing order parameters and product line specifications with multiple Pantone color variants"
         breadcrumb={[
           { label: 'Production' },
           { label: 'Orders', href: '/production/orders' },
@@ -738,7 +916,7 @@ export default function CreateProductionOrder() {
                   required
                   value={form.title}
                   onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  placeholder="e.g. Export Queen Bed Linen Contract - Summer Batch"
+                  placeholder="e.g. Export Linen Bedding Contract - Multi-Color Suite"
                 />
               </div>
 
@@ -814,16 +992,19 @@ export default function CreateProductionOrder() {
           </div>
         </div>
 
-        {/* Section 2: Product Lines */}
+        {/* Section 2: Product Lines & Color Variants */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
-          <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2">
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 min-w-0">
               <Layers className="w-4 h-4 text-brand-600 shrink-0" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 truncate">
                 Product Lines & Variants
               </h2>
               <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 rounded-full border border-brand-200 shrink-0">
-                {orderItems.length} {orderItems.length === 1 ? 'Line' : 'Lines'}
+                {productGroups.length} {productGroups.length === 1 ? 'Product Line' : 'Product Lines'}
+              </span>
+              <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-medium bg-slate-100 text-slate-600 rounded-full border border-slate-200 shrink-0">
+                {totalVariantsCount} {totalVariantsCount === 1 ? 'Color Variant' : 'Color Variants'}
               </span>
             </div>
             <Button
@@ -831,7 +1012,7 @@ export default function CreateProductionOrder() {
               size="xs"
               className="sm:text-xs"
               icon={<Plus className="w-3.5 h-3.5" />}
-              onClick={handleAddItemRow}
+              onClick={handleAddProductGroup}
             >
               <span className="hidden sm:inline">Add Product Line</span>
               <span className="sm:hidden font-semibold">+ Line</span>
@@ -857,179 +1038,299 @@ export default function CreateProductionOrder() {
               </div>
             )}
 
-            <div className="space-y-3.5">
-              {orderItems.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="bg-slate-50/70 hover:bg-slate-50/90 border border-slate-200 rounded-xl p-3.5 sm:p-4 transition-all shadow-2xs"
-                >
-                  {/* Card Header for Mobile with Item # and Trash button */}
-                  <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-200/60 md:hidden">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-brand-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                        {idx + 1}
-                      </span>
-                      <span className="text-xs font-bold text-slate-700">
-                        Product Line #{idx + 1}
-                      </span>
-                      {item.total_quantity > 0 && (
-                        <span className="text-[10px] font-mono font-medium text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                          {item.total_quantity} pcs
+            {/* List of Product Groups */}
+            <div className="space-y-4 sm:space-y-5">
+              {productGroups.map((group, gIdx) => {
+                const groupTotal = getGroupTotal(group);
+                const selectedProduct = buyerProducts.find((p) => String(p.id) === String(group.product_id));
+
+                return (
+                  <div
+                    key={group.id}
+                    className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs hover:border-slate-300 transition-all"
+                  >
+                    {/* Product Group Card Header */}
+                    <div className="px-3.5 sm:px-4 py-2.5 bg-slate-50/90 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-5 h-5 rounded-full bg-brand-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+                          {gIdx + 1}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicateItemRow(idx)}
-                        className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
-                        title="Duplicate product line"
-                      >
-                        <Copy className="w-4 h-4 text-slate-500 hover:text-brand-600" />
-                      </button>
-                      {orderItems.length > 1 && (
+                        <span className="text-xs font-bold text-slate-800 truncate">
+                          Product Line #{gIdx + 1}
+                        </span>
+                        {selectedProduct && (
+                          <span className="text-xs text-slate-600 truncate max-w-[200px] sm:max-w-none">
+                            — <strong className="text-slate-800">{selectedProduct.product_name || selectedProduct.name}</strong>
+                            {selectedProduct.product_code && (
+                              <span className="font-mono text-slate-400 text-[11px] ml-1">
+                                ({selectedProduct.product_code})
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right stats & action buttons */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 bg-white rounded-md border border-slate-200 text-xs">
+                          <span className="text-slate-500 text-[10px] uppercase font-semibold hidden xs:inline">Total:</span>
+                          <span className="font-mono font-bold text-brand-700">{groupTotal.toLocaleString()} pcs</span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-[11px] font-medium text-slate-500">
+                            {group.variants.length} {group.variants.length === 1 ? 'color' : 'colors'}
+                          </span>
+                        </div>
+
+                        {/* Duplicate Product Line Action */}
                         <button
                           type="button"
-                          onClick={() => handleRemoveItemRow(idx)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                          title="Remove product line"
+                          onClick={() => handleDuplicateProductGroup(gIdx)}
+                          className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-md transition-colors"
+                          title="Duplicate this entire product line with all its variants"
+                        >
+                          <Copy className="w-4 h-4 text-slate-500 hover:text-brand-600" />
+                        </button>
+
+                        {/* Remove Product Line Action */}
+                        <button
+                          type="button"
+                          disabled={productGroups.length <= 1}
+                          onClick={() => handleRemoveProductGroup(gIdx)}
+                          className={`p-1.5 rounded-md transition-colors ${
+                            productGroups.length <= 1
+                              ? 'text-slate-300 cursor-not-allowed'
+                              : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                          }`}
+                          title={productGroups.length <= 1 ? 'Order must have at least one product line' : 'Remove product line'}
                         >
                           <Trash2 className="w-4 h-4 text-red-500" />
                         </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Desktop view (md+) & Mobile view */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                    {/* Line Number indicator (Desktop only) */}
-                    <div className="hidden md:flex md:col-span-1 items-center gap-1.5 pb-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 text-[11px] font-bold flex items-center justify-center shrink-0">
-                        {idx + 1}
-                      </span>
-                    </div>
-
-                    {/* Searchable Product */}
-                    <div className="md:col-span-5">
-                      <SearchableSelect
-                        label="Product *"
-                        placeholder={
-                          !form.customer_id
-                            ? 'Select a buyer first'
-                            : loadingBuyerProducts
-                            ? 'Loading buyer products...'
-                            : buyerProducts.length === 0
-                            ? 'No products configured for this buyer'
-                            : '— Select Product —'
-                        }
-                        searchPlaceholder={
-                          !form.customer_id
-                            ? 'Select a buyer first'
-                            : 'Search configured product by name, code...'
-                        }
-                        disabled={!form.customer_id || loadingBuyerProducts || buyerProducts.length === 0}
-                        options={productOptions}
-                        value={item.product_id}
-                        onChange={(val) => handleProductChange(idx, val)}
-                      />
-                    </div>
-
-                    {/* Searchable Color with + Add Color */}
-                    <div className="md:col-span-4">
-                      <div className="flex flex-col">
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-medium text-slate-600">
-                            Color Variant *
-                          </label>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAddColor(idx)}
-                            className="text-[10px] text-brand-600 hover:text-brand-700 font-semibold flex items-center gap-0.5"
-                          >
-                            <Plus className="w-2.5 h-2.5" /> Add Color
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="flex-1 min-w-0">
-                            <SearchableSelect
-                              placeholder="— Select Color —"
-                              searchPlaceholder="Search color by name or HEX..."
-                              options={colorOptions}
-                              value={item.color}
-                              onChange={(val) => handleItemChange(idx, 'color', val)}
-                              actionButton={{
-                                label: 'Add New Color',
-                                icon: <Palette className="w-3.5 h-3.5 text-brand-600" />,
-                                onClick: () => handleOpenAddColor(idx),
-                              }}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAddColor(idx)}
-                            className="p-2 border border-slate-300 hover:border-brand-400 bg-white hover:bg-brand-50 text-slate-500 hover:text-brand-600 rounded-md transition-colors shrink-0"
-                            title="Create new color in Colors Master"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
                       </div>
                     </div>
 
-                    {/* Quantity Input */}
-                    <div className="md:col-span-1">
-                      <label className="text-[11px] font-medium text-slate-600 block mb-1">
-                        Qty (pcs) *
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.total_quantity || ''}
-                        onChange={(e) =>
-                          handleItemChange(
-                            idx,
-                            'total_quantity',
-                            parseInt(e.target.value, 10) || 0
-                          )
-                        }
-                        className="w-full min-h-[36px] px-2.5 py-1.5 text-xs text-right font-mono font-semibold bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800"
-                      />
-                    </div>
+                    {/* Product Group Body */}
+                    <div className="p-3.5 sm:p-4 space-y-3.5">
+                      {/* Product Selector */}
+                      <div className="max-w-xl">
+                        <SearchableSelect
+                          label="Product *"
+                          placeholder={
+                            !form.customer_id
+                              ? 'Select a buyer first'
+                              : loadingBuyerProducts
+                              ? 'Loading buyer products...'
+                              : buyerProducts.length === 0
+                              ? 'No products configured for this buyer'
+                              : '— Select Product —'
+                          }
+                          searchPlaceholder={
+                            !form.customer_id
+                              ? 'Select a buyer first'
+                              : 'Search configured product by name, code...'
+                          }
+                          disabled={!form.customer_id || loadingBuyerProducts || buyerProducts.length === 0}
+                          options={productOptions}
+                          value={group.product_id}
+                          onChange={(val) => handleProductChange(gIdx, val)}
+                        />
+                      </div>
 
-                    {/* Actions: Duplicate & Remove (Desktop only) */}
-                    <div className="hidden md:flex md:col-span-1 items-center justify-end gap-1 pb-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleDuplicateItemRow(idx)}
-                        className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
-                        title="Duplicate product line"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={orderItems.length <= 1}
-                        onClick={() => handleRemoveItemRow(idx)}
-                        className={`p-1.5 rounded transition-colors ${
-                          orderItems.length <= 1
-                            ? 'text-slate-300 cursor-not-allowed'
-                            : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                        }`}
-                        title={orderItems.length <= 1 ? 'Order must have at least one line' : 'Remove row'}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Color Variants Sub-section */}
+                      <div className="bg-slate-50/70 border border-slate-200/80 rounded-xl p-3 sm:p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between pb-1 border-b border-slate-200/60">
+                          <div className="flex items-center gap-1.5">
+                            <Palette className="w-3.5 h-3.5 text-brand-600" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                              Pantone Color Variants & Quantities
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddColorVariant(gIdx)}
+                            className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 bg-white hover:bg-brand-50 px-2 py-0.5 rounded border border-brand-200 flex items-center gap-1 transition shadow-2xs"
+                          >
+                            <Plus className="w-3 h-3 stroke-[2.5]" />
+                            <span>Add Color Variant</span>
+                          </button>
+                        </div>
+
+                        {/* Variant Rows */}
+                        <div className="space-y-2">
+                          {group.variants.map((variant, vIdx) => {
+                            const swatch = getColorDetails(variant.color);
+                            const isDup = variant.color ? isColorDuplicateInGroup(gIdx, vIdx, variant.color) : false;
+
+                            return (
+                              <div
+                                key={variant.id}
+                                className={`p-2.5 rounded-lg border transition-all ${
+                                  isDup
+                                    ? 'border-red-300 bg-red-50/50'
+                                    : 'border-slate-200 bg-white hover:border-slate-300'
+                                }`}
+                              >
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+                                  {/* Line Index & Swatch Thumbnail */}
+                                  <div className="hidden md:flex md:col-span-1 items-center justify-center gap-1.5">
+                                    <span className="text-[10px] font-mono text-slate-400 font-bold">
+                                      #{vIdx + 1}
+                                    </span>
+                                    {swatch ? (
+                                      <div
+                                        className="w-4 h-4 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                                        style={{ backgroundColor: swatch.hex }}
+                                        title={`${swatch.name} (${swatch.code || swatch.hex})`}
+                                      />
+                                    ) : (
+                                      <div className="w-4 h-4 rounded-full border border-dashed border-slate-300 shrink-0" />
+                                    )}
+                                  </div>
+
+                                  {/* Color Selector */}
+                                  <div className="md:col-span-6">
+                                    <div className="flex items-center gap-1.5">
+                                      {/* Mobile-only swatch display */}
+                                      <div className="md:hidden">
+                                        {swatch ? (
+                                          <div
+                                            className="w-5 h-5 rounded-full border border-slate-300 shrink-0 shadow-2xs"
+                                            style={{ backgroundColor: swatch.hex }}
+                                            title={`${swatch.name} (${swatch.code || swatch.hex})`}
+                                          />
+                                        ) : (
+                                          <div className="w-5 h-5 rounded-full border border-dashed border-slate-300 shrink-0" />
+                                        )}
+                                      </div>
+
+                                      <div className="flex-1 min-w-0">
+                                        <SearchableSelect
+                                          placeholder="— Select Pantone Color —"
+                                          searchPlaceholder="Search color by name, Pantone code, or HEX..."
+                                          options={colorOptions}
+                                          value={variant.color}
+                                          onChange={(val) => handleVariantChange(gIdx, vIdx, 'color', val)}
+                                          actionButton={{
+                                            label: 'Add New Color',
+                                            icon: <Palette className="w-3.5 h-3.5 text-brand-600" />,
+                                            onClick: () => handleOpenAddColor(gIdx, vIdx),
+                                          }}
+                                        />
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenAddColor(gIdx, vIdx)}
+                                        className="p-1.5 sm:p-2 border border-slate-300 hover:border-brand-400 bg-white hover:bg-brand-50 text-slate-500 hover:text-brand-600 rounded-md transition-colors shrink-0"
+                                        title="Create new color in Colors Master"
+                                      >
+                                        <Plus className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+
+                                    {isDup && (
+                                      <div className="text-[10px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                                        <AlertCircle className="w-3 h-3 shrink-0" />
+                                        Duplicate color variant in this product. Each color variant must be unique.
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Swatch & Pantone Info Tag (Desktop) */}
+                                  <div className="md:col-span-2 hidden md:block">
+                                    {swatch ? (
+                                      <div className="flex items-center gap-1 text-[11px] text-slate-600 truncate">
+                                        {swatch.code ? (
+                                          <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 truncate">
+                                            {swatch.code}
+                                          </span>
+                                        ) : (
+                                          <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-600">
+                                            {swatch.hex}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400 italic">No color selected</span>
+                                    )}
+                                  </div>
+
+                                  {/* Quantity Input */}
+                                  <div className="md:col-span-2">
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={variant.quantity || ''}
+                                        onChange={(e) =>
+                                          handleVariantChange(
+                                            gIdx,
+                                            vIdx,
+                                            'quantity',
+                                            parseInt(e.target.value, 10) || 0
+                                          )
+                                        }
+                                        className="w-full px-2.5 py-1.5 text-xs text-right font-mono font-semibold bg-white border border-slate-300 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 text-slate-800 pr-8"
+                                        placeholder="Qty"
+                                      />
+                                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-400 pointer-events-none">
+                                        pcs
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Remove Variant Action */}
+                                  <div className="md:col-span-1 flex items-center justify-end">
+                                    <button
+                                      type="button"
+                                      disabled={group.variants.length <= 1}
+                                      onClick={() => handleRemoveColorVariant(gIdx, vIdx)}
+                                      className={`p-1.5 rounded transition-colors ${
+                                        group.variants.length <= 1
+                                          ? 'text-slate-300 cursor-not-allowed'
+                                          : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
+                                      }`}
+                                      title={group.variants.length <= 1 ? 'Product must have at least one color variant' : 'Remove color variant'}
+                                    >
+                                      <Trash2 className="w-4 h-4 text-red-500" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Product Group Subtotal Footer */}
+                        <div className="pt-2 flex items-center justify-between text-xs text-slate-600 border-t border-slate-200/60">
+                          <button
+                            type="button"
+                            onClick={() => handleAddColorVariant(gIdx)}
+                            className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add Another Color Variant</span>
+                          </button>
+
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[11px] text-slate-500">Product Line Total:</span>
+                            <span className="font-mono font-bold text-xs text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                              {groupTotal.toLocaleString()} pcs
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Bottom summary bar of product lines */}
             <div className="mt-4 pt-3.5 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/50 p-3 rounded-xl">
               <button
                 type="button"
-                onClick={handleAddItemRow}
+                onClick={handleAddProductGroup}
                 className="w-full sm:w-auto text-xs text-brand-600 hover:text-brand-700 font-bold flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-brand-200 bg-white hover:bg-brand-50 transition-colors shadow-2xs"
               >
                 <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -1038,12 +1339,18 @@ export default function CreateProductionOrder() {
 
               <div className="flex items-center gap-3 text-xs w-full sm:w-auto justify-between sm:justify-end">
                 <span className="text-slate-500">
-                  Total Lines: <strong className="text-slate-800 font-semibold">{orderItems.length}</strong>
+                  Products: <strong className="text-slate-800 font-semibold">{productGroups.length}</strong>
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="text-slate-500">
+                  Colors: <strong className="text-slate-800 font-semibold">{totalVariantsCount}</strong>
                 </span>
                 <span className="text-slate-300">|</span>
                 <span className="text-slate-500">
                   Total Order Quantity:{' '}
-                  <strong className="text-brand-700 font-mono text-sm font-bold">{totalPieces.toLocaleString()} pcs</strong>
+                  <strong className="text-brand-700 font-mono text-sm font-bold">
+                    {totalPieces.toLocaleString()} pcs
+                  </strong>
                 </span>
               </div>
             </div>
@@ -1055,7 +1362,9 @@ export default function CreateProductionOrder() {
           <div className="w-full sm:w-auto flex items-center justify-between sm:justify-start gap-3 text-xs text-slate-500">
             <div className="flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Target Delivery: <strong className="text-slate-800">{form.target_delivery_date || 'Not set'}</strong></span>
+              <span>
+                Target Delivery: <strong className="text-slate-800">{form.target_delivery_date || 'Not set'}</strong>
+              </span>
             </div>
             <div className="sm:hidden font-mono font-bold text-brand-700">
               {totalPieces.toLocaleString()} pcs
@@ -1139,7 +1448,7 @@ export default function CreateProductionOrder() {
               {!colorLookupLoading && colorIsVerified && colorVerifiedInfo && (
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-medium">
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>Verified {colorVerifiedInfo.system} ({colorVerifiedInfo.category})</span>
+                  <span>Verified ${colorVerifiedInfo.system} (${colorVerifiedInfo.category})</span>
                 </div>
               )}
               {!colorLookupLoading && colorIsCustomMode && (

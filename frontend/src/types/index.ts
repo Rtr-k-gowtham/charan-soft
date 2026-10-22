@@ -855,10 +855,12 @@ export interface DispatchRecord {
   transporter_name?: string;
   delivery_challan_number?: string;
   invoice_reference?: string;
+  eway_bill_number?: string;
   destination_notes?: string;
   remarks?: string;
   truck_photo_urls?: string[];
   loaded_cartons_photo_urls?: string[];
+  eway_bill_photo_urls?: string[];
   labels_photo_urls?: string[];
   document_urls?: string[];
   status: 'Partially Dispatched' | 'Fully Dispatched';

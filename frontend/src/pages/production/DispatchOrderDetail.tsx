@@ -12,6 +12,7 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
+import EwayBillCameraCapture from '../../components/production/EwayBillCameraCapture';
 import {
   ArrowLeft,
   Truck,
@@ -115,12 +116,14 @@ export default function DispatchOrderDetail() {
     transporter_name: '',
     delivery_challan_number: '',
     invoice_reference: '',
+    eway_bill_number: '',
     destination_notes: '',
     remarks: ''
   });
   const [selectedCartonIds, setSelectedCartonIds] = useState<number[]>([]);
   const [truckPhotos, setTruckPhotos] = useState<string[]>([]);
   const [cartonPhotos, setCartonPhotos] = useState<string[]>([]);
+  const [ewayBillPhoto, setEwayBillPhoto] = useState<string | null>(null);
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [dispatchError, setDispatchError] = useState('');
 
@@ -189,9 +192,16 @@ export default function DispatchOrderDetail() {
     const remainingCartons = Math.max(0, totalPackedCartons - dispatchedCartons);
     const remainingToDispatchQty = Math.max(0, orderedQty - dispatchedQty);
 
-    let completionStatus: 'Packed / Awaiting Dispatch' | 'Partially Dispatched' | 'Fully Dispatched & Completed' = 'Packed / Awaiting Dispatch';
-    if ((dispatchedQty >= orderedQty && orderedQty > 0) || (totalPackedCartons > 0 && remainingCartons === 0)) {
-      completionStatus = 'Fully Dispatched & Completed';
+    const hasValidEwayProof = dispatches.length > 0 && dispatches.every(d =>
+      Boolean((d.eway_bill_number || '').trim()) &&
+      ((d.eway_bill_photo_urls && d.eway_bill_photo_urls.length > 0) || (d.document_urls && d.document_urls.length > 0))
+    );
+
+    let completionStatus: 'Packed / Awaiting Dispatch' | 'Partially Dispatched' | 'Awaiting E-Way Bill Proof' | 'Fully Dispatched & Completed' = 'Packed / Awaiting Dispatch';
+    const allDispatched = (dispatchedQty >= orderedQty && orderedQty > 0) || (totalPackedCartons > 0 && remainingCartons === 0);
+
+    if (allDispatched) {
+      completionStatus = hasValidEwayProof ? 'Fully Dispatched & Completed' : 'Awaiting E-Way Bill Proof';
     } else if (dispatchedQty > 0 || dispatchedCartons > 0) {
       completionStatus = 'Partially Dispatched';
     }
@@ -203,7 +213,8 @@ export default function DispatchOrderDetail() {
       dispatchedCartons,
       remainingCartons,
       remainingToDispatchQty,
-      completionStatus
+      completionStatus,
+      hasValidEwayProof
     };
   }, [order, items, dispatches, cartons]);
 
@@ -214,6 +225,7 @@ export default function DispatchOrderDetail() {
       return;
     }
     const randNum = Math.floor(1000 + Math.random() * 9000);
+    const randEway = Math.floor(100000000000 + Math.random() * 900000000000);
     setDispatchForm(prev => ({
       ...prev,
       dispatch_date: new Date().toISOString().split('T')[0],
@@ -224,6 +236,7 @@ export default function DispatchOrderDetail() {
       transporter_name: '',
       delivery_challan_number: `DC-DISP-${randNum}`,
       invoice_reference: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
+      eway_bill_number: `EWB-${randEway}`,
       destination_notes: (order as any)?.delivery_address || (order as any)?.destination_hub || '',
       remarks: ''
     }));
@@ -231,6 +244,7 @@ export default function DispatchOrderDetail() {
     setSelectedCartonIds(availableCartons.map(c => c.id || 0).filter(Boolean));
     setTruckPhotos([]);
     setCartonPhotos([]);
+    setEwayBillPhoto(null);
     setDispatchError('');
     setDispatchModalOpen(true);
   };
@@ -294,9 +308,25 @@ export default function DispatchOrderDetail() {
       return;
     }
 
+    const trimEw = dispatchForm.eway_bill_number.trim();
+    if (!trimEw) {
+      setDispatchError('E-Way Bill Number is mandatory before dispatch and order completion.');
+      return;
+    }
+
+    if (dispatches.some(d => (d.eway_bill_number || '').trim().toLowerCase() === trimEw.toLowerCase())) {
+      setDispatchError(`Duplicate Dispatch Error: E-Way Bill number '${trimEw}' has already been recorded for this order.`);
+      return;
+    }
+
     const selectedCartons = cartons.filter(c => selectedCartonIds.includes(c.id || 0));
     const totalPcs = selectedCartons.reduce((sum, c) => sum + Number(c.items_count || 0), 0);
     const totalBoxesCount = selectedCartons.length * 5; // Section D ratio
+
+    if (!ewayBillPhoto) {
+      setDispatchError('Mandatory E-Way Bill camera capture proof is missing. A clear photograph of the printed E-Way Bill document must be captured via camera and confirmed.');
+      return;
+    }
 
     if (!truckPhotos || truckPhotos.length === 0) {
       setDispatchError('Real-time camera photograph with live GPS coordinates of the transport vehicle & registration number plate is mandatory.');
@@ -328,10 +358,13 @@ export default function DispatchOrderDetail() {
         transporter_name: dispatchForm.transporter_name,
         delivery_challan_number: dispatchForm.delivery_challan_number,
         invoice_reference: dispatchForm.invoice_reference,
+        eway_bill_number: trimEw,
         destination_notes: dispatchForm.destination_notes,
         remarks: dispatchForm.remarks,
         truck_photo_urls: truckPhotos,
         loaded_cartons_photo_urls: cartonPhotos,
+        eway_bill_photo_urls: [ewayBillPhoto],
+        document_urls: [ewayBillPhoto],
         carton_ids: selectedCartonIds
       });
 
@@ -549,6 +582,12 @@ export default function DispatchOrderDetail() {
                           Inv: {disp.invoice_reference}
                         </span>
                       )}
+                      {disp.eway_bill_number && (
+                        <span className="px-2 py-0.5 rounded bg-emerald-50 font-mono text-[10px] text-emerald-800 border border-emerald-200 font-bold flex items-center gap-1">
+                          <FileText className="w-3 h-3 text-emerald-600" />
+                          E-Way: {disp.eway_bill_number}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
                       <span>Vehicle: {disp.vehicle_number}</span>
@@ -578,7 +617,37 @@ export default function DispatchOrderDetail() {
                 )}
 
                 {/* Evidence Photos */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  {/* E-Way Bill Document Photos */}
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-600 mb-1.5 flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>E-Way Bill Camera Proof</span>
+                    </div>
+                    {(() => {
+                      const photos = parsePhotos(disp.eway_bill_photo_urls || disp.document_urls);
+                      return photos.length > 0 ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {photos.map((url, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setPreviewImage(url)}
+                              className="relative group w-16 h-16 rounded-lg overflow-hidden border border-emerald-300 cursor-pointer shadow-2xs hover:scale-105 transition"
+                              title="Click to zoom E-Way Bill proof"
+                            >
+                              <img src={url} alt="E-Way Bill Proof" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                <ZoomIn className="w-4 h-4 text-white" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-400 italic">No E-Way Bill photo attached</div>
+                      );
+                    })()}
+                  </div>
+
                   {/* Truck Photos */}
                   <div>
                     <div className="text-[11px] font-semibold text-slate-600 mb-1.5 flex items-center gap-1">
@@ -743,6 +812,17 @@ export default function DispatchOrderDetail() {
                 onChange={e => setDispatchForm({ ...dispatchForm, invoice_reference: e.target.value })}
               />
             </FormField>
+
+            <FormField label="E-Way Bill Number" required>
+              <input
+                type="text"
+                required
+                placeholder="e.g. 541298457612 or EWB-2026-9041"
+                className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
+                value={dispatchForm.eway_bill_number}
+                onChange={e => setDispatchForm({ ...dispatchForm, eway_bill_number: e.target.value })}
+              />
+            </FormField>
           </div>
 
           {/* Cartons Selection */}
@@ -813,12 +893,21 @@ export default function DispatchOrderDetail() {
 
           {/* Mandatory Live Camera Photo Proofs */}
           <div className="space-y-4 pt-1">
+            <EwayBillCameraCapture
+              value={ewayBillPhoto}
+              onChange={setEwayBillPhoto}
+              ewayBillNumber={dispatchForm.eway_bill_number}
+              orderNumber={order?.order_number}
+              error={dispatchError && !ewayBillPhoto ? 'Real-time camera photograph proof of the E-Way Bill is mandatory.' : undefined}
+              required={true}
+            />
+
             <LivePhotoCaptureField
               label="Truck & Vehicle Registration Plate Photo"
               required={true}
               photos={truckPhotos}
               onPhotosChange={setTruckPhotos}
-              stageName="Dispatch — Transport Vehicle (Stage 11)"
+              stageName="Dispatch — Transport Vehicle (Stage 10)"
               orderNumber={order?.order_number}
               error={dispatchError && truckPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the transport vehicle is mandatory.' : undefined}
               buttonText="Take Real-Time Truck Photo"
@@ -829,7 +918,7 @@ export default function DispatchOrderDetail() {
               required={true}
               photos={cartonPhotos}
               onPhotosChange={setCartonPhotos}
-              stageName="Dispatch — Loaded Cartons (Stage 11)"
+              stageName="Dispatch — Loaded Cartons (Stage 10)"
               orderNumber={order?.order_number}
               error={dispatchError && cartonPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the loaded cartons & seal is mandatory.' : undefined}
               buttonText="Take Real-Time Carton Load Photo"

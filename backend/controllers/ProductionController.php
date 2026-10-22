@@ -1294,10 +1294,12 @@ class ProductionController {
                   `transporter_name` VARCHAR(255) NULL,
                   `delivery_challan_number` VARCHAR(100) NULL,
                   `invoice_reference` VARCHAR(100) NULL,
+                  `eway_bill_number` VARCHAR(100) NULL,
                   `destination_notes` TEXT NULL,
                   `remarks` TEXT NULL,
                   `truck_photo_urls` JSON NULL,
                   `loaded_cartons_photo_urls` JSON NULL,
+                  `eway_bill_photo_urls` JSON NULL,
                   `labels_photo_urls` JSON NULL,
                   `document_urls` JSON NULL,
                   `status` VARCHAR(50) DEFAULT 'Dispatched',
@@ -1307,6 +1309,16 @@ class ProductionController {
                   INDEX `idx_dr_ord` (`production_order_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
+
+            try {
+                $cols = $pdo->query("SHOW COLUMNS FROM dispatch_records")->fetchAll(PDO::FETCH_COLUMN);
+                if (!in_array('eway_bill_number', $cols)) {
+                    $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_number VARCHAR(100) NULL AFTER invoice_reference");
+                }
+                if (!in_array('eway_bill_photo_urls', $cols)) {
+                    $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_photo_urls JSON NULL AFTER loaded_cartons_photo_urls");
+                }
+            } catch (Exception $colEx) {}
         } catch (Exception $e) {}
     }
 
@@ -3431,7 +3443,7 @@ class ProductionController {
             $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
             $dispatches = $pdo->query("SELECT * FROM dispatch_records WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
             foreach ($dispatches as &$dsp) {
-                foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
+                foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'eway_bill_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
                     if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
                         $dsp[$fld] = json_decode($dsp[$fld], true) ?: [];
                     }
@@ -3486,6 +3498,29 @@ class ProductionController {
                     Response::error("Duplicate Dispatch Error: Invoice reference '{$invRef}' has already been recorded for this order (Dispatch {$dupInv['dispatch_number']}). Duplicate dispatch is not allowed.", 422);
                     return;
                 }
+            }
+
+            // 2b. Mandatory E-Way Bill Number Validation & Duplicate Check
+            $ewayBillNo = trim((string)($data['eway_bill_number'] ?? ''));
+            if (empty($ewayBillNo)) {
+                Response::error("E-Way Bill Number is mandatory before dispatch and order completion.", 422);
+                return;
+            }
+
+            $dupEwStmt = $pdo->prepare("SELECT id, dispatch_number FROM dispatch_records WHERE production_order_id = ? AND LOWER(TRIM(COALESCE(eway_bill_number, ''))) = LOWER(?)");
+            $dupEwStmt->execute([$pId, $ewayBillNo]);
+            $dupEw = $dupEwStmt->fetch();
+            if ($dupEw) {
+                Response::error("Duplicate Dispatch Error: E-Way Bill number '{$ewayBillNo}' has already been recorded for this order (Dispatch {$dupEw['dispatch_number']}).", 422);
+                return;
+            }
+
+            // 2c. Mandatory E-Way Bill Camera Photo Proof Validation
+            $rawEwayPhotos = (array)($data['eway_bill_photo_urls'] ?? $data['document_urls'] ?? []);
+            $ewayPhotos = array_values(array_filter($rawEwayPhotos, fn($p) => !empty(trim((string)$p))));
+            if (empty($ewayPhotos)) {
+                Response::error("Mandatory E-Way Bill camera capture proof is missing. A clear photograph of the E-Way Bill document must be captured via camera before dispatch can be completed.", 422);
+                return;
             }
 
             // 3. Check if all cartons for this order have already been dispatched
@@ -3555,37 +3590,77 @@ class ProductionController {
 
             $pdo->beginTransaction();
 
-            $stmt = $pdo->prepare("INSERT INTO dispatch_records (
-                dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
-                total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
-                transporter_name, delivery_challan_number, invoice_reference, destination_notes, 
-                remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, 
-                document_urls, carton_serial_numbers, items_breakdown
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $cols = $pdo->query("SHOW COLUMNS FROM dispatch_records")->fetchAll(PDO::FETCH_COLUMN);
+            $hasEwayCol = in_array('eway_bill_number', $cols);
+            $hasEwayPhotoCol = in_array('eway_bill_photo_urls', $cols);
 
-            $stmt->execute([
-                $dspNo, 
-                $pId, 
-                $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
-                $data['dispatch_date'] ?? date('Y-m-d'), 
-                $data['dispatch_time'] ?? date('H:i:s'), 
-                $totalDispatched, 
-                $totalBoxes, 
-                $data['vehicle_number'] ?? '', 
-                $data['driver_name'] ?? null, 
-                $data['driver_contact'] ?? null, 
-                $data['transporter_name'] ?? null, 
-                $dcNo ?: null, 
-                $invRef ?: null, 
-                $data['destination_notes'] ?? null, 
-                $data['remarks'] ?? '', 
-                json_encode($data['truck_photo_urls'] ?? []), 
-                json_encode($data['loaded_cartons_photo_urls'] ?? []), 
-                json_encode($data['labels_photo_urls'] ?? []), 
-                json_encode($data['document_urls'] ?? []), 
-                json_encode($cartonSerialList), 
-                json_encode($data['items_breakdown'] ?? [])
-            ]);
+            if ($hasEwayCol && $hasEwayPhotoCol) {
+                $stmt = $pdo->prepare("INSERT INTO dispatch_records (
+                    dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
+                    total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
+                    transporter_name, delivery_challan_number, invoice_reference, eway_bill_number, destination_notes, 
+                    remarks, truck_photo_urls, loaded_cartons_photo_urls, eway_bill_photo_urls, labels_photo_urls, 
+                    document_urls, carton_serial_numbers, items_breakdown
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+                $stmt->execute([
+                    $dspNo, 
+                    $pId, 
+                    $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
+                    $data['dispatch_date'] ?? date('Y-m-d'), 
+                    $data['dispatch_time'] ?? date('H:i:s'), 
+                    $totalDispatched, 
+                    $totalBoxes, 
+                    $data['vehicle_number'] ?? '', 
+                    $data['driver_name'] ?? null, 
+                    $data['driver_contact'] ?? null, 
+                    $data['transporter_name'] ?? null, 
+                    $dcNo ?: null, 
+                    $invRef ?: null, 
+                    $ewayBillNo ?: null,
+                    $data['destination_notes'] ?? null, 
+                    $data['remarks'] ?? '', 
+                    json_encode($data['truck_photo_urls'] ?? []), 
+                    json_encode($data['loaded_cartons_photo_urls'] ?? []), 
+                    json_encode($ewayPhotos),
+                    json_encode($data['labels_photo_urls'] ?? []), 
+                    json_encode($ewayPhotos), 
+                    json_encode($cartonSerialList), 
+                    json_encode($data['items_breakdown'] ?? [])
+                ]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO dispatch_records (
+                    dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
+                    total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
+                    transporter_name, delivery_challan_number, invoice_reference, destination_notes, 
+                    remarks, truck_photo_urls, loaded_cartons_photo_urls, labels_photo_urls, 
+                    document_urls, carton_serial_numbers, items_breakdown
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+                $stmt->execute([
+                    $dspNo, 
+                    $pId, 
+                    $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
+                    $data['dispatch_date'] ?? date('Y-m-d'), 
+                    $data['dispatch_time'] ?? date('H:i:s'), 
+                    $totalDispatched, 
+                    $totalBoxes, 
+                    $data['vehicle_number'] ?? '', 
+                    $data['driver_name'] ?? null, 
+                    $data['driver_contact'] ?? null, 
+                    $data['transporter_name'] ?? null, 
+                    $dcNo ?: null, 
+                    $invRef ?: null, 
+                    $data['destination_notes'] ?? null, 
+                    $data['remarks'] ?? '', 
+                    json_encode($data['truck_photo_urls'] ?? []), 
+                    json_encode($data['loaded_cartons_photo_urls'] ?? []), 
+                    json_encode($data['labels_photo_urls'] ?? []), 
+                    json_encode($ewayPhotos), 
+                    json_encode($cartonSerialList), 
+                    json_encode($data['items_breakdown'] ?? [])
+                ]);
+            }
             $dspId = (int)$pdo->lastInsertId();
 
             // 6. Mark selected cartons as Dispatched in packing_cartons
