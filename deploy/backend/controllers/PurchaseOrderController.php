@@ -155,6 +155,18 @@ class PurchaseOrderController {
                     $supplierId = (int)$pdo->lastInsertId();
                 }
             }
+
+            // Pre-transaction setup: Ensure schema tables exist and detect columns OUTSIDE transaction
+            // (In MySQL, executing DDL statements like CREATE TABLE causes an immediate implicit commit)
+            $this->ensurePOTermsTable($pdo);
+            try {
+                $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN production_order_id INT NULL");
+            } catch (Exception $alterEx) {}
+
+            // Dynamically detect existing columns in purchase_orders & purchase_order_items to prevent schema mismatch
+            $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
+            $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
+
             $pdo->beginTransaction();
 
             // Ensure business timezone is set to Asia/Kolkata
@@ -198,9 +210,6 @@ class PurchaseOrderController {
                 $dateFormatted = date('dmy', strtotime($poDate) ?: time());
             }
             $prefix = 'PO-' . $dateFormatted . '-';
-
-            // Dynamically detect existing columns in purchase_orders to prevent schema mismatch
-            $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
 
             $poId = null;
             $poNumber = null;
@@ -276,9 +285,6 @@ class PurchaseOrderController {
                 }
             }
 
-            // Dynamically detect existing columns in purchase_order_items
-            $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
-
             foreach ($items as $idx => $it) {
                 if (empty($it['order_no'])) {
                     $it['order_no'] = 'ORD-' . str_pad((string)($idx + 1), 3, '0', STR_PAD_LEFT);
@@ -341,8 +347,7 @@ class PurchaseOrderController {
                 }
             }
 
-            // Save PO Terms snapshot
-            $this->ensurePOTermsTable($pdo);
+            // Save PO Terms snapshot (without invoking DDL inside transaction)
             $poTerms = $data['terms'] ?? null;
             if (!empty($poTerms) && is_array($poTerms)) {
                 $this->savePOTerms($pdo, $poId, $poTerms);
@@ -356,11 +361,15 @@ class PurchaseOrderController {
                 }
             }
 
-            $pdo->commit();
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
             AuditLogger::log('PurchaseOrders', 'CREATE', $poId, null, ['po_number' => $poNumber, 'status' => $poStatus, 'net_amount' => $netTotal]);
             Response::success(['id' => $poId, 'po_number' => $poNumber, 'status' => $poStatus], "Purchase Order created successfully", 201);
         } catch (Exception $e) {
-            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             Response::error($e->getMessage(), 500);
         }
     }
@@ -376,6 +385,10 @@ class PurchaseOrderController {
 
         try {
             $pdo = Database::getConnection();
+            $this->ensurePOTermsTable($pdo);
+            $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
+            $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
+
             $pdo->beginTransaction();
 
             $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
@@ -426,9 +439,6 @@ class PurchaseOrderController {
             $paidAmt = (float)($po['paid_amount'] ?? 0);
             $balanceAmt = round($netTotal - $paidAmt, 2);
 
-            // Update purchase_orders table dynamically based on existing columns
-            $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
-
             $updateCandidates = [
                 'category_id' => $categoryId,
                 'supplier_id' => $supplierId,
@@ -460,8 +470,6 @@ class PurchaseOrderController {
             // Remove previous items and insert updated items
             $delStmt = $pdo->prepare("DELETE FROM purchase_order_items WHERE purchase_order_id = ?");
             $delStmt->execute([$poId]);
-
-            $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
 
             foreach ($items as $idx => $it) {
                 if (empty($it['order_no'])) {
@@ -515,7 +523,9 @@ class PurchaseOrderController {
                 $this->savePOTerms($pdo, $poId, $data['terms']);
             }
 
-            $pdo->commit();
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
             AuditLogger::log('PurchaseOrders', 'UPDATE', $poId, ['old_net_amount' => $po['net_amount']], ['net_amount' => $netTotal, 'items_count' => count($items)]);
             Response::success([
                 'id' => $poId,
@@ -524,7 +534,9 @@ class PurchaseOrderController {
                 'net_amount' => $netTotal
             ], "Purchase Order updated successfully");
         } catch (Exception $e) {
-            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             Response::error($e->getMessage(), 500);
         }
     }
@@ -549,16 +561,19 @@ class PurchaseOrderController {
             $po = $stmt->fetch();
 
             if (!$po) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Purchase Order not found", 404);
                 return;
             }
 
             if (strtolower(trim((string)($po['status'] ?? ''))) === 'draft') {
+                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Cannot record payments against a Draft Purchase Order. Please confirm and order the PO first.", 422);
                 return;
             }
 
             if ($amount > (float)$po['balance_amount']) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
                 Response::error("Payment amount (₹{$amount}) cannot exceed outstanding balance (₹{$po['balance_amount']})", 422);
                 return;
             }
@@ -596,7 +611,9 @@ class PurchaseOrderController {
             $uStmt = $pdo->prepare("UPDATE purchase_orders SET paid_amount = ?, balance_amount = ?, payment_status = ? WHERE id = ?");
             $uStmt->execute([$newPaid, $newBalance, $newStatus, $poId]);
 
-            $pdo->commit();
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
             AuditLogger::log('PurchasePayments', 'CREATE', $poId, ['balance' => $po['balance_amount']], ['new_balance' => $newBalance, 'paid' => $amount]);
             Response::success([
                 'paid_amount' => $newPaid,
@@ -604,7 +621,9 @@ class PurchaseOrderController {
                 'payment_status' => $newStatus
             ], "Payment recorded successfully");
         } catch (Exception $e) {
-            if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             Response::error($e->getMessage(), 500);
         }
     }
@@ -1101,7 +1120,9 @@ class PurchaseOrderController {
                 $uStmt->execute([$canonicalStatus, $poId]);
             }
 
-            $pdo->commit();
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
 
             AuditLogger::log('PurchaseOrders', 'UPDATE_STATUS', $poId, ['old_status' => $po['status']], ['status' => $canonicalStatus]);
             Response::success([
@@ -1111,12 +1132,17 @@ class PurchaseOrderController {
                 'payment_due_date' => $canonicalStatus === 'Ordered' ? $dueDate : null
             ], "Purchase Order status updated to {$canonicalStatus}");
         } catch (Exception $e) {
-            if (isset($pdo) && $pdo && $pdo->inTransaction()) $pdo->rollBack();
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             Response::error($e->getMessage(), 500);
         }
     }
 
     private function ensurePOTermsTable(PDO $pdo): void {
+        if ($pdo->inTransaction()) {
+            return; // DDL causes an implicit COMMIT in MySQL. Never execute inside an active transaction.
+        }
         try {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS purchase_order_terms (
@@ -1155,7 +1181,6 @@ class PurchaseOrderController {
     }
 
     private function savePOTerms(PDO $pdo, int $poId, array $terms): void {
-        $this->ensurePOTermsTable($pdo);
         $delStmt = $pdo->prepare("DELETE FROM purchase_order_terms WHERE purchase_order_id = ?");
         $delStmt->execute([$poId]);
 

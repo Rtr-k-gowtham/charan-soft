@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionOrderBOMReport, ProductionStage, PurchaseOrder } from '../../types';
@@ -50,6 +50,7 @@ const fmtCurrency = (n: number) =>
 export default function POOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const handleBack = useStageBackNavigation('/production/po');
 
   const [order, setOrder] = useState<ProductionOrder | null>(null);
@@ -59,6 +60,13 @@ export default function POOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setSuccessToast(location.state.successMessage);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
 
   // Advance to Inward Stage Modal

@@ -619,7 +619,6 @@ export default function PurchaseOrders() {
   // Load category fields for viewed PO dynamically from DB
   useEffect(() => {
     if (!viewPO || !viewPO.category_id) return;
-    setApprovalSuccess('');
     setApprovalError('');
     const catId = Number(viewPO.category_id);
     const existing = categories.find(c => c.id === catId);
@@ -1014,6 +1013,15 @@ export default function PurchaseOrders() {
         });
         return;
       }
+      if (createdPO?.id) {
+        navigate(`/purchase/orders/${createdPO.id}`, {
+          state: {
+            successMessage: `Purchase Order ${createdPO?.po_number || ''} ${poStatus === 'Ordered' ? 'issued & locked' : 'saved as draft'} successfully!`
+          }
+        });
+        return;
+      }
+      navigate('/purchase/orders', { replace: true });
     } catch (e: unknown) {
       setError((e as Error).message || 'Failed to create Purchase Order');
     } finally {
@@ -1367,6 +1375,11 @@ export default function PurchaseOrders() {
             console.warn('Failed to load PO for view:', err);
           });
       }
+    }
+
+    if (location.state?.successMessage) {
+      setApprovalSuccess(location.state.successMessage);
+      window.history.replaceState({}, document.title);
     }
   }, [routeId, searchParams, location.pathname, location.state]);
 
