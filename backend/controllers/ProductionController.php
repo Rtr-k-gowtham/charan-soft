@@ -1315,6 +1315,12 @@ class ProductionController {
                 if (!in_array('eway_bill_number', $cols)) {
                     $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_number VARCHAR(100) NULL AFTER invoice_reference");
                 }
+                if (!in_array('eway_bill_filename', $cols)) {
+                    $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_filename VARCHAR(255) NULL AFTER eway_bill_number");
+                }
+                if (!in_array('eway_bill_filesize', $cols)) {
+                    $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_filesize INT NULL AFTER eway_bill_filename");
+                }
                 if (!in_array('eway_bill_photo_urls', $cols)) {
                     $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_photo_urls JSON NULL AFTER loaded_cartons_photo_urls");
                 }
@@ -3515,13 +3521,73 @@ class ProductionController {
                 return;
             }
 
-            // 2c. Mandatory E-Way Bill Camera Photo Proof Validation
-            $rawEwayPhotos = (array)($data['eway_bill_photo_urls'] ?? $data['document_urls'] ?? []);
-            $ewayPhotos = array_values(array_filter($rawEwayPhotos, fn($p) => !empty(trim((string)$p))));
-            if (empty($ewayPhotos)) {
-                Response::error("Mandatory E-Way Bill camera capture proof is missing. A clear photograph of the E-Way Bill document must be captured via camera before dispatch can be completed.", 422);
+            // 2c. Mandatory E-Way Bill PDF Document Validation & Processing
+            $rawEwayDoc = trim((string)($data['eway_bill_pdf'] ?? ''));
+            if (empty($rawEwayDoc)) {
+                $rawArr = (array)($data['document_urls'] ?? $data['eway_bill_photo_urls'] ?? []);
+                $ewayDocs = array_values(array_filter($rawArr, fn($p) => !empty(trim((string)$p))));
+                $rawEwayDoc = $ewayDocs[0] ?? '';
+            }
+
+            if (empty($rawEwayDoc)) {
+                Response::error("Mandatory E-Way Bill PDF document is missing. Please upload the original multi-page E-Way Bill PDF before dispatch can be completed.", 422);
                 return;
             }
+
+            $docUrl = $rawEwayDoc;
+            $fileName = trim((string)($data['eway_bill_filename'] ?? ''));
+            $fileSize = (int)($data['eway_bill_filesize'] ?? 0);
+
+            // If base64 payload, validate file type (%PDF- header) and size limit (10MB)
+            if (preg_match('/^data:([^;]+);base64,(.+)$/', $rawEwayDoc, $matches)) {
+                $b64Data = $matches[2];
+                $binary = base64_decode($b64Data, true);
+
+                if ($binary === false) {
+                    Response::error("Corrupt or invalid document data received.", 422);
+                    return;
+                }
+
+                $binSize = strlen($binary);
+                // 10MB limit
+                if ($binSize > 10 * 1024 * 1024) {
+                    Response::error("Uploaded E-Way Bill PDF exceeds the 10 MB limit (" . round($binSize / (1024 * 1024), 2) . " MB).", 422);
+                    return;
+                }
+
+                // Check magic bytes: must start with %PDF- (or JPEG/PNG for backward compatibility)
+                $isPdf = (strncmp($binary, '%PDF-', 5) === 0);
+                $isJpeg = (strncmp($binary, "\xFF\xD8\xFF", 3) === 0);
+                $isPng = (strncmp($binary, "\x89PNG", 4) === 0);
+
+                if (!$isPdf && !$isJpeg && !$isPng) {
+                    Response::error("Invalid file format. The uploaded E-Way Bill document must be a valid PDF file.", 422);
+                    return;
+                }
+
+                if ($fileSize <= 0) $fileSize = $binSize;
+                if (empty($fileName)) {
+                    $ext = $isPdf ? 'pdf' : ($isPng ? 'png' : 'jpg');
+                    $fileName = 'Eway_Bill_' . preg_replace('/[^a-zA-Z0-9_-]/', '', $ewayBillNo) . '.' . $ext;
+                }
+
+                // Attempt to write to uploads directory
+                $uploadRelDir = '/uploads/eway_bills';
+                $uploadAbsDir = dirname(__DIR__, 2) . $uploadRelDir;
+                if (!is_dir($uploadAbsDir)) {
+                    @mkdir($uploadAbsDir, 0755, true);
+                }
+                if (is_dir($uploadAbsDir) && is_writable($uploadAbsDir)) {
+                    $cleanExt = $isPdf ? 'pdf' : ($isPng ? 'png' : 'jpg');
+                    $safeFileName = 'EWB_' . $pId . '_' . time() . '_' . substr(md5($binary), 0, 8) . '.' . $cleanExt;
+                    $fullPath = $uploadAbsDir . '/' . $safeFileName;
+                    if (@file_put_contents($fullPath, $binary) !== false) {
+                        $docUrl = $uploadRelDir . '/' . $safeFileName;
+                    }
+                }
+            }
+
+            $ewayDocs = [$docUrl];
 
             // 3. Check if all cartons for this order have already been dispatched
             $cartonCheckStmt = $pdo->prepare("SELECT COUNT(*) as total_ctns, SUM(IF(status = 'Dispatched', 1, 0)) as dispatched_ctns FROM packing_cartons WHERE production_order_id = ?");
@@ -3593,41 +3659,81 @@ class ProductionController {
             $cols = $pdo->query("SHOW COLUMNS FROM dispatch_records")->fetchAll(PDO::FETCH_COLUMN);
             $hasEwayCol = in_array('eway_bill_number', $cols);
             $hasEwayPhotoCol = in_array('eway_bill_photo_urls', $cols);
+            $hasFnCol = in_array('eway_bill_filename', $cols);
+            $hasFsCol = in_array('eway_bill_filesize', $cols);
 
             if ($hasEwayCol && $hasEwayPhotoCol) {
-                $stmt = $pdo->prepare("INSERT INTO dispatch_records (
-                    dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
-                    total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
-                    transporter_name, delivery_challan_number, invoice_reference, eway_bill_number, destination_notes, 
-                    remarks, truck_photo_urls, loaded_cartons_photo_urls, eway_bill_photo_urls, labels_photo_urls, 
-                    document_urls, carton_serial_numbers, items_breakdown
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                if ($hasFnCol && $hasFsCol) {
+                    $stmt = $pdo->prepare("INSERT INTO dispatch_records (
+                        dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
+                        total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
+                        transporter_name, delivery_challan_number, invoice_reference, eway_bill_number, eway_bill_filename, eway_bill_filesize, destination_notes, 
+                        remarks, truck_photo_urls, loaded_cartons_photo_urls, eway_bill_photo_urls, labels_photo_urls, 
+                        document_urls, carton_serial_numbers, items_breakdown
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-                $stmt->execute([
-                    $dspNo, 
-                    $pId, 
-                    $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
-                    $data['dispatch_date'] ?? date('Y-m-d'), 
-                    $data['dispatch_time'] ?? date('H:i:s'), 
-                    $totalDispatched, 
-                    $totalBoxes, 
-                    $data['vehicle_number'] ?? '', 
-                    $data['driver_name'] ?? null, 
-                    $data['driver_contact'] ?? null, 
-                    $data['transporter_name'] ?? null, 
-                    $dcNo ?: null, 
-                    $invRef ?: null, 
-                    $ewayBillNo ?: null,
-                    $data['destination_notes'] ?? null, 
-                    $data['remarks'] ?? '', 
-                    json_encode($data['truck_photo_urls'] ?? []), 
-                    json_encode($data['loaded_cartons_photo_urls'] ?? []), 
-                    json_encode($ewayPhotos),
-                    json_encode($data['labels_photo_urls'] ?? []), 
-                    json_encode($ewayPhotos), 
-                    json_encode($cartonSerialList), 
-                    json_encode($data['items_breakdown'] ?? [])
-                ]);
+                    $stmt->execute([
+                        $dspNo, 
+                        $pId, 
+                        $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
+                        $data['dispatch_date'] ?? date('Y-m-d'), 
+                        $data['dispatch_time'] ?? date('H:i:s'), 
+                        $totalDispatched, 
+                        $totalBoxes, 
+                        $data['vehicle_number'] ?? '', 
+                        $data['driver_name'] ?? null, 
+                        $data['driver_contact'] ?? null, 
+                        $data['transporter_name'] ?? null, 
+                        $dcNo ?: null, 
+                        $invRef ?: null, 
+                        $ewayBillNo ?: null,
+                        $fileName ?: null,
+                        $fileSize ?: null,
+                        $data['destination_notes'] ?? null, 
+                        $data['remarks'] ?? '', 
+                        json_encode($data['truck_photo_urls'] ?? []), 
+                        json_encode($data['loaded_cartons_photo_urls'] ?? []), 
+                        json_encode($ewayDocs),
+                        json_encode($data['labels_photo_urls'] ?? []), 
+                        json_encode($ewayDocs), 
+                        json_encode($cartonSerialList), 
+                        json_encode($data['items_breakdown'] ?? [])
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO dispatch_records (
+                        dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
+                        total_dispatched_quantity, total_boxes, vehicle_number, driver_name, driver_contact, 
+                        transporter_name, delivery_challan_number, invoice_reference, eway_bill_number, destination_notes, 
+                        remarks, truck_photo_urls, loaded_cartons_photo_urls, eway_bill_photo_urls, labels_photo_urls, 
+                        document_urls, carton_serial_numbers, items_breakdown
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+                    $stmt->execute([
+                        $dspNo, 
+                        $pId, 
+                        $data['buyer_name'] ?? ($ord['customer_name'] ?? 'Buyer'), 
+                        $data['dispatch_date'] ?? date('Y-m-d'), 
+                        $data['dispatch_time'] ?? date('H:i:s'), 
+                        $totalDispatched, 
+                        $totalBoxes, 
+                        $data['vehicle_number'] ?? '', 
+                        $data['driver_name'] ?? null, 
+                        $data['driver_contact'] ?? null, 
+                        $data['transporter_name'] ?? null, 
+                        $dcNo ?: null, 
+                        $invRef ?: null, 
+                        $ewayBillNo ?: null,
+                        $data['destination_notes'] ?? null, 
+                        $data['remarks'] ?? '', 
+                        json_encode($data['truck_photo_urls'] ?? []), 
+                        json_encode($data['loaded_cartons_photo_urls'] ?? []), 
+                        json_encode($ewayDocs),
+                        json_encode($data['labels_photo_urls'] ?? []), 
+                        json_encode($ewayDocs), 
+                        json_encode($cartonSerialList), 
+                        json_encode($data['items_breakdown'] ?? [])
+                    ]);
+                }
             } else {
                 $stmt = $pdo->prepare("INSERT INTO dispatch_records (
                     dispatch_number, production_order_id, buyer_name, dispatch_date, dispatch_time, 
@@ -3656,7 +3762,7 @@ class ProductionController {
                     json_encode($data['truck_photo_urls'] ?? []), 
                     json_encode($data['loaded_cartons_photo_urls'] ?? []), 
                     json_encode($data['labels_photo_urls'] ?? []), 
-                    json_encode($ewayPhotos), 
+                    json_encode($ewayDocs), 
                     json_encode($cartonSerialList), 
                     json_encode($data['items_breakdown'] ?? [])
                 ]);

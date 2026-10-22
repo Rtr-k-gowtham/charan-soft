@@ -856,6 +856,8 @@ export interface DispatchRecord {
   delivery_challan_number?: string;
   invoice_reference?: string;
   eway_bill_number?: string;
+  eway_bill_filename?: string;
+  eway_bill_filesize?: number;
   destination_notes?: string;
   remarks?: string;
   truck_photo_urls?: string[];

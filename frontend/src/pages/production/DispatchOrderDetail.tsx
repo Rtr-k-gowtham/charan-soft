@@ -12,7 +12,7 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
-import EwayBillCameraCapture from '../../components/production/EwayBillCameraCapture';
+import EwayBillPdfUpload, { EwayBillDocumentData } from '../../components/production/EwayBillPdfUpload';
 import {
   ArrowLeft,
   Truck,
@@ -36,7 +36,8 @@ import {
   ShieldCheck,
   Printer,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ExternalLink
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -91,6 +92,14 @@ function parsePhotos(urls: any): string[] {
   return [];
 }
 
+function isPdfAttachment(url: string, filename?: string): boolean {
+  if (!url) return false;
+  if (url.startsWith('data:application/pdf')) return true;
+  if (url.toLowerCase().endsWith('.pdf')) return true;
+  if (filename && filename.toLowerCase().endsWith('.pdf')) return true;
+  return false;
+}
+
 export default function DispatchOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -123,12 +132,13 @@ export default function DispatchOrderDetail() {
   const [selectedCartonIds, setSelectedCartonIds] = useState<number[]>([]);
   const [truckPhotos, setTruckPhotos] = useState<string[]>([]);
   const [cartonPhotos, setCartonPhotos] = useState<string[]>([]);
-  const [ewayBillPhoto, setEwayBillPhoto] = useState<string | null>(null);
+  const [ewayBillDoc, setEwayBillDoc] = useState<EwayBillDocumentData | null>(null);
   const [savingDispatch, setSavingDispatch] = useState(false);
   const [dispatchError, setDispatchError] = useState('');
 
-  // Image Preview Modal
+  // Evidence Preview Modals (Images and PDFs)
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewPdfDoc, setPreviewPdfDoc] = useState<{ url: string; title: string; size?: string } | null>(null);
 
   const fetchOrderData = async () => {
     if (!id) return;
@@ -244,7 +254,7 @@ export default function DispatchOrderDetail() {
     setSelectedCartonIds(availableCartons.map(c => c.id || 0).filter(Boolean));
     setTruckPhotos([]);
     setCartonPhotos([]);
-    setEwayBillPhoto(null);
+    setEwayBillDoc(null);
     setDispatchError('');
     setDispatchModalOpen(true);
   };
@@ -323,8 +333,8 @@ export default function DispatchOrderDetail() {
     const totalPcs = selectedCartons.reduce((sum, c) => sum + Number(c.items_count || 0), 0);
     const totalBoxesCount = selectedCartons.length * 5; // Section D ratio
 
-    if (!ewayBillPhoto) {
-      setDispatchError('Mandatory E-Way Bill camera capture proof is missing. A clear photograph of the printed E-Way Bill document must be captured via camera and confirmed.');
+    if (!ewayBillDoc || !ewayBillDoc.dataUrl) {
+      setDispatchError('Mandatory E-Way Bill PDF document is missing. Please upload the original multi-page E-Way Bill PDF before dispatch can be completed.');
       return;
     }
 
@@ -359,12 +369,15 @@ export default function DispatchOrderDetail() {
         delivery_challan_number: dispatchForm.delivery_challan_number,
         invoice_reference: dispatchForm.invoice_reference,
         eway_bill_number: trimEw,
+        eway_bill_pdf: ewayBillDoc.dataUrl,
+        eway_bill_filename: ewayBillDoc.filename,
+        eway_bill_filesize: ewayBillDoc.fileSize,
         destination_notes: dispatchForm.destination_notes,
         remarks: dispatchForm.remarks,
         truck_photo_urls: truckPhotos,
         loaded_cartons_photo_urls: cartonPhotos,
-        eway_bill_photo_urls: [ewayBillPhoto],
-        document_urls: [ewayBillPhoto],
+        eway_bill_photo_urls: [ewayBillDoc.dataUrl],
+        document_urls: [ewayBillDoc.dataUrl],
         carton_ids: selectedCartonIds
       });
 
@@ -618,32 +631,62 @@ export default function DispatchOrderDetail() {
 
                 {/* Evidence Photos */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
-                  {/* E-Way Bill Document Photos */}
+                  {/* E-Way Bill Document / Proof */}
                   <div>
                     <div className="text-[11px] font-semibold text-slate-600 mb-1.5 flex items-center gap-1">
-                      <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>E-Way Bill Camera Proof</span>
+                      <FileText className="w-3.5 h-3.5 text-rose-600" />
+                      <span>E-Way Bill Document</span>
                     </div>
                     {(() => {
-                      const photos = parsePhotos(disp.eway_bill_photo_urls || disp.document_urls);
-                      return photos.length > 0 ? (
+                      const docs = parsePhotos(disp.document_urls || disp.eway_bill_photo_urls);
+                      if (docs.length === 0) {
+                        return <div className="text-[11px] text-slate-400 italic">No E-Way Bill attached</div>;
+                      }
+                      return (
                         <div className="flex items-center gap-2 flex-wrap">
-                          {photos.map((url, idx) => (
-                            <div
-                              key={idx}
-                              onClick={() => setPreviewImage(url)}
-                              className="relative group w-16 h-16 rounded-lg overflow-hidden border border-emerald-300 cursor-pointer shadow-2xs hover:scale-105 transition"
-                              title="Click to zoom E-Way Bill proof"
-                            >
-                              <img src={url} alt="E-Way Bill Proof" className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
-                                <ZoomIn className="w-4 h-4 text-white" />
+                          {docs.map((docUrl, idx) => {
+                            const isPdf = isPdfAttachment(docUrl, disp.eway_bill_filename);
+                            if (isPdf) {
+                              const docTitle = disp.eway_bill_filename || (disp.eway_bill_number ? `Eway_Bill_${disp.eway_bill_number}.pdf` : `E-Way_Bill_Doc_${idx + 1}.pdf`);
+                              const docSizeStr = disp.eway_bill_filesize ? `${(disp.eway_bill_filesize / 1024).toFixed(1)} KB` : undefined;
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => setPreviewPdfDoc({ url: docUrl, title: docTitle, size: docSizeStr })}
+                                  className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 hover:border-rose-300 cursor-pointer shadow-2xs transition"
+                                  title={`Click to preview multi-page PDF: ${docTitle}`}
+                                >
+                                  <div className="w-7 h-7 rounded bg-rose-600 text-white flex items-center justify-center font-mono text-[9px] font-black shrink-0">
+                                    PDF
+                                  </div>
+                                  <div className="min-w-0 max-w-[150px]">
+                                    <div className="text-xs font-bold text-slate-800 truncate" title={docTitle}>
+                                      {docTitle}
+                                    </div>
+                                    <div className="text-[10px] text-emerald-700 font-medium">
+                                      {docSizeStr || 'Multi-page PDF'}
+                                    </div>
+                                  </div>
+                                  <Eye className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-600 shrink-0 ml-1 transition" />
+                                </div>
+                              );
+                            }
+                            // Historical Image Proof
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => setPreviewImage(docUrl)}
+                                className="relative group w-16 h-16 rounded-lg overflow-hidden border border-emerald-300 cursor-pointer shadow-2xs hover:scale-105 transition"
+                                title="Click to zoom historical camera proof"
+                              >
+                                <img src={docUrl} alt="E-Way Bill Proof" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                                  <ZoomIn className="w-4 h-4 text-white" />
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
-                      ) : (
-                        <div className="text-[11px] text-slate-400 italic">No E-Way Bill photo attached</div>
                       );
                     })()}
                   </div>
@@ -891,14 +934,15 @@ export default function DispatchOrderDetail() {
             />
           </FormField>
 
-          {/* Mandatory Live Camera Photo Proofs */}
+          {/* Mandatory Proofs: PDF Document for E-Way Bill, Live GPS Camera for Truck & Cartons */}
           <div className="space-y-4 pt-1">
-            <EwayBillCameraCapture
-              value={ewayBillPhoto}
-              onChange={setEwayBillPhoto}
+            <EwayBillPdfUpload
+              value={ewayBillDoc?.dataUrl || null}
+              filename={ewayBillDoc?.filename}
+              fileSize={ewayBillDoc?.fileSize}
+              onChange={setEwayBillDoc}
               ewayBillNumber={dispatchForm.eway_bill_number}
-              orderNumber={order?.order_number}
-              error={dispatchError && !ewayBillPhoto ? 'Real-time camera photograph proof of the E-Way Bill is mandatory.' : undefined}
+              error={dispatchError && (!ewayBillDoc || !ewayBillDoc.dataUrl) ? 'Original E-Way Bill PDF document upload is mandatory.' : undefined}
               required={true}
             />
 
@@ -951,6 +995,43 @@ export default function DispatchOrderDetail() {
           </div>
         )}
       </Modal>
+
+      {/* PDF Document Preview Modal */}
+      {previewPdfDoc && (
+        <Modal
+          isOpen={!!previewPdfDoc}
+          onClose={() => setPreviewPdfDoc(null)}
+          title={`E-Way Bill Document — ${previewPdfDoc.title}`}
+          size="xl"
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+              <div className="flex items-center gap-2 text-slate-700">
+                <FileText className="w-4 h-4 text-rose-600" />
+                <span className="font-semibold">{previewPdfDoc.title}</span>
+                {previewPdfDoc.size && <span className="text-slate-400 font-mono">({previewPdfDoc.size})</span>}
+              </div>
+              <a
+                href={previewPdfDoc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open in New Window</span>
+              </a>
+            </div>
+
+            <div className="w-full h-[65vh] sm:h-[72vh] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
+              <iframe
+                src={previewPdfDoc.url}
+                title="E-Way Bill PDF Document"
+                className="w-full h-full border-0"
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
