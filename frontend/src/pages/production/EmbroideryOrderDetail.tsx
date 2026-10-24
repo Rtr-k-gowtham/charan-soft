@@ -697,11 +697,17 @@ export default function EmbroideryOrderDetail() {
   // Stage Transfer to Stitching
   const handleOpenTransferModal = (itemOrJob: any) => {
     let it = itemOrJob;
-    if (itemOrJob.total_quantity_sent !== undefined) {
-      it = items.find(i => Number(i.accepted_inward || 0) > 0) || items[0];
+    let jId: number | undefined = undefined;
+    if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
+      jId = itemOrJob.id;
+      it = items.find(i => Number(i.ready_to_transfer || 0) > 0) || items[0];
     }
-    setTransferItem(it);
-    const maxQty = Number(it?.accepted_inward || it?.ready_to_transfer || overallTotals.acceptedQty || 0);
+    const maxQty = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
+    if (maxQty <= 0) {
+      showToast('All accepted embroidery pieces have already been transferred to Stitching.');
+      return;
+    }
+    setTransferItem({ ...it, job_order_id: jId });
     setTransferQuantity(maxQty);
     setTransferRemarks('Embroidery completed and QC approved. Transferred to Stage 07: Stitching.');
     setTransferError('');
@@ -721,6 +727,7 @@ export default function EmbroideryOrderDetail() {
       await api.transferEmbroideryOutput({
         production_order_id: order.id,
         item_id: transferItem?.active_embroidery_item_id || transferItem?.id,
+        job_order_id: transferItem?.job_order_id,
         transfer_quantity: Number(transferQuantity),
         destination_stage_id: 7,
         destination_stage_name: 'Stitching — Color-wise Tracking',
@@ -1459,6 +1466,8 @@ export default function EmbroideryOrderDetail() {
                     const outQ = Number(it.outstanding_quantity || 0);
                     const availQ = Number(it.available_to_dispatch || 0);
 
+                    const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, accQ - Number(it.transferred_to_stitching || 0)));
+
                     return (
                       <tr key={it.id || idx} className="hover:bg-slate-50/70 transition">
                         <td className="py-3 px-4 text-center font-mono text-slate-400">{idx + 1}</td>
@@ -1515,13 +1524,14 @@ export default function EmbroideryOrderDetail() {
                                 <Clock className="w-3 h-3 text-amber-600" />
                                 With Vendor
                               </span>
-                            ) : arrivedQ > 0 && accQ > 0 ? (
+                            ) : readyQ > 0 ? (
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  QC Passed
+                                  QC Passed ({fmt(readyQ)})
                                 </span>
                                 <Button
+                                  id={`btn-transfer-stitching-item-${idx}`}
                                   size="xs"
                                   variant="secondary"
                                   icon={<ArrowRight className="w-3 h-3" />}
@@ -1531,6 +1541,11 @@ export default function EmbroideryOrderDetail() {
                                   To Stitching
                                 </Button>
                               </div>
+                            ) : accQ > 0 ? (
+                              <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-200 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                                Transferred to Stitching
+                              </span>
                             ) : (
                               <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
                                 Awaiting Cutting
@@ -1691,7 +1706,7 @@ export default function EmbroideryOrderDetail() {
                               >
                                 Receive Inward
                               </Button>
-                            ) : (
+                            ) : Number(job.ready_to_transfer !== undefined ? job.ready_to_transfer : Math.max(0, Number(job.total_quantity_accepted || 0) - Number(job.transferred_to_stitching_quantity || 0))) > 0 ? (
                               <Button
                                 id={`btn-transfer-stitching-${job.id}`}
                                 size="xs"
@@ -1700,8 +1715,17 @@ export default function EmbroideryOrderDetail() {
                                 onClick={() => handleOpenTransferModal(job)}
                                 className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
                               >
-                                To Stitching
+                                To Stitching ({fmt(Number(job.ready_to_transfer || 0))})
                               </Button>
+                            ) : Number(job.total_quantity_accepted || 0) > 0 ? (
+                              <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-200 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                                Transferred to Stitching
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
+                                Completed
+                              </span>
                             )}
                           </div>
                         </td>
@@ -2128,12 +2152,15 @@ export default function EmbroideryOrderDetail() {
             <input
               type="number"
               min="1"
-              max={Number(transferItem?.accepted_inward || transferItem?.ready_to_transfer || overallTotals.acceptedQty || 1000)}
+              max={Number(transferItem?.ready_to_transfer || 0)}
               value={transferQuantity}
               onChange={e => setTransferQuantity(Number(e.target.value))}
               className="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono font-bold text-purple-900"
               required
             />
+            <span className="text-[11px] text-slate-500 mt-1 block">
+              Remaining eligible untransferred: <strong className="text-purple-700 font-bold">{Number(transferItem?.ready_to_transfer || 0)}</strong> pcs
+            </span>
           </FormField>
 
           <FormField label="Transfer Remarks">

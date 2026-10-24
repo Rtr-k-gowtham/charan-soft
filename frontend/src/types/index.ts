@@ -695,7 +695,9 @@ export interface EmbroideryJobOrder {
   total_quantity_rejected: number;
   total_quantity_rework: number;
   total_quantity_outstanding: number;
-  status: 'Sent to Vendor' | 'Partially Received' | 'Received' | 'Cancelled';
+  transferred_to_stitching_quantity?: number;
+  ready_to_transfer?: number;
+  status: 'Sent to Vendor' | 'Partially Received' | 'Received' | 'Cancelled' | 'Transferred to Stitching' | string;
   notes?: string;
   attachments?: string[];
   items?: EmbroideryJobOrderItem[];

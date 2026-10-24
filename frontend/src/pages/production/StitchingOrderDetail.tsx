@@ -445,7 +445,14 @@ export default function StitchingOrderDetail() {
 
             <div className="flex items-center gap-1.5 text-slate-500 font-medium">
               <Package className="w-3.5 h-3.5 text-slate-400" />
-              <span>Total Order Qty: <strong className="text-slate-700 font-mono">{fmt(overallTotals.orderQty)} pcs</strong></span>
+              <span>
+                Total Order Qty: <strong className="text-slate-700 font-mono">{fmt(overallTotals.orderQty)} pcs</strong>
+                {overallTotals.orderQty > overallTotals.totalArrived && (
+                  <span className="text-amber-600 font-bold ml-1">
+                    ({fmt(overallTotals.orderQty - overallTotals.totalArrived)} awaiting transfer)
+                  </span>
+                )}
+              </span>
             </div>
 
             <div className="flex items-center gap-1.5 text-slate-500 font-medium">
@@ -470,7 +477,9 @@ export default function StitchingOrderDetail() {
           <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Arrived at Stitching</span>
             <span className="text-lg font-black text-slate-900 font-mono mt-0.5 block">{fmt(overallTotals.totalArrived)}</span>
-            <span className="text-[10px] text-slate-400 mt-0.5 block">From Cutting & Embroidery</span>
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              {fmt(overallTotals.arrivedFromCutting)} Cutting • {fmt(overallTotals.arrivedFromEmbroidery)} Embroidery
+            </span>
           </div>
 
           <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs">

@@ -359,8 +359,11 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       }
       const group = map.get(key)!;
       group.items.push(it);
-      group.total_stage_quantity += (it.current_stage_quantity || it.total_quantity || 0);
-      group.total_order_quantity = (it as any).total_order_quantity || Math.max(group.total_order_quantity, it.total_quantity || 0);
+      const stageQty = (it.current_stage_quantity !== undefined && it.current_stage_quantity !== null)
+        ? Number(it.current_stage_quantity)
+        : Number(it.total_quantity || 0);
+      group.total_stage_quantity += stageQty;
+      group.total_order_quantity = Number((it as any).total_order_quantity || Math.max(group.total_order_quantity, it.total_quantity || 0));
     });
 
     // Compute unique product names
@@ -799,6 +802,18 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
             <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
               {fmt(orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0))} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs</span>
             </p>
+            {(() => {
+              const totalOrd = orderGroups.reduce((acc, g) => acc + g.total_order_quantity, 0);
+              const stageGarments = orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0);
+              if (totalOrd > stageGarments && activeCode !== 'REQ') {
+                return (
+                  <p className="text-[9px] text-amber-600 font-medium truncate">
+                    of {fmt(totalOrd)} ordered ({fmt(totalOrd - stageGarments)} awaiting)
+                  </p>
+                );
+              }
+              return null;
+            })()}
           </div>
           <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 shrink-0">
             <Layers className="w-4 h-4" />
@@ -1269,8 +1284,15 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
                               <>
                                 <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {fmt(group.total_stage_quantity)}{' '}
-                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                  <div>
+                                    <span>{fmt(group.total_stage_quantity)}{' '}</span>
+                                    <span className="text-[10px] font-normal text-slate-400">pcs</span>
+                                  </div>
+                                  {group.total_order_quantity > group.total_stage_quantity && (
+                                    <div className="text-[10px] font-normal text-amber-600 font-sans">
+                                      of {fmt(group.total_order_quantity)} ord ({fmt(group.total_order_quantity - group.total_stage_quantity)} awaiting)
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                   <StatusBadge status={group.status || 'In Progress'} />
