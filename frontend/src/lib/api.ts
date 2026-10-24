@@ -121,6 +121,10 @@ export const api = {
     request<unknown>(`/purchase-orders/${id}`, 'PUT', data),
   updatePurchaseOrderStatus: (poId: number, status: string) =>
     request<unknown>(`/purchase-orders/${poId}/status`, 'PATCH', { status }),
+  cancelPurchaseOrder: (poId: number, reason: string) =>
+    request<unknown>(`/purchase-orders/${poId}/cancel`, 'POST', { reason }),
+  reissuePurchaseOrder: (poId: number) =>
+    request<unknown>(`/purchase-orders/${poId}/reissue`, 'POST', {}),
   addPayment: (poId: number, data: unknown) =>
     request<unknown>(`/purchase-orders/${poId}/payments`, 'POST', data),
   receiveGoods: (poId: number, data: unknown) =>

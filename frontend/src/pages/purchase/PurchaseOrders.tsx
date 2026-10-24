@@ -38,7 +38,10 @@ import {
   Send,
   FileText,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Ban,
+  RotateCcw,
+  XCircle
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
@@ -375,6 +378,19 @@ export default function PurchaseOrders() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
   const [editCategoryFieldsLoading, setEditCategoryFieldsLoading] = useState(false);
+
+  // Cancel PO state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelPO, setCancelPO] = useState<PurchaseOrder | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+
+  // Reissue PO state
+  const [reissueModalOpen, setReissueModalOpen] = useState(false);
+  const [reissuePO, setReissuePO] = useState<PurchaseOrder | null>(null);
+  const [reissuing, setReissuing] = useState(false);
+  const [reissueError, setReissueError] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -780,6 +796,255 @@ export default function PurchaseOrders() {
     }
   };
   const handleApprovePO = handleIssuePO;
+
+  const handleOpenCancelModal = (po: PurchaseOrder) => {
+    setCancelPO(po);
+    setCancelReason('');
+    setCancelError('');
+    setCancelModalOpen(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (!cancelPO) return;
+    const trimmed = cancelReason.trim();
+    if (!trimmed) {
+      setCancelError('Please enter a required cancellation reason.');
+      return;
+    }
+    setCancelling(true);
+    setCancelError('');
+    try {
+      await api.cancelPurchaseOrder(cancelPO.id, trimmed);
+      setApprovalSuccess(`Purchase Order ${cancelPO.po_number} has been cancelled successfully.`);
+      setCancelModalOpen(false);
+      await load();
+      if (viewPO && viewPO.id === cancelPO.id) {
+        const refreshed: any = await api.getPurchaseOrder(cancelPO.id);
+        const data = refreshed?.data || refreshed;
+        setViewPO(data);
+      }
+    } catch (err: unknown) {
+      setCancelError((err as Error).message || 'Failed to cancel Purchase Order');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleOpenReissueModal = (po: PurchaseOrder) => {
+    setReissuePO(po);
+    setReissueError('');
+    setReissueModalOpen(true);
+  };
+
+  const handleConfirmReissue = async () => {
+    if (!reissuePO) return;
+    setReissuing(true);
+    setReissueError('');
+    try {
+      // If we are currently in detailed edit view, save the pending edits first so the reissued PO reflects changes
+      if (editPO && editPO.id === reissuePO.id) {
+        const finalSupplierId = editForm.supplier_id || (suppliers.length > 0 ? String(suppliers[0].id) : '');
+        const finalCategoryId = editForm.category_id || (categories.length > 0 ? String(categories[0].id) : '');
+        const preparedEditItems = editItems.map((it, idx) => ({
+          ...it,
+          order_no: it.order_no || `ORD-${String(idx + 1).padStart(3, '0')}`,
+        }));
+        await api.updatePurchaseOrder(editPO.id, {
+          supplier_id: finalSupplierId,
+          category_id: finalCategoryId,
+          production_order_id: editForm.production_order_id ? Number(editForm.production_order_id) : null,
+          po_date: editForm.po_date,
+          delivery_due_date: editForm.delivery_due_date,
+          remarks: editForm.remarks,
+          items: preparedEditItems,
+          terms: editPOTerms,
+        });
+      }
+
+      await api.reissuePurchaseOrder(reissuePO.id);
+      setApprovalSuccess(`Purchase Order ${reissuePO.po_number} has been reissued successfully as Ordered!`);
+      setReissueModalOpen(false);
+      await load();
+      if (viewPO && viewPO.id === reissuePO.id) {
+        const refreshed: any = await api.getPurchaseOrder(reissuePO.id);
+        const data = refreshed?.data || refreshed;
+        setViewPO(data);
+      }
+      if (editPO && editPO.id === reissuePO.id) {
+        setEditPO(null);
+        if (location.state?.from) {
+          navigate(location.state.from);
+        } else if (editForm.production_order_id) {
+          navigate(`/production/po/${editForm.production_order_id}`);
+        } else {
+          const refreshed: any = await api.getPurchaseOrder(reissuePO.id);
+          const data = refreshed?.data || refreshed;
+          setViewPO(data);
+          navigate(`/purchase/orders/${reissuePO.id}`, { replace: true });
+        }
+      }
+    } catch (err: unknown) {
+      setReissueError((err as Error).message || 'Failed to reissue Purchase Order');
+    } finally {
+      setReissuing(false);
+    }
+  };
+
+  const renderCancelModal = () => (
+    <Modal
+      open={cancelModalOpen}
+      onClose={() => { if (!cancelling) setCancelModalOpen(false); }}
+      title="Cancel Purchase Order"
+      subtitle={cancelPO ? `PO: ${cancelPO.po_number}` : ''}
+      size="md"
+      footer={
+        <div className="flex items-center justify-end gap-2 w-full">
+          <Button
+            variant="secondary"
+            disabled={cancelling}
+            onClick={() => setCancelModalOpen(false)}
+          >
+            Go Back
+          </Button>
+          <Button
+            variant="danger"
+            loading={cancelling}
+            icon={<Ban className="w-4 h-4" />}
+            onClick={handleConfirmCancel}
+            className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+          >
+            Cancel Purchase Order
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3 py-2 text-xs text-slate-600">
+        <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-950 leading-relaxed">
+          <p className="font-semibold text-rose-950 mb-1">Confirm Purchase Order Cancellation</p>
+          <p>
+            Cancelling this PO will change its status from{' '}
+            <strong className="text-emerald-800 font-semibold">{cancelPO?.status || 'Ordered'}</strong> to{' '}
+            <strong className="text-rose-800 font-semibold">Cancelled</strong>.
+          </p>
+          <p className="mt-1 text-[11px] text-rose-700">
+            It will be prevented from being treated as active for Material Receipts or Supplier Payments. Historical records and line items remain safely stored.
+          </p>
+        </div>
+
+        {cancelError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 font-medium flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <span>{cancelError}</span>
+          </div>
+        )}
+
+        {cancelPO && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 font-mono text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">PO Number:</span>
+              <span className="font-bold text-slate-800">{cancelPO.po_number}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Supplier:</span>
+              <span className="text-slate-800 font-sans">{cancelPO.supplier_name || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Current Status:</span>
+              <span className="font-bold text-emerald-700 uppercase">{cancelPO.status}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Total Net Amount:</span>
+              <span className="font-bold text-slate-800">{fmtCur(cancelPO.net_amount || 0)}</span>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-xs font-bold text-slate-700 mb-1">
+            Cancellation Reason <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={cancelReason}
+            onChange={(e) => setCancelReason(e.target.value)}
+            placeholder="Enter a required cancellation reason (e.g. Specification changed by buyer, supplier price revision, incorrect quantities)..."
+            rows={3}
+            className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+          />
+        </div>
+      </div>
+    </Modal>
+  );
+
+  const renderReissueModal = () => (
+    <Modal
+      open={reissueModalOpen}
+      onClose={() => { if (!reissuing) setReissueModalOpen(false); }}
+      title="Reissue Purchase Order"
+      subtitle={reissuePO ? `PO: ${reissuePO.po_number}` : ''}
+      size="md"
+      footer={
+        <div className="flex items-center justify-end gap-2 w-full">
+          <Button
+            variant="secondary"
+            disabled={reissuing}
+            onClick={() => setReissueModalOpen(false)}
+          >
+            Go Back
+          </Button>
+          <Button
+            loading={reissuing}
+            icon={<RotateCcw className="w-4 h-4" />}
+            onClick={handleConfirmReissue}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+          >
+            Confirm & Reissue PO
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-3 py-2 text-xs text-slate-600">
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-950 leading-relaxed">
+          <p className="font-semibold text-emerald-950 mb-1">Confirm Reissuance</p>
+          <p>
+            Reissuing will validate the updated PO details and transition the status from{' '}
+            <strong className="text-rose-800 font-semibold">Cancelled</strong> to{' '}
+            <strong className="text-emerald-800 font-semibold">Ordered</strong>.
+          </p>
+          <p className="mt-1 text-[11px] text-emerald-700">
+            Once reissued, this PO will immediately become active again for Material Receipts and Supplier Payments without creating duplicate PO numbers.
+          </p>
+        </div>
+
+        {reissueError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 font-medium flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <span>{reissueError}</span>
+          </div>
+        )}
+
+        {reissuePO && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 font-mono text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">PO Number:</span>
+              <span className="font-bold text-slate-800">{reissuePO.po_number}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Supplier:</span>
+              <span className="text-slate-800 font-sans">{reissuePO.supplier_name || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Item Count:</span>
+              <span className="font-bold text-slate-800">{reissuePO.items?.length || 0} items</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500 font-sans">Updated Net Total:</span>
+              <span className="font-bold text-emerald-700">{fmtCur(reissuePO.net_amount || 0)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
 
   const createBlankItem = (targetIndex?: number) => {
     const idx = targetIndex !== undefined ? targetIndex : items.length;
@@ -1199,9 +1464,11 @@ export default function PurchaseOrders() {
   };
 
   const handleOpenEdit = async (po: PurchaseOrder) => {
-    const isDraft = (po.status || '').toLowerCase() === 'draft';
-    if (!isDraft) {
-      alert('This Purchase Order is already Ordered and locked against edits.');
+    const st = (po.status || '').toLowerCase();
+    const isDraft = st === 'draft';
+    const isCancelled = st === 'cancelled';
+    if (!isDraft && !isCancelled) {
+      alert('This Purchase Order is currently Ordered. You must cancel it first to make corrections.');
       return;
     }
     setEditError('');
@@ -1326,13 +1593,22 @@ export default function PurchaseOrders() {
       });
 
       await load();
+      if (viewPO && viewPO.id === editPO.id) {
+        const refreshed: any = await api.getPurchaseOrder(editPO.id);
+        const data = refreshed?.data || refreshed;
+        setViewPO(data);
+      }
+
+      setApprovalSuccess(`Purchase Order ${editPO.po_number} updated successfully.`);
       if (location.state?.from) {
         navigate(location.state.from);
       } else if (editForm.production_order_id) {
         navigate(`/production/po/${editForm.production_order_id}`);
       } else {
         setEditPO(null);
-        navigate('/purchase/orders', { replace: true });
+        if (!viewPO) {
+          navigate('/purchase/orders', { replace: true });
+        }
       }
     } catch (e: unknown) {
       setEditError((e as Error).message || 'Failed to update Purchase Order');
@@ -1445,12 +1721,22 @@ export default function PurchaseOrders() {
       width: '72px',
       align: 'center',
       render: (r: PurchaseOrder) => {
-        const isDraft = (r.status || '').toLowerCase() === 'draft';
-        return isDraft ? (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-            Draft
-          </span>
-        ) : (
+        const st = (r.status || '').toLowerCase();
+        if (st === 'draft') {
+          return (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              Draft
+            </span>
+          );
+        }
+        if (st === 'cancelled') {
+          return (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+              Cancelled
+            </span>
+          );
+        }
+        return (
           <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
             Ordered
           </span>
@@ -2234,12 +2520,26 @@ export default function PurchaseOrders() {
             <div className="h-5 w-px bg-slate-200" />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-800 leading-tight">Edit Purchase Order: {editPO.po_number}</h1>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                  Draft (Editable)
-                </span>
+                <h1 className="text-base font-bold text-slate-800 leading-tight">
+                  {(editPO.status || '').toLowerCase() === 'cancelled'
+                    ? `Edit Cancelled PO: ${editPO.po_number}`
+                    : `Edit Purchase Order: ${editPO.po_number}`}
+                </h1>
+                {(editPO.status || '').toLowerCase() === 'cancelled' ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                    Cancelled (Editable)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    Draft (Editable)
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] text-slate-500">Edit supplier, category, dates, remarks, and line items • PO number is preserved</p>
+              <p className="text-[11px] text-slate-500">
+                {(editPO.status || '').toLowerCase() === 'cancelled'
+                  ? 'Update fields of this cancelled PO. Status remains Cancelled until you explicitly reissue it.'
+                  : 'Edit supplier, category, dates, remarks, and line items • PO number is preserved'}
+              </p>
             </div>
           </div>
 
@@ -2262,6 +2562,17 @@ export default function PurchaseOrders() {
             <Button loading={editSaving} onClick={handleSaveEdit} icon={<Save className="w-4 h-4" />}>
               Save Changes ({fmtCur(editTotals.net)})
             </Button>
+            {(editPO.status || '').toLowerCase() === 'cancelled' && (
+              <Button
+                variant="primary"
+                onClick={() => handleOpenReissueModal(editPO)}
+                icon={<RotateCcw className="w-4 h-4" />}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs"
+                title="Save changes and reissue this Purchase Order as Ordered"
+              >
+                Reissue PO
+              </Button>
+            )}
           </div>
         </div>
 
@@ -2850,9 +3161,21 @@ export default function PurchaseOrders() {
               <Button loading={editSaving} onClick={handleSaveEdit} icon={<Save className="w-4 h-4" />}>
                 Save Changes ({fmtCur(editTotals.net)})
               </Button>
+              {(editPO.status || '').toLowerCase() === 'cancelled' && (
+                <Button
+                  variant="primary"
+                  onClick={() => handleOpenReissueModal(editPO)}
+                  icon={<RotateCcw className="w-4 h-4" />}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-xs"
+                  title="Save changes and reissue this Purchase Order as Ordered"
+                >
+                  Reissue PO
+                </Button>
+              )}
             </div>
           </div>
         </div>
+        {renderReissueModal()}
       </div>
     );
   }
@@ -2971,6 +3294,39 @@ export default function PurchaseOrders() {
                   Issue PO
                 </Button>
               )}
+
+              {(viewPO.status || '').toLowerCase() === 'ordered' && (
+                <Button
+                  variant="danger"
+                  size="xs"
+                  icon={<Ban className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenCancelModal(viewPO)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                >
+                  Cancel PO
+                </Button>
+              )}
+
+              {(viewPO.status || '').toLowerCase() === 'cancelled' && (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    icon={<Pencil className="w-3.5 h-3.5" />}
+                    onClick={() => handleOpenEdit(viewPO)}
+                  >
+                    Edit Cancelled PO
+                  </Button>
+                  <Button
+                    size="xs"
+                    icon={<RotateCcw className="w-3.5 h-3.5" />}
+                    onClick={() => handleOpenReissueModal(viewPO)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  >
+                    Reissue PO
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -3010,36 +3366,105 @@ export default function PurchaseOrders() {
           )}
 
           {/* Status Context Banner */}
-          <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm ${
-            (viewPO.status || '').toLowerCase() === 'draft'
-              ? 'bg-amber-50/80 border-amber-200 text-amber-900'
-              : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-          }`}>
-            <div className="flex items-center gap-2.5">
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                (viewPO.status || '').toLowerCase() === 'draft' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
-              }`} />
-              <div>
-                <span className="font-bold text-xs uppercase tracking-wide">
-                  {(viewPO.status || '').toLowerCase() === 'draft' ? 'Status: Draft' : 'Status: Ordered'}
-                </span>
-                <p className="text-[11px] mt-0.5 text-slate-600">
-                  {(viewPO.status || '').toLowerCase() === 'draft'
-                    ? 'This Purchase Order is currently a Draft. Material receipts and supplier payments cannot be processed until approved.'
-                    : 'This Purchase Order has been confirmed and ordered. It is active for Material Receipts and Supplier Payments.'}
-                </p>
+          {(() => {
+            const st = (viewPO.status || '').toLowerCase();
+            if (st === 'draft') {
+              return (
+                <div className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm bg-amber-50/80 border-amber-200 text-amber-900">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-amber-500 animate-pulse" />
+                    <div>
+                      <span className="font-bold text-xs uppercase tracking-wide">Status: Draft</span>
+                      <p className="text-[11px] mt-0.5 text-slate-600">
+                        This Purchase Order is currently a Draft. Material receipts and supplier payments cannot be processed until approved.
+                      </p>
+                    </div>
+                  </div>
+                  {canApprove && (
+                    <Button
+                      icon={<Send className="w-3.5 h-3.5" />}
+                      onClick={() => setApproveModalOpen(true)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+                    >
+                      Issue Purchase Order
+                    </Button>
+                  )}
+                </div>
+              );
+            }
+            if (st === 'cancelled') {
+              return (
+                <div className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm bg-rose-50/80 border-rose-200 text-rose-900">
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-rose-500 mt-1 sm:mt-0" />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-xs uppercase tracking-wide text-rose-800">Status: Cancelled</span>
+                        {viewPO.cancelled_at && (
+                          <span className="text-[10px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-mono">
+                            Cancelled on {viewPO.cancelled_at} {viewPO.cancelled_by ? `by ${viewPO.cancelled_by}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] mt-1 text-rose-700 font-medium break-words">
+                        <strong className="text-rose-900">Reason:</strong> {viewPO.cancellation_reason || 'No reason provided'}
+                      </p>
+                      <p className="text-[10px] mt-0.5 text-slate-500">
+                        This PO is inactive for material receipts and supplier payments. You can update its details and reissue it when corrections are completed.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<Pencil className="w-3.5 h-3.5" />}
+                      onClick={() => handleOpenEdit(viewPO)}
+                    >
+                      Edit Cancelled PO
+                    </Button>
+                    <Button
+                      size="sm"
+                      icon={<RotateCcw className="w-3.5 h-3.5" />}
+                      onClick={() => handleOpenReissueModal(viewPO)}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    >
+                      Reissue PO
+                    </Button>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm bg-emerald-50/80 border-emerald-200 text-emerald-900">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-500" />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-xs uppercase tracking-wide">Status: Ordered</span>
+                      {viewPO.reissued_at && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono">
+                          Reissued on {viewPO.reissued_at} {viewPO.reissued_by ? `by ${viewPO.reissued_by}` : ''}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] mt-0.5 text-slate-600">
+                      This Purchase Order has been confirmed and ordered. It is active for Material Receipts and Supplier Payments.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={<Ban className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenCancelModal(viewPO)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold"
+                >
+                  Cancel PO
+                </Button>
               </div>
-            </div>
-            {(viewPO.status || '').toLowerCase() === 'draft' && canApprove && (
-              <Button
-                icon={<Send className="w-3.5 h-3.5" />}
-                onClick={() => setApproveModalOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-              >
-                Issue Purchase Order
-              </Button>
-            )}
-          </div>
+            );
+          })()}
 
           {/* Section 1: Order Header & Supplier */}
           <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
@@ -3543,10 +3968,32 @@ export default function PurchaseOrders() {
                 </Button>
               )}
               {(viewPO.status || '').toLowerCase() === 'ordered' && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Order Issued & Confirmed
-                </span>
+                <Button
+                  variant="danger"
+                  icon={<Ban className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenCancelModal(viewPO)}
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold"
+                >
+                  Cancel Purchase Order
+                </Button>
+              )}
+              {(viewPO.status || '').toLowerCase() === 'cancelled' && (
+                <>
+                  <Button
+                    variant="secondary"
+                    icon={<Pencil className="w-3.5 h-3.5" />}
+                    onClick={() => handleOpenEdit(viewPO)}
+                  >
+                    Edit Cancelled PO
+                  </Button>
+                  <Button
+                    icon={<RotateCcw className="w-4 h-4" />}
+                    onClick={() => handleOpenReissueModal(viewPO)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  >
+                    Reissue Purchase Order
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -3606,6 +4053,10 @@ export default function PurchaseOrders() {
             </div>
           </div>
         </Modal>
+
+        {/* Cancel PO & Reissue PO Modals */}
+        {renderCancelModal()}
+        {renderReissueModal()}
 
         {/* Dynamic PO Print / Template Modal */}
         <Modal
@@ -3834,7 +4285,7 @@ export default function PurchaseOrders() {
                   <span>View Details</span>
                 </button>
 
-                {isDraft ? (
+                {(r.status || '').toLowerCase() === 'draft' && (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -3846,14 +4297,47 @@ export default function PurchaseOrders() {
                     <Pencil className="w-3.5 h-3.5" />
                     <span>Edit</span>
                   </button>
-                ) : (
+                )}
+
+                {(r.status || '').toLowerCase() === 'ordered' && (
                   <button
                     type="button"
-                    disabled
-                    className="flex items-center justify-center gap-1.5 py-1.5 px-2.5 text-xs font-semibold text-slate-300 rounded-lg cursor-not-allowed"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenCancelModal(r);
+                    }}
+                    className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors"
                   >
-                    <Lock className="w-3.5 h-3.5" />
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Cancel</span>
                   </button>
+                )}
+
+                {(r.status || '').toLowerCase() === 'cancelled' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenEdit(r);
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenReissueModal(r);
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-1.5 px-3 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reissue</span>
+                    </button>
+                  </>
                 )}
 
                 <button
@@ -3886,7 +4370,10 @@ export default function PurchaseOrders() {
           rowKey="id"
           onRowClick={(r: PurchaseOrder) => setViewPO(r)}
           actions={(r: PurchaseOrder) => {
-            const isDraft = (r.status || '').toLowerCase() === 'draft';
+            const st = (r.status || '').toLowerCase();
+            const isDraft = st === 'draft';
+            const isCancelled = st === 'cancelled';
+            const isOrdered = st === 'ordered';
             return (
               <div className="flex items-center gap-0.5 justify-center">
                 <button 
@@ -3896,7 +4383,7 @@ export default function PurchaseOrders() {
                 >
                   <Eye className="w-3.5 h-3.5" />
                 </button>
-                {isDraft ? (
+                {isDraft && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleOpenEdit(r); }} 
                     className="p-1 text-slate-400 hover:text-amber-600 rounded hover:bg-slate-100"
@@ -3904,13 +4391,32 @@ export default function PurchaseOrders() {
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                ) : (
+                )}
+                {isCancelled && (
+                  <>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleOpenEdit(r); }} 
+                      className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100"
+                      title="Edit Cancelled PO"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleOpenReissueModal(r); }} 
+                      className="p-1 text-slate-400 hover:text-emerald-600 rounded hover:bg-slate-100"
+                      title="Reissue Purchase Order"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+                {isOrdered && (
                   <button 
-                    disabled
-                    className="p-1 text-slate-300 cursor-not-allowed rounded"
-                    title="Ordered PO is locked from editing"
+                    onClick={(e) => { e.stopPropagation(); handleOpenCancelModal(r); }} 
+                    className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-slate-100"
+                    title="Cancel Purchase Order"
                   >
-                    <Lock className="w-3.5 h-3.5" />
+                    <Ban className="w-3.5 h-3.5" />
                   </button>
                 )}
                 <button 
@@ -3979,6 +4485,10 @@ export default function PurchaseOrders() {
           </div>
         )}
       </Modal>
+
+      {/* Cancel PO & Reissue PO Modals for Listing */}
+      {renderCancelModal()}
+      {renderReissueModal()}
     </div>
   );
 }

@@ -388,9 +388,42 @@ class ProductionController {
             $pdo = Database::getConnection();
             $pdo->beginTransaction();
 
-            $destStageStmt = $pdo->prepare("SELECT is_final_stage FROM production_stages WHERE id = ?");
+            $destStageStmt = $pdo->prepare("SELECT id, sequence_order, code, is_final_stage FROM production_stages WHERE id = ?");
             $destStageStmt->execute([$toStageId]);
-            $isFinal = (bool)$destStageStmt->fetchColumn();
+            $destStage = $destStageStmt->fetch();
+            $isFinal = (bool)($destStage['is_final_stage'] ?? false);
+
+            // Validation: Moving to Stage 02 (PO Stage) requires assigned suppliers for procurement materials
+            if ($destStage && ((int)$destStage['sequence_order'] === 2 || strtoupper($destStage['code'] ?? '') === 'PO')) {
+                $targetPOId = $prodOrderId;
+                if (!$targetPOId && $orderItemId) {
+                    $poiStmt = $pdo->prepare("SELECT production_order_id FROM production_order_items WHERE id = ?");
+                    $poiStmt->execute([$orderItemId]);
+                    $targetPOId = (int)$poiStmt->fetchColumn();
+                }
+                if ($targetPOId) {
+                    $bomStmt = $pdo->prepare("SELECT generated_bom FROM production_orders WHERE id = ?");
+                    $bomStmt->execute([$targetPOId]);
+                    $rawBom = $bomStmt->fetchColumn();
+                    if ($rawBom) {
+                        $parsedBom = json_decode($rawBom, true);
+                        $mats = $parsedBom['total_materials'] ?? [];
+                        $unassigned = [];
+                        foreach ($mats as $mat) {
+                            $reqQty = (float)($mat['total_required_qty'] ?? 0);
+                            $supId = $mat['preferred_supplier_id'] ?? null;
+                            if ($reqQty > 0 && empty($supId)) {
+                                $unassigned[] = $mat['name'] ?? 'Material';
+                            }
+                        }
+                        if (!empty($unassigned)) {
+                            $pdo->rollBack();
+                            Response::error("Cannot move to Stage 02 (PO Stage): The following materials require an assigned Preferred Supplier: " . implode(', ', array_unique($unassigned)), 422);
+                            return;
+                        }
+                    }
+                }
+            }
 
             // Support order-level stage movement if no specific item id was passed
             if (!$orderItemId && $prodOrderId > 0) {
@@ -764,9 +797,11 @@ class ProductionController {
 
                 // Load BOM components from buyer_product_components (configured in /masters/buyers/:id/products)
                 $compStmt = $pdo->prepare("
-                    SELECT bpc.*, m.code as material_code, m.purchase_rate, m.current_stock, m.uom as material_uom
+                    SELECT bpc.*, m.code as material_code, m.purchase_rate, m.current_stock, m.uom as material_uom,
+                           m.supplier_id as default_supplier_id, s.name as default_supplier_name, s.code as default_supplier_code
                     FROM buyer_product_components bpc
                     LEFT JOIN materials m ON bpc.material_id = m.id
+                    LEFT JOIN suppliers s ON m.supplier_id = s.id
                     WHERE bpc.buyer_product_id = ?
                     ORDER BY bpc.id ASC
                 ");
@@ -779,10 +814,12 @@ class ProductionController {
                         $fallbackStmt = $pdo->prepare("
                             SELECT bi.*, m.name as name, m.code as material_code, m.uom as uom, 
                                    m.purchase_rate, m.current_stock, bi.quantity_required as quantity_per_product,
-                                   bi.wastage_percent, 'Fabric' as category
+                                   bi.wastage_percent, 'Fabric' as category,
+                                   m.supplier_id as default_supplier_id, s.name as default_supplier_name, s.code as default_supplier_code
                             FROM bom_items bi
                             JOIN boms b ON bi.bom_id = b.id
                             LEFT JOIN materials m ON bi.material_id = m.id
+                            LEFT JOIN suppliers s ON m.supplier_id = s.id
                             WHERE b.product_id = ?
                         ");
                         $fallbackStmt->execute([$pId]);
@@ -846,6 +883,9 @@ class ProductionController {
                             'unit_cost' => $rate,
                             'current_stock' => $stock,
                             'total_required_qty' => 0.0,
+                            'preferred_supplier_id' => !empty($c['default_supplier_id']) ? (int)$c['default_supplier_id'] : null,
+                            'preferred_supplier_name' => !empty($c['default_supplier_name']) ? (string)$c['default_supplier_name'] : null,
+                            'preferred_supplier_code' => !empty($c['default_supplier_code']) ? (string)$c['default_supplier_code'] : null,
                             'per_product_contributions' => [],
                         ];
                     }
@@ -887,7 +927,13 @@ class ProductionController {
                 $matIds = array_filter(array_column($totalMaterialsList, 'material_id'));
                 if (!empty($matIds)) {
                     $inPlaceholders = implode(',', array_fill(0, count($matIds), '?'));
-                    $mStmt = $pdo->prepare("SELECT id, current_stock, purchase_rate FROM materials WHERE id IN ($inPlaceholders)");
+                    $mStmt = $pdo->prepare("
+                        SELECT m.id, m.current_stock, m.purchase_rate, m.supplier_id as default_supplier_id, 
+                               s.name as default_supplier_name, s.code as default_supplier_code
+                        FROM materials m
+                        LEFT JOIN suppliers s ON m.supplier_id = s.id
+                        WHERE m.id IN ($inPlaceholders)
+                    ");
                     $mStmt->execute(array_values($matIds));
                     $liveStockMap = [];
                     foreach ($mStmt->fetchAll() as $row) {
@@ -895,7 +941,8 @@ class ProductionController {
                     }
                     foreach ($totalMaterialsList as &$sm) {
                         if (!empty($sm['material_id']) && isset($liveStockMap[$sm['material_id']])) {
-                            $sm['current_stock'] = (float)$liveStockMap[$sm['material_id']]['current_stock'];
+                            $liveMat = $liveStockMap[$sm['material_id']];
+                            $sm['current_stock'] = (float)$liveMat['current_stock'];
                             $req = (float)($sm['total_required_qty'] ?? 0);
                             $stk = (float)$sm['current_stock'];
                             $sm['shortage_qty'] = max(0.0, round($req - $stk, 3));
@@ -904,6 +951,32 @@ class ProductionController {
                             } else {
                                 $sm['status'] = 'In Stock';
                             }
+
+                            // If preferred supplier not yet assigned on saved BOM, use material default
+                            if (empty($sm['preferred_supplier_id']) && !empty($liveMat['default_supplier_id'])) {
+                                $sm['preferred_supplier_id'] = (int)$liveMat['default_supplier_id'];
+                                $sm['preferred_supplier_name'] = $liveMat['default_supplier_name'];
+                                $sm['preferred_supplier_code'] = $liveMat['default_supplier_code'];
+                            }
+                        }
+                    }
+                    unset($sm);
+                }
+
+                // Ensure live supplier name and code are enriched for all assigned preferred_supplier_ids
+                $assignedSupIds = array_filter(array_column($totalMaterialsList, 'preferred_supplier_id'));
+                if (!empty($assignedSupIds)) {
+                    $supPlaceholders = implode(',', array_fill(0, count($assignedSupIds), '?'));
+                    $sStmt = $pdo->prepare("SELECT id, name, code FROM suppliers WHERE id IN ($supPlaceholders)");
+                    $sStmt->execute(array_values($assignedSupIds));
+                    $supLiveMap = [];
+                    foreach ($sStmt->fetchAll() as $sRow) {
+                        $supLiveMap[$sRow['id']] = $sRow;
+                    }
+                    foreach ($totalMaterialsList as &$sm) {
+                        if (!empty($sm['preferred_supplier_id']) && isset($supLiveMap[$sm['preferred_supplier_id']])) {
+                            $sm['preferred_supplier_name'] = $supLiveMap[$sm['preferred_supplier_id']]['name'];
+                            $sm['preferred_supplier_code'] = $supLiveMap[$sm['preferred_supplier_id']]['code'];
                         }
                     }
                     unset($sm);
@@ -919,6 +992,11 @@ class ProductionController {
                             if (empty($sm['model']) && !empty($mappedMat['model'])) $sm['model'] = $mappedMat['model'];
                             if (empty($sm['length']) && !empty($mappedMat['length'])) $sm['length'] = $mappedMat['length'];
                             if (empty($sm['thickness']) && !empty($mappedMat['thickness'])) $sm['thickness'] = $mappedMat['thickness'];
+                            if (empty($sm['preferred_supplier_id']) && !empty($mappedMat['preferred_supplier_id'])) {
+                                $sm['preferred_supplier_id'] = $mappedMat['preferred_supplier_id'];
+                                $sm['preferred_supplier_name'] = $mappedMat['preferred_supplier_name'];
+                                $sm['preferred_supplier_code'] = $mappedMat['preferred_supplier_code'];
+                            }
                             break;
                         }
                     }
@@ -982,6 +1060,9 @@ class ProductionController {
                     'unit_cost' => $m['unit_cost'],
                     'total_estimated_cost' => $cost,
                     'status' => $status,
+                    'preferred_supplier_id' => $m['preferred_supplier_id'] ?? null,
+                    'preferred_supplier_name' => $m['preferred_supplier_name'] ?? null,
+                    'preferred_supplier_code' => $m['preferred_supplier_code'] ?? null,
                     'product_contributions' => $m['per_product_contributions'],
                 ];
             }
@@ -1024,8 +1105,45 @@ class ProductionController {
                 return;
             }
 
+            $rawMaterials = $data['total_materials'] ?? $data['materials'] ?? [];
+
+            // Query live suppliers to validate and sanitize preferred vendor assignments
+            $supIds = [];
+            foreach ($rawMaterials as $mat) {
+                if (!empty($mat['preferred_supplier_id'])) {
+                    $supIds[] = (int)$mat['preferred_supplier_id'];
+                }
+            }
+            $supIds = array_unique($supIds);
+            $supMap = [];
+            if (!empty($supIds)) {
+                $inQuery = implode(',', array_fill(0, count($supIds), '?'));
+                $sStmt = $pdo->prepare("SELECT id, name, code, status FROM suppliers WHERE id IN ($inQuery)");
+                $sStmt->execute($supIds);
+                foreach ($sStmt->fetchAll() as $s) {
+                    $supMap[$s['id']] = $s;
+                }
+            }
+
+            $sanitizedMaterials = [];
+            foreach ($rawMaterials as $mat) {
+                $sId = !empty($mat['preferred_supplier_id']) ? (int)$mat['preferred_supplier_id'] : null;
+                $sName = $mat['preferred_supplier_name'] ?? null;
+                $sCode = $mat['preferred_supplier_code'] ?? null;
+
+                if ($sId && isset($supMap[$sId])) {
+                    $sName = $supMap[$sId]['name'];
+                    $sCode = $supMap[$sId]['code'];
+                }
+
+                $mat['preferred_supplier_id'] = $sId;
+                $mat['preferred_supplier_name'] = $sName;
+                $mat['preferred_supplier_code'] = $sCode;
+                $sanitizedMaterials[] = $mat;
+            }
+
             $bomPayload = [
-                'total_materials' => $data['total_materials'] ?? $data['materials'] ?? [],
+                'total_materials' => $sanitizedMaterials,
                 'summary' => $data['summary'] ?? [],
                 'products' => $data['products'] ?? [],
                 'updated_at' => date('Y-m-d H:i:s'),

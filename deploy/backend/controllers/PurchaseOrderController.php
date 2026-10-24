@@ -56,7 +56,13 @@ class PurchaseOrderController {
 
             foreach ($orders as &$po) {
                 $st = strtolower(trim((string)($po['status'] ?? '')));
-                $po['status'] = ($st === 'draft') ? 'Draft' : 'Ordered';
+                if ($st === 'draft') {
+                    $po['status'] = 'Draft';
+                } elseif ($st === 'cancelled') {
+                    $po['status'] = 'Cancelled';
+                } else {
+                    $po['status'] = 'Ordered';
+                }
                 try {
                     $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? ORDER BY id ASC");
                     $iStmt->execute([$po['id']]);
@@ -166,6 +172,20 @@ class PurchaseOrderController {
             // Dynamically detect existing columns in purchase_orders & purchase_order_items to prevent schema mismatch
             $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
             $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
+
+            // Prevent duplicate PO creation for the same production order, category, and supplier group
+            $prodOrderId = !empty($data['production_order_id']) ? (int)$data['production_order_id'] : null;
+            if ($prodOrderId && $categoryId && $supplierId && empty($data['allow_duplicate'])) {
+                $hasDel = in_array('deleted_at', $poCols);
+                $dupSql = "SELECT id, po_number, status FROM purchase_orders WHERE production_order_id = ? AND category_id = ? AND supplier_id = ?" . ($hasDel ? " AND deleted_at IS NULL" : "");
+                $dupStmt = $pdo->prepare($dupSql);
+                $dupStmt->execute([$prodOrderId, $categoryId, $supplierId]);
+                $existingPO = $dupStmt->fetch();
+                if ($existingPO) {
+                    Response::error("A purchase order (" . $existingPO['po_number'] . ") already exists for this supplier and category group.", 409);
+                    return;
+                }
+            }
 
             $pdo->beginTransaction();
 
@@ -402,9 +422,9 @@ class PurchaseOrderController {
             }
 
             $currentStatus = strtolower(trim((string)($po['status'] ?? '')));
-            if ($currentStatus !== 'draft') {
+            if ($currentStatus !== 'draft' && $currentStatus !== 'cancelled') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Only Draft purchase orders can be edited. Ordered purchase orders are locked.", 422);
+                Response::error("Only Draft or Cancelled purchase orders can be edited. Ordered purchase orders must be cancelled before making corrections.", 422);
                 return;
             }
 
@@ -526,11 +546,12 @@ class PurchaseOrderController {
             if ($pdo->inTransaction()) {
                 $pdo->commit();
             }
-            AuditLogger::log('PurchaseOrders', 'UPDATE', $poId, ['old_net_amount' => $po['net_amount']], ['net_amount' => $netTotal, 'items_count' => count($items)]);
+            $statusPreserved = ($currentStatus === 'cancelled') ? 'Cancelled' : 'Draft';
+            AuditLogger::log('PurchaseOrders', 'UPDATE', $poId, ['old_net_amount' => $po['net_amount']], ['net_amount' => $netTotal, 'items_count' => count($items), 'status' => $statusPreserved]);
             Response::success([
                 'id' => $poId,
                 'po_number' => $po['po_number'],
-                'status' => 'Draft',
+                'status' => $statusPreserved,
                 'net_amount' => $netTotal
             ], "Purchase Order updated successfully");
         } catch (Exception $e) {
@@ -566,9 +587,10 @@ class PurchaseOrderController {
                 return;
             }
 
-            if (strtolower(trim((string)($po['status'] ?? ''))) === 'draft') {
+            $currentStatus = strtolower(trim((string)($po['status'] ?? '')));
+            if ($currentStatus !== 'ordered') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Cannot record payments against a Draft Purchase Order. Please confirm and order the PO first.", 422);
+                Response::error("Cannot record payments against a {$po['status']} Purchase Order. Only active Ordered POs can receive payments.", 422);
                 return;
             }
 
@@ -657,9 +679,10 @@ class PurchaseOrderController {
                 return;
             }
 
-            if (strtolower(trim((string)($po['status'] ?? ''))) === 'draft') {
+            $currentStatus = strtolower(trim((string)($po['status'] ?? '')));
+            if ($currentStatus !== 'ordered') {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Cannot receive materials against a Draft Purchase Order. Please confirm and order the PO first.", 422);
+                Response::error("Cannot receive materials against a {$po['status']} Purchase Order. Only active Ordered POs can receive materials.", 422);
                 return;
             }
 
@@ -961,7 +984,13 @@ class PurchaseOrderController {
             }
 
             $st = strtolower(trim((string)($po['status'] ?? '')));
-            $po['status'] = ($st === 'draft') ? 'Draft' : 'Ordered';
+            if ($st === 'draft') {
+                $po['status'] = 'Draft';
+            } elseif ($st === 'cancelled') {
+                $po['status'] = 'Cancelled';
+            } else {
+                $po['status'] = 'Ordered';
+            }
 
             try {
                 $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? ORDER BY id ASC");
@@ -1024,13 +1053,249 @@ class PurchaseOrderController {
         }
     }
 
+    public function cancel(int $poId): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $reason = trim((string)($data['reason'] ?? $data['cancellation_reason'] ?? ''));
+
+        if (empty($reason)) {
+            Response::error("A cancellation reason is required to cancel this purchase order.", 422);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureCancelColumns($pdo);
+
+            $pdo->beginTransaction();
+
+            $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $stmt->execute([$poId]);
+            $po = $stmt->fetch();
+
+            if (!$po) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                Response::error("Purchase Order not found", 404);
+                return;
+            }
+
+            $currentStatus = strtolower(trim((string)($po['status'] ?? '')));
+            if ($currentStatus === 'cancelled') {
+                if ($pdo->inTransaction()) $pdo->commit();
+                Response::success($po, "Purchase Order is already cancelled");
+                return;
+            }
+
+            // Downstream transaction checks: receipts, payments, returns
+            $rStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_receipts WHERE purchase_order_id = ?");
+            $rStmt->execute([$poId]);
+            $receiptCount = (int)$rStmt->fetchColumn();
+
+            $pStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_payments WHERE purchase_order_id = ?");
+            $pStmt->execute([$poId]);
+            $paymentCount = (int)$pStmt->fetchColumn();
+
+            $retStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_returns WHERE purchase_order_id = ?");
+            $retStmt->execute([$poId]);
+            $returnCount = (int)$retStmt->fetchColumn();
+
+            if ($receiptCount > 0 || $paymentCount > 0 || $returnCount > 0) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $details = [];
+                if ($receiptCount > 0) $details[] = "{$receiptCount} material receipt(s)";
+                if ($paymentCount > 0) $details[] = "{$paymentCount} supplier payment(s)";
+                if ($returnCount > 0) $details[] = "{$returnCount} return(s)";
+                $detailStr = implode(', ', $details);
+                Response::error("Cannot cancel PO {$po['po_number']}: downstream records exist ({$detailStr}). Active transactions must be reversed first before cancelling.", 422);
+                return;
+            }
+
+            $user = $this->getCurrentUser();
+            $userName = $user['name'] ?: 'Staff';
+            $now = date('Y-m-d H:i:s');
+
+            $uStmt = $pdo->prepare("
+                UPDATE purchase_orders 
+                SET status = 'Cancelled',
+                    cancellation_reason = ?,
+                    cancelled_at = ?,
+                    cancelled_by = ?
+                WHERE id = ?
+            ");
+            $uStmt->execute([$reason, $now, $userName, $poId]);
+
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            AuditLogger::log('PurchaseOrders', 'CANCEL', $poId, [
+                'old_status' => $po['status']
+            ], [
+                'status' => 'Cancelled',
+                'cancellation_reason' => $reason,
+                'cancelled_at' => $now,
+                'cancelled_by' => $userName
+            ]);
+
+            $po['status'] = 'Cancelled';
+            $po['cancellation_reason'] = $reason;
+            $po['cancelled_at'] = $now;
+            $po['cancelled_by'] = $userName;
+
+            Response::success($po, "Purchase Order {$po['po_number']} cancelled successfully");
+        } catch (Exception $e) {
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function reissue(int $poId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureCancelColumns($pdo);
+
+            $pdo->beginTransaction();
+
+            $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $stmt->execute([$poId]);
+            $po = $stmt->fetch();
+
+            if (!$po) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                Response::error("Purchase Order not found", 404);
+                return;
+            }
+
+            $currentStatus = strtolower(trim((string)($po['status'] ?? '')));
+            if ($currentStatus === 'ordered') {
+                if ($pdo->inTransaction()) $pdo->commit();
+                Response::success($po, "Purchase Order is already Ordered");
+                return;
+            }
+
+            if ($currentStatus !== 'cancelled') {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                Response::error("Only Cancelled purchase orders can be reissued. Current status is {$po['status']}.", 422);
+                return;
+            }
+
+            // Verify items exist
+            $iStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ?");
+            $iStmt->execute([$poId]);
+            $itemCount = (int)$iStmt->fetchColumn();
+            if ($itemCount === 0) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                Response::error("Cannot reissue Purchase Order without line items. Please edit the PO to add materials first.", 422);
+                return;
+            }
+
+            $user = $this->getCurrentUser();
+            $userName = $user['name'] ?: 'Staff';
+            $now = date('Y-m-d H:i:s');
+
+            // Default payment due date 15 days if empty
+            $dueDate = $po['payment_due_date'] ?? null;
+            if (empty($dueDate) || $dueDate === '0000-00-00') {
+                $dueDate = date('Y-m-d', strtotime(date('Y-m-d') . ' +15 days'));
+            }
+
+            $uStmt = $pdo->prepare("
+                UPDATE purchase_orders 
+                SET status = 'Ordered',
+                    ordered_at = ?,
+                    payment_due_date = ?,
+                    reissued_at = ?,
+                    reissued_by = ?
+                WHERE id = ?
+            ");
+            $uStmt->execute([$now, $dueDate, $now, $userName, $poId]);
+
+            // Ensure linked production order items are at least at Stage 02: PO
+            if (!empty($po['production_order_id'])) {
+                try {
+                    $pOrdId = (int)$po['production_order_id'];
+                    $stgStmt = $pdo->query("SELECT id FROM production_stages WHERE code = 'PO' OR name LIKE '%Purchase Order%' ORDER BY sequence_order ASC LIMIT 1");
+                    $poStageId = $stgStmt ? $stgStmt->fetchColumn() : null;
+                    if ($poStageId) {
+                        $updatePoi = $pdo->prepare("UPDATE production_order_items SET current_stage_id = ? WHERE production_order_id = ? AND (current_stage_id = 1 OR current_stage_id IN (SELECT id FROM production_stages WHERE sequence_order < 2))");
+                        $updatePoi->execute([$poStageId, $pOrdId]);
+                    }
+                } catch (\Throwable $exIgnore) {}
+            }
+
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            AuditLogger::log('PurchaseOrders', 'REISSUE', $poId, [
+                'old_status' => 'Cancelled'
+            ], [
+                'status' => 'Ordered',
+                'reissued_at' => $now,
+                'reissued_by' => $userName
+            ]);
+
+            $po['status'] = 'Ordered';
+            $po['ordered_at'] = $now;
+            $po['payment_due_date'] = $dueDate;
+            $po['reissued_at'] = $now;
+            $po['reissued_by'] = $userName;
+
+            Response::success($po, "Purchase Order {$po['po_number']} reissued successfully as Ordered");
+        } catch (Exception $e) {
+            if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    private function getCurrentUser(): array {
+        $user = ['id' => null, 'name' => 'System User', 'role' => ''];
+        try {
+            $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+            if (empty($authHeader) && function_exists('getallheaders')) {
+                $allHeaders = getallheaders();
+                $authHeader = $allHeaders['Authorization'] ?? $allHeaders['authorization'] ?? '';
+            }
+            if (!empty($authHeader) && preg_match('/Bearer\s+(.*)$/i', $authHeader, $m)) {
+                $token = trim($m[1]);
+                $decoded = json_decode(base64_decode($token), true);
+                if (is_array($decoded)) {
+                    if (!empty($decoded['name'])) $user['name'] = $decoded['name'];
+                    elseif (!empty($decoded['username'])) $user['name'] = $decoded['username'];
+                    elseif (!empty($decoded['email'])) $user['name'] = $decoded['email'];
+                    if (!empty($decoded['id'])) $user['id'] = (int)$decoded['id'];
+                }
+            }
+        } catch (\Throwable $e) {}
+        return $user;
+    }
+
+    private function ensureCancelColumns(PDO $pdo): void {
+        static $checked = false;
+        if ($checked) return;
+        try { $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN cancellation_reason TEXT NULL"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN cancelled_at DATETIME NULL"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN cancelled_by VARCHAR(150) NULL"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN reissued_at DATETIME NULL"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN reissued_by VARCHAR(150) NULL"); } catch (Exception $e) {}
+        $checked = true;
+    }
+
     public function updateStatus(int $poId): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $status = trim((string)($data['status'] ?? ''));
         $statusLower = strtolower($status);
 
+        if ($statusLower === 'cancelled') {
+            $this->cancel($poId);
+            return;
+        }
+
         if ($statusLower !== 'draft' && $statusLower !== 'ordered') {
-            Response::error("Invalid status. Allowed statuses are 'Draft' and 'Ordered'", 422);
+            Response::error("Invalid status. Allowed statuses are 'Draft', 'Ordered', and 'Cancelled'", 422);
             return;
         }
 

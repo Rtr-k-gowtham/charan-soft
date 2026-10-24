@@ -82,6 +82,8 @@ try {
         $r0 === 'purchase-orders' && $method === 'POST' && !$id => (new PurchaseOrderController)->store(),
         $r0 === 'purchase-orders' && $id && !$action && in_array($method, ['PUT', 'PATCH', 'POST']) => (new PurchaseOrderController)->update($id),
         $r0 === 'purchase-orders' && $id && $action === 'status' && in_array($method, ['PATCH', 'PUT', 'POST']) => (new PurchaseOrderController)->updateStatus($id),
+        $r0 === 'purchase-orders' && $id && $action === 'cancel' && $method === 'POST' => (new PurchaseOrderController)->cancel($id),
+        $r0 === 'purchase-orders' && $id && $action === 'reissue' && $method === 'POST' => (new PurchaseOrderController)->reissue($id),
         $r0 === 'purchase-orders' && $id && $action === 'payments' && $method === 'POST' => (new PurchaseOrderController)->addPayment($id),
         $r0 === 'purchase-orders' && $id && $action === 'receive' && $method === 'POST' => (new PurchaseOrderController)->receive($id),
         $r0 === 'purchase' && $r1 === 'receipts' && $method === 'GET' => (new PurchaseOrderController)->receiptsList(),

@@ -242,8 +242,13 @@ export interface PurchaseOrder {
   paid_amount: number;
   balance_amount: number;
   payment_status: 'Unpaid' | 'Partially Paid' | 'Settled' | 'Overdue' | 'Not Paid' | 'Paid';
-  status: 'Draft' | 'Ordered' | string;
+  status: 'Draft' | 'Ordered' | 'Cancelled' | string;
   remarks?: string;
+  cancellation_reason?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  reissued_at?: string;
+  reissued_by?: string;
   production_order_id?: number | null;
   production_order_number?: string;
   production_order_title?: string;
@@ -551,6 +556,9 @@ export interface OrderMaterialRequirementItem {
   unit_cost: number;
   total_estimated_cost: number;
   status: 'In Stock' | 'Partial Stock' | 'Needs Procurement';
+  preferred_supplier_id?: number | null;
+  preferred_supplier_name?: string | null;
+  preferred_supplier_code?: string | null;
   product_contributions?: {
     product_id: number;
     product_name: string;

@@ -31,8 +31,29 @@ import {
   FileText,
   DollarSign,
   PackageCheck,
-  Eye
+  Eye,
+  Ban,
+  RotateCcw
 } from 'lucide-react';
+
+export interface CategorySupplierGroup {
+  groupKey: string;
+  categoryName: string;
+  categoryId?: number;
+  supplierId: number | null;
+  supplierName: string;
+  supplierCode?: string | null;
+  materials: OrderMaterialRequirementItem[];
+  itemCount: number;
+  totalCost: number;
+  matchingPOs: PurchaseOrder[];
+  matchingPO?: PurchaseOrder | null;
+  hasOrderedPO: boolean;
+  hasDraftPO: boolean;
+  draftPO?: PurchaseOrder | null;
+  hasCancelledPO: boolean;
+  cancelledPO?: PurchaseOrder | null;
+}
 
 interface Props {
   orderId: number | string;
@@ -71,9 +92,9 @@ export default function CategoryPOIssuer({
   const [existingPOs, setExistingPOs] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Selected vendor per category for new PO generation
+  // Selected vendor per groupKey if unassigned
   const [selectedVendors, setSelectedVendors] = useState<Record<string, string>>({});
-  // Issuing PO loading state per category
+  // Issuing PO loading state per groupKey
   const [issuingPO, setIssuingPO] = useState<Record<string, boolean>>({});
   // Changing status of existing PO (e.g. Draft -> Ordered)
   const [updatingPOStatus, setUpdatingPOStatus] = useState<Record<number, boolean>>({});
@@ -82,15 +103,12 @@ export default function CategoryPOIssuer({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  // Edit PO Modal State
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
-  const [editSupplierId, setEditSupplierId] = useState('');
-  const [editDeliveryDueDate, setEditDeliveryDueDate] = useState('');
-  const [editRemarks, setEditRemarks] = useState('');
-  const [editItems, setEditItems] = useState<any[]>([]);
-  const [savingEditPO, setSavingEditPO] = useState(false);
-  const [editPOError, setEditPOError] = useState('');
+  // Cancel PO state
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelPO, setCancelPO] = useState<PurchaseOrder | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
 
   const loadDependencies = async () => {
     setLoading(true);
@@ -139,17 +157,6 @@ export default function CategoryPOIssuer({
     }
   }, [actionSuccess]);
 
-  // Group materials by category
-  const categorizedMaterials = useMemo(() => {
-    const groups: Record<string, OrderMaterialRequirementItem[]> = {};
-    (materials || []).forEach(m => {
-      const cat = m.category || 'General';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(m);
-    });
-    return groups;
-  }, [materials]);
-
   // For a given category, find matching suppliers
   const getCategorySuppliers = (categoryName: string) => {
     const cleanCat = categoryName.trim().toLowerCase();
@@ -185,28 +192,122 @@ export default function CategoryPOIssuer({
     };
   };
 
-  // Automatically select vendor: if PO already exists for this category, select that PO's vendor;
-  // otherwise, select the first matched vendor if available
+  // Group materials by (Category, Preferred Supplier)
+  const categorySupplierGroups = useMemo<CategorySupplierGroup[]>(() => {
+    const map = new Map<string, {
+      categoryName: string;
+      supplierId: number | null;
+      supplierName: string;
+      supplierCode?: string | null;
+      materials: OrderMaterialRequirementItem[];
+      totalCost: number;
+    }>();
+
+    (materials || []).forEach(m => {
+      const cat = m.category || 'General';
+      const supId = m.preferred_supplier_id ? Number(m.preferred_supplier_id) : null;
+      const key = `${cat}__${supId ?? 'unassigned'}`;
+
+      if (!map.has(key)) {
+        let supName = m.preferred_supplier_name || '';
+        let supCode = m.preferred_supplier_code || null;
+        if (supId) {
+          const found = suppliers.find(s => s.id === supId);
+          if (found) {
+            supName = found.name;
+            supCode = found.code || supCode;
+          }
+        }
+        if (!supName) {
+          supName = supId ? `Supplier #${supId}` : 'Unassigned Supplier';
+        }
+
+        map.set(key, {
+          categoryName: cat,
+          supplierId: supId,
+          supplierName: supName,
+          supplierCode: supCode,
+          materials: [],
+          totalCost: 0,
+        });
+      }
+
+      const grp = map.get(key)!;
+      grp.materials.push(m);
+      grp.totalCost += Number(m.total_required_qty || 0) * Number(m.unit_cost || 0);
+    });
+
+    const result: CategorySupplierGroup[] = [];
+    map.forEach((grp, groupKey) => {
+      const catLower = grp.categoryName.toLowerCase();
+      const matchingPOs = existingPOs.filter(p => {
+        const poCatLower = (p.category_name || '').toLowerCase();
+        const catMatches = poCatLower === catLower || (p.remarks && p.remarks.toLowerCase().includes(catLower));
+        let supMatches = false;
+        if (grp.supplierId) {
+          supMatches = Number(p.supplier_id) === Number(grp.supplierId);
+        } else {
+          // If group is unassigned, check temporary selected vendor if any
+          const selSup = selectedVendors[groupKey];
+          if (selSup) {
+            supMatches = Number(p.supplier_id) === Number(selSup);
+          } else {
+            supMatches = true;
+          }
+        }
+        return catMatches && supMatches;
+      });
+
+      const catObj = categories.find(
+        c => c.name.trim().toLowerCase() === grp.categoryName.trim().toLowerCase()
+      );
+      const categoryId = catObj ? catObj.id : (grp.supplierId ? (suppliers.find(s => s.id === grp.supplierId)?.category_id || 1) : 1);
+
+      const orderedPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'ordered') || null;
+      const draftPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft') || null;
+      const cancelledPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'cancelled') || null;
+      const primaryPO = orderedPO || draftPO || cancelledPO || matchingPOs[0] || null;
+
+      result.push({
+        groupKey,
+        categoryName: grp.categoryName,
+        categoryId,
+        supplierId: grp.supplierId,
+        supplierName: grp.supplierName,
+        supplierCode: grp.supplierCode,
+        materials: grp.materials,
+        itemCount: grp.materials.length,
+        totalCost: grp.totalCost,
+        matchingPOs,
+        matchingPO: primaryPO,
+        hasOrderedPO: Boolean(orderedPO),
+        hasDraftPO: Boolean(draftPO),
+        draftPO,
+        hasCancelledPO: Boolean(cancelledPO),
+        cancelledPO,
+      });
+    });
+
+    return result;
+  }, [materials, suppliers, categories, existingPOs, selectedVendors]);
+
+  // Automatically select vendor: prefill selectedVendors map
   useEffect(() => {
     const next: Record<string, string> = { ...selectedVendors };
     let changed = false;
 
-    Object.keys(categorizedMaterials).forEach(cat => {
-      if (!next[cat]) {
-        const catLower = cat.toLowerCase();
-        const existingPO = existingPOs.find(p => {
-          if ((p.category_name || '').toLowerCase() === catLower) return true;
-          if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
-          return false;
-        });
-
-        if (existingPO && existingPO.supplier_id) {
-          next[cat] = String(existingPO.supplier_id);
+    categorySupplierGroups.forEach(grp => {
+      if (!next[grp.groupKey]) {
+        if (grp.supplierId) {
+          next[grp.groupKey] = String(grp.supplierId);
+          changed = true;
+        } else if (grp.matchingPO && grp.matchingPO.supplier_id) {
+          next[grp.groupKey] = String(grp.matchingPO.supplier_id);
           changed = true;
         } else {
-          const { suppliers: catSups } = getCategorySuppliers(cat);
+          const { suppliers: catSups } = getCategorySuppliers(grp.categoryName);
           if (catSups.length > 0) {
-            next[cat] = String(catSups[0].id);
+            next[grp.groupKey] = String(catSups[0].id);
             changed = true;
           }
         }
@@ -216,27 +317,40 @@ export default function CategoryPOIssuer({
     if (changed) {
       setSelectedVendors(next);
     }
-  }, [suppliers, categories, categorizedMaterials, existingPOs]);
+  }, [suppliers, categories, categorySupplierGroups, existingPOs]);
 
-  const handleOpenCreatePOPage = (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
-    const selectedSupId = selectedVendors[categoryName] || '';
-    const selectedSup = suppliers.find(s => String(s.id) === String(selectedSupId));
+  const handleOpenCreatePOPage = (group: CategorySupplierGroup) => {
+    // If PO already exists, navigate directly to view it
+    if (group.matchingPO) {
+      navigate(`/purchase/orders/${group.matchingPO.id}`, {
+        state: { from: location.pathname || `/production/po/${orderId}` }
+      });
+      return;
+    }
+
+    const effectiveSupId = group.supplierId || (selectedVendors[group.groupKey] ? Number(selectedVendors[group.groupKey]) : null);
+    if (!effectiveSupId) {
+      setActionError(`Please assign or select a supplier for ${group.categoryName} before creating a Purchase Order.`);
+      return;
+    }
+
+    const selectedSup = suppliers.find(s => Number(s.id) === Number(effectiveSupId));
     const catObj = categories.find(
-      c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+      c => c.name.trim().toLowerCase() === group.categoryName.trim().toLowerCase()
     );
-    const catId = catObj ? catObj.id : (selectedSup?.category_id || 1);
+    const catId = catObj ? catObj.id : (selectedSup?.category_id || group.categoryId || 1);
 
     navigate('/purchase/orders?create=true', {
       state: {
         production_order_id: Number(orderId),
         production_order_number: orderNumber,
         category_id: catId,
-        category_name: categoryName,
-        supplier_id: selectedSupId ? Number(selectedSupId) : (selectedSup?.id || ''),
+        category_name: group.categoryName,
+        supplier_id: Number(effectiveSupId),
         target_delivery_date: targetDeliveryDate,
-        remarks: `PO for ${categoryName} - Production Order ${orderNumber}`,
+        remarks: `PO for ${group.categoryName} (${selectedSup?.name || group.supplierName}) - Production Order ${orderNumber}`,
         status: 'Ordered',
-        materials: catMaterials.map((m, idx) => ({
+        materials: group.materials.map((m, idx) => ({
           material_id: m.material_id || undefined,
           material_code: m.material_code || undefined,
           item_description: m.name,
@@ -257,42 +371,36 @@ export default function CategoryPOIssuer({
     });
   };
 
-  // Create & Issue PO for a category
-  const handleIssuePOForCategory = async (categoryName: string, catMaterials: OrderMaterialRequirementItem[]) => {
-    const vendorId = selectedVendors[categoryName];
-    if (!vendorId) {
-      setActionError(`Please select a supplier/vendor for ${categoryName}`);
+  // Create & Issue PO for a group
+  const handleIssuePOForGroup = async (group: CategorySupplierGroup) => {
+    const effectiveSupId = group.supplierId || (selectedVendors[group.groupKey] ? Number(selectedVendors[group.groupKey]) : null);
+    if (!effectiveSupId) {
+      setActionError(`Please select a supplier/vendor for ${group.categoryName}`);
       return;
     }
 
-    if (!catMaterials || catMaterials.length === 0) {
-      setActionError(`No valid material lines found for category "${categoryName}"`);
+    if (!group.materials || group.materials.length === 0) {
+      setActionError(`No valid material lines found for category "${group.categoryName}"`);
       return;
     }
 
-    // Guard: prevent duplicate PO if one already exists for this category
-    const catLower = categoryName.toLowerCase();
-    const alreadyExists = existingPOs.some(p => {
-      if ((p.category_name || '').toLowerCase() === catLower) return true;
-      if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
-      return false;
-    });
-    if (alreadyExists) {
-      setActionError(`A Purchase Order already exists for "${categoryName}". Please edit the existing PO in the table above instead of creating a new one.`);
+    // Guard: prevent duplicate PO if one already exists for this category + supplier
+    if (group.matchingPO) {
+      setActionError(`A Purchase Order (${group.matchingPO.po_number}) already exists for "${group.categoryName}" and this supplier. Please view or edit the existing PO.`);
       return;
     }
 
     setActionError(null);
-    setIssuingPO(prev => ({ ...prev, [categoryName]: true }));
+    setIssuingPO(prev => ({ ...prev, [group.groupKey]: true }));
 
     try {
-      const selectedSup = suppliers.find(s => String(s.id) === String(vendorId));
+      const selectedSup = suppliers.find(s => Number(s.id) === Number(effectiveSupId));
       const catObj = categories.find(
-        c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+        c => c.name.trim().toLowerCase() === group.categoryName.trim().toLowerCase()
       );
-      const catId = catObj ? catObj.id : (selectedSup?.category_id || 1);
+      const catId = catObj ? catObj.id : (selectedSup?.category_id || group.categoryId || 1);
 
-      const itemsPayload = catMaterials.map((m, idx) => ({
+      const itemsPayload = group.materials.map((m, idx) => ({
         material_id: m.material_id || undefined,
         item_description: m.name,
         description: m.name,
@@ -310,12 +418,12 @@ export default function CategoryPOIssuer({
 
       const payload = {
         production_order_id: Number(orderId),
-        supplier_id: Number(vendorId),
+        supplier_id: Number(effectiveSupId),
         production_order_number: orderNumber,
         category_id: Number(catId),
         po_date: new Date().toISOString().split('T')[0],
         delivery_due_date: targetDeliveryDate || undefined,
-        remarks: `PO issued from Production Order ${orderNumber} for ${categoryName} materials`,
+        remarks: `PO issued from Production Order ${orderNumber} for ${group.categoryName} materials`,
         status: 'Ordered',
         items: itemsPayload,
       };
@@ -364,20 +472,20 @@ export default function CategoryPOIssuer({
       });
       setExistingPOs(rel);
 
-      // Check if ALL required categories for this production order are now issued
-      const allCatNames = Object.keys(categorizedMaterials);
-      const allCategoriesIssued = allCatNames.every(catName => {
-        const cLower = catName.toLowerCase();
+      // Check if ALL required groups for this production order are now issued
+      const allGroupsIssued = categorySupplierGroups.every(g => {
+        const cLower = g.categoryName.toLowerCase();
+        const sId = g.supplierId;
         return rel.some(p => {
           const isIssued = (p.status || '').toLowerCase() !== 'draft';
           if (!isIssued) return false;
-          if ((p.category_name || '').toLowerCase() === cLower) return true;
-          if (p.remarks && p.remarks.toLowerCase().includes(cLower)) return true;
-          return false;
+          const catMatches = (p.category_name || '').toLowerCase() === cLower || (p.remarks && p.remarks.toLowerCase().includes(cLower));
+          const supMatches = sId ? Number(p.supplier_id) === Number(sId) : true;
+          return catMatches && supMatches;
         });
       });
 
-      if (allCategoriesIssued) {
+      if (allGroupsIssued) {
         // Advance production order items to Stage 03: Inward
         try {
           const prodOrderRes = await api.getProductionOrder(Number(orderId));
@@ -389,7 +497,7 @@ export default function CategoryPOIssuer({
                   order_item_id: it.id,
                   to_stage_id: 3, // Inward
                   quantity_moved: it.total_quantity || it.current_stage_quantity || 1,
-                  remarks: `All ${allCatNames.length} category POs issued — order advanced to Inward stage`,
+                  remarks: `All ${categorySupplierGroups.length} vendor/category POs issued — order advanced to Inward stage`,
                 }).catch(() => null)
               )
             );
@@ -397,16 +505,16 @@ export default function CategoryPOIssuer({
         } catch (stageErr) {
           console.warn('Inward stage movement warning:', stageErr);
         }
-        setActionSuccess(`Purchase Order ${poNum} successfully issued! All categories are issued — Order has advanced to Stage 03: Inward.`);
+        setActionSuccess(`Purchase Order ${poNum} successfully issued! All groups are issued — Order has advanced to Stage 03: Inward.`);
       } else {
-        setActionSuccess(`Purchase Order ${poNum} successfully issued & locked for ${categoryName}! (Remaining categories pending in Stage 02).`);
+        setActionSuccess(`Purchase Order ${poNum} successfully issued & locked for ${group.categoryName} (${selectedSup?.name || group.supplierName})!`);
       }
 
       if (onPOCreated) onPOCreated(poNum);
     } catch (err: unknown) {
-      setActionError((err as Error).message || `Failed to create PO for ${categoryName}`);
+      setActionError((err as Error).message || `Failed to create PO for ${group.categoryName}`);
     } finally {
-      setIssuingPO(prev => ({ ...prev, [categoryName]: false }));
+      setIssuingPO(prev => ({ ...prev, [group.groupKey]: false }));
     }
   };
 
@@ -428,20 +536,20 @@ export default function CategoryPOIssuer({
       });
       setExistingPOs(rel);
 
-      // Check if ALL required categories are now issued
-      const allCatNames = Object.keys(categorizedMaterials);
-      const allCategoriesIssued = allCatNames.every(catName => {
-        const cLower = catName.toLowerCase();
+      // Check if ALL required groups are now issued
+      const allGroupsIssued = categorySupplierGroups.every(g => {
+        const cLower = g.categoryName.toLowerCase();
+        const sId = g.supplierId;
         return rel.some(p => {
           const isIssued = (p.status || '').toLowerCase() !== 'draft';
           if (!isIssued) return false;
-          if ((p.category_name || '').toLowerCase() === cLower) return true;
-          if (p.remarks && p.remarks.toLowerCase().includes(cLower)) return true;
-          return false;
+          const catMatches = (p.category_name || '').toLowerCase() === cLower || (p.remarks && p.remarks.toLowerCase().includes(cLower));
+          const supMatches = sId ? Number(p.supplier_id) === Number(sId) : true;
+          return catMatches && supMatches;
         });
       });
 
-      if (allCategoriesIssued) {
+      if (allGroupsIssued) {
         if (orderId) {
           const ordRes = await api.getProductionOrder(Number(orderId));
           const ord = (ordRes as any)?.data || ordRes;
@@ -458,9 +566,9 @@ export default function CategoryPOIssuer({
             );
           }
         }
-        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued! All categories are issued — Order has moved to Stage 03: Inward.`);
+        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued! All groups are issued — Order has moved to Stage 03: Inward.`);
       } else {
-        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued & Locked! (Remaining categories pending in Stage 02).`);
+        setActionSuccess(`Purchase Order ${po.po_number} is officially Issued & Locked! (Remaining groups pending in Stage 02).`);
       }
     } catch (err: unknown) {
       setActionError((err as Error).message || `Failed to issue PO ${po.po_number}`);
@@ -469,116 +577,44 @@ export default function CategoryPOIssuer({
     }
   };
 
-  // Open Edit Modal for a PO
-  const handleOpenEditPO = async (po: PurchaseOrder) => {
-    setEditPOError('');
-    setSavingEditPO(false);
-    try {
-      // Fetch full details including items
-      const fullPO = await api.getPurchaseOrder(po.id);
-      const data = (fullPO as any)?.data || fullPO;
-      setEditingPO(data);
-      setEditSupplierId(String(data.supplier_id || ''));
-      setEditDeliveryDueDate(data.delivery_due_date || '');
-      setEditRemarks(data.remarks || '');
-      setEditItems(
-        (data.items || []).map((it: any) => ({
-          id: it.id,
-          material_id: it.material_id,
-          item_description: it.item_description || it.description || '',
-          size: it.size || '',
-          model: it.model || '',
-          length: it.length || '',
-          thickness: it.thickness || '',
-          uom: it.uom || 'PCS',
-          quantity: Number(it.quantity) || 0,
-          rate: Number(it.rate) || 0,
-          tax_percent: Number(it.tax_percent) || 5,
-        }))
-      );
-      setEditModalOpen(true);
-    } catch (err: unknown) {
-      setActionError((err as Error).message || 'Failed to open PO editor');
-    }
+  const handleOpenCancelModal = (po: PurchaseOrder) => {
+    setCancelPO(po);
+    setCancelReason('');
+    setCancelError('');
+    setCancelModalOpen(true);
   };
 
-  const handleUpdateEditItem = (idx: number, field: string, val: any) => {
-    setEditItems(prev => {
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: val };
-      return copy;
-    });
-  };
-
-  const handleAddEditItem = () => {
-    setEditItems(prev => [
-      ...prev,
-      {
-        material_id: null,
-        item_description: 'New Material Item',
-        uom: 'PCS',
-        quantity: 10,
-        rate: 0,
-        tax_percent: 5,
-      }
-    ]);
-  };
-
-  const handleDeleteEditItem = (idx: number) => {
-    setEditItems(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleSavePOEdits = async () => {
-    if (!editingPO) return;
-    if (editItems.length === 0) {
-      setEditPOError('At least one item is required in the Purchase Order.');
+  const handleConfirmCancel = async () => {
+    if (!cancelPO) return;
+    const trimmed = cancelReason.trim();
+    if (!trimmed) {
+      setCancelError('Please enter a required cancellation reason.');
       return;
     }
-    setSavingEditPO(true);
-    setEditPOError('');
+    setCancelling(true);
+    setCancelError('');
     try {
-      const payload = {
-        category_id: editingPO.category_id,
-        supplier_id: Number(editSupplierId) || editingPO.supplier_id,
-        delivery_due_date: editDeliveryDueDate || undefined,
-        remarks: editRemarks,
-        items: editItems.map((it, idx) => ({
-          material_id: it.material_id || undefined,
-          item_description: it.item_description,
-          size: it.size || undefined,
-          model: it.model || undefined,
-          length: it.length || undefined,
-          thickness: it.thickness || undefined,
-          uom: it.uom,
-          quantity: Number(it.quantity) || 0,
-          rate: Number(it.rate) || 0,
-          tax_percent: Number(it.tax_percent) || 5,
-          order_no: orderNumber || `ORD-${idx + 1}`,
-        })),
-      };
-
-      await api.updatePurchaseOrder(editingPO.id, payload);
-      setActionSuccess(`Purchase Order ${editingPO.po_number} updated successfully!`);
-      setEditModalOpen(false);
-
-      // Refresh POs
-      const updatedPOs = await api.getPurchaseOrders().catch(() => []);
-      const rel = (updatedPOs as PurchaseOrder[]).filter(p => {
+      await api.cancelPurchaseOrder(cancelPO.id, trimmed);
+      setActionSuccess(`Purchase Order ${cancelPO.po_number} cancelled.`);
+      setCancelModalOpen(false);
+      const updated = await api.getPurchaseOrders().catch(() => []);
+      const ordNum = orderNumber || '';
+      const rel = (updated as PurchaseOrder[]).filter(p => {
         if (p.production_order_id && String(p.production_order_id) === String(orderId)) return true;
-        if (p.production_order_number && p.production_order_number === orderNumber) return true;
-        if (p.remarks && p.remarks.includes(orderNumber)) return true;
-        if (Array.isArray(p.items) && p.items.some((it: any) => it.order_no === orderNumber)) return true;
+        if (p.production_order_number && p.production_order_number === ordNum) return true;
+        if (p.remarks && p.remarks.includes(ordNum)) return true;
+        if (Array.isArray(p.items) && p.items.some((it: any) => it.order_no === ordNum)) return true;
         return false;
       });
       setExistingPOs(rel);
     } catch (err: unknown) {
-      setEditPOError((err as Error).message || 'Failed to update Purchase Order');
+      setCancelError((err as Error).message || 'Failed to cancel Purchase Order');
     } finally {
-      setSavingEditPO(false);
+      setCancelling(false);
     }
   };
 
-  const categoriesList = Object.entries(categorizedMaterials);
+
 
   return (
     <div className="bg-white rounded-xl border border-indigo-200/90 shadow-2xs overflow-hidden space-y-4">
@@ -597,16 +633,15 @@ export default function CategoryPOIssuer({
         </div>
       )}
 
-      {/* CATEGORY-BASED MATERIAL PROCUREMENT & PO GENERATION (STRUCTURED TABLE VIEW) */}
+      {/* CATEGORY & SUPPLIER-BASED MATERIAL PROCUREMENT & PO GENERATION (STRUCTURED TABLE VIEW) */}
       <div className="p-4 sm:p-5">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-
-            Issue Category Purchase Orders ({categoriesList.length} Categories)
+            Purchase Order Stage ({categorySupplierGroups.length} {categorySupplierGroups.length === 1 ? 'Group' : 'Groups'})
           </h4>
         </div>
 
-        {categoriesList.length === 0 ? (
+        {categorySupplierGroups.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-200">
             No raw material requirements found for this order. Please verify BOM master configuration.
           </div>
@@ -618,45 +653,29 @@ export default function CategoryPOIssuer({
                   <tr>
                     <th className="py-2.5 px-2 w-[36px] text-center">#</th>
                     <th className="py-2.5 px-2.5 w-[110px]">PO Number</th>
-                    <th className="py-2.5 px-2.5 w-[160px]">Material Category</th>
-                    <th className="py-2.5 px-2 text-center w-[80px]">Item Count</th>
-                    <th className="py-2.5 px-3 min-w-[180px]">Required Materials</th>
-
-                    <th className="py-2.5 px-2.5 w-[200px]">Supplier</th>
-                    <th className="py-2.5 px-2 text-center w-[95px]">PO Status</th>
-                    <th className="py-2.5 px-2.5 text-right w-[100px]">Action</th>
+                    <th className="py-2.5 px-2.5 w-[150px]">Material Category</th>
+                    <th className="py-2.5 px-2.5 w-[180px]">Supplier</th>
+                    <th className="py-2.5 px-2 text-center w-[75px]">Item Count</th>
+                    <th className="py-2.5 px-3 min-w-[150px]">Required Materials</th>
+                    <th className="py-2.5 px-2 text-center w-[100px]">PO Status</th>
+                    <th className="py-2.5 px-2.5 text-right w-[160px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {categoriesList.map(([categoryName, catMaterials], idx) => {
-                    const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(categoryName);
-                    const totalCatCost = catMaterials.reduce(
-                      (sum, m) => sum + (Number(m.total_required_qty || 0) * Number(m.unit_cost || 0)),
-                      0
-                    );
-                    const isSaving = !!issuingPO[categoryName];
-                    const selectedSupId = selectedVendors[categoryName] || '';
+                  {categorySupplierGroups.map((group, idx) => {
+                    const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(group.categoryName);
+                    const isSaving = !!issuingPO[group.groupKey];
+                    const selectedSupId = selectedVendors[group.groupKey] || (group.supplierId ? String(group.supplierId) : '');
 
                     // Category visual matching with icon
                     const catObj = categories.find(
-                      c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+                      c => c.name.trim().toLowerCase() === group.categoryName.trim().toLowerCase()
                     );
-                    const visual = getCategoryVisual(catObj || { name: categoryName });
+                    const visual = getCategoryVisual(catObj || { name: group.categoryName });
                     const CatIcon = visual.Icon;
 
-                    // Check if any PO is already created for this category
-                    const catLower = categoryName.toLowerCase();
-                    const matchingPOs = existingPOs.filter(p => {
-                      if ((p.category_name || '').toLowerCase() === catLower) return true;
-                      if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
-                      return false;
-                    });
-                    const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
-                    const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
-                    const draftPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft');
-
                     // Material names for clean display
-                    const materialNames = catMaterials.map(m => m.name).filter(Boolean);
+                    const materialNames = group.materials.map(m => m.name).filter(Boolean);
                     const materialsText = materialNames.length > 0 ? materialNames.join(', ') : '—';
 
                     // Ensure selected supplier is available in dropdown even if not category-matched
@@ -682,7 +701,7 @@ export default function CategoryPOIssuer({
                     });
 
                     return (
-                      <tr key={categoryName} className="hover:bg-slate-50/70 transition">
+                      <tr key={group.groupKey} className="hover:bg-slate-50/70 transition">
                         {/* 1. # */}
                         <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
                           {idx + 1}
@@ -690,9 +709,9 @@ export default function CategoryPOIssuer({
 
                         {/* 2. PO Number (Dedicated column with prominent badge & clickable link) */}
                         <td className="py-2.5 px-2.5 align-middle">
-                          {matchingPOs.length > 0 ? (
+                          {group.matchingPOs.length > 0 ? (
                             <div className="flex flex-col gap-1 items-start">
-                              {matchingPOs.map(p => (
+                              {group.matchingPOs.map(p => (
                                 <button
                                   key={p.id}
                                   type="button"
@@ -713,40 +732,28 @@ export default function CategoryPOIssuer({
                         <td className="py-2.5 px-2.5 align-middle">
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs max-w-full truncate`}
-                            title={categoryName}
+                            title={group.categoryName}
                           >
                             <CatIcon className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate">{categoryName}</span>
+                            <span className="truncate">{group.categoryName}</span>
                           </span>
                         </td>
 
-                        {/* 4. Item Count */}
-                        <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
-                          <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
-                            {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
-                          </span>
-                        </td>
-
-                        {/* 5. Required Materials / Summary (Wrapped text in fixed table view) */}
-                        <td className="py-2.5 px-3 align-middle">
-                          <p
-                            className="text-slate-700 text-[11px] font-medium leading-relaxed break-words whitespace-normal"
-                            title={materialsText}
-                          >
-                            {materialsText}
-                          </p>
-                        </td>
-
-                        {/* 6. Total Estimated Cost */}
-
-
-                        {/* 7. Vendor / Supplier */}
+                        {/* 4. Supplier */}
                         <td className="py-2.5 px-2.5 align-middle">
-                          {hasOrderedPO ? (
+                          {group.hasOrderedPO ? (
                             <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
                               <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span className="font-medium truncate" title={matchingPOs[0]?.supplier_name || 'Assigned Supplier'}>
-                                {matchingPOs[0]?.supplier_name || 'Assigned Supplier'}
+                              <span className="font-medium truncate" title={group.matchingPOs[0]?.supplier_name || group.supplierName}>
+                                {group.matchingPOs[0]?.supplier_name || group.supplierName}
+                              </span>
+                            </div>
+                          ) : group.supplierId ? (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-800 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
+                              <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              <span className="font-semibold truncate" title={`${group.supplierName}${group.supplierCode ? ` (${group.supplierCode})` : ''}`}>
+                                {group.supplierName}
+                                {group.supplierCode && <span className="text-slate-400 font-normal ml-1">({group.supplierCode})</span>}
                               </span>
                             </div>
                           ) : (
@@ -756,16 +763,16 @@ export default function CategoryPOIssuer({
                                 onChange={val =>
                                   setSelectedVendors(prev => ({
                                     ...prev,
-                                    [categoryName]: val,
+                                    [group.groupKey]: val,
                                   }))
                                 }
                                 options={vendorOptions}
                                 placeholder="-- Select Supplier --"
                                 searchPlaceholder="Search vendor..."
-                                disabled={hasOrderedPO}
-                                clearable={!hasOrderedPO}
+                                disabled={group.hasOrderedPO}
+                                clearable={!group.hasOrderedPO}
                               />
-                              {isExactMatch && !hasOrderedPO && (
+                              {isExactMatch && !group.hasOrderedPO && (
                                 <span className="text-[9px] font-medium text-emerald-700 block mt-0.5 truncate">
                                   ✓ {matchedCount} {matchedCount === 1 ? 'matched supplier' : 'matched suppliers'}
                                 </span>
@@ -774,67 +781,132 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 8. PO Status */}
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                        {/* 5. Item Count */}
+                        <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
+                          <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
+                            {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'}
+                          </span>
+                        </td>
+
+                        {/* 6. Required Materials / Summary */}
+                        <td className="py-2.5 px-3 align-middle">
+                          <p
+                            className="text-slate-700 text-[11px] font-medium leading-relaxed break-words whitespace-normal"
+                            title={materialsText}
+                          >
+                            {materialsText}
+                          </p>
+                        </td>
+
+                        {/* 7. PO Status */}
+                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle w-[100px]">
                           {isSaving ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                               <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
                             </span>
-                          ) : hasOrderedPO ? (
+                          ) : group.hasOrderedPO ? (
                             <span
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
                               title="Purchase Order issued & ordered"
                             >
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
                             </span>
-                          ) : hasDraftPO ? (
+                          ) : group.hasCancelledPO ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200"
+                              title="Purchase Order has been cancelled"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
+                            </span>
+                          ) : group.hasDraftPO ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                               Draft
                             </span>
-                          ) : selectedSupId ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                              Ready to Issue
-                            </span>
                           ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                              Not Issued
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              Not Created
                             </span>
                           )}
                         </td>
 
-                        {/* 9. Action */}
-                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle">
-                          {hasOrderedPO ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title="View PO Details"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View PO</span>
-                            </button>
-                          ) : hasDraftPO && draftPO ? (
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${draftPO.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title="View Draft PO"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View PO</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                              title={`View PO & materials for ${categoryName}`}
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View PO</span>
-                            </button>
-                          )}
+                        {/* 8. Action */}
+                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle w-[160px]">
+                          <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                            {group.hasOrderedPO ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${group.matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="View PO Details"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
+                                  <span>View PO</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCancelModal(group.matchingPOs[0])}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="Cancel this issued PO"
+                                >
+                                  <Ban className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Cancel PO</span>
+                                </button>
+                              </>
+                            ) : group.hasCancelledPO && group.cancelledPO ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="View Cancelled PO"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
+                                  <span>View PO</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="Edit Cancelled PO in Detailed Editor"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                                  <span>Edit PO</span>
+                                </button>
+                              </>
+                            ) : group.hasDraftPO && group.draftPO ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="View Draft PO"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
+                                  <span>View PO</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
+                                  title="Edit Draft PO in Detailed Editor"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                                  <span>Edit</span>
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenCreatePOPage(group)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
+                                title={`View PO & materials for ${group.categoryName} (${group.supplierName})`}
+                              >
+                                <Eye className="w-3.5 h-3.5 text-brand-600" />
+                                <span>View PO</span>
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -845,28 +917,18 @@ export default function CategoryPOIssuer({
 
             {/* Mobile Cards for Category Purchase Orders */}
             <div className="md:hidden space-y-3 p-3">
-              {categoriesList.map(([categoryName, catMaterials], idx) => {
-                const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(categoryName);
-                const isSaving = !!issuingPO[categoryName];
-                const selectedSupId = selectedVendors[categoryName] || '';
+              {categorySupplierGroups.map((group, idx) => {
+                const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(group.categoryName);
+                const isSaving = !!issuingPO[group.groupKey];
+                const selectedSupId = selectedVendors[group.groupKey] || (group.supplierId ? String(group.supplierId) : '');
 
                 const catObj = categories.find(
-                  c => c.name.trim().toLowerCase() === categoryName.trim().toLowerCase()
+                  c => c.name.trim().toLowerCase() === group.categoryName.trim().toLowerCase()
                 );
-                const visual = getCategoryVisual(catObj || { name: categoryName });
+                const visual = getCategoryVisual(catObj || { name: group.categoryName });
                 const CatIcon = visual.Icon;
 
-                const catLower = categoryName.toLowerCase();
-                const matchingPOs = existingPOs.filter(p => {
-                  if ((p.category_name || '').toLowerCase() === catLower) return true;
-                  if (p.remarks && p.remarks.toLowerCase().includes(catLower)) return true;
-                  return false;
-                });
-                const hasOrderedPO = matchingPOs.some(p => (p.status || '').toLowerCase() !== 'draft');
-                const hasDraftPO = matchingPOs.some(p => (p.status || '').toLowerCase() === 'draft');
-                const draftPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft');
-
-                const materialNames = catMaterials.map(m => m.name).filter(Boolean);
+                const materialNames = group.materials.map(m => m.name).filter(Boolean);
                 const materialsText = materialNames.length > 0 ? materialNames.join(', ') : '—';
 
                 const availableSups = [...allSuppliers];
@@ -892,7 +954,7 @@ export default function CategoryPOIssuer({
 
                 return (
                   <div
-                    key={`mob_${categoryName}`}
+                    key={`mob_${group.groupKey}`}
                     className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3"
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -901,19 +963,19 @@ export default function CategoryPOIssuer({
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs`}
                         >
                           <CatIcon className="w-4 h-4 shrink-0" />
-                          <span className="truncate">{categoryName}</span>
+                          <span className="truncate">{group.categoryName}</span>
                         </span>
                         <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
                       </div>
                       <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
-                        {catMaterials.length} {catMaterials.length === 1 ? 'item' : 'items'}
+                        {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'}
                       </span>
                     </div>
 
-                    {matchingPOs.length > 0 && (
+                    {group.matchingPOs.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] text-slate-400 font-semibold uppercase">PO:</span>
-                        {matchingPOs.map(p => (
+                        {group.matchingPOs.map(p => (
                           <button
                             key={p.id}
                             type="button"
@@ -939,11 +1001,19 @@ export default function CategoryPOIssuer({
                       <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                         Supplier / Vendor
                       </span>
-                      {hasOrderedPO ? (
+                      {group.hasOrderedPO ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200">
                           <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-medium truncate" title={matchingPOs[0]?.supplier_name || 'Assigned Supplier'}>
-                            {matchingPOs[0]?.supplier_name || 'Assigned Supplier'}
+                          <span className="font-medium truncate" title={group.matchingPOs[0]?.supplier_name || group.supplierName}>
+                            {group.matchingPOs[0]?.supplier_name || group.supplierName}
+                          </span>
+                        </div>
+                      ) : group.supplierId ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-800 bg-slate-50 px-2.5 py-2 rounded-lg border border-slate-200">
+                          <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span className="font-semibold truncate">
+                            {group.supplierName}
+                            {group.supplierCode && <span className="text-slate-400 font-normal ml-1">({group.supplierCode})</span>}
                           </span>
                         </div>
                       ) : (
@@ -953,16 +1023,16 @@ export default function CategoryPOIssuer({
                             onChange={val =>
                               setSelectedVendors(prev => ({
                                 ...prev,
-                                [categoryName]: val,
+                                [group.groupKey]: val,
                               }))
                             }
                             options={vendorOptions}
                             placeholder="-- Select Supplier --"
                             searchPlaceholder="Search vendor..."
-                            disabled={hasOrderedPO}
-                            clearable={!hasOrderedPO}
+                            disabled={group.hasOrderedPO}
+                            clearable={!group.hasOrderedPO}
                           />
-                          {isExactMatch && !hasOrderedPO && (
+                          {isExactMatch && !group.hasOrderedPO && (
                             <span className="text-[10px] font-medium text-emerald-700 block mt-1">
                               ✓ {matchedCount} {matchedCount === 1 ? 'matched supplier' : 'matched suppliers'}
                             </span>
@@ -977,48 +1047,87 @@ export default function CategoryPOIssuer({
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                             <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
                           </span>
-                        ) : hasOrderedPO ? (
+                        ) : group.hasOrderedPO ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Ordered
                           </span>
-                        ) : hasDraftPO ? (
+                        ) : group.hasCancelledPO ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                            <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
+                          </span>
+                        ) : group.hasDraftPO ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                             Draft
                           </span>
-                        ) : selectedSupId ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                            Ready to Issue
-                          </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                            Not Issued
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                            Not Created
                           </span>
                         )}
                       </div>
 
-                      <div>
-                        {hasOrderedPO ? (
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/purchase/orders/${matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-brand-600" />
-                            <span>View PO</span>
-                          </button>
-                        ) : hasDraftPO && draftPO ? (
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/purchase/orders/${draftPO.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-brand-600" />
-                            <span>View PO</span>
-                          </button>
+                      <div className="flex items-center gap-1.5">
+                        {group.hasOrderedPO ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${group.matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCancelModal(group.matchingPOs[0])}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-2xs transition"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Cancel</span>
+                            </button>
+                          </>
+                        ) : group.hasCancelledPO && group.cancelledPO ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Edit</span>
+                            </button>
+                          </>
+                        ) : group.hasDraftPO && group.draftPO ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-brand-600" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Edit</span>
+                            </button>
+                          </>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => handleOpenCreatePOPage(categoryName, catMaterials)}
+                            onClick={() => handleOpenCreatePOPage(group)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-lg shadow-2xs transition"
                           >
                             <Eye className="w-3.5 h-3.5 text-brand-600" />
@@ -1035,260 +1144,89 @@ export default function CategoryPOIssuer({
         )}
       </div>
 
-      {/* MODAL: EDIT PURCHASE ORDER */}
-      {editModalOpen && editingPO && (
-        <Modal
-          open={editModalOpen}
-          onClose={() => setEditModalOpen(false)}
-          title={`Edit Purchase Order: ${editingPO.po_number}`}
-          subtitle={`Category: ${editingPO.category_name || 'General'} | Production Order: ${orderNumber}`}
-        >
-          <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
-            {editPOError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-                <span>{editPOError}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                  Vendor / Supplier
-                </label>
-                <SearchableSelect
-                  value={editSupplierId}
-                  onChange={val => setEditSupplierId(val)}
-                  options={suppliers.map(sup => ({
-                    value: String(sup.id),
-                    label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
-                    sublabel: [
-                      sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
-                      sup.category_name ? sup.category_name : null,
-                      sup.contact_person ? sup.contact_person : null,
-                    ].filter(Boolean).join(' • '),
-                  }))}
-                  placeholder="Select Vendor"
-                  searchPlaceholder="Search vendor by name, code..."
-                  clearable={false}
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                  Delivery Due Date
-                </label>
-                <input
-                  type="date"
-                  value={editDeliveryDueDate}
-                  onChange={e => setEditDeliveryDueDate(e.target.value)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                  Remarks / Notes
-                </label>
-                <input
-                  type="text"
-                  value={editRemarks}
-                  onChange={e => setEditRemarks(e.target.value)}
-                  placeholder="Notes for vendor..."
-                  className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* PO Line Items */}
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Purchase Order Items ({editItems.length})
-                </span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon={<Plus className="w-3 h-3 text-emerald-600" />}
-                  onClick={handleAddEditItem}
-                  className="text-[11px]"
-                >
-                  Add Item
-                </Button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase">
-                    <tr>
-                      <th className="py-2 px-2.5 w-8 text-center">#</th>
-                      <th className="py-2 px-2.5 min-w-[160px]">Item Description</th>
-                      <th className="py-2 px-2 w-16">Size</th>
-                      <th className="py-2 px-2 w-16">Model</th>
-                      <th className="py-2 px-2 w-16">Length</th>
-                      <th className="py-2 px-2 w-16">Thick</th>
-                      <th className="py-2 px-2.5 w-20">UOM</th>
-                      <th className="py-2 px-2.5 w-24 text-right">Quantity</th>
-                      <th className="py-2 px-2.5 w-24 text-right">Rate (₹)</th>
-                      <th className="py-2 px-2.5 w-16 text-right">Tax %</th>
-                      <th className="py-2 px-2.5 w-24 text-right">Net Amount</th>
-                      <th className="py-2 px-2 w-10 text-center"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {editItems.map((it, idx) => {
-                      const qty = Number(it.quantity) || 0;
-                      const rate = Number(it.rate) || 0;
-                      const tax = Number(it.tax_percent) || 0;
-                      const taxable = qty * rate;
-                      const net = taxable + taxable * (tax / 100);
-
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/60">
-                          <td className="py-2 px-2.5 text-center font-mono text-slate-400">
-                            {idx + 1}
-                          </td>
-                          <td className="py-2 px-2.5">
-                            <input
-                              type="text"
-                              value={it.item_description}
-                              onChange={e => handleUpdateEditItem(idx, 'item_description', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={it.size || ''}
-                              onChange={e => handleUpdateEditItem(idx, 'size', e.target.value)}
-                              placeholder="Size"
-                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={it.model || ''}
-                              onChange={e => handleUpdateEditItem(idx, 'model', e.target.value)}
-                              placeholder="Model"
-                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={it.length || ''}
-                              onChange={e => handleUpdateEditItem(idx, 'length', e.target.value)}
-                              placeholder="Length"
-                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2">
-                            <input
-                              type="text"
-                              value={it.thickness || ''}
-                              onChange={e => handleUpdateEditItem(idx, 'thickness', e.target.value)}
-                              placeholder="Thick"
-                              className="w-full px-1.5 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2.5">
-                            <input
-                              type="text"
-                              value={it.uom}
-                              onChange={e => handleUpdateEditItem(idx, 'uom', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 font-mono"
-                            />
-                          </td>
-                          <td className="py-2 px-2.5 text-right">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={it.quantity}
-                              onChange={e => handleUpdateEditItem(idx, 'quantity', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-right font-mono font-bold text-slate-900"
-                            />
-                          </td>
-                          <td className="py-2 px-2.5 text-right">
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={it.rate}
-                              onChange={e => handleUpdateEditItem(idx, 'rate', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-right font-mono text-slate-800"
-                            />
-                          </td>
-                          <td className="py-2 px-2.5 text-right">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={it.tax_percent}
-                              onChange={e => handleUpdateEditItem(idx, 'tax_percent', e.target.value)}
-                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-right font-mono text-slate-600"
-                            />
-                          </td>
-                          <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800">
-                            {fmtCurrency(net)}
-                          </td>
-                          <td className="py-2 px-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteEditItem(idx)}
-                              className="p-1 text-slate-400 hover:text-red-600 rounded transition"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Subtotal Footer */}
-              <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex justify-end gap-4 text-xs font-mono">
-                <span>
-                  Total Net Payable:{' '}
-                  <strong className="text-slate-900 text-sm">
-                    {fmtCurrency(
-                      editItems.reduce((acc, it) => {
-                        const q = Number(it.quantity) || 0;
-                        const r = Number(it.rate) || 0;
-                        const t = Number(it.tax_percent) || 0;
-                        const taxable = q * r;
-                        return acc + (taxable + taxable * (t / 100));
-                      }, 0)
-                    )}
-                  </strong>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <Button
-                variant="secondary"
-                onClick={() => setEditModalOpen(false)}
-                className="text-xs"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={savingEditPO}
-                onClick={handleSavePOEdits}
-                icon={<Save className="w-3.5 h-3.5" />}
-                className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs"
-              >
-                {savingEditPO ? 'Saving Changes...' : 'Save PO Changes'}
-              </Button>
-            </div>
+      {/* Cancel PO Confirmation Modal */}
+      <Modal
+        open={cancelModalOpen}
+        onClose={() => { if (!cancelling) setCancelModalOpen(false); }}
+        title="Cancel Purchase Order"
+        subtitle={cancelPO ? `PO: ${cancelPO.po_number}` : ''}
+        size="md"
+        footer={
+          <div className="flex items-center justify-end gap-2 w-full">
+            <Button
+              variant="secondary"
+              disabled={cancelling}
+              onClick={() => setCancelModalOpen(false)}
+            >
+              Go Back
+            </Button>
+            <Button
+              variant="danger"
+              loading={cancelling}
+              icon={<Ban className="w-4 h-4" />}
+              onClick={handleConfirmCancel}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+            >
+              Cancel Purchase Order
+            </Button>
           </div>
-        </Modal>
-      )}
+        }
+      >
+        <div className="space-y-3 py-2 text-xs text-slate-600">
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-950 leading-relaxed">
+            <p className="font-semibold text-rose-950 mb-1">Confirm Purchase Order Cancellation</p>
+            <p>
+              Cancelling this PO will change its status from{' '}
+              <strong className="text-emerald-800 font-semibold">{cancelPO?.status || 'Ordered'}</strong> to{' '}
+              <strong className="text-rose-800 font-semibold">Cancelled</strong>.
+            </p>
+            <p className="mt-1 text-[11px] text-rose-700">
+              It will be blocked from receiving new materials or payments until corrected and reissued.
+            </p>
+          </div>
+
+          {cancelError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 font-medium flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <span>{cancelError}</span>
+            </div>
+          )}
+
+          {cancelPO && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 font-mono text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-sans">PO Number:</span>
+                <span className="font-bold text-slate-800">{cancelPO.po_number}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-sans">Supplier:</span>
+                <span className="text-slate-800 font-sans">{cancelPO.supplier_name || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-sans">Current Status:</span>
+                <span className="font-bold text-emerald-700 uppercase">{cancelPO.status}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-sans">Total Net Amount:</span>
+                <span className="font-bold text-slate-800">{fmtCurrency(Number(cancelPO.net_amount || 0))}</span>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Cancellation Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Enter a required cancellation reason (e.g. Specification changed, price adjustment, supplier mismatch)..."
+              rows={3}
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

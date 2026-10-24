@@ -2,13 +2,15 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
-import { ProductionOrderBOMReport, OrderMaterialRequirementItem, ProductionStage } from '../../types';
+import { ProductionOrderBOMReport, OrderMaterialRequirementItem, ProductionStage, Supplier, Category } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
+import { getCategoryVisual } from '../masters/Categories';
 import {
   ArrowLeft,
   Sparkles,
@@ -35,6 +37,7 @@ import {
   Plus,
   Save,
   RotateCcw,
+  Building2,
   X
 } from 'lucide-react';
 
@@ -58,6 +61,9 @@ export default function RequirementOrderDetail() {
 
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
   const [stages, setStages] = useState<ProductionStage[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [missingSuppliersList, setMissingSuppliersList] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState('');
@@ -84,9 +90,11 @@ export default function RequirementOrderDetail() {
     setLoading(true);
     setError('');
     try {
-      const [bomData, stgData] = await Promise.all([
+      const [bomData, stgData, supData, catData] = await Promise.all([
         api.getOrderMaterialRequirements(id),
         api.getProductionStages().catch(() => []),
+        api.getSuppliers().catch(() => []),
+        api.getCategories().catch(() => []),
       ]);
       const report = (bomData as any)?.data || (bomData as ProductionOrderBOMReport);
 
@@ -111,6 +119,8 @@ export default function RequirementOrderDetail() {
 
       setBomReport(report);
       setStages((stgData as ProductionStage[]) || []);
+      setSuppliers((supData as Supplier[]) || []);
+      setCategories((catData as Category[]) || []);
     } catch (err: unknown) {
       setError((err as Error).message || 'Failed to load requirement order BOM data');
     } finally {
@@ -201,6 +211,9 @@ export default function RequirementOrderDetail() {
         unit_cost: 0,
         total_estimated_cost: 0,
         status: 'Needs Procurement',
+        preferred_supplier_id: null,
+        preferred_supplier_name: null,
+        preferred_supplier_code: null,
       }
     ]);
   };
@@ -259,6 +272,70 @@ export default function RequirementOrderDetail() {
     setSuccessToast('BOM reset to default Buyer Master components!');
   };
 
+  const getSupplierOptionsForMaterial = (categoryName?: string): SelectOption[] => {
+    const cleanCat = (categoryName || '').trim().toLowerCase();
+    const matched: Supplier[] = [];
+    const others: Supplier[] = [];
+    suppliers.forEach(s => {
+      const sCat = (s.category_name || '').trim().toLowerCase();
+      if (cleanCat && (sCat === cleanCat || sCat.includes(cleanCat) || cleanCat.includes(sCat))) {
+        matched.push(s);
+      } else {
+        others.push(s);
+      }
+    });
+
+    const list = matched.length > 0 ? [...matched, ...others] : suppliers;
+    return list.map(sup => ({
+      value: String(sup.id),
+      label: `${sup.name}${sup.code ? ` (${sup.code})` : ''}`,
+      sublabel: [
+        sup.category_name,
+        sup.phone && sup.phone !== 'N/A' ? sup.phone : null,
+        sup.contact_person || null
+      ].filter(Boolean).join(' • '),
+    }));
+  };
+
+  const handleAssignSupplier = async (originalIdx: number, supplierIdStr: string) => {
+    if (!bomReport || !id) return;
+    const supId = supplierIdStr ? Number(supplierIdStr) : null;
+    const selectedSup = suppliers.find(s => String(s.id) === String(supplierIdStr));
+
+    const updatedMaterials = [...bomReport.total_materials];
+    const targetMat = updatedMaterials[originalIdx];
+    if (!targetMat) return;
+
+    updatedMaterials[originalIdx] = {
+      ...targetMat,
+      preferred_supplier_id: supId,
+      preferred_supplier_name: selectedSup ? selectedSup.name : null,
+      preferred_supplier_code: selectedSup ? (selectedSup.code || null) : null,
+    };
+
+    const updatedReport = {
+      ...bomReport,
+      total_materials: updatedMaterials,
+    };
+
+    setBomReport(updatedReport);
+
+    if (missingSuppliersList.length > 0) {
+      setMissingSuppliersList(prev => prev.filter(name => name !== targetMat.name));
+    }
+
+    try {
+      localStorage.setItem(`cheran_order_bom_${id}`, JSON.stringify(updatedMaterials));
+    } catch (e) {}
+
+    try {
+      await api.saveOrderMaterialRequirements(id, updatedReport);
+      setSuccessToast(`Preferred Vendor saved for ${targetMat.name}`);
+    } catch (e) {
+      console.warn('Backend save supplier assignment notice:', e);
+    }
+  };
+
   // Validation: BOM must be generated and contain valid material requirements
   const isBOMValid = useMemo(() => {
     return Boolean(
@@ -269,8 +346,44 @@ export default function RequirementOrderDetail() {
     );
   }, [bomReport]);
 
+  const handleOpenMoveModal = () => {
+    if (!bomReport?.total_materials) return;
+    const unassignedMats = bomReport.total_materials.filter(
+      m => Number(m.total_required_qty || 0) > 0 && !m.preferred_supplier_id
+    );
+    if (unassignedMats.length > 0) {
+      const names = Array.from(new Set(unassignedMats.map(m => m.name)));
+      setMissingSuppliersList(names);
+      setMoveError(
+        `Mandatory Preferred Vendor assignment missing for ${names.length} material(s):\n• ` +
+        names.join('\n• ')
+      );
+      setActiveTab('bom');
+      setMoveOpen(true);
+      return;
+    }
+    setMissingSuppliersList([]);
+    setMoveError('');
+    setMoveOpen(true);
+  };
+
   const handleConfirmMoveToPO = async () => {
     if (!bomReport || !bomReport.order || !isBOMValid || savingMove) return;
+
+    // Validate that every material needing procurement has a preferred supplier assigned
+    const unassignedMats = (bomReport.total_materials || []).filter(
+      m => Number(m.total_required_qty || 0) > 0 && !m.preferred_supplier_id
+    );
+    if (unassignedMats.length > 0) {
+      const names = Array.from(new Set(unassignedMats.map(m => m.name)));
+      setMissingSuppliersList(names);
+      setMoveError(
+        `Mandatory Preferred Vendor assignment missing for ${names.length} material(s):\n• ` +
+        names.join('\n• ')
+      );
+      return;
+    }
+
     setSavingMove(true);
     setMoveError('');
     try {
@@ -340,17 +453,20 @@ export default function RequirementOrderDetail() {
   // Filtered materials
   const filteredMaterials = useMemo(() => {
     if (!bomReport?.total_materials) return [];
-    return bomReport.total_materials.filter(m => {
-      if (categoryFilter !== 'ALL' && m.category.toUpperCase() !== categoryFilter.toUpperCase()) {
-        return false;
-      }
-      if (!searchQuery) return true;
-      const q = searchQuery.toLowerCase();
-      const matchName = m.name.toLowerCase().includes(q);
-      const matchCode = (m.material_code || '').toLowerCase().includes(q);
-      const matchCat = m.category.toLowerCase().includes(q);
-      return matchName || matchCode || matchCat;
-    });
+    return bomReport.total_materials
+      .map((m, idx) => ({ ...m, _originalIndex: idx }))
+      .filter(m => {
+        if (categoryFilter !== 'ALL' && m.category.toUpperCase() !== categoryFilter.toUpperCase()) {
+          return false;
+        }
+        if (!searchQuery) return true;
+        const q = searchQuery.toLowerCase();
+        const matchName = m.name.toLowerCase().includes(q);
+        const matchCode = (m.material_code || '').toLowerCase().includes(q);
+        const matchCat = m.category.toLowerCase().includes(q);
+        const matchSup = (m.preferred_supplier_name || '').toLowerCase().includes(q);
+        return matchName || matchCode || matchCat || matchSup;
+      });
   }, [bomReport, categoryFilter, searchQuery]);
 
   // Grouped products by category
@@ -667,6 +783,7 @@ export default function RequirementOrderDetail() {
                         <th className="py-2.5 px-2 w-24">Model</th>
                         <th className="py-2.5 px-2 w-20">Length</th>
                         <th className="py-2.5 px-2 w-24">Thickness</th>
+                        <th className="py-2.5 px-3 min-w-[170px]">Preferred Vendor</th>
                         <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
                         <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
                         <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
@@ -775,6 +892,27 @@ export default function RequirementOrderDetail() {
                               />
                             </td>
 
+                            <td className="py-2 px-3">
+                              <select
+                                value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  const curSup = suppliers.find(s => String(s.id) === String(val));
+                                  handleUpdateEditedRow(idx, 'preferred_supplier_id', val ? Number(val) : null);
+                                  handleUpdateEditedRow(idx, 'preferred_supplier_name', curSup ? curSup.name : null);
+                                  handleUpdateEditedRow(idx, 'preferred_supplier_code', curSup ? (curSup.code || null) : null);
+                                }}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              >
+                                <option value="">-- Select Vendor --</option>
+                                {suppliers.map(s => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name} {s.code ? `(${s.code})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
                             <td className="py-2 px-3 text-right">
                               <input
                                 type="number"
@@ -819,27 +957,28 @@ export default function RequirementOrderDetail() {
                 </div>
               ) : (
                 <>
-                  <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                  <div className="hidden md:block overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse table-fixed">
+                      <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                         <tr>
-                          <th className="py-3 px-4 w-12 text-center">#</th>
-                          <th className="py-3 px-4 min-w-[200px]">Raw Material</th>
-                          <th className="py-3 px-3 min-w-[140px]">Category</th>
-                          <th className="py-3 px-3 min-w-[70px]">UOM</th>
-                          <th className="py-3 px-3 min-w-[70px]">Size</th>
-                          <th className="py-3 px-3 min-w-[80px]">Model</th>
-                          <th className="py-3 px-3 min-w-[80px]">Length</th>
-                          <th className="py-3 px-3 min-w-[90px]">Thickness</th>
-                          <th className="py-3 px-3 text-right min-w-[110px]">Total Req. Qty</th>
-                          <th className="py-3 px-3 text-right min-w-[90px]">Unit Rate</th>
-                          <th className="py-3 px-4 text-right min-w-[100px]">Total Cost</th>
+                          <th className="py-2.5 px-1.5 w-[32px] text-center">#</th>
+                          <th className="py-2.5 px-2 min-w-[130px]">Raw Material</th>
+                          <th className="py-2.5 px-2 w-[130px]">Category</th>
+                          <th className="py-2.5 px-1 w-[46px] text-center">UOM</th>
+                          <th className="py-2.5 px-1 w-[48px] text-center">Size</th>
+                          <th className="py-2.5 px-1 w-[52px] text-center">Model</th>
+                          <th className="py-2.5 px-1 w-[48px] text-center">Length</th>
+                          <th className="py-2.5 px-1 w-[54px] text-center">Thick</th>
+                          <th className="py-2.5 px-2 w-[85px] text-right">Req. Qty</th>
+                          <th className="py-2.5 px-1.5 w-[65px] text-right">Rate</th>
+                          <th className="py-2.5 px-2 w-[82px] text-right">Total Cost</th>
+                          <th className="py-2.5 px-2 w-[185px]">Preferred Vendor</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {filteredMaterials.length === 0 ? (
                           <tr>
-                            <td colSpan={11} className="py-10 text-center text-slate-400">
+                            <td colSpan={12} className="py-10 text-center text-slate-400">
                               <Sparkles className="w-6 h-6 mx-auto mb-2 text-slate-300" />
                               <p className="font-semibold text-xs text-slate-600">No material requirements to display</p>
                               <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
@@ -851,52 +990,86 @@ export default function RequirementOrderDetail() {
                           </tr>
                         ) : (
                           filteredMaterials.map((m, idx) => {
+                            const isMissingSup = missingSuppliersList.includes(m.name);
+                            const catObj = categories.find(
+                              c => c.name.trim().toLowerCase() === (m.category || '').trim().toLowerCase()
+                            );
+                            const visual = getCategoryVisual(catObj || { name: m.category });
+                            const CatIcon = visual.Icon;
+
                             return (
-                              <tr key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} className="hover:bg-slate-50/70 transition">
-                                <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                              <tr 
+                                key={m.material_id ? `id_${m.material_id}_${idx}` : `name_${m.name}_${idx}`} 
+                                className={`transition ${isMissingSup ? 'bg-amber-50/70 border-l-4 border-l-amber-500' : 'hover:bg-slate-50/70'}`}
+                              >
+                                <td className="py-2.5 px-1.5 text-center font-mono text-slate-400 text-[11px] align-middle">
                                   {idx + 1}
                                 </td>
-                                <td className="py-3 px-4 font-medium text-slate-800">
-                                  <span className="font-bold text-slate-800 block">{m.name}</span>
+                                <td className="py-2.5 px-2 font-medium text-slate-800 align-middle">
+                                  <span className="font-bold text-slate-800 block truncate" title={m.name}>{m.name}</span>
                                   {m.material_code && (
-                                    <span className="font-mono text-[10px] text-slate-400 block">{m.material_code}</span>
+                                    <span className="font-mono text-[10px] text-slate-400 block truncate" title={m.material_code}>{m.material_code}</span>
                                   )}
                                 </td>
 
-                                <td className="py-3 px-3">
-                                  <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                    {m.category}
+                                <td className="py-2.5 px-2 align-middle">
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs max-w-full truncate`}
+                                    title={m.category}
+                                  >
+                                    <CatIcon className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate">{m.category}</span>
                                   </span>
                                 </td>
 
-                                <td className="py-3 px-3 font-mono text-slate-600 font-semibold">{m.uom}</td>
+                                <td className="py-2.5 px-1 text-center font-mono text-slate-600 font-semibold text-[11px] align-middle">{m.uom}</td>
 
-                                <td className="py-3 px-3 text-slate-700 font-mono text-xs">
+                                <td className="py-2.5 px-1 text-center text-slate-700 font-mono text-[11px] truncate align-middle" title={m.size || undefined}>
                                   {m.size || <span className="text-slate-300 font-sans">—</span>}
                                 </td>
 
-                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                <td className="py-2.5 px-1 text-center text-slate-700 text-[11px] truncate align-middle" title={m.model || undefined}>
                                   {m.model || <span className="text-slate-300 font-sans">—</span>}
                                 </td>
 
-                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                <td className="py-2.5 px-1 text-center text-slate-700 text-[11px] truncate align-middle" title={m.length || undefined}>
                                   {m.length || <span className="text-slate-300 font-sans">—</span>}
                                 </td>
 
-                                <td className="py-3 px-3 text-slate-700 text-xs">
+                                <td className="py-2.5 px-1 text-center text-slate-700 text-[11px] truncate align-middle" title={m.thickness || undefined}>
                                   {m.thickness || <span className="text-slate-300 font-sans">—</span>}
                                 </td>
 
-                                <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
+                                <td className="py-2.5 px-2 text-right font-mono font-bold text-slate-800 text-[11px] whitespace-nowrap align-middle">
                                   {fmt(m.total_required_qty, 2)}
                                 </td>
 
-                                <td className="py-3 px-3 text-right font-mono text-slate-600">
+                                <td className="py-2.5 px-1.5 text-right font-mono text-slate-600 text-[11px] whitespace-nowrap align-middle">
                                   {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
                                 </td>
 
-                                <td className="py-3 px-4 text-right font-mono font-bold text-slate-800">
+                                <td className="py-2.5 px-2 text-right font-mono font-bold text-slate-800 text-[11px] whitespace-nowrap align-middle">
                                   {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                                </td>
+
+                                {/* Preferred Vendor Selection Column */}
+                                <td className="py-2 px-2 align-middle">
+                                  <div className="w-full">
+                                    <SearchableSelect
+                                      value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
+                                      onChange={val => handleAssignSupplier(m._originalIndex ?? idx, val)}
+                                      options={getSupplierOptionsForMaterial(m.category)}
+                                      placeholder="-- Select Vendor --"
+                                      searchPlaceholder="Search vendor..."
+                                      clearable={true}
+                                    />
+                                    {!m.preferred_supplier_id && (Number(m.total_required_qty) > 0) && (
+                                      <span className="text-[9px] font-bold text-amber-600 flex items-center gap-1 mt-0.5 truncate" title="Vendor selection required">
+                                        <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                                        <span className="truncate">Vendor required</span>
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -919,60 +1092,103 @@ export default function RequirementOrderDetail() {
                         </p>
                       </div>
                     ) : (
-                      filteredMaterials.map((m, idx) => (
-                        <div
-                          key={m.material_id ? `mob_id_${m.material_id}_${idx}` : `mob_name_${m.name}_${idx}`}
-                          className="bg-white border border-slate-200 rounded-xl p-3 shadow-xs space-y-2.5"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
-                                <h4 className="font-bold text-slate-900 text-xs break-words">{m.name}</h4>
+                      filteredMaterials.map((m, idx) => {
+                        const isMissingSup = missingSuppliersList.includes(m.name);
+
+                        return (
+                          <div
+                            key={m.material_id ? `mob_id_${m.material_id}_${idx}` : `mob_name_${m.name}_${idx}`}
+                            className={`bg-white border rounded-xl p-3 shadow-xs space-y-2.5 ${
+                              isMissingSup ? 'border-amber-400 bg-amber-50/30 ring-1 ring-amber-300' : 'border-slate-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
+                                  <h4 className="font-bold text-slate-900 text-xs break-words">{m.name}</h4>
+                                </div>
+                                {m.material_code && (
+                                  <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                                    {m.material_code}
+                                  </span>
+                                )}
                               </div>
-                              {m.material_code && (
-                                <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
-                                  {m.material_code}
+                              {(() => {
+                                const catObj = categories.find(
+                                  c => c.name.trim().toLowerCase() === (m.category || '').trim().toLowerCase()
+                                );
+                                const visual = getCategoryVisual(catObj || { name: m.category });
+                                const CatIcon = visual.Icon;
+                                return (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs shrink-0 max-w-[130px] truncate`}
+                                    title={m.category}
+                                  >
+                                    <CatIcon className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate">{m.category}</span>
+                                  </span>
+                                );
+                              })()}
+                            </div>
+
+                            {(m.size || m.model || m.length || m.thickness) && (
+                              <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded">
+                                {m.size && <span>Size: <strong className="font-mono">{m.size}</strong></span>}
+                                {m.model && <span>• Model: <strong>{m.model}</strong></span>}
+                                {m.length && <span>• Len: <strong>{m.length}</strong></span>}
+                                {m.thickness && <span>• Thk: <strong>{m.thickness}</strong></span>}
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">Req. Qty</span>
+                                <span className="font-mono font-bold text-slate-900 text-xs">
+                                  {fmt(m.total_required_qty, 2)}{' '}
+                                  <span className="text-[10px] font-normal text-slate-500">{m.uom}</span>
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">Rate</span>
+                                <span className="font-mono text-slate-700 text-xs">
+                                  {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
+                                <span className="font-mono font-bold text-emerald-700 text-xs">
+                                  {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Mobile Preferred Vendor selector */}
+                            <div className="pt-2 border-t border-slate-100">
+                              <label className="text-[10px] font-bold uppercase text-slate-500 mb-1 flex items-center justify-between">
+                                <span>Preferred Vendor</span>
+                                {m.preferred_supplier_name && (
+                                  <span className="text-emerald-700 text-[10px] font-semibold">Assigned</span>
+                                )}
+                              </label>
+                              <SearchableSelect
+                                value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
+                                onChange={val => handleAssignSupplier(m._originalIndex ?? idx, val)}
+                                options={getSupplierOptionsForMaterial(m.category)}
+                                placeholder="-- Select Vendor --"
+                                searchPlaceholder="Search vendor..."
+                                clearable={true}
+                              />
+                              {!m.preferred_supplier_id && (Number(m.total_required_qty) > 0) && (
+                                <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1 mt-1">
+                                  <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                                  Vendor selection required
                                 </span>
                               )}
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
-                              {m.category}
-                            </span>
                           </div>
-
-                          {(m.size || m.model || m.length || m.thickness) && (
-                            <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-600 bg-slate-50 px-2 py-1 rounded">
-                              {m.size && <span>Size: <strong className="font-mono">{m.size}</strong></span>}
-                              {m.model && <span>• Model: <strong>{m.model}</strong></span>}
-                              {m.length && <span>• Len: <strong>{m.length}</strong></span>}
-                              {m.thickness && <span>• Thk: <strong>{m.thickness}</strong></span>}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2 rounded-lg border border-slate-100">
-                            <div>
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Req. Qty</span>
-                              <span className="font-mono font-bold text-slate-900 text-xs">
-                                {fmt(m.total_required_qty, 2)}{' '}
-                                <span className="text-[10px] font-normal text-slate-500">{m.uom}</span>
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Rate</span>
-                              <span className="font-mono text-slate-700 text-xs">
-                                {m.unit_cost > 0 ? fmtCurrency(m.unit_cost) : '—'}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Cost</span>
-                              <span className="font-mono font-bold text-emerald-700 text-xs">
-                                {m.total_estimated_cost > 0 ? fmtCurrency(m.total_estimated_cost) : '—'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </>
@@ -1111,10 +1327,7 @@ export default function RequirementOrderDetail() {
 
           <div className="flex items-center justify-end w-full sm:w-auto shrink-0">
             <Button
-              onClick={() => {
-                setMoveError('');
-                setMoveOpen(true);
-              }}
+              onClick={handleOpenMoveModal}
               disabled={!isBOMValid || savingMove}
               loading={savingMove}
               icon={<ChevronRight className="w-4 h-4" />}
@@ -1143,7 +1356,7 @@ export default function RequirementOrderDetail() {
             </Button>
             <Button
               loading={savingMove}
-              disabled={!isBOMValid || savingMove}
+              disabled={!isBOMValid || savingMove || missingSuppliersList.length > 0}
               onClick={handleConfirmMoveToPO}
               icon={<ChevronRight className="w-4 h-4" />}
               className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
@@ -1154,7 +1367,31 @@ export default function RequirementOrderDetail() {
         }
       >
         <div className="flex flex-col gap-3.5">
-          {moveError && (
+          {missingSuppliersList.length > 0 && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-950 flex flex-col gap-2 shadow-2xs">
+              <div className="flex items-center gap-2 text-amber-800 font-bold">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Preferred Vendor Assignment Required ({missingSuppliersList.length} items)</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Before advancing to Stage 02, please select a Preferred Vendor for each required material in the BOM table:
+              </p>
+              <div className="bg-white/90 rounded-lg p-2.5 border border-amber-200">
+                <div className="flex flex-wrap gap-1.5">
+                  {missingSuppliersList.map(name => (
+                    <span key={name} className="px-2 py-0.5 bg-amber-100 text-amber-900 font-bold rounded text-[11px] border border-amber-300">
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[10px] text-amber-700 font-medium">
+                Close this modal to assign vendors from the dropdown, then click "Move to PO" again.
+              </p>
+            </div>
+          )}
+
+          {moveError && !missingSuppliersList.length && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
               <div>
