@@ -114,9 +114,9 @@ export default function InwardOrderDetail() {
   const [dcNumber, setDcNumber] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
-  const [receivedBy, setReceivedBy] = useState('Stores Executive');
-  const [condition, setCondition] = useState('Good & Verified');
-  const [remarks, setRemarks] = useState('Materials received at factory store, verified with DC');
+  const [receivedBy, setReceivedBy] = useState('');
+  const [condition, setCondition] = useState('Good');
+  const [remarks, setRemarks] = useState('');
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveError, setReceiveError] = useState('');
 
@@ -132,7 +132,7 @@ export default function InwardOrderDetail() {
   // Advance to Stage 04 (Dyeing) Modal
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
   const [selectedNextStageId, setSelectedNextStageId] = useState('4');
-  const [advanceNotes, setAdvanceNotes] = useState('Raw materials verified and inwarded. Ready for dyeing stage.');
+  const [advanceNotes, setAdvanceNotes] = useState('');
   const [savingAdvance, setSavingAdvance] = useState(false);
 
   // Accordions

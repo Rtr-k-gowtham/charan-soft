@@ -250,7 +250,7 @@ export default function CheckingOrderDetail() {
     setOriginalInspectionId(origId);
 
     const available = Number(item.available_to_inspect ?? item.pending_inspection ?? item.arrived_from_stitching ?? 0);
-    const defaultQty = isReinspect ? 50 : (available > 0 ? available : 0);
+    const defaultQty = isReinspect ? Number(item.rework_quantity || available || 0) : (available > 0 ? available : 0);
 
     setForm({
       inspection_date: new Date().toISOString().split('T')[0],
@@ -355,7 +355,7 @@ export default function CheckingOrderDetail() {
       ? Number(itOrInsp?.passed_quantity || 0)
       : Number(it?.ready_to_pack ?? it?.passed_quantity ?? overallTotals.readyForPacking ?? 0);
     setTransferQuantity(maxQty);
-    setTransferRemarks('Inspection completed and passed 100% audit. Transferred to Stage 09: Packing.');
+    setTransferRemarks('');
     setTransferError('');
     setTransferModalOpen(true);
   };

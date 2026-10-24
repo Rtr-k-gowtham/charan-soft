@@ -166,8 +166,8 @@ export default function DyeingOrderDetail() {
     d.setDate(d.getDate() + 10);
     return d.toISOString().split('T')[0];
   });
-  const [processType, setProcessType] = useState<string>('Reactive Dyeing & Soft Flow');
-  const [remarks, setRemarks] = useState<string>('PO for FABRIC DYEING ORDER - Stage 04 Outward');
+  const [processType, setProcessType] = useState<string>('Fabric Dyeing');
+  const [remarks, setRemarks] = useState<string>('');
 
   // Color breakdown rows
   const [colorRows, setColorRows] = useState<NewColorRow[]>([]);
@@ -189,9 +189,9 @@ export default function DyeingOrderDetail() {
   }[]>([]);
   const [receiptChallanNo, setReceiptChallanNo] = useState('');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
-  const [receivedBy, setReceivedBy] = useState('Stores & QC Inward');
+  const [receivedBy, setReceivedBy] = useState('');
   const [shadeCondition, setShadeCondition] = useState('Approved - Pantone Matched');
-  const [receiptRemarks, setReceiptRemarks] = useState('Fabric received after dyeing and shade verified');
+  const [receiptRemarks, setReceiptRemarks] = useState('');
   const [advanceToCutting, setAdvanceToCutting] = useState(true);
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveError, setReceiveError] = useState('');
@@ -256,36 +256,16 @@ export default function DyeingOrderDetail() {
         .map((m: any, idx: number) => ({
           material_id: Number(m.id || m.material_id || (100 + idx)),
           material_code: m.code || m.material_code || `MAT-FAB-00${idx + 1}`,
-          material_name: m.material_name || m.name || 'Cotton Fabric 40s',
+          material_name: m.material_name || m.name || 'Fabric Material',
           uom: m.uom || 'MTR',
-          inward_quantity: Number(m.quantity || 150),
+          inward_quantity: Number(m.inward_quantity || 0),
           outward_quantity: 0,
-          available_quantity: Number(m.quantity || 150),
+          available_quantity: Number(m.available_quantity || 0),
         }));
       if (orderFabrics.length > 0) return orderFabrics;
     }
 
-    // Fallback 2: Standard production fabric options so user is NEVER blocked
-    return [
-      {
-        material_id: 101,
-        material_code: 'MAT-FAB-001',
-        material_name: 'Cotton Single Jersey Fabric 40s (Bio-washed)',
-        uom: 'MTR',
-        inward_quantity: 150,
-        outward_quantity: 0,
-        available_quantity: 150,
-      },
-      {
-        material_id: 102,
-        material_code: 'MAT-FAB-002',
-        material_name: 'Cotton Terry Fleece 280 GSM',
-        uom: 'MTR',
-        inward_quantity: 100,
-        outward_quantity: 0,
-        available_quantity: 100,
-      },
-    ];
+    return [];
   }, [fabricStockData, order]);
 
   // Options for SearchableSelect
@@ -377,15 +357,19 @@ export default function DyeingOrderDetail() {
       });
     }
 
-    // 3. Fallback if no colors found on order items at all
+    // 3. If no colors found on order items at all, return empty or single unassigned row
     if (candidateList.length === 0) {
-      candidateList = [
-        { color_name: 'Green', pantone_code: '18-5642 TCX', hex_code: '#2d6a4f', garment_qty: 20 },
-        { color_name: 'Red', pantone_code: '19-1664 TCX', hex_code: '#b91c1c', garment_qty: 20 },
-        { color_name: 'Orange', pantone_code: '16-1364 TCX', hex_code: '#ea580c', garment_qty: 20 },
-        { color_name: 'White', pantone_code: '11-0601 TCX', hex_code: '#f8fafc', garment_qty: 20 },
-        { color_name: 'Black', pantone_code: '19-4008 TCX', hex_code: '#0f172a', garment_qty: 20 },
-      ];
+      if (avail > 0) {
+        return [{
+          color_name: '',
+          pantone_code: '',
+          hex_code: '#6366f1',
+          planned_quantity: avail,
+          rate_per_unit: '',
+          notes: ''
+        }];
+      }
+      return [];
     }
 
     // Proportionally distribute fabric yardage
@@ -579,10 +563,10 @@ export default function DyeingOrderDetail() {
         color_name: '',
         pantone_code: '',
         hex_code: '#3b82f6',
-        planned_quantity: 50,
+        planned_quantity: 0,
         uom: uom || 'MTR',
-        rate_per_unit: 12.50,
-        tax_percent: 5,
+        rate_per_unit: 0,
+        tax_percent: 0,
         notes: ''
       }
     ]);

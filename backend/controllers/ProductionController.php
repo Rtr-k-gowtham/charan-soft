@@ -2111,7 +2111,7 @@ class ProductionController {
             $stmt->execute([
                 $jobNo, 
                 $pId, 
-                $data['vendor_name'] ?? 'Apex Embroidery Works', 
+                $data['vendor_name'] ?? 'Embroidery Unit', 
                 $data['job_order_date'] ?? date('Y-m-d'), 
                 $data['dispatch_date'] ?? date('Y-m-d'), 
                 $data['expected_return_date'] ?? null, 
@@ -3213,7 +3213,7 @@ class ProductionController {
                 $rej, 
                 $data['defect_category'] ?? 'Finishing & Seams', 
                 $data['defect_description'] ?? '', 
-                $data['inspector'] ?? 'Lead QC Inspector', 
+                $data['inspector'] ?? 'QC Inspector', 
                 $data['inspection_date'] ?? date('Y-m-d'), 
                 $data['remarks'] ?? '', 
                 json_encode($data['photo_urls'] ?? [])

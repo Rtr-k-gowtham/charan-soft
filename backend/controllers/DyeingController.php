@@ -202,11 +202,6 @@ class DyeingController {
             }
 
             if ($poId <= 0) {
-                $fallback = $pdo->query("SELECT id FROM production_orders WHERE deleted_at IS NULL ORDER BY id DESC LIMIT 1")->fetchColumn();
-                $poId = (int)($fallback ?: 0);
-            }
-
-            if ($poId <= 0) {
                 Response::error("Valid production_order_id is required", 422);
                 return;
             }
@@ -262,7 +257,7 @@ class DyeingController {
 
             foreach ($fabricItems as $fi) {
                 $dyn = !empty($fi['dynamic_data']) ? json_decode($fi['dynamic_data'], true) : [];
-                $mId = (int)($fi['material_id'] ?: ($dyn['material_id'] ?? 86));
+                $mId = (int)($fi['material_id'] ?: ($dyn['material_id'] ?? 0));
                 $key = (string)$mId;
                 $rcvQty = (float)($fi['received_quantity'] ?? $dyn['received_quantity'] ?? 0);
                 $ordQty = (float)($dyn['quantity'] ?? $rcvQty);
@@ -300,40 +295,31 @@ class DyeingController {
                 } catch (Exception $e) {}
             }
 
-            // Fallback if no specific PO inwarded yet
+            // If no fabric has been inwarded yet from POs, populate from order BOM requirements with actual 0 inward stock
             if (empty($fabricMap)) {
                 try {
-                    $mStmt = $pdo->query("SELECT id, code, name, uom FROM materials WHERE UPPER(category_name) LIKE '%FABRIC%' OR UPPER(name) LIKE '%COTTON%' OR UPPER(name) LIKE '%FABRIC%' LIMIT 3");
-                    $fabMasterList = $mStmt->fetchAll(PDO::FETCH_ASSOC);
-                    foreach ($fabMasterList as $fmMaster) {
-                        $k = (string)$fmMaster['id'];
+                    $bomStmt = $pdo->prepare("
+                        SELECT bom.*, m.code as material_code, m.name as material_name, m.uom as material_uom
+                        FROM order_material_requirements bom
+                        LEFT JOIN materials m ON bom.material_id = m.id
+                        WHERE bom.production_order_id = ?
+                          AND (UPPER(bom.category) LIKE '%FABRIC%' OR UPPER(bom.material_name) LIKE '%FABRIC%' OR UPPER(COALESCE(m.name, '')) LIKE '%FABRIC%')
+                    ");
+                    $bomStmt->execute([$poId]);
+                    $bomFabrics = $bomStmt->fetchAll(PDO::FETCH_ASSOC);
+                    foreach ($bomFabrics as $bf) {
+                        $k = (string)($bf['material_id'] ?: $bf['id']);
                         $fabricMap[$k] = [
-                            'material_id' => (int)$fmMaster['id'],
-                            'material_code' => $fmMaster['code'] ?: ('MAT-' . $fmMaster['id']),
-                            'material_name' => $fmMaster['name'],
-                            'uom' => $fmMaster['uom'] ?: 'MTR',
-                            'inward_quantity' => (float)($prodOrder['total_quantity'] ?? 100),
+                            'material_id' => (int)($bf['material_id'] ?: $bf['id']),
+                            'material_code' => $bf['material_code'] ?: ('MAT-' . $k),
+                            'material_name' => $bf['material_name'] ?: ($bf['name'] ?? 'Fabric'),
+                            'uom' => $bf['material_uom'] ?: ($bf['uom'] ?? 'MTR'),
+                            'inward_quantity' => 0.0,
                             'outward_quantity' => 0.0,
-                            'available_quantity' => (float)($prodOrder['total_quantity'] ?? 100)
+                            'available_quantity' => 0.0
                         ];
                     }
                 } catch (Exception $e) {}
-
-                if (empty($fabricMap)) {
-                    $fabricMap['86'] = [
-                        'material_id' => 86,
-                        'material_code' => 'MAT-FAB-001',
-                        'material_name' => 'Cotton Fabric [MAT-FAB-001]',
-                        'uom' => 'MTR',
-                        'inward_quantity' => (float)($prodOrder['total_quantity'] ?? 100),
-                        'outward_quantity' => 0.0,
-                        'available_quantity' => (float)($prodOrder['total_quantity'] ?? 100)
-                    ];
-                }
-
-                if ($totalFabricInwarded <= 0) {
-                    $totalFabricInwarded = (float)($prodOrder['total_quantity'] ?? 100);
-                }
             }
 
             // 2. Gather total fabric quantity already issued to Dyeing Orders (Outward)

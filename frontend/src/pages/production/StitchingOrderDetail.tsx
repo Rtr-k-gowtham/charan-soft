@@ -135,7 +135,7 @@ export default function StitchingOrderDetail() {
   const [transferItem, setTransferItem] = useState<any | null>(null);
   const [transferBatchId, setTransferBatchId] = useState<number | undefined>(undefined);
   const [transferQuantity, setTransferQuantity] = useState<number>(0);
-  const [transferRemarks, setTransferRemarks] = useState('Stitching completed and passed initial line audit. Transferred to Stage 08: Checking.');
+  const [transferRemarks, setTransferRemarks] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
@@ -321,7 +321,7 @@ export default function StitchingOrderDetail() {
       ? Number(itOrBatch?.accepted_quantity || 0)
       : Number(it?.ready_to_transfer ?? it?.accepted_quantity ?? overallTotals.readyForChecking ?? 0);
     setTransferQuantity(maxQty);
-    setTransferRemarks('Stitching completed and passed initial line audit. Transferred to Stage 08: Checking.');
+    setTransferRemarks('');
     setTransferError('');
     setTransferModalOpen(true);
   };

@@ -158,7 +158,7 @@ export default function EmbroideryOrderDetail() {
   const [showCreatePage, setShowCreatePage] = useState<boolean>(() => searchParams.get('create') === 'true');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [selectedSupplier, setSelectedSupplier] = useState<string>('Sri Krishna Embroidery Works (Vendor ID: V-04)');
+  const [selectedSupplier, setSelectedSupplier] = useState<string>('');
   const [categoryType, setCategoryType] = useState<string>('EMBROIDERY JOB ORDER');
   const [challanNo, setChallanNo] = useState<string>(() => `DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`);
   const [orderDate, setOrderDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -167,11 +167,11 @@ export default function EmbroideryOrderDetail() {
     d.setDate(d.getDate() + 5);
     return d.toISOString().split('T')[0];
   });
-  const [processType, setProcessType] = useState<string>('12-head Multi-needle Embroidery & Applique');
-  const [fabricName, setFabricName] = useState<string>('Cut Pieces (Eligible for Embroidery)');
-  const [transportDetails, setTransportDetails] = useState<string>('Dedicated Factory Van (TN-38-BZ-4412)');
-  const [dispatchedBy, setDispatchedBy] = useState<string>('M. Ramesh (Production Dispatch)');
-  const [remarks, setRemarks] = useState<string>('PO for EMBROIDERY JOB ORDER - Stage 06 Outward');
+  const [processType, setProcessType] = useState<string>('Embroidery');
+  const [fabricName, setFabricName] = useState<string>('');
+  const [transportDetails, setTransportDetails] = useState<string>('');
+  const [dispatchedBy, setDispatchedBy] = useState<string>('');
+  const [remarks, setRemarks] = useState<string>('');
   const [outwardPhotos, setOutwardPhotos] = useState<string[]>([]);
   const [lineRows, setLineRows] = useState<EmbroideryLineRow[]>([]);
 
@@ -181,8 +181,8 @@ export default function EmbroideryOrderDetail() {
   const [inwardForm, setInwardForm] = useState({
     receipt_date: new Date().toISOString().split('T')[0],
     vendor_challan_no: '',
-    received_by: 'K. Balan (QC & Store Supervisor)',
-    remarks: 'Thread tension and stitch density verified against approved strike-off sample.'
+    received_by: '',
+    remarks: ''
   });
   const [inwardItemQuantities, setInwardItemQuantities] = useState<{
     [key: string]: { received: number; accepted: number; rejected: number; rework: number }
@@ -195,7 +195,7 @@ export default function EmbroideryOrderDetail() {
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferItem, setTransferItem] = useState<any | null>(null);
   const [transferQuantity, setTransferQuantity] = useState<number>(0);
-  const [transferRemarks, setTransferRemarks] = useState('Completed embroidery passed QC, transferred to Stitching unit.');
+  const [transferRemarks, setTransferRemarks] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
@@ -282,14 +282,6 @@ export default function EmbroideryOrderDetail() {
         });
       }
     });
-
-    if (list.length === 0) {
-      list.push(
-        { value: 'Sri Krishna Embroidery Works (Vendor ID: V-04)', label: 'Sri Krishna Embroidery Works', sublabel: 'Vendor ID: V-04 • Multi-Head Embroidery' },
-        { value: 'Aart tex', label: 'Aart tex', sublabel: 'Dyeing & Embroidery Unit' },
-        { value: 'Apex Embroidery Works', label: 'Apex Embroidery Works', sublabel: 'Specialized 12-Head Mill' }
-      );
-    }
 
     return list;
   }, [embroideryUnits, suppliers]);

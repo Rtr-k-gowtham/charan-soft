@@ -119,7 +119,7 @@ export default function CuttingOrderDetail() {
   const [transferForm, setTransferForm] = useState({
     destination_stage_id: '6', // default to Embroidery (6) or Stitching (7)
     transfer_quantity: 0,
-    remarks: 'Cut lot inspected and approved for subsequent stage processing',
+    remarks: '',
   });
   const [savingTransfer, setSavingTransfer] = useState(false);
   const [transferError, setTransferError] = useState('');
@@ -270,7 +270,7 @@ export default function CuttingOrderDetail() {
     setTransferForm({
       destination_stage_id: '6', // Embroidery Outward
       transfer_quantity: Math.max(0, avail),
-      remarks: 'Transfer approved cut panels to next stage',
+      remarks: '',
     });
     setTransferError('');
     setTransferModalOpen(true);

@@ -83,7 +83,7 @@ export default function CreateProductionOrder() {
   const [form, setForm] = useState({
     title: '',
     customer_id: '',
-    category_id: '7',
+    category_id: '',
     priority: 'Medium',
     start_date: new Date().toISOString().split('T')[0],
     target_delivery_date: (() => {
@@ -100,7 +100,7 @@ export default function CreateProductionOrder() {
       id: 'grp_init_1',
       product_id: '',
       variants: [
-        { id: 'var_init_1', color: '', quantity: 100 },
+        { id: 'var_init_1', color: '', quantity: '' as any },
       ],
     },
   ]);
@@ -546,7 +546,7 @@ export default function CreateProductionOrder() {
           {
             id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             color: '',
-            quantity: 100,
+            quantity: '' as any,
           },
         ],
       },
@@ -601,7 +601,7 @@ export default function CreateProductionOrder() {
           {
             id: `var_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
             color: '',
-            quantity: 100,
+            quantity: '' as any,
           },
         ],
       };
@@ -618,7 +618,7 @@ export default function CreateProductionOrder() {
         // Clear color instead of deleting the last variant row
         copy[groupIndex] = {
           ...group,
-          variants: [{ ...group.variants[0], color: '', quantity: 100 }],
+          variants: [{ ...group.variants[0], color: '', quantity: '' as any }],
         };
         return copy;
       }
