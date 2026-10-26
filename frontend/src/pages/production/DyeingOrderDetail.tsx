@@ -27,6 +27,7 @@ import {
 } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
 import StageReworkSection from '../../components/production/StageReworkSection';
+import StageInspectionModal from '../../components/production/StageInspectionModal';
 import {
   ArrowLeft,
   RotateCcw,
@@ -200,6 +201,10 @@ export default function DyeingOrderDetail() {
   const [advanceToCutting, setAdvanceToCutting] = useState(true);
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveError, setReceiveError] = useState('');
+
+  // Quality Inspection Modal State (Stage 04: Dyeing)
+  const [showInspectModal, setShowInspectModal] = useState(false);
+  const [selectedReceiptForInspect, setSelectedReceiptForInspect] = useState<any>(null);
 
   // Photo Proof State
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -896,17 +901,6 @@ export default function DyeingOrderDetail() {
       return;
     }
 
-    // Validate each row for Accepted + Rework = Received
-    for (const it of receivingItems) {
-      const rQty = Number(it.received_quantity || 0);
-      const accQty = Number(it.accepted_quantity ?? it.received_quantity ?? 0);
-      const rwkQty = Number(it.rework_quantity || 0);
-      if (rQty > 0 && Math.abs((accQty + rwkQty) - rQty) > 0.01) {
-        setReceiveError(`Color "${it.color_name}": Accepted (${accQty}) + Rework (${rwkQty}) must equal Received quantity (${rQty}).`);
-        return;
-      }
-    }
-
     setSavingReceive(true);
     try {
       const numericPoId = Number(order?.id) || Number(selectedDyeingOrder.production_order_id) || (Number.isFinite(Number(id)) ? Number(id) : undefined);
@@ -919,15 +913,11 @@ export default function DyeingOrderDetail() {
         photo_url: photoUrl,
         shade_condition: shadeCondition,
         remarks: receiptRemarks,
-        advance_to_cutting: advanceToCutting,
         items: receivingItems.map(it => ({
           item_id: it.item_id,
           color_name: it.color_name,
           planned_quantity: Number(it.planned_quantity || 0),
           received_quantity: Number(it.received_quantity || 0),
-          accepted_quantity: Number(it.accepted_quantity ?? it.received_quantity ?? 0),
-          rework_quantity: Number(it.rework_quantity || 0),
-          rework_reason: it.rework_reason || 'Shade Mismatch / Uneven Dyeing',
           shrinkage_loss_percent: Number(it.shrinkage_loss_percent || 0),
           shade_match_status: it.shade_match_status,
           notes: it.notes
@@ -937,7 +927,7 @@ export default function DyeingOrderDetail() {
       await api.receiveDyeingOrder(selectedDyeingOrder.id, payload);
       setShowReceiveModal(false);
       setSelectedDyeingOrder(null);
-      setSuccessToast(`Dyed fabric inward receipt recorded successfully!`);
+      setSuccessToast(`Dyed fabric inward receipt recorded successfully! Ready for Quality Inspection.`);
       await loadData();
     } catch (err: any) {
       console.error('Failed to receive dyed fabric:', err);
@@ -2270,6 +2260,25 @@ export default function DyeingOrderDetail() {
 
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            {Math.max(0, Number(rec.total_received_quantity || 0) - Number(rec.total_accepted_quantity || 0) - Number(rec.total_rework_quantity || 0)) > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedReceiptForInspect(rec);
+                                  setShowInspectModal(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition shadow-2xs"
+                                title="Perform Quality Inspection on Received Fabric"
+                              >
+                                <ShieldCheck className="w-3.5 h-3.5" />
+                                <span>Inspect</span>
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Inspected</span>
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
@@ -2365,7 +2374,26 @@ export default function DyeingOrderDetail() {
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+                      {Math.max(0, Number(rec.total_received_quantity || 0) - Number(rec.total_accepted_quantity || 0) - Number(rec.total_rework_quantity || 0)) > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReceiptForInspect(rec);
+                            setShowInspectModal(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition shadow-2xs"
+                          title="Perform Quality Inspection on Received Fabric"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Inspect Fabric</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Inspected</span>
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
@@ -2561,7 +2589,7 @@ export default function DyeingOrderDetail() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-200/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-200/60">
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-[11px] font-semibold text-slate-700">
@@ -2589,41 +2617,6 @@ export default function DyeingOrderDetail() {
                       </div>
 
                       <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-semibold text-emerald-700">
-                            Accepted Qty ({selectedDyeingOrder?.uom}) *
-                          </label>
-                        </div>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={it.accepted_quantity}
-                          onChange={e => handleReceiveItemChange(idx, 'accepted_quantity', e.target.value)}
-                          className="w-full text-xs font-bold rounded-lg border border-emerald-300 py-1.5 px-2.5 bg-emerald-50/40 text-emerald-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-2xs"
-                          placeholder="0.00"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-semibold text-amber-700">
-                            Rework Qty ({selectedDyeingOrder?.uom})
-                          </label>
-                        </div>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={it.rework_quantity}
-                          onChange={e => handleReceiveItemChange(idx, 'rework_quantity', e.target.value)}
-                          className="w-full text-xs font-bold rounded-lg border border-amber-300 py-1.5 px-2.5 bg-amber-50/40 text-amber-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs"
-                          placeholder="0.00"
-                        />
-                      </div>
-
-                      <div>
                         <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                           Pantone Shade Check
                         </label>
@@ -2639,39 +2632,6 @@ export default function DyeingOrderDetail() {
                         </select>
                       </div>
                     </div>
-
-                    {Number(it.rework_quantity) > 0 && (
-                      <div className="pt-2 border-t border-amber-200/80 bg-amber-50/50 p-2.5 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <label className="text-[11px] font-bold text-amber-800 block mb-1">
-                            Rework Reason / Defect Category *
-                          </label>
-                          <select
-                            value={it.rework_reason || 'Shade Mismatch / Uneven Dyeing'}
-                            onChange={e => handleReceiveItemChange(idx, 'rework_reason', e.target.value)}
-                            className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white font-medium text-amber-900"
-                          >
-                            <option value="Shade Mismatch / Uneven Dyeing">Shade Mismatch / Uneven Dyeing</option>
-                            <option value="Patchiness / Streaks in Fabric">Patchiness / Streaks in Fabric</option>
-                            <option value="Excessive Shrinkage / Width Loss">Excessive Shrinkage / Width Loss</option>
-                            <option value="Fabric Hand Feel / Stiff Finish">Fabric Hand Feel / Stiff Finish</option>
-                            <option value="Color Fastness / Rubbing Bleed">Color Fastness / Rubbing Bleed</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-bold text-amber-800 block mb-1">
-                            Correction Notes for Mill
-                          </label>
-                          <input
-                            type="text"
-                            value={it.notes || ''}
-                            onChange={e => handleReceiveItemChange(idx, 'notes', e.target.value)}
-                            placeholder="e.g. Needs 1 tone darker to match TCX..."
-                            className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white text-slate-800"
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -2764,6 +2724,34 @@ export default function DyeingOrderDetail() {
             />
           </div>
         </div>
+      )}
+
+      {/* Quality Inspection Modal (Stage 04: Dyeing) */}
+      {selectedReceiptForInspect && (
+        <StageInspectionModal
+          isOpen={showInspectModal}
+          onClose={() => {
+            setShowInspectModal(false);
+            setSelectedReceiptForInspect(null);
+          }}
+          title={`Fabric Quality Inspection — ${selectedReceiptForInspect.receipt_no}`}
+          productionOrderId={Number(order?.id) || Number(selectedReceiptForInspect.production_order_id) || Number(id)}
+          stageId={4}
+          stageCode="DYE"
+          referenceId={selectedReceiptForInspect.receipt_no}
+          referenceType="Dyeing Receipt"
+          batchNumber={selectedReceiptForInspect.dyeing_order_no}
+          productName={selectedReceiptForInspect.fabric_name || 'Dyed Fabric Material'}
+          vendorName={selectedReceiptForInspect.dyeing_mill_name || 'Processing Mill'}
+          availableQuantity={Math.max(0, Number(selectedReceiptForInspect.total_received_quantity || 0) - Number(selectedReceiptForInspect.total_accepted_quantity || 0) - Number(selectedReceiptForInspect.total_rework_quantity || 0))}
+          uom={selectedReceiptForInspect.uom || 'MTR'}
+          onSuccess={async () => {
+            setShowInspectModal(false);
+            setSelectedReceiptForInspect(null);
+            setSuccessToast('Quality inspection recorded successfully! Accepted balance credited.');
+            await loadData();
+          }}
+        />
       )}
 
       {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}

@@ -318,6 +318,10 @@ export default function CheckingOrderDetail() {
       await api.recordQualityInspection({
         production_order_id: Number(order.id),
         production_order_item_id: selectedItem.active_checking_item_id || selectedItem.id,
+        stage_id: 8,
+        stage_code: 'CHK',
+        reference_type: 'Checking QC',
+        uom: 'PCS',
         submitted_quantity: checked,
         checked_quantity: checked,
         passed_quantity: passed,

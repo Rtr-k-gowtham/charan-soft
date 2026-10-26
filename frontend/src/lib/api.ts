@@ -225,9 +225,11 @@ export const api = {
   getCheckingOrderDetails: (orderId: number | string) =>
     request<any>(`/production/checking/${orderId}`),
   recordQualityInspection: (data: any) =>
-    request<any>('/production/checking/inspect', 'POST', data),
+    request<any>('/production/inspect', 'POST', data),
   createQualityInspection: (data: any) =>
-    request<any>('/production/checking/inspect', 'POST', data),
+    request<any>('/production/inspect', 'POST', data),
+  recordStageInspection: (data: any) =>
+    request<any>('/production/inspect', 'POST', data),
   getQualityInspections: (productionOrderId?: number | string) =>
     request<any[]>(`/production/checking/orders${productionOrderId ? `?production_order_id=${productionOrderId}` : ''}`),
   transferCheckingOutput: (data: any) =>

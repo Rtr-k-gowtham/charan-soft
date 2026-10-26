@@ -16,6 +16,7 @@ import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSe
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import { lookupPantone, VERIFIED_PANTONE_LIBRARY } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
+import StageInspectionModal from '../../components/production/StageInspectionModal';
 import {
   ArrowLeft,
   Sparkles,
@@ -193,6 +194,10 @@ export default function EmbroideryOrderDetail() {
   const [inwardPhotos, setInwardPhotos] = useState<string[]>([]);
   const [savingInward, setSavingInward] = useState(false);
   const [inwardError, setInwardError] = useState('');
+
+  // Quality Inspection Modal State (Stage 06: Embroidery)
+  const [showInspectModal, setShowInspectModal] = useState(false);
+  const [selectedReceiptForInspect, setSelectedReceiptForInspect] = useState<any | null>(null);
 
   // Stage Transfer to Stitching Modal
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -572,7 +577,7 @@ export default function EmbroideryOrderDetail() {
   const handleOpenInwardModal = (job: any) => {
     setSelectedJobOrder(job);
     const jItems = Array.isArray(job.items_json) ? job.items_json : [];
-    const initQty: { [key: string]: { received: number; accepted: number; rejected: number; rework: number; rework_reason?: string; rework_remarks?: string } } = {};
+    const initQty: { [key: string]: { received: number; accepted: number; rejected: number; rework: number } } = {};
 
     jItems.forEach((ji: any, idx: number) => {
       const key = String(ji.production_order_item_id || idx);
@@ -581,17 +586,15 @@ export default function EmbroideryOrderDetail() {
       const pending = Math.max(0, sent - rec);
       initQty[key] = {
         received: pending,
-        accepted: pending,
+        accepted: 0,
         rejected: 0,
-        rework: 0,
-        rework_reason: 'Thread Breakage / Missing Stitches',
-        rework_remarks: ''
+        rework: 0
       };
     });
 
     if (jItems.length === 0) {
       const out = Number(job.total_quantity_outstanding || job.total_quantity_sent || 0);
-      initQty['0'] = { received: out, accepted: out, rejected: 0, rework: 0, rework_reason: 'Thread Breakage / Missing Stitches', rework_remarks: '' };
+      initQty['0'] = { received: out, accepted: 0, rejected: 0, rework: 0 };
     }
 
     setInwardItemQuantities(initQty);
@@ -600,8 +603,8 @@ export default function EmbroideryOrderDetail() {
     setInwardForm({
       receipt_date: new Date().toISOString().split('T')[0],
       vendor_challan_no: `INV-EMB-${Math.floor(1000 + Math.random() * 9000)}`,
-      received_by: 'K. Balan (QC & Store Supervisor)',
-      remarks: 'Thread tension and stitch density verified against approved strike-off sample.'
+      received_by: 'Stores & Inward QC',
+      remarks: 'Physically received from embroidery vendor; pending quality inspection.'
     });
     setInwardModalOpen(true);
   };
@@ -639,26 +642,18 @@ export default function EmbroideryOrderDetail() {
             product_name: ji.product_name,
             color: ji.color,
             size: ji.size,
-            received_quantity: Number(q.received),
-            accepted_quantity: Number(q.accepted),
-            rejected_quantity: Number(q.rejected),
-            rework_quantity: Number(q.rework),
-            rework_reason: q.rework_reason || 'Thread Breakage / Missing Stitches',
-            rework_remarks: q.rework_remarks || ''
+            received_quantity: Number(q.received)
           });
         }
       });
     } else {
       const q = inwardItemQuantities['0'] || { received: 0, accepted: 0, rejected: 0, rework: 0 };
-      receiptItems.push({
-        production_order_item_id: items[0]?.active_embroidery_item_id || items[0]?.id || 0,
-        received_quantity: Number(q.received),
-        accepted_quantity: Number(q.accepted),
-        rejected_quantity: Number(q.rejected),
-        rework_quantity: Number(q.rework),
-        rework_reason: q.rework_reason || 'Thread Breakage / Missing Stitches',
-        rework_remarks: q.rework_remarks || ''
-      });
+      if (q.received > 0) {
+        receiptItems.push({
+          production_order_item_id: items[0]?.active_embroidery_item_id || items[0]?.id || 0,
+          received_quantity: Number(q.received)
+        });
+      }
     }
 
     const totalRec = receiptItems.reduce((s, i) => s + i.received_quantity, 0);
@@ -1863,15 +1858,40 @@ export default function EmbroideryOrderDetail() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
-                            title="Print / Download Embroidery Inward QC Receipt"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-teal-600" />
-                            <span>Print Receipt</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            {(() => {
+                              const uninspected = Math.max(0, Number(rec.total_received_qty || 0) - Number(rec.total_accepted_qty || 0) - Number(rec.total_rework_qty || 0) - Number(rec.total_rejected_qty || 0));
+                              return uninspected > 0 ? (
+                                <Button
+                                  size="xs"
+                                  variant="primary"
+                                  icon={<ShieldCheck className="w-3 h-3 text-white" />}
+                                  onClick={() => {
+                                    setSelectedReceiptForInspect(rec);
+                                    setShowInspectModal(true);
+                                  }}
+                                  className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
+                                  title="Perform Quality Inspection on Inward Pieces"
+                                >
+                                  Inspect ({uninspected})
+                                </Button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Inspected
+                                </span>
+                              );
+                            })()}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
+                              title="Print / Download Embroidery Inward QC Receipt"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-teal-600" />
+                              <span>Receipt</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1990,11 +2010,26 @@ export default function EmbroideryOrderDetail() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50/70 p-3 rounded-lg border border-slate-200/60">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                            Received Qty
-                          </label>
+                      <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-200/60">
+                        <div className="max-w-xs">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-slate-700 uppercase">
+                              Received Qty (Pieces) *
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInwardItemQuantities(prev => ({
+                                  ...prev,
+                                  [key]: { ...q, received: sent }
+                                }));
+                              }}
+                              className="text-[10px] font-bold text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+                              title="Set to total sent quantity"
+                            >
+                              Fill Max ({fmt(sent)})
+                            </button>
+                          </div>
                           <input
                             type="number"
                             min="0"
@@ -2004,172 +2039,46 @@ export default function EmbroideryOrderDetail() {
                               const rVal = Math.max(0, Number(e.target.value));
                               setInwardItemQuantities(prev => ({
                                 ...prev,
-                                [key]: {
-                                  ...q,
-                                  received: rVal,
-                                  accepted: Math.max(0, rVal - q.rejected - q.rework)
-                                }
+                                [key]: { ...q, received: rVal }
                               }));
                             }}
-                            className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded font-mono font-bold text-indigo-700"
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg font-mono font-bold text-indigo-700 bg-white"
                             required
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">
-                            Accepted Qty
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max={q.received}
-                            value={q.accepted}
-                            onChange={e => {
-                              const aVal = Math.max(0, Number(e.target.value));
-                              setInwardItemQuantities(prev => ({
-                                ...prev,
-                                [key]: { ...q, accepted: aVal }
-                              }));
-                            }}
-                            className="w-full text-xs px-2.5 py-1.5 border border-emerald-300 rounded font-mono font-bold text-emerald-700"
-                            required
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-red-700 uppercase mb-1">
-                            Rejected Qty
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={q.rejected}
-                            onChange={e => {
-                              const rVal = Math.max(0, Number(e.target.value));
-                              setInwardItemQuantities(prev => ({
-                                ...prev,
-                                [key]: {
-                                  ...q,
-                                  rejected: rVal,
-                                  accepted: Math.max(0, q.received - rVal - q.rework)
-                                }
-                              }));
-                            }}
-                            className="w-full text-xs px-2.5 py-1.5 border border-red-300 rounded font-mono font-bold text-red-600"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold text-amber-700 uppercase mb-1">
-                            Rework Qty
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            value={q.rework}
-                            onChange={e => {
-                              const rVal = Math.max(0, Number(e.target.value));
-                              setInwardItemQuantities(prev => ({
-                                ...prev,
-                                [key]: {
-                                  ...q,
-                                  rework: rVal,
-                                  accepted: Math.max(0, q.received - q.rejected - rVal)
-                                }
-                              }));
-                            }}
-                            className="w-full text-xs px-2.5 py-1.5 border border-amber-300 rounded font-mono font-bold text-amber-600"
                           />
                         </div>
                       </div>
-
-                      {Number(q.rework) > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-amber-200/70 bg-amber-50/50 p-2.5 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <label className="text-[10px] font-bold text-amber-800 block mb-1">
-                              Rework Defect Reason *
-                            </label>
-                            <select
-                              value={q.rework_reason || 'Thread Breakage / Missing Stitches'}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setInwardItemQuantities(prev => ({
-                                  ...prev,
-                                  [key]: { ...q, rework_reason: val }
-                                }));
-                              }}
-                              className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white font-medium text-amber-900"
-                            >
-                              <option value="Thread Breakage / Missing Stitches">Thread Breakage / Missing Stitches</option>
-                              <option value="Design Misalignment / Skewed">Design Misalignment / Skewed</option>
-                              <option value="Wrong Thread Color / Shade Mismatch">Wrong Thread Color / Shade Mismatch</option>
-                              <option value="Fabric Hole / Needle Cut">Fabric Hole / Needle Cut</option>
-                              <option value="Puckering / High Tension">Puckering / High Tension</option>
-                              <option value="Other Embroidery Defect">Other Embroidery Defect</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="text-[10px] font-bold text-amber-800 block mb-1">
-                              Correction Instructions for Vendor
-                            </label>
-                            <input
-                              type="text"
-                              value={q.rework_remarks || ''}
-                              onChange={e => {
-                                const val = e.target.value;
-                                setInwardItemQuantities(prev => ({
-                                  ...prev,
-                                  [key]: { ...q, rework_remarks: val }
-                                }));
-                              }}
-                              placeholder="e.g. Fill missing leaf motif on left chest..."
-                              className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white text-slate-800"
-                            />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })
               ) : (
                 <div className="p-4 bg-white">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-50/70 p-3 rounded-lg border border-slate-200">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Received Qty</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={inwardItemQuantities['0']?.received || 0}
-                        onChange={e => {
-                          const v = Number(e.target.value);
-                          setInwardItemQuantities(prev => ({
-                            ...prev,
-                            '0': { ...prev['0'], received: v, accepted: v }
-                          }));
-                        }}
-                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded font-mono font-bold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Accepted Qty</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={inwardItemQuantities['0']?.accepted || 0}
-                        onChange={e => {
-                          const v = Number(e.target.value);
-                          setInwardItemQuantities(prev => ({
-                            ...prev,
-                            '0': { ...prev['0'], accepted: v }
-                          }));
-                        }}
-                        className="w-full text-xs px-2.5 py-1.5 border border-emerald-300 rounded font-mono font-bold text-emerald-700"
-                      />
-                    </div>
+                  <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-200 max-w-xs">
+                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Received Qty (Pieces) *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={inwardItemQuantities['0']?.received || 0}
+                      onChange={e => {
+                        const v = Number(e.target.value);
+                        setInwardItemQuantities(prev => ({
+                          ...prev,
+                          '0': { ...prev['0'], received: v, accepted: 0, rejected: 0, rework: 0 }
+                        }));
+                      }}
+                      className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg font-mono font-bold text-indigo-700 bg-white"
+                      required
+                    />
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg text-xs text-teal-800 flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Two-Step Quality Verification Workflow</span>
+                <span>Record the physical pieces delivered by the vendor. Quality inspection and rework decisions take place in the next step via <strong>Quality Inspection</strong>.</span>
+              </div>
             </div>
           </div>
 
@@ -2311,6 +2220,35 @@ export default function EmbroideryOrderDetail() {
             />
           </div>
         </div>
+      )}
+
+      {/* Quality Inspection Modal (Stage 06: Embroidery) */}
+      {selectedReceiptForInspect && (
+        <StageInspectionModal
+          isOpen={showInspectModal}
+          onClose={() => {
+            setShowInspectModal(false);
+            setSelectedReceiptForInspect(null);
+          }}
+          title={`Embroidery Quality Inspection — Receipt ${selectedReceiptForInspect.receipt_number}`}
+          productionOrderId={Number(order?.id || id)}
+          stageId={6}
+          stageCode="EMB"
+          referenceId={selectedReceiptForInspect.receipt_number}
+          referenceType="Embroidery Receipt"
+          batchNumber={selectedReceiptForInspect.job_order_number || `EMB-JOB-${selectedReceiptForInspect.job_order_id}`}
+          productName="Embroidered Garment Panels"
+          vendorName={selectedReceiptForInspect.vendor_name || 'Embroidery Vendor'}
+          availableQuantity={Math.max(0, Number(selectedReceiptForInspect.total_received_qty || 0) - Number(selectedReceiptForInspect.total_accepted_qty || 0) - Number(selectedReceiptForInspect.total_rework_qty || 0) - Number(selectedReceiptForInspect.total_rejected_qty || 0))}
+          uom="PCS"
+          supportsRejection={true}
+          onSuccess={async () => {
+            setShowInspectModal(false);
+            setSelectedReceiptForInspect(null);
+            showToast('Embroidery inspection recorded successfully! Accepted balance credited for transfer to Stitching.');
+            await fetchOrderData();
+          }}
+        />
       )}
 
       {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}

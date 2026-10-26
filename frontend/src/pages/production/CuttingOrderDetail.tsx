@@ -31,9 +31,11 @@ import {
   Eye,
   CheckCheck,
   FileText,
-  RotateCcw
+  RotateCcw,
+  ShieldCheck
 } from 'lucide-react';
 import StageReworkSection from '../../components/production/StageReworkSection';
+import StageInspectionModal from '../../components/production/StageInspectionModal';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
@@ -108,16 +110,15 @@ export default function CuttingOrderDetail() {
     cutting_date: new Date().toISOString().split('T')[0],
     assigned_quantity: 0,
     actual_cut_quantity: 0,
-    rejected_quantity: 0,
-    rework_quantity: 0,
-    rework_reason: 'Incorrect Dimensions / Cutting Defect',
-    rework_destination: 'Cutting Recut / Correction',
-    rework_remarks: '',
     remarks: '',
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchError, setBatchError] = useState('');
+
+  // Quality Inspection Modal State (Stage 05: Cutting)
+  const [showInspectModal, setShowInspectModal] = useState(false);
+  const [selectedBatchForInspect, setSelectedBatchForInspect] = useState<CuttingBatch | null>(null);
 
   // Transfer Modal State
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -194,11 +195,6 @@ export default function CuttingOrderDetail() {
       cutting_date: new Date().toISOString().split('T')[0],
       assigned_quantity: pending,
       actual_cut_quantity: pending,
-      rejected_quantity: 0,
-      rework_quantity: 0,
-      rework_reason: 'Incorrect Dimensions / Cutting Defect',
-      rework_destination: 'Cutting Recut / Correction',
-      rework_remarks: '',
       remarks: '',
     });
     setPhotoUrls([]);
@@ -225,8 +221,6 @@ export default function CuttingOrderDetail() {
   const handleSaveBatch = async () => {
     if (!selectedItem) return;
     const actual = Number(batchForm.actual_cut_quantity || 0);
-    const rej = Number(batchForm.rejected_quantity || 0);
-    const rwk = Number(batchForm.rework_quantity || 0);
     const assigned = Number(batchForm.assigned_quantity || 0);
 
     if (actual <= 0) {
@@ -235,10 +229,6 @@ export default function CuttingOrderDetail() {
     }
     if (assigned > 0 && actual > assigned) {
       setBatchError(`Actual Cut Qty (${actual}) cannot exceed remaining assigned quantity (${assigned})`);
-      return;
-    }
-    if (rej + rwk > actual) {
-      setBatchError(`Rejected (${rej}) + Rework (${rwk}) cannot exceed actual cut quantity (${actual})`);
       return;
     }
     if (!photoUrls || photoUrls.length === 0) {
@@ -256,18 +246,13 @@ export default function CuttingOrderDetail() {
         color: selectedItem.color,
         assigned_quantity: assigned > 0 ? assigned : actual,
         actual_cut_quantity: actual,
-        rejected_quantity: rej,
-        rework_quantity: rwk,
-        rework_reason: batchForm.rework_reason,
-        rework_destination: batchForm.rework_destination,
-        rework_remarks: batchForm.rework_remarks,
         cutting_date: batchForm.cutting_date,
         remarks: batchForm.remarks,
         photo_urls: photoUrls,
       });
 
       setBatchModalOpen(false);
-      setToastMessage('Cutting batch recorded and yield reconciled successfully!');
+      setToastMessage('Cutting batch recorded successfully! Ready for Quality Inspection.');
       loadData();
     } catch (err: any) {
       setBatchError(err.message || 'Failed to save cutting batch');
@@ -695,22 +680,44 @@ export default function CuttingOrderDetail() {
                           })()}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {avail > 0 ? (
-                            <Button
-                              size="xs"
-                              variant="secondary"
-                              icon={<ArrowRight className="w-3 h-3 text-purple-600" />}
-                              onClick={() => handleOpenTransferModal(b)}
-                              className="text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200"
-                            >
-                              Transfer ({avail})
-                            </Button>
-                          ) : (
-                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
-                              <CheckCheck className="w-3 h-3 text-emerald-600" />
-                              Transferred ({fmt(b.transferred_to_next_stage_quantity || b.accepted_output_quantity)})
-                            </span>
-                          )}
+                          {(() => {
+                            const uninspectedCut = Math.max(0, Number(b.actual_cut_quantity || 0) - Number(b.accepted_output_quantity || 0) - Number(b.rework_quantity || 0) - Number(b.rejected_quantity || 0));
+                            return (
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                {uninspectedCut > 0 && (
+                                  <Button
+                                    size="xs"
+                                    variant="primary"
+                                    icon={<ShieldCheck className="w-3 h-3 text-white" />}
+                                    onClick={() => {
+                                      setSelectedBatchForInspect(b);
+                                      setShowInspectModal(true);
+                                    }}
+                                    className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
+                                    title="Perform Quality Inspection on Cut Pieces"
+                                  >
+                                    Inspect ({uninspectedCut})
+                                  </Button>
+                                )}
+                                {avail > 0 ? (
+                                  <Button
+                                    size="xs"
+                                    variant="secondary"
+                                    icon={<ArrowRight className="w-3 h-3 text-purple-600" />}
+                                    onClick={() => handleOpenTransferModal(b)}
+                                    className="text-[11px] font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200"
+                                  >
+                                    Transfer ({avail})
+                                  </Button>
+                                ) : uninspectedCut <= 0 ? (
+                                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                                    <CheckCheck className="w-3 h-3 text-emerald-600" />
+                                    Transferred ({fmt(b.transferred_to_next_stage_quantity || b.accepted_output_quantity)})
+                                  </span>
+                                ) : null}
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
@@ -782,95 +789,27 @@ export default function CuttingOrderDetail() {
             </FormField>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <FormField label="Actual Cut Qty" required>
+          <div>
+            <FormField label="Actual Cut Qty (Pieces)" required>
               <input
                 type="number"
                 min={1}
                 max={batchForm.assigned_quantity || undefined}
                 value={batchForm.actual_cut_quantity}
                 onChange={(e) => setBatchForm({ ...batchForm, actual_cut_quantity: Number(e.target.value) })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono font-bold text-indigo-700"
-              />
-            </FormField>
-
-            <FormField label="Rejected Qty">
-              <input
-                type="number"
-                min={0}
-                value={batchForm.rejected_quantity}
-                onChange={(e) => setBatchForm({ ...batchForm, rejected_quantity: Number(e.target.value) })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono text-red-600"
-              />
-            </FormField>
-
-            <FormField label="Rework Qty">
-              <input
-                type="number"
-                min={0}
-                value={batchForm.rework_quantity}
-                onChange={(e) => setBatchForm({ ...batchForm, rework_quantity: Number(e.target.value) })}
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono text-amber-600"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono font-bold text-indigo-700 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                placeholder="0"
+                required
               />
             </FormField>
           </div>
 
-          {Number(batchForm.rework_quantity) > 0 && (
-            <div className="pt-2 border-t border-amber-200/80 bg-amber-50/60 p-3 rounded-lg space-y-2 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-amber-850 block mb-1">
-                    Rework Defect Category *
-                  </label>
-                  <select
-                    value={batchForm.rework_reason}
-                    onChange={(e) => setBatchForm({ ...batchForm, rework_reason: e.target.value })}
-                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-amber-900"
-                  >
-                    <option value="Incorrect Dimensions / Cutting Defect">Incorrect Dimensions / Cutting Defect</option>
-                    <option value="Pattern / Grain Line Misalignment">Pattern / Grain Line Misalignment</option>
-                    <option value="Notch / Drill Mark Missing">Notch / Drill Mark Missing</option>
-                    <option value="Fabric Ply Shifting / Frayed Edges">Fabric Ply Shifting / Frayed Edges</option>
-                    <option value="Bundle Mismatch / Label Defect">Bundle Mismatch / Label Defect</option>
-                    <option value="Other Cutting Defect">Other Cutting Defect</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-amber-850 block mb-1">
-                    Correction Process / Line
-                  </label>
-                  <select
-                    value={batchForm.rework_destination}
-                    onChange={(e) => setBatchForm({ ...batchForm, rework_destination: e.target.value })}
-                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-slate-800"
-                  >
-                    <option value="Cutting Recut / Correction">Cutting Recut / Correction Line</option>
-                    <option value="In-House Alteration / Trimming">In-House Alteration / Trimming</option>
-                    <option value="Fabric Sorting / Re-layering">Fabric Sorting / Re-layering</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-amber-850 block mb-1">
-                  Rework Instructions / Defect Details
-                </label>
-                <input
-                  type="text"
-                  value={batchForm.rework_remarks}
-                  onChange={(e) => setBatchForm({ ...batchForm, rework_remarks: e.target.value })}
-                  placeholder="e.g. Sleeves 0.5cm shorter than pattern spec, recut front plackets..."
-                  className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white text-slate-800"
-                />
-              </div>
+          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block">Two-Step Quality Verification Workflow</span>
+              <span>Record the total completed cut pieces here. Quality inspection, defect categorization, and rework decisions take place in the next step via <strong>Quality Inspection</strong>.</span>
             </div>
-          )}
-
-          {/* Calculated Net Accepted Output */}
-          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs">
-            <span className="font-semibold text-emerald-800">Calculated Net Accepted Output:</span>
-            <span className="font-mono font-bold text-sm text-emerald-700">
-              {fmt(Math.max(0, Number(batchForm.actual_cut_quantity) - Number(batchForm.rejected_quantity) - Number(batchForm.rework_quantity)))} pcs
-            </span>
           </div>
 
           <FormField label="Notes">
@@ -994,6 +933,37 @@ export default function CuttingOrderDetail() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Quality Inspection Modal (Stage 05: Cutting) */}
+      {selectedBatchForInspect && (
+        <StageInspectionModal
+          isOpen={showInspectModal}
+          onClose={() => {
+            setShowInspectModal(false);
+            setSelectedBatchForInspect(null);
+          }}
+          title={`Cut Pieces Quality Inspection — Batch ${selectedBatchForInspect.batch_number}`}
+          productionOrderId={Number(order?.id || id)}
+          stageId={5}
+          stageCode="CUT"
+          referenceId={selectedBatchForInspect.batch_number}
+          referenceType="Cutting Batch"
+          batchNumber={selectedBatchForInspect.batch_number}
+          productName={selectedBatchForInspect.product_name || 'Cut Components'}
+          color={selectedBatchForInspect.color}
+          size={selectedBatchForInspect.size}
+          productionOrderItemId={selectedBatchForInspect.production_order_item_id}
+          availableQuantity={Math.max(0, Number(selectedBatchForInspect.actual_cut_quantity || 0) - Number(selectedBatchForInspect.accepted_output_quantity || 0) - Number(selectedBatchForInspect.rework_quantity || 0) - Number(selectedBatchForInspect.rejected_quantity || 0))}
+          uom="PCS"
+          supportsRejection={true}
+          onSuccess={async () => {
+            setShowInspectModal(false);
+            setSelectedBatchForInspect(null);
+            setToastMessage('Quality inspection recorded successfully! Accepted balance credited for stage transfer.');
+            loadData();
+          }}
+        />
       )}
     </div>
   );

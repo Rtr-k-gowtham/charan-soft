@@ -43,6 +43,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import StageReworkSection from '../../components/production/StageReworkSection';
+import StageInspectionModal from '../../components/production/StageInspectionModal';
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -125,16 +126,15 @@ export default function StitchingOrderDetail() {
     completion_date: new Date().toISOString().split('T')[0],
     assigned_quantity: 0,
     completed_quantity: 0,
-    rejected_quantity: 0,
-    rework_quantity: 0,
-    rework_reason: 'Broken Seam / Stitching Defect',
-    rework_destination: 'Stitching Line Correction',
-    rework_remarks: '',
     remarks: ''
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchError, setBatchError] = useState('');
+
+  // Quality Inspection Modal State (Stage 07: Stitching)
+  const [showInspectModal, setShowInspectModal] = useState(false);
+  const [selectedBatchForInspect, setSelectedBatchForInspect] = useState<any | null>(null);
 
   // Transfer to Checking Modal
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -231,11 +231,6 @@ export default function StitchingOrderDetail() {
       completion_date: new Date().toISOString().split('T')[0],
       assigned_quantity: assigned,
       completed_quantity: assigned,
-      rejected_quantity: 0,
-      rework_quantity: 0,
-      rework_reason: 'Broken Seam / Stitching Defect',
-      rework_destination: 'Stitching Line Correction',
-      rework_remarks: '',
       remarks: ''
     });
     setPhotoUrls([]);
@@ -258,23 +253,16 @@ export default function StitchingOrderDetail() {
     }
   };
 
-  // Submit Stitching Batch (Accepted Qty is calculated automatically as Completed - Rejected - Rework)
+  // Submit Stitching Batch (Records completed sewing output; Quality Inspection happens in the next step)
   const handleSaveBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!order || !selectedItem) return;
 
     const comp = Number(batchForm.completed_quantity);
-    const rej = Number(batchForm.rejected_quantity);
-    const rwk = Number(batchForm.rework_quantity);
     const assigned = Number(batchForm.assigned_quantity);
 
     if (comp <= 0) {
       setBatchError('Please specify a positive completed quantity.');
-      return;
-    }
-
-    if (rej + rwk > comp) {
-      setBatchError('The sum of rejected and rework quantities cannot exceed the completed quantity.');
       return;
     }
 
@@ -292,11 +280,6 @@ export default function StitchingOrderDetail() {
         production_order_item_id: selectedItem.active_stitching_item_id || selectedItem.id,
         assigned_quantity: assigned > 0 ? assigned : comp,
         completed_quantity: comp,
-        rejected_quantity: rej,
-        rework_quantity: rwk,
-        rework_reason: batchForm.rework_reason,
-        rework_destination: batchForm.rework_destination,
-        rework_remarks: batchForm.rework_remarks,
         start_date: batchForm.start_date,
         completion_date: batchForm.completion_date,
         remarks: batchForm.remarks,
@@ -304,7 +287,7 @@ export default function StitchingOrderDetail() {
       });
 
       setBatchModalOpen(false);
-      showToast(`Stitching batch for ${selectedItem.product_name} (${selectedItem.color}) recorded successfully!`);
+      showToast(`Stitching batch recorded successfully! Ready for Quality Inspection.`);
       await fetchOrderData();
     } catch (err: any) {
       console.error('Failed to save stitching batch:', err);
@@ -857,23 +840,52 @@ export default function StitchingOrderDetail() {
                           )}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
-                            <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1 shadow-2xs">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
-                              In Checking
-                            </span>
-                          ) : (
-                            <Button
-                              id={`btn-transfer-checking-${batch.id}`}
-                              size="xs"
-                              variant="secondary"
-                              icon={<ArrowRight className="w-3 h-3" />}
-                              onClick={() => handleOpenTransferModal(batch)}
-                              className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
-                            >
-                              To Checking
-                            </Button>
-                          )}
+                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                            {(() => {
+                              const uninspected = Math.max(0, Number(batch.completed_quantity || 0) - Number(batch.accepted_quantity || 0) - Number(batch.rework_quantity || 0) - Number(batch.rejected_quantity || 0));
+                              return (
+                                <>
+                                  {uninspected > 0 && (
+                                    <Button
+                                      size="xs"
+                                      variant="primary"
+                                      icon={<ShieldCheck className="w-3 h-3 text-white" />}
+                                      onClick={() => {
+                                        setSelectedBatchForInspect(batch);
+                                        setShowInspectModal(true);
+                                      }}
+                                      className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
+                                      title="Perform Quality Inspection on Sewn Garments"
+                                    >
+                                      Inspect ({uninspected})
+                                    </Button>
+                                  )}
+                                  {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
+                                    <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1 shadow-2xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                                      In Checking
+                                    </span>
+                                  ) : Number(batch.accepted_quantity || 0) > 0 ? (
+                                    <Button
+                                      id={`btn-transfer-checking-${batch.id}`}
+                                      size="xs"
+                                      variant="secondary"
+                                      icon={<ArrowRight className="w-3 h-3" />}
+                                      onClick={() => handleOpenTransferModal(batch)}
+                                      className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
+                                    >
+                                      To Checking
+                                    </Button>
+                                  ) : uninspected <= 0 ? (
+                                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      Completed
+                                    </span>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -984,7 +996,7 @@ export default function StitchingOrderDetail() {
               {/* Completed Qty */}
               <div className="bg-white p-2.5 rounded-lg border border-blue-200 shadow-xs">
                 <label className="block text-[11px] font-bold text-blue-900 uppercase mb-1">
-                  Completed <span className="text-red-500">*</span>
+                  Completed Output <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -996,104 +1008,13 @@ export default function StitchingOrderDetail() {
                   required
                 />
               </div>
-
-              {/* Rejected Qty */}
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Rejected
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={batchForm.rejected_quantity}
-                  onChange={e => setBatchForm({ ...batchForm, rejected_quantity: Math.max(0, Number(e.target.value)) })}
-                  className="w-full text-sm px-2.5 py-1.5 border border-slate-300 rounded font-mono font-bold text-slate-800 focus:ring-2 focus:ring-red-400/20 focus:border-red-500"
-                />
-              </div>
-
-              {/* Rework Qty */}
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">
-                  Rework
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={batchForm.rework_quantity}
-                  onChange={e => setBatchForm({ ...batchForm, rework_quantity: Math.max(0, Number(e.target.value)) })}
-                  className="w-full text-sm px-2.5 py-1.5 border border-slate-300 rounded font-mono font-bold text-slate-800 focus:ring-2 focus:ring-amber-400/20 focus:border-amber-500"
-                />
-              </div>
             </div>
 
-            {Number(batchForm.rework_quantity) > 0 && (
-              <div className="pt-2 border-t border-amber-200/80 bg-amber-50/60 p-3 rounded-lg space-y-2 text-xs">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-amber-900 block mb-1">
-                      Rework Defect Category *
-                    </label>
-                    <select
-                      value={batchForm.rework_reason}
-                      onChange={e => setBatchForm({ ...batchForm, rework_reason: e.target.value })}
-                      className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-amber-900"
-                    >
-                      <option value="Broken Seam / Stitching Defect">Broken Seam / Stitching Defect</option>
-                      <option value="Pucker / High Thread Tension">Pucker / High Thread Tension</option>
-                      <option value="Incorrect Label / Hemming">Incorrect Label / Hemming</option>
-                      <option value="Skipped Stitches / Needle Run">Skipped Stitches / Needle Run</option>
-                      <option value="Uneven Topstitching">Uneven Topstitching</option>
-                      <option value="Other Stitching Defect">Other Stitching Defect</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-amber-900 block mb-1">
-                      Correction Process / Line
-                    </label>
-                    <select
-                      value={batchForm.rework_destination}
-                      onChange={e => setBatchForm({ ...batchForm, rework_destination: e.target.value })}
-                      className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-slate-800"
-                    >
-                      <option value="Stitching Line Correction">Stitching Line Correction</option>
-                      <option value="In-House Alteration / Unpicking">In-House Alteration / Unpicking</option>
-                      <option value="Finishing / Hemming Touch-up">Finishing / Hemming Touch-up</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-amber-900 block mb-1">
-                    Alteration Instructions / Defect Details
-                  </label>
-                  <input
-                    type="text"
-                    value={batchForm.rework_remarks}
-                    onChange={e => setBatchForm({ ...batchForm, rework_remarks: e.target.value })}
-                    placeholder="e.g. Unpick side seam 3 inches, re-stitch with matched thread..."
-                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white text-slate-800"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Dynamic Passed QC Output Banner */}
-            <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 rounded-lg flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-4.5 h-4.5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-emerald-950 block">Estimated Passed QC Output</span>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    Auto-calculated: {batchForm.completed_quantity || 0} completed − {batchForm.rejected_quantity || 0} rej − {batchForm.rework_quantity || 0} rwk
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-black font-mono text-emerald-700">
-                  {Math.max(0, Number(batchForm.completed_quantity || 0) - Number(batchForm.rejected_quantity || 0) - Number(batchForm.rework_quantity || 0))}
-                </span>
-                <span className="text-xs font-bold text-emerald-600 ml-1">pcs</span>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Two-Step Quality Verification Workflow</span>
+                <span>Record the total completed sewn pieces here. Quality inspection, seam defect categorization, and rework decisions take place in the next step via <strong>Quality Inspection</strong>.</span>
               </div>
             </div>
           </div>
@@ -1237,6 +1158,37 @@ export default function StitchingOrderDetail() {
             />
           </div>
         </div>
+      )}
+
+      {/* Quality Inspection Modal (Stage 07: Stitching) */}
+      {selectedBatchForInspect && (
+        <StageInspectionModal
+          isOpen={showInspectModal}
+          onClose={() => {
+            setShowInspectModal(false);
+            setSelectedBatchForInspect(null);
+          }}
+          title={`Stitching Quality Inspection — Batch ${selectedBatchForInspect.batch_number}`}
+          productionOrderId={Number(order?.id || id)}
+          stageId={7}
+          stageCode="STI"
+          referenceId={selectedBatchForInspect.batch_number}
+          referenceType="Stitching Batch"
+          batchNumber={selectedBatchForInspect.batch_number}
+          productName={selectedBatchForInspect.product_name || 'Sewn Garments'}
+          color={selectedBatchForInspect.color}
+          size={selectedBatchForInspect.size}
+          productionOrderItemId={selectedBatchForInspect.production_order_item_id}
+          availableQuantity={Math.max(0, Number(selectedBatchForInspect.completed_quantity || 0) - Number(selectedBatchForInspect.accepted_quantity || 0) - Number(selectedBatchForInspect.rework_quantity || 0) - Number(selectedBatchForInspect.rejected_quantity || 0))}
+          uom="PCS"
+          supportsRejection={true}
+          onSuccess={async () => {
+            setShowInspectModal(false);
+            setSelectedBatchForInspect(null);
+            showToast('Stitching quality inspection recorded successfully! Accepted balance credited for transfer to Checking.');
+            await fetchOrderData();
+          }}
+        />
       )}
     </div>
   );

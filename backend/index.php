@@ -115,6 +115,8 @@ try {
         $r0 === 'production' && $r1 === 'rework' && $r2 === 'send' && $method === 'POST' => (new ProductionController)->sendRework(),
         $r0 === 'production' && $r1 === 'rework' && $r2 === 'receive' && $method === 'POST' => (new ProductionController)->receiveRework(),
         $r0 === 'production' && $r1 === 'rework' && $r2 === 'reinspect' && $method === 'POST' => (new ProductionController)->reinspectRework(),
+        $r0 === 'production' && $r1 === 'inspect' && $method === 'POST' => (new ProductionController)->recordQualityInspection(),
+        $r0 === 'production' && in_array($r1, ['dyeing', 'cutting', 'embroidery', 'stitching', 'checking']) && $r2 === 'inspect' && $method === 'POST' => (new ProductionController)->recordQualityInspection(),
         $r0 === 'production' && $r1 === 'qc' && $method === 'GET' => (new ProductionController)->qcList(),
         $r0 === 'qc' && $method === 'POST' => (new ProductionController)->recordQC(),
 
