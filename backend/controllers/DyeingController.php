@@ -910,4 +910,61 @@ class DyeingController {
             Response::error($e->getMessage(), 500);
         }
     }
+
+    /**
+     * Handover / transfer dyed fabric to Stage 05 (Cutting)
+     */
+    public function transferToCutting(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $receiptId = (int)($data['receipt_id'] ?? 0);
+            $qty = (float)($data['quantity'] ?? 0);
+            $transferredBy = trim($data['transferred_by'] ?? 'Dyeing Dept / Stores Inward');
+            $notes = trim($data['notes'] ?? 'Dyed fabric dispatched to Stage 05 Cutting store');
+
+            if ($pId <= 0) {
+                Response::error("Valid production_order_id is required", 422);
+                return;
+            }
+
+            // Record in quantity ledger
+            try {
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, 0, 4, 'DYE', 'TRANSFERRED_TO_CUTTING', ?, 'HANDOVER', ?, ?, 'Dyeing Handover', ?, ?)
+                ");
+                $lStmt->execute([
+                    $pId,
+                    $qty,
+                    $transferredBy,
+                    $transferredBy,
+                    $receiptId > 0 ? (string)$receiptId : 'STAGE-04-HANDOVER',
+                    $notes
+                ]);
+            } catch (Exception $lex) {}
+
+            // Advance current_stage_id on production order items if currently at dyeing (stage 4)
+            try {
+                $pdo->prepare("
+                    UPDATE production_order_items 
+                    SET current_stage_id = 5 
+                    WHERE production_order_id = ? AND current_stage_id <= 4
+                ")->execute([$pId]);
+            } catch (Exception $uex) {}
+
+            Response::success([
+                'production_order_id' => $pId,
+                'quantity' => $qty,
+                'status' => 'Transferred to Cutting'
+            ], "Dyed fabric successfully transferred to Stage 05 Cutting");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
 }
+

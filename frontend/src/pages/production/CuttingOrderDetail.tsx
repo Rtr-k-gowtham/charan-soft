@@ -32,7 +32,8 @@ import {
   CheckCheck,
   FileText,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  Package
 } from 'lucide-react';
 import StageReworkSection from '../../components/production/StageReworkSection';
 import StageInspectionModal from '../../components/production/StageInspectionModal';
@@ -98,6 +99,7 @@ export default function CuttingOrderDetail() {
   const [items, setItems] = useState<any[]>([]);
   const [batches, setBatches] = useState<CuttingBatch[]>([]);
   const [stages, setStages] = useState<ProductionStage[]>([]);
+  const [dyeingData, setDyeingData] = useState<{ totalReceived: number; totalAccepted: number; receipts: any[] }>({ totalReceived: 0, totalAccepted: 0, receipts: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -148,6 +150,11 @@ export default function CuttingOrderDetail() {
         setOrder(cData.order || null);
         setItems(cData.items || []);
         setBatches(cData.batches || []);
+        setDyeingData({
+          totalReceived: Number(cData.total_dyed_fabric_received || 0),
+          totalAccepted: Number(cData.total_dyed_fabric_accepted || 0),
+          receipts: cData.dyeing_receipts || [],
+        });
         setStages((stagesRes as ProductionStage[]) || []);
       })
       .catch((err) => {
@@ -432,6 +439,53 @@ export default function CuttingOrderDetail() {
             </div>
           </div>
         </div>
+
+        {/* Stage 04 Dyed Fabric Availability Banner */}
+        {dyeingData.totalReceived > 0 ? (
+          <div className="bg-gradient-to-r from-emerald-50 via-teal-50/60 to-white p-3.5 sm:p-4 rounded-xl border border-emerald-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="p-2.5 rounded-xl bg-emerald-600 text-white shadow-2xs shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-emerald-950">Dyed Fabric Available from Stage 04</span>
+                  <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    {fmt(dyeingData.totalReceived)} MTR Inwarded
+                  </span>
+                  {dyeingData.totalAccepted > 0 && (
+                    <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-300">
+                      {fmt(dyeingData.totalAccepted)} MTR QC Accepted
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-emerald-800/90 mt-0.5 truncate">
+                  Processed fabric rolls received from dyeing mills are available in stores ready for marker planning & cutting.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate(`/production/dyeing/${order.id}`)}
+              className="text-xs font-bold text-emerald-800 hover:text-emerald-950 hover:underline shrink-0 flex items-center gap-1 self-start sm:self-center bg-white/80 hover:bg-white px-3 py-1.5 rounded-lg border border-emerald-200 shadow-2xs transition"
+            >
+              <span>View Stage 04 Dyeing</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <Package className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Fabric dyeing inward pending or in progress in Stage 04 Dyeing.</span>
+            </div>
+            <button
+              onClick={() => navigate(`/production/dyeing/${order.id}`)}
+              className="font-bold text-amber-800 hover:text-amber-950 underline shrink-0 text-xs"
+            >
+              Open Stage 04 Dyeing →
+            </button>
+          </div>
+        )}
 
         {/* Quick KPI Stat Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

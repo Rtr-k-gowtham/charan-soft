@@ -178,6 +178,8 @@ export const api = {
   getDyeingOrder: (id: number | string) => request<any>(`/dyeing/orders/${id}`),
   createDyeingOrder: (data: any) => request<any>('/dyeing/orders', 'POST', data),
   receiveDyeingOrder: (id: number | string, data: any) => request<any>(`/dyeing/orders/${id}/receive`, 'POST', data),
+  transferDyeingToCutting: (data: { production_order_id: number | string; receipt_id?: number | string; quantity?: number; transferred_by?: string; notes?: string }) =>
+    request<any>('/dyeing/transfer-to-cutting', 'POST', data),
   getDyeingFabricStock: (productionOrderId: number | string) =>
     request<any>(`/dyeing/fabric-stock?production_order_id=${productionOrderId}`),
 

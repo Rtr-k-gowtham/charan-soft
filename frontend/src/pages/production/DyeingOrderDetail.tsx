@@ -60,7 +60,8 @@ import {
   Search,
   Building2,
   Save,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Scissors
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -205,6 +206,56 @@ export default function DyeingOrderDetail() {
   // Quality Inspection Modal State (Stage 04: Dyeing)
   const [showInspectModal, setShowInspectModal] = useState(false);
   const [selectedReceiptForInspect, setSelectedReceiptForInspect] = useState<any>(null);
+
+  // Transfer to Cutting Modal State
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferReceipt, setTransferReceipt] = useState<any>(null);
+  const [transferQty, setTransferQty] = useState(0);
+  const [transferredBy, setTransferredBy] = useState('Dyeing Stores / Inward');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [savingTransfer, setSavingTransfer] = useState(false);
+  const [transferError, setTransferError] = useState('');
+
+  const handleOpenTransferModal = (rec?: any) => {
+    setTransferReceipt(rec || null);
+    const available = rec 
+      ? Number(rec.total_accepted_quantity || rec.total_received_quantity || 0)
+      : Number(totalFabricReceived || 0);
+    setTransferQty(available > 0 ? available : (totalFabricReceived || 150));
+    setTransferredBy('Dyeing Stores / Inward');
+    setTransferNotes(`Dyed fabric transferred to Stage 05 Cutting for ${order?.order_number || 'order'}`);
+    setTransferError('');
+    setTransferModalOpen(true);
+  };
+
+  const handleConfirmTransfer = async () => {
+    const poId = Number(order?.id || id);
+    if (!poId) return;
+    if (transferQty <= 0) {
+      setTransferError('Transfer quantity must be greater than zero');
+      return;
+    }
+    setSavingTransfer(true);
+    setTransferError('');
+    try {
+      await api.transferDyeingToCutting({
+        production_order_id: poId,
+        receipt_id: transferReceipt?.id,
+        quantity: transferQty,
+        transferred_by: transferredBy,
+        notes: transferNotes,
+      });
+      setTransferModalOpen(false);
+      setSuccessToast('Dyed fabric transferred to Cutting! Navigating to Stage 05 Cutting...');
+      setTimeout(() => {
+        navigate(`/production/cutting/${poId}`);
+      }, 700);
+    } catch (err: any) {
+      setTransferError(err?.message || 'Failed to transfer fabric to cutting');
+    } finally {
+      setSavingTransfer(false);
+    }
+  };
 
   // Photo Proof State
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -1510,10 +1561,11 @@ export default function DyeingOrderDetail() {
             </button>
 
             <button
-              onClick={() => navigate('/production/cutting')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              onClick={() => navigate(`/production/cutting/${order?.id || id}`)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition shadow-2xs"
+              title="Proceed to Stage 05 Cutting for this order"
             >
-              <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+              <ArrowRight className="w-3.5 h-3.5 text-brand-600" />
               <span>Next: Stage 05 Cutting</span>
             </button>
 
@@ -1668,15 +1720,28 @@ export default function DyeingOrderDetail() {
 
             {/* 4. Dyed Fabric Received */}
             <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">Dyed Fabric Received</span>
-                <CheckCheck className="w-4 h-4 text-emerald-600" />
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Dyed Fabric Received</span>
+                  <CheckCheck className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-emerald-700">{fmt(totalFabricReceived, 1)}</span>
+                  <span className="text-xs text-slate-500 font-semibold">MTR</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Inwarded from dyeing mills</p>
               </div>
-              <div className="mt-2 flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold font-mono text-emerald-700">{fmt(totalFabricReceived, 1)}</span>
-                <span className="text-xs text-slate-500 font-semibold">MTR</span>
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1">Inwarded from dyeing mills</p>
+              {totalFabricReceived > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenTransferModal()}
+                  className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-2xs transition"
+                  title="Handover & Transfer dyed fabric to Stage 05 Cutting"
+                >
+                  <Scissors className="w-3.5 h-3.5" />
+                  <span>Transfer to Cutting</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2281,6 +2346,15 @@ export default function DyeingOrderDetail() {
                             )}
                             <button
                               type="button"
+                              onClick={() => handleOpenTransferModal(rec)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition shadow-2xs"
+                              title="Handover & Transfer Dyed Fabric to Stage 05 Cutting"
+                            >
+                              <Scissors className="w-3.5 h-3.5" />
+                              <span>To Cutting</span>
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
                               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition shadow-2xs"
                               title="Print Inward Receipt & Inspection Report"
@@ -2394,6 +2468,15 @@ export default function DyeingOrderDetail() {
                           <span>Inspected</span>
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTransferModal(rec)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition shadow-2xs"
+                        title="Handover & Transfer Dyed Fabric to Stage 05 Cutting"
+                      >
+                        <Scissors className="w-3.5 h-3.5" />
+                        <span>To Cutting</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
@@ -2752,6 +2835,108 @@ export default function DyeingOrderDetail() {
             await loadData();
           }}
         />
+      )}
+
+      {/* Transfer to Cutting Modal */}
+      {transferModalOpen && (
+        <Modal
+          isOpen={transferModalOpen}
+          onClose={() => setTransferModalOpen(false)}
+          title={`Transfer Dyed Fabric to Stage 05 (Cutting) — ${order?.order_number || ''}`}
+          size="md"
+        >
+          <div className="space-y-4">
+            <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 text-xs text-purple-950">
+              <div className="flex items-center gap-2 font-bold text-purple-900 mb-1">
+                <Scissors className="w-4 h-4 text-purple-700" />
+                Handover to Cutting Department
+              </div>
+              <p>
+                Logging this transfer records the physical handover of dyed fabric rolls to the Cutting table store.
+                The cutting department will be able to immediately begin laying and cutting garment batches.
+              </p>
+            </div>
+
+            {transferError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs font-semibold text-red-700">
+                {transferError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Production Order</span>
+                <span className="font-mono font-bold text-slate-800">{order?.order_number}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Inward Received</span>
+                <span className="font-mono font-bold text-emerald-700">{fmt(totalFabricReceived, 1)} MTR</span>
+              </div>
+            </div>
+
+            <FormField label="Transfer Quantity (MTR) *" required>
+              <input
+                type="number"
+                step="0.01"
+                min="0.1"
+                max={totalFabricReceived || 999999}
+                value={transferQty || ''}
+                onChange={(e) => setTransferQty(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono font-bold focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="Enter meters to handover..."
+              />
+            </FormField>
+
+            <FormField label="Transferred By / Store Keeper *">
+              <input
+                type="text"
+                value={transferredBy}
+                onChange={(e) => setTransferredBy(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="Name or department..."
+              />
+            </FormField>
+
+            <FormField label="Handover Notes & Remarks">
+              <textarea
+                rows={2}
+                value={transferNotes}
+                onChange={(e) => setTransferNotes(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                placeholder="Roll numbers, storage rack, shrinkage allowance notes..."
+              />
+            </FormField>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setTransferModalOpen(false)}
+                disabled={savingTransfer}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleConfirmTransfer}
+                disabled={savingTransfer || transferQty <= 0}
+                className="bg-purple-600 hover:bg-purple-700 text-white font-bold"
+              >
+                {savingTransfer ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                    Transferring...
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
+                    Confirm Handover & Open Stage 05 Cutting
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}

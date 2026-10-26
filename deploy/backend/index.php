@@ -165,6 +165,7 @@ try {
 
         // ---------------- DYEING (STAGE 04) ----------------
         $r0 === 'dyeing' && $r1 === 'fabric-stock' && $method === 'GET' => (new DyeingController)->fabricStock(),
+        $r0 === 'dyeing' && $r1 === 'transfer-to-cutting' && $method === 'POST' => (new DyeingController)->transferToCutting(),
         $r0 === 'dyeing' && $r1 === 'orders' && isset($segments[2]) && ($segments[3] ?? '') === 'receive' && $method === 'POST' => (new DyeingController)->receive($segments[2]),
         $r0 === 'dyeing' && $r1 === 'orders' && isset($segments[2]) && !isset($segments[3]) && $method === 'GET' => (new DyeingController)->show($segments[2]),
         $r0 === 'dyeing' && $r1 === 'orders' && !isset($segments[2]) && $method === 'GET' => (new DyeingController)->index(),

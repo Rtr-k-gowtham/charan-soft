@@ -747,10 +747,10 @@ class ProductionController {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
 
-            $pId = (int)($data['production_order_id'] ?? 0);
+            $pId = (int)($data['production_order_id'] ?? ($data['order_id'] ?? 0));
             $stageId = (int)($data['stage_id'] ?? 0);
             $stageCode = trim($data['stage_code'] ?? '');
-            $qty = (float)($data['rework_quantity'] ?? 0);
+            $qty = (float)($data['rework_quantity'] ?? ($data['quantity'] ?? 0));
 
             if ($pId <= 0 || $stageId <= 0 || $qty <= 0) {
                 Response::error("Production order ID, stage ID, and positive rework quantity are required", 422);
@@ -764,14 +764,17 @@ class ProductionController {
             }
 
             $orderNo = 'RWK-' . $stageCode . '-' . rand(1000, 9999);
+            $reason = trim((string)($data['defect_reason'] ?? ($data['rework_reason'] ?? 'Quality correction required')));
+            $remarks = trim((string)($data['remarks'] ?? ($data['rework_remarks'] ?? '')));
+
             $stmt = $pdo->prepare("
                 INSERT INTO rework_records (
                     production_order_id, production_order_item_id, stage_id, stage_code, 
                     rework_stage_id, rework_order_no, batch_number, reference_id,
-                    product_id, product_name, color, size, uom, rework_quantity, 
-                    pending_quantity, defect_reason, defect_category, remarks, 
+                    product_id, product_name, color, size, uom, rework_quantity, quantity,
+                    pending_quantity, defect_reason, rework_reason, defect_category, remarks, rework_remarks,
                     destination_process, vendor_id, vendor_name, status, cycle_number
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', 1)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', 1)
             ");
             $stmt->execute([
                 $pId,
@@ -789,9 +792,12 @@ class ProductionController {
                 $data['uom'] ?? 'Pieces',
                 $qty,
                 $qty,
-                $data['defect_reason'] ?? 'Quality correction required',
+                $qty,
+                $reason,
+                $reason,
                 $data['defect_category'] ?? 'Defect',
-                $data['remarks'] ?? '',
+                $remarks,
+                $remarks,
                 $data['destination_process'] ?? 'Correction Workflow',
                 $data['vendor_id'] ?? null,
                 $data['vendor_name'] ?? null
@@ -1875,11 +1881,11 @@ class ProductionController {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `rework_records` (
                   `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `rework_order_no` VARCHAR(100) NOT NULL UNIQUE,
-                  `production_order_id` INT NOT NULL,
+                  `rework_order_no` VARCHAR(100) NOT NULL DEFAULT '',
+                  `production_order_id` INT NOT NULL DEFAULT 0,
                   `production_order_item_id` INT NULL,
-                  `stage_id` INT NOT NULL,
-                  `stage_code` VARCHAR(20) NOT NULL,
+                  `stage_id` INT NOT NULL DEFAULT 4,
+                  `stage_code` VARCHAR(20) NOT NULL DEFAULT 'DYE',
                   `qc_record_id` INT NULL,
                   `product_id` INT NULL,
                   `product_name` VARCHAR(255) NULL,
@@ -1887,7 +1893,8 @@ class ProductionController {
                   `size` VARCHAR(50) NULL,
                   `batch_number` VARCHAR(100) NULL,
                   `rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
-                  `uom` VARCHAR(20) DEFAULT 'PCS',
+                  `quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `uom` VARCHAR(50) DEFAULT 'Pieces',
                   `rework_reason` VARCHAR(255) NULL,
                   `rework_remarks` TEXT NULL,
                   `rework_stage_id` INT NULL,
@@ -1904,11 +1911,15 @@ class ProductionController {
                   `accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
                   `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
                   `pending_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `defect_reason` VARCHAR(255) NULL,
+                  `defect_category` VARCHAR(100) NULL,
+                  `remarks` TEXT NULL,
                   `cycle_number` INT NOT NULL DEFAULT 1,
                   `status` VARCHAR(50) NOT NULL DEFAULT 'Pending Rework',
                   `reference_type` VARCHAR(100) NULL,
                   `reference_id` VARCHAR(100) NULL,
                   `metadata_json` JSON NULL,
+                  `created_by_user_id` INT NULL,
                   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                   INDEX `idx_rr_pord` (`production_order_id`),
@@ -1916,6 +1927,65 @@ class ProductionController {
                   INDEX `idx_rr_status` (`status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             ");
+
+            try {
+                $rwCols = $pdo->query("SHOW COLUMNS FROM rework_records")->fetchAll(PDO::FETCH_COLUMN);
+                $rwNeeded = [
+                    'rework_order_no' => "VARCHAR(100) NOT NULL DEFAULT ''",
+                    'production_order_id' => "INT NOT NULL DEFAULT 0",
+                    'production_order_item_id' => "INT NULL",
+                    'stage_id' => "INT NOT NULL DEFAULT 4",
+                    'stage_code' => "VARCHAR(20) NOT NULL DEFAULT 'DYE'",
+                    'qc_record_id' => "INT NULL",
+                    'product_id' => "INT NULL",
+                    'product_name' => "VARCHAR(255) NULL",
+                    'color' => "VARCHAR(100) NULL",
+                    'size' => "VARCHAR(50) NULL",
+                    'batch_number' => "VARCHAR(100) NULL",
+                    'rework_quantity' => "DECIMAL(12, 2) NOT NULL DEFAULT 0.00",
+                    'quantity' => "DECIMAL(12, 2) NOT NULL DEFAULT 0.00",
+                    'uom' => "VARCHAR(50) DEFAULT 'Pieces'",
+                    'rework_reason' => "VARCHAR(255) NULL",
+                    'rework_remarks' => "TEXT NULL",
+                    'rework_stage_id' => "INT NULL",
+                    'destination_process' => "VARCHAR(255) NULL",
+                    'vendor_id' => "INT NULL",
+                    'vendor_name' => "VARCHAR(255) NULL",
+                    'dc_challan_no' => "VARCHAR(100) NULL",
+                    'sent_date' => "DATE NULL",
+                    'received_date' => "DATE NULL",
+                    'reinspection_date' => "DATE NULL",
+                    'reinspection_result' => "VARCHAR(100) NULL",
+                    'reinspection_notes' => "TEXT NULL",
+                    'inspector_name' => "VARCHAR(150) NULL",
+                    'accepted_quantity' => "DECIMAL(12, 2) NOT NULL DEFAULT 0.00",
+                    'rejected_quantity' => "DECIMAL(12, 2) NOT NULL DEFAULT 0.00",
+                    'pending_quantity' => "DECIMAL(12, 2) NOT NULL DEFAULT 0.00",
+                    'defect_reason' => "VARCHAR(255) NULL",
+                    'defect_category' => "VARCHAR(100) NULL",
+                    'remarks' => "TEXT NULL",
+                    'cycle_number' => "INT NOT NULL DEFAULT 1",
+                    'status' => "VARCHAR(50) NOT NULL DEFAULT 'Pending Rework'",
+                    'reference_type' => "VARCHAR(100) NULL",
+                    'reference_id' => "VARCHAR(100) NULL",
+                    'metadata_json' => "JSON NULL",
+                    'created_by_user_id' => "INT NULL",
+                    'updated_at' => "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+                ];
+                foreach ($rwNeeded as $col => $colType) {
+                    if (!in_array($col, $rwCols)) {
+                        try {
+                            $pdo->exec("ALTER TABLE `rework_records` ADD COLUMN `{$col}` {$colType}");
+                        } catch (Exception $e) {}
+                    }
+                }
+                // Relax legacy constraints if existing table had NOT NULL or ENUM restrictions
+                try { $pdo->exec("ALTER TABLE `rework_records` MODIFY COLUMN `qc_record_id` INT NULL"); } catch (Exception $e) {}
+                try { $pdo->exec("ALTER TABLE `rework_records` MODIFY COLUMN `production_order_item_id` INT NULL"); } catch (Exception $e) {}
+                try { $pdo->exec("ALTER TABLE `rework_records` MODIFY COLUMN `rework_stage_id` INT NULL"); } catch (Exception $e) {}
+                try { $pdo->exec("ALTER TABLE `rework_records` MODIFY COLUMN `quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00"); } catch (Exception $e) {}
+                try { $pdo->exec("ALTER TABLE `rework_records` MODIFY COLUMN `status` VARCHAR(50) DEFAULT 'Pending Rework'"); } catch (Exception $e) {}
+            } catch (Exception $rwEx) {}
 
             try {
                 $pdo->exec("ALTER TABLE `cutting_batches` ADD COLUMN `rework_status` VARCHAR(50) DEFAULT 'Normal' AFTER `status`");
@@ -2243,12 +2313,33 @@ class ProductionController {
             $insStmt->execute([$orderId]);
             $inspections = $insStmt->fetchAll();
 
+            // Fetch dyed fabric received from Stage 04 Dyeing
+            $dyeReceipts = [];
+            $totalDyedReceived = 0.0;
+            $totalDyedAccepted = 0.0;
+            try {
+                $dyeStmt = $pdo->prepare("
+                    SELECT dr.*, do.fabric_name, do.dyeing_mill_name, do.uom
+                    FROM dyeing_receipts dr
+                    LEFT JOIN dyeing_orders do ON dr.dyeing_order_id = do.id
+                    WHERE dr.production_order_id = ?
+                    ORDER BY dr.id DESC
+                ");
+                $dyeStmt->execute([$orderId]);
+                $dyeReceipts = $dyeStmt->fetchAll() ?: [];
+                $totalDyedReceived = array_reduce($dyeReceipts, fn($s, $r) => $s + (float)($r['total_received_quantity'] ?? 0), 0.0);
+                $totalDyedAccepted = array_reduce($dyeReceipts, fn($s, $r) => $s + (float)($r['total_accepted_quantity'] ?? 0), 0.0);
+            } catch (Exception $dyeEx) {}
+
             Response::success([
                 'order' => $ord, 
                 'items' => $items, 
                 'batches' => $batches,
                 'inspections' => $inspections,
-                'rework_records' => $reworks
+                'rework_records' => $reworks,
+                'dyeing_receipts' => $dyeReceipts,
+                'total_dyed_fabric_received' => $totalDyedReceived,
+                'total_dyed_fabric_accepted' => $totalDyedAccepted
             ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
