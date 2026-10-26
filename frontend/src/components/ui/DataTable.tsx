@@ -147,9 +147,9 @@ export default function DataTable<T extends Record<string, any>>({
   }, [contentCols, titleCol, codeCol]);
 
   return (
-    <div className="flex flex-col min-h-0 w-full">
+    <div className="flex flex-col min-h-0 w-full flex-1 h-full">
       {searchable && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2.5">
+        <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mb-2.5">
           <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
@@ -166,9 +166,9 @@ export default function DataTable<T extends Record<string, any>>({
       )}
 
       {/* Desktop Table View (md+) */}
-      <div className={`hidden md:block ${fixedLayout ? 'overflow-hidden' : 'overflow-x-auto touch-scroll'} flex-1 rounded-md border border-slate-200 bg-white shadow-2xs`}>
+      <div className={`hidden md:block ${fixedLayout ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto touch-scroll'} flex-1 min-h-0 rounded-md border border-slate-200 bg-white shadow-2xs`}>
         <table className={`w-full border-collapse ${fixedLayout ? 'table-fixed' : 'min-w-full'} ${fixedLayout ? 'table-dense-fixed' : 'table-dense'}`}>
-          <thead>
+          <thead className="sticky top-0 bg-[#f8fafc] z-10 shadow-2xs">
             <tr>
               {columns.map((col: Column<T>) => (
                 <th
@@ -225,7 +225,7 @@ export default function DataTable<T extends Record<string, any>>({
       </div>
 
       {/* Mobile Responsive Cards View (< md) */}
-      <div className="md:hidden flex-1 space-y-3 pb-4">
+      <div className="md:hidden flex-1 min-h-0 overflow-y-auto touch-scroll space-y-3 pb-4">
         {pageData.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/80 shadow-xs">
             <p className="text-xs text-slate-400 font-medium">{emptyMessage}</p>
@@ -334,7 +334,7 @@ export default function DataTable<T extends Record<string, any>>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 px-1">
+        <div className="shrink-0 flex flex-col sm:flex-row items-center justify-between gap-2 mt-2 px-1">
           <span className="text-[11px] text-slate-400">
             Page {currentPage} of {totalPages} ({filtered.length} total)
           </span>

@@ -289,7 +289,7 @@ export default function Suppliers() {
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <PageHeader
         title="Suppliers"
         subtitle="Manage supplier master records and category assignments"
@@ -339,7 +339,7 @@ export default function Suppliers() {
 
       {/* Unassigned Warning Banner */}
       {unassignedCount > 0 && categoryFilter !== 'unassigned' && (
-        <div className="mx-2.5 sm:mx-4 mt-2 px-3 py-2 bg-amber-50/80 border border-amber-200 rounded-lg flex items-center justify-between gap-2 text-xs text-amber-800">
+        <div className="shrink-0 mx-2.5 sm:mx-4 mt-2 px-3 py-2 bg-amber-50/80 border border-amber-200 rounded-lg flex items-center justify-between gap-2 text-xs text-amber-800">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
@@ -356,7 +356,7 @@ export default function Suppliers() {
       )}
 
       {categoryFilter === 'unassigned' && (
-        <div className="mx-2.5 sm:mx-4 mt-2 px-3 py-2 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between gap-2 text-xs text-blue-800">
+        <div className="shrink-0 mx-2.5 sm:mx-4 mt-2 px-3 py-2 bg-blue-50/80 border border-blue-200 rounded-lg flex items-center justify-between gap-2 text-xs text-blue-800">
           <div className="flex items-center gap-2">
             <Tag className="w-4 h-4 text-blue-600 shrink-0" />
             <span>
@@ -372,7 +372,7 @@ export default function Suppliers() {
         </div>
       )}
 
-      <div className="flex-1 overflow-hidden p-2.5 sm:p-4">
+      <div className="flex-1 min-h-0 overflow-hidden p-2.5 sm:p-4 flex flex-col">
         <DataTable
           data={filteredData}
           columns={columns}
