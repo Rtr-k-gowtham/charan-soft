@@ -652,13 +652,13 @@ export default function CategoryPOIssuer({
                 <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
                     <th className="py-2.5 px-2 w-[36px] text-center">#</th>
-                    <th className="py-2.5 px-2.5 w-[110px]">PO Number</th>
+                    <th className="py-2.5 px-2.5 w-[115px]">PO Number</th>
+                    <th className="py-2.5 px-2 text-center w-[110px]">PO Status</th>
                     <th className="py-2.5 px-2.5 w-[150px]">Material Category</th>
                     <th className="py-2.5 px-2.5 w-[180px]">Supplier</th>
                     <th className="py-2.5 px-2 text-center w-[75px]">Item Count</th>
                     <th className="py-2.5 px-3 min-w-[150px]">Required Materials</th>
-                    <th className="py-2.5 px-2 text-center w-[100px]">PO Status</th>
-                    <th className="py-2.5 px-2.5 text-right w-[160px]">Action</th>
+                    <th className="py-2.5 px-2.5 text-right w-[180px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -728,7 +728,38 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 3. Material Category (Full readable name with badge) */}
+                        {/* 3. PO Status (Moved to left side space next to PO Number) */}
+                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle w-[110px]">
+                          {isSaving ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
+                            </span>
+                          ) : group.hasOrderedPO ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              title="Purchase Order issued & ordered"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
+                            </span>
+                          ) : group.hasCancelledPO ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200"
+                              title="Purchase Order has been cancelled"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
+                            </span>
+                          ) : group.hasDraftPO ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              Draft
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              Not Created
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 4. Material Category (Full readable name with badge) */}
                         <td className="py-2.5 px-2.5 align-middle">
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs max-w-full truncate`}
@@ -739,7 +770,7 @@ export default function CategoryPOIssuer({
                           </span>
                         </td>
 
-                        {/* 4. Supplier */}
+                        {/* 5. Supplier */}
                         <td className="py-2.5 px-2.5 align-middle">
                           {group.hasOrderedPO ? (
                             <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
@@ -781,14 +812,14 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 5. Item Count */}
+                        {/* 6. Item Count */}
                         <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
                           <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
                             {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'}
                           </span>
                         </td>
 
-                        {/* 6. Required Materials / Summary */}
+                        {/* 7. Required Materials / Summary */}
                         <td className="py-2.5 px-3 align-middle">
                           <p
                             className="text-slate-700 text-[11px] font-medium leading-relaxed break-words whitespace-normal"
@@ -798,39 +829,8 @@ export default function CategoryPOIssuer({
                           </p>
                         </td>
 
-                        {/* 7. PO Status */}
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle w-[100px]">
-                          {isSaving ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
-                            </span>
-                          ) : group.hasOrderedPO ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
-                              title="Purchase Order issued & ordered"
-                            >
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
-                            </span>
-                          ) : group.hasCancelledPO ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200"
-                              title="Purchase Order has been cancelled"
-                            >
-                              <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
-                            </span>
-                          ) : group.hasDraftPO ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              Draft
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                              Not Created
-                            </span>
-                          )}
-                        </td>
-
                         {/* 8. Action */}
-                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle w-[160px]">
+                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle w-[180px]">
                           <div className="flex items-center justify-end gap-1.5 flex-nowrap">
                             {group.hasOrderedPO ? (
                               <>
