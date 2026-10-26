@@ -1546,7 +1546,7 @@ class ProductionController {
                     $supIds[] = (int)$mat['preferred_supplier_id'];
                 }
             }
-            $supIds = array_unique($supIds);
+            $supIds = array_values(array_unique($supIds));
             $supMap = [];
             if (!empty($supIds)) {
                 $inQuery = implode(',', array_fill(0, count($supIds), '?'));
@@ -1771,6 +1771,7 @@ class ProductionController {
                   `defect_category` VARCHAR(100) NULL,
                   `defect_description` TEXT NULL,
                   `color` VARCHAR(100) NULL,
+                  `size` VARCHAR(50) NULL,
                   `inspector` VARCHAR(150) NULL,
                   `inspection_date` DATE NOT NULL,
                   `is_reinspection` TINYINT(1) DEFAULT 0,
@@ -2031,6 +2032,12 @@ class ProductionController {
             } catch (Exception $e) {}
             try {
                 $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `uom` VARCHAR(20) DEFAULT 'PCS' AFTER `rejected_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `rework_records` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
             } catch (Exception $e) {}
             try {
                 $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `rework_destination` VARCHAR(100) NULL AFTER `color`");
@@ -4006,37 +4013,79 @@ class ProductionController {
             $size = !empty($data['size']) ? trim((string)$data['size']) : null;
             $remarks = trim((string)($data['remarks'] ?? ''));
 
-            $stmt = $pdo->prepare("
-                INSERT INTO quality_inspections 
-                (production_order_id, production_order_item_id, stage_id, stage_code, reference_id, reference_type, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, uom, defect_category, defect_description, color, size, rework_destination, rework_reason, inspector, inspection_date, remarks, photo_urls, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inspected')
-            ");
-            $stmt->execute([
-                $pId, 
-                $itemId, 
-                $stageId,
-                $stageCode,
-                $refId,
-                $refType,
-                $batchNo, 
-                $sub > 0 ? $sub : $checked, 
-                $checked, 
-                $passed, 
-                $failed, 
-                $rwk, 
-                $rej, 
-                $uom,
-                $defectCategory, 
-                $defectDesc, 
-                $color,
-                $size,
-                $reworkDest,
-                $reworkReason,
-                $inspector, 
-                $inspDate, 
-                $remarks, 
-                json_encode($data['photo_urls'] ?? [])
-            ]);
+            $qiCols = $pdo->query("SHOW COLUMNS FROM quality_inspections")->fetchAll(PDO::FETCH_COLUMN);
+            $hasQiSize = in_array('size', $qiCols);
+            if (!$hasQiSize) {
+                try {
+                    $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
+                    $hasQiSize = true;
+                } catch (Exception $e) {}
+            }
+
+            if ($hasQiSize) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO quality_inspections 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, reference_id, reference_type, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, uom, defect_category, defect_description, color, size, rework_destination, rework_reason, inspector, inspection_date, remarks, photo_urls, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inspected')
+                ");
+                $stmt->execute([
+                    $pId, 
+                    $itemId, 
+                    $stageId,
+                    $stageCode,
+                    $refId,
+                    $refType,
+                    $batchNo, 
+                    $sub > 0 ? $sub : $checked, 
+                    $checked, 
+                    $passed, 
+                    $failed, 
+                    $rwk, 
+                    $rej, 
+                    $uom,
+                    $defectCategory, 
+                    $defectDesc, 
+                    $color,
+                    $size,
+                    $reworkDest,
+                    $reworkReason,
+                    $inspector, 
+                    $inspDate, 
+                    $remarks, 
+                    json_encode($data['photo_urls'] ?? [])
+                ]);
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO quality_inspections 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, reference_id, reference_type, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, uom, defect_category, defect_description, color, rework_destination, rework_reason, inspector, inspection_date, remarks, photo_urls, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inspected')
+                ");
+                $stmt->execute([
+                    $pId, 
+                    $itemId, 
+                    $stageId,
+                    $stageCode,
+                    $refId,
+                    $refType,
+                    $batchNo, 
+                    $sub > 0 ? $sub : $checked, 
+                    $checked, 
+                    $passed, 
+                    $failed, 
+                    $rwk, 
+                    $rej, 
+                    $uom,
+                    $defectCategory, 
+                    $defectDesc, 
+                    $color,
+                    $reworkDest,
+                    $reworkReason,
+                    $inspector, 
+                    $inspDate, 
+                    $remarks, 
+                    json_encode($data['photo_urls'] ?? [])
+                ]);
+            }
             $insId = (int)$pdo->lastInsertId();
 
             // Reconcile and update source stage receipts/batches
@@ -4159,32 +4208,69 @@ class ProductionController {
                 else if ($reworkDest === 'ALTERATION' || $reworkDest === 'STITCHING') $destStageId = 7;
                 else $destStageId = $stageId;
 
-                $insRwk = $pdo->prepare("
-                    INSERT INTO rework_records 
-                    (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, vendor_name, status, reference_type, reference_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', ?, ?)
-                ");
-                $insRwk->execute([
-                    $rwkOrderNo,
-                    $pId,
-                    $itemId,
-                    $stageId,
-                    $stageCode,
-                    $insId,
-                    $color,
-                    $size,
-                    $batchNo,
-                    $rwk,
-                    $rwk,
-                    $uom,
-                    $reworkReason,
-                    $defectDesc,
-                    $destStageId,
-                    $reworkDest,
-                    $data['vendor_name'] ?? null,
-                    $refType,
-                    $refId ?: (string)$insId
-                ]);
+                $rwkCols = $pdo->query("SHOW COLUMNS FROM rework_records")->fetchAll(PDO::FETCH_COLUMN);
+                $hasRwkSize = in_array('size', $rwkCols);
+                if (!$hasRwkSize) {
+                    try {
+                        $pdo->exec("ALTER TABLE `rework_records` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
+                        $hasRwkSize = true;
+                    } catch (Exception $e) {}
+                }
+
+                if ($hasRwkSize) {
+                    $insRwk = $pdo->prepare("
+                        INSERT INTO rework_records 
+                        (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, vendor_name, status, reference_type, reference_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', ?, ?)
+                    ");
+                    $insRwk->execute([
+                        $rwkOrderNo,
+                        $pId,
+                        $itemId,
+                        $stageId,
+                        $stageCode,
+                        $insId,
+                        $color,
+                        $size,
+                        $batchNo,
+                        $rwk,
+                        $rwk,
+                        $uom,
+                        $reworkReason,
+                        $defectDesc,
+                        $destStageId,
+                        $reworkDest,
+                        $data['vendor_name'] ?? null,
+                        $refType,
+                        $refId ?: (string)$insId
+                    ]);
+                } else {
+                    $insRwk = $pdo->prepare("
+                        INSERT INTO rework_records 
+                        (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, vendor_name, status, reference_type, reference_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', ?, ?)
+                    ");
+                    $insRwk->execute([
+                        $rwkOrderNo,
+                        $pId,
+                        $itemId,
+                        $stageId,
+                        $stageCode,
+                        $insId,
+                        $color,
+                        $batchNo,
+                        $rwk,
+                        $rwk,
+                        $uom,
+                        $reworkReason,
+                        $defectDesc,
+                        $destStageId,
+                        $reworkDest,
+                        $data['vendor_name'] ?? null,
+                        $refType,
+                        $refId ?: (string)$insId
+                    ]);
+                }
 
                 $lStmtRwk = $pdo->prepare("
                     INSERT INTO production_quantity_ledger 
