@@ -110,7 +110,11 @@ try {
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'product-quantities' && $method === 'GET' => (new ProductionController)->orderProductQuantities((int)$r2),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'quantity-ledger' && $method === 'GET' => (new ProductionController)->orderQuantityLedger((int)$r2),
         $r0 === 'production' && $r1 === 'stage' && !empty($r2) => (new ProductionController)->stageOrders($r2),
-        $r0 === 'production' && $r1 === 'rework' && $method === 'GET' => (new ProductionController)->reworkList(),
+        $r0 === 'production' && $r1 === 'rework' && empty($r2) && $method === 'GET' => (new ProductionController)->reworkList(),
+        $r0 === 'production' && $r1 === 'rework' && $r2 === 'create' && $method === 'POST' => (new ProductionController)->createRework(),
+        $r0 === 'production' && $r1 === 'rework' && $r2 === 'send' && $method === 'POST' => (new ProductionController)->sendRework(),
+        $r0 === 'production' && $r1 === 'rework' && $r2 === 'receive' && $method === 'POST' => (new ProductionController)->receiveRework(),
+        $r0 === 'production' && $r1 === 'rework' && $r2 === 'reinspect' && $method === 'POST' => (new ProductionController)->reinspectRework(),
         $r0 === 'production' && $r1 === 'qc' && $method === 'GET' => (new ProductionController)->qcList(),
         $r0 === 'qc' && $method === 'POST' => (new ProductionController)->recordQC(),
 

@@ -678,19 +678,440 @@ class ProductionController {
     public function reworkList(): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->query("
-                SELECT rw.*, poi.color, po.order_number, 
-                       COALESCE(bp.product_name, p.name) as product_name, 
-                       ps.name as target_stage_name
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = isset($_GET['production_order_id']) && is_numeric($_GET['production_order_id']) ? (int)$_GET['production_order_id'] : 0;
+            $stageId = isset($_GET['stage_id']) && is_numeric($_GET['stage_id']) ? (int)$_GET['stage_id'] : 0;
+            $status = isset($_GET['status']) ? trim($_GET['status']) : '';
+
+            $where = [];
+            $params = [];
+
+            if ($pId > 0) {
+                $where[] = "(rw.production_order_id = ? OR poi.production_order_id = ?)";
+                $params[] = $pId;
+                $params[] = $pId;
+            }
+            if ($stageId > 0) {
+                $where[] = "rw.stage_id = ?";
+                $params[] = $stageId;
+            }
+            if (!empty($status) && $status !== 'all') {
+                $where[] = "rw.status = ?";
+                $params[] = $status;
+            }
+
+            $whereSql = !empty($where) ? "WHERE " . implode(" AND ", $where) : "";
+
+            $stmt = $pdo->prepare("
+                SELECT rw.*, 
+                       COALESCE(poi.color, rw.color) as item_color, 
+                       COALESCE(po.order_number, CONCAT('ORD-', rw.production_order_id)) as order_number, 
+                       COALESCE(bp.product_name, p.name, rw.product_name, 'Garment Unit') as display_product_name,
+                       COALESCE(bp.product_code, p.code) as display_product_code,
+                       src_ps.name as source_stage_name,
+                       src_ps.code as source_stage_code,
+                       dest_ps.name as target_stage_name,
+                       dest_ps.code as target_stage_code
                 FROM rework_records rw
-                JOIN production_order_items poi ON rw.production_order_item_id = poi.id
-                JOIN production_orders po ON poi.production_order_id = po.id
-                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
-                LEFT JOIN products p ON poi.product_id = p.id
-                LEFT JOIN production_stages ps ON rw.rework_stage_id = ps.id
+                LEFT JOIN production_order_items poi ON rw.production_order_item_id = poi.id
+                LEFT JOIN production_orders po ON (rw.production_order_id = po.id OR poi.production_order_id = po.id)
+                LEFT JOIN buyer_products bp ON (rw.product_id = bp.id OR poi.product_id = bp.id)
+                LEFT JOIN products p ON (rw.product_id = p.id OR poi.product_id = p.id)
+                LEFT JOIN production_stages src_ps ON rw.stage_id = src_ps.id
+                LEFT JOIN production_stages dest_ps ON rw.rework_stage_id = dest_ps.id
+                {$whereSql}
                 ORDER BY rw.id DESC
             ");
-            Response::success($stmt->fetchAll());
+            $stmt->execute($params);
+            $records = $stmt->fetchAll();
+
+            foreach ($records as &$r) {
+                $r['rework_quantity'] = (float)$r['rework_quantity'];
+                $r['accepted_quantity'] = (float)$r['accepted_quantity'];
+                $r['rejected_quantity'] = (float)$r['rejected_quantity'];
+                $r['pending_quantity'] = (float)$r['pending_quantity'];
+                $r['cycle_number'] = (int)$r['cycle_number'];
+            }
+            unset($r);
+
+            Response::success($records);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function createRework(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            $stageId = (int)($data['stage_id'] ?? 0);
+            $stageCode = trim($data['stage_code'] ?? '');
+            $qty = (float)($data['rework_quantity'] ?? 0);
+
+            if ($pId <= 0 || $stageId <= 0 || $qty <= 0) {
+                Response::error("Production order ID, stage ID, and positive rework quantity are required", 422);
+                return;
+            }
+
+            if (empty($stageCode)) {
+                $stg = $pdo->prepare("SELECT code FROM production_stages WHERE id = ?");
+                $stg->execute([$stageId]);
+                $stageCode = $stg->fetchColumn() ?: 'STG';
+            }
+
+            $orderNo = 'RWK-' . $stageCode . '-' . rand(1000, 9999);
+            $stmt = $pdo->prepare("
+                INSERT INTO rework_records (
+                    production_order_id, production_order_item_id, stage_id, stage_code, 
+                    rework_stage_id, rework_order_no, batch_number, reference_id,
+                    product_id, product_name, color, size, uom, rework_quantity, 
+                    pending_quantity, defect_reason, defect_category, remarks, 
+                    destination_process, vendor_id, vendor_name, status, cycle_number
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending Rework', 1)
+            ");
+            $stmt->execute([
+                $pId,
+                $data['production_order_item_id'] ?? null,
+                $stageId,
+                $stageCode,
+                $data['rework_stage_id'] ?? null,
+                $orderNo,
+                $data['batch_number'] ?? null,
+                $data['reference_id'] ?? null,
+                $data['product_id'] ?? null,
+                $data['product_name'] ?? null,
+                $data['color'] ?? null,
+                $data['size'] ?? null,
+                $data['uom'] ?? 'Pieces',
+                $qty,
+                $qty,
+                $data['defect_reason'] ?? 'Quality correction required',
+                $data['defect_category'] ?? 'Defect',
+                $data['remarks'] ?? '',
+                $data['destination_process'] ?? 'Correction Workflow',
+                $data['vendor_id'] ?? null,
+                $data['vendor_name'] ?? null
+            ]);
+            $id = (int)$pdo->lastInsertId();
+
+            Response::success(['id' => $id, 'rework_order_no' => $orderNo, 'quantity' => $qty], "Rework created successfully", 201);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function sendRework(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $rwkId = (int)($data['rework_id'] ?? $data['id'] ?? 0);
+            if ($rwkId <= 0) {
+                Response::error("Rework record ID is required", 422);
+                return;
+            }
+
+            $rStmt = $pdo->prepare("SELECT * FROM rework_records WHERE id = ? FOR UPDATE");
+            $rStmt->execute([$rwkId]);
+            $rwk = $rStmt->fetch();
+            if (!$rwk) { Response::error("Rework record not found", 404); return; }
+
+            $pdo->beginTransaction();
+
+            $sentDate = !empty($data['sent_date']) ? $data['sent_date'] : date('Y-m-d');
+            $destProcess = trim($data['destination_process'] ?? ($rwk['destination_process'] ?? 'Correction Process'));
+            $vendorName = trim($data['vendor_name'] ?? ($rwk['vendor_name'] ?? ''));
+            $remarks = trim($data['remarks'] ?? '');
+
+            $upd = $pdo->prepare("
+                UPDATE rework_records 
+                SET status = 'Sent for Rework',
+                    sent_date = ?,
+                    destination_process = ?,
+                    vendor_name = ?,
+                    remarks = CASE WHEN ? != '' THEN ? ELSE remarks END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ");
+            $upd->execute([$sentDate, $destProcess, $vendorName, $remarks, $remarks, $rwkId]);
+
+            // Ledger log
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, ?, ?, 'REWORK_SENT', ?, ?, '', '', 'Rework Outward', ?, ?)
+            ");
+            $lStmt->execute([
+                $rwk['production_order_id'],
+                $rwk['production_order_item_id'] ?? 0,
+                $rwk['stage_id'],
+                $rwk['stage_code'],
+                $rwk['rework_quantity'],
+                $rwk['rework_order_no'],
+                $rwk['rework_order_no'],
+                "Sent for correction: {$destProcess}" . ($vendorName ? " ({$vendorName})" : "")
+            ]);
+
+            if ($pdo->inTransaction()) $pdo->commit();
+
+            Response::success(['id' => $rwkId, 'status' => 'Sent for Rework', 'sent_date' => $sentDate], "Rework dispatched successfully");
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function receiveRework(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $rwkId = (int)($data['rework_id'] ?? $data['id'] ?? 0);
+            if ($rwkId <= 0) {
+                Response::error("Rework record ID is required", 422);
+                return;
+            }
+
+            $rStmt = $pdo->prepare("SELECT * FROM rework_records WHERE id = ? FOR UPDATE");
+            $rStmt->execute([$rwkId]);
+            $rwk = $rStmt->fetch();
+            if (!$rwk) { Response::error("Rework record not found", 404); return; }
+
+            $pdo->beginTransaction();
+
+            $recvDate = !empty($data['received_date']) ? $data['received_date'] : date('Y-m-d');
+            $remarks = trim($data['remarks'] ?? '');
+
+            $upd = $pdo->prepare("
+                UPDATE rework_records 
+                SET status = 'Rework Received',
+                    received_date = ?,
+                    remarks = CASE WHEN ? != '' THEN ? ELSE remarks END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ");
+            $upd->execute([$recvDate, $remarks, $remarks, $rwkId]);
+
+            // Ledger log
+            $lStmt = $pdo->prepare("
+                INSERT INTO production_quantity_ledger 
+                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                VALUES (?, ?, ?, ?, 'REWORK_RECEIVED', ?, ?, '', '', 'Rework Inward', ?, ?)
+            ");
+            $lStmt->execute([
+                $rwk['production_order_id'],
+                $rwk['production_order_item_id'] ?? 0,
+                $rwk['stage_id'],
+                $rwk['stage_code'],
+                $rwk['rework_quantity'],
+                $rwk['rework_order_no'],
+                $rwk['rework_order_no'],
+                "Received back from correction: {$remarks}"
+            ]);
+
+            if ($pdo->inTransaction()) $pdo->commit();
+
+            Response::success(['id' => $rwkId, 'status' => 'Rework Received', 'received_date' => $recvDate], "Rework return recorded successfully");
+        } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function reinspectRework(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $rwkId = (int)($data['rework_id'] ?? $data['id'] ?? 0);
+            $acceptedQty = (float)($data['accepted_quantity'] ?? 0);
+            $rejectedQty = (float)($data['rejected_quantity'] ?? 0);
+            $furtherReworkQty = (float)($data['rework_quantity'] ?? 0);
+            $inspector = trim($data['inspector_name'] ?? 'QC Inspector');
+            $notes = trim($data['reinspection_notes'] ?? ($data['remarks'] ?? ''));
+            $resStatus = trim($data['reinspection_result'] ?? '');
+
+            if ($rwkId <= 0) {
+                Response::error("Rework record ID is required", 422);
+                return;
+            }
+
+            $rStmt = $pdo->prepare("SELECT * FROM rework_records WHERE id = ? FOR UPDATE");
+            $rStmt->execute([$rwkId]);
+            $rwk = $rStmt->fetch();
+            if (!$rwk) {
+                Response::error("Rework record not found", 404);
+                return;
+            }
+
+            $origQty = (float)$rwk['rework_quantity'];
+            $alreadyAcc = (float)$rwk['accepted_quantity'];
+            $alreadyRej = (float)$rwk['rejected_quantity'];
+            $outstanding = max(0.0, $origQty - $alreadyAcc - $alreadyRej);
+
+            $testedTotal = $acceptedQty + $rejectedQty + $furtherReworkQty;
+            if ($testedTotal > $outstanding + 0.001) {
+                Response::error("The sum of Accepted ({$acceptedQty}) + Rejected ({$rejectedQty}) + Further Rework ({$furtherReworkQty}) cannot exceed outstanding rework quantity ({$outstanding})", 422);
+                return;
+            }
+
+            $pdo->beginTransaction();
+
+            $newAcc = $alreadyAcc + $acceptedQty;
+            $newRej = $alreadyRej + $rejectedQty;
+            $newPending = max(0.0, $origQty - $newAcc - $newRej);
+
+            // Determine final status
+            if ($furtherReworkQty > 0 || $newPending > 0.001) {
+                $status = 'Pending Rework';
+                $cycleNumber = (int)$rwk['cycle_number'] + 1;
+            } else if ($newAcc > 0) {
+                $status = 'Accepted After Rework';
+                $cycleNumber = (int)$rwk['cycle_number'];
+            } else {
+                $status = 'Rejected';
+                $cycleNumber = (int)$rwk['cycle_number'];
+            }
+
+            $updRwk = $pdo->prepare("
+                UPDATE rework_records 
+                SET accepted_quantity = ?,
+                    rejected_quantity = ?,
+                    pending_quantity = ?,
+                    status = ?,
+                    cycle_number = ?,
+                    reinspection_date = ?,
+                    reinspection_result = ?,
+                    reinspection_notes = ?,
+                    inspector_name = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ");
+            $updRwk->execute([
+                $newAcc,
+                $newRej,
+                $newPending,
+                $status,
+                $cycleNumber,
+                $data['reinspection_date'] ?? date('Y-m-d'),
+                $resStatus ?: ($status === 'Accepted After Rework' ? 'Accepted - Passed Audit' : 'Inspection Recorded'),
+                $notes,
+                $inspector,
+                $rwkId
+            ]);
+
+            $pId = (int)$rwk['production_order_id'];
+            $itemId = (int)($rwk['production_order_item_id'] ?? 0);
+            $stageId = (int)$rwk['stage_id'];
+            $stageCode = trim((string)$rwk['stage_code']);
+            $batchNo = trim((string)($rwk['batch_number'] ?? ''));
+
+            // Log acceptance in ledger
+            if ($acceptedQty > 0) {
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, ?, ?, 'ACCEPTED', ?, ?, '', ?, 'Rework Re-inspection', ?, ?)
+                ");
+                $lStmt->execute([
+                    $pId, 
+                    $itemId, 
+                    $stageId, 
+                    $stageCode, 
+                    $acceptedQty, 
+                    $batchNo ?: $rwk['rework_order_no'], 
+                    $inspector, 
+                    $rwk['rework_order_no'], 
+                    "Accepted after rework cycle {$rwk['cycle_number']}: {$notes}"
+                ]);
+            }
+
+            if ($rejectedQty > 0) {
+                $lStmtRej = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, ?, ?, 'REJECTED', ?, ?, '', ?, 'Rework Re-inspection', ?, ?)
+                ");
+                $lStmtRej->execute([
+                    $pId, 
+                    $itemId, 
+                    $stageId, 
+                    $stageCode, 
+                    $rejectedQty, 
+                    $batchNo ?: $rwk['rework_order_no'], 
+                    $inspector, 
+                    $rwk['rework_order_no'], 
+                    "Rejected during rework re-inspection: {$notes}"
+                ]);
+            }
+
+            // Stage-specific quantity reconciliation:
+            if ($acceptedQty > 0) {
+                if ($stageId === 4) {
+                    // Stage 04 Dyeing: update total_accepted_quantity in dyeing_orders
+                    $refId = trim((string)$rwk['reference_id']);
+                    if (!empty($refId)) {
+                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ? WHERE id = ? OR dyeing_order_no = ?")
+                            ->execute([$acceptedQty, $refId, $refId]);
+                    } else {
+                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ? WHERE production_order_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $pId]);
+                    }
+                } else if ($stageId === 5) {
+                    // Stage 05 Cutting: update cutting_batches accepted_output_quantity
+                    if (!empty($batchNo)) {
+                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                    } else if ($itemId > 0) {
+                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $itemId]);
+                    }
+                } else if ($stageId === 6) {
+                    // Stage 06 Embroidery: update embroidery_job_orders / receipts
+                    $refId = trim((string)$rwk['reference_id']);
+                    if (!empty($refId)) {
+                        $pdo->prepare("UPDATE embroidery_job_orders SET total_quantity_accepted = total_quantity_accepted + ? WHERE id = ? OR job_order_number = ?")
+                            ->execute([$acceptedQty, $refId, $refId]);
+                    } else {
+                        $pdo->prepare("UPDATE embroidery_job_orders SET total_quantity_accepted = total_quantity_accepted + ? WHERE production_order_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $pId]);
+                    }
+                } else if ($stageId === 7) {
+                    // Stage 07 Stitching: update stitching_batches accepted_quantity
+                    if (!empty($batchNo)) {
+                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                    } else if ($itemId > 0) {
+                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $itemId]);
+                    }
+                } else if ($stageId === 8) {
+                    // Stage 08 Checking: update quality_inspections passed_quantity
+                    if (!empty($batchNo)) {
+                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                    } else if ($itemId > 0) {
+                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $itemId]);
+                    }
+                }
+            }
+
+            if ($pdo->inTransaction()) {
+                $pdo->commit();
+            }
+
+            Response::success([
+                'id' => $rwkId,
+                'accepted_quantity' => $acceptedQty,
+                'rejected_quantity' => $rejectedQty,
+                'total_accepted' => $newAcc,
+                'total_rejected' => $newRej,
+                'pending_quantity' => $newPending,
+                'status' => $status,
+                'cycle_number' => $cycleNumber
+            ], "Rework re-inspection recorded successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -1449,6 +1870,77 @@ class ProductionController {
                     $pdo->exec("ALTER TABLE dispatch_records ADD COLUMN eway_bill_photo_urls JSON NULL AFTER loaded_cartons_photo_urls");
                 }
             } catch (Exception $colEx) {}
+
+            // Rework Management across Stages 4, 5, 6, 7, 8
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `rework_records` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `rework_order_no` VARCHAR(100) NOT NULL UNIQUE,
+                  `production_order_id` INT NOT NULL,
+                  `production_order_item_id` INT NULL,
+                  `stage_id` INT NOT NULL,
+                  `stage_code` VARCHAR(20) NOT NULL,
+                  `qc_record_id` INT NULL,
+                  `product_id` INT NULL,
+                  `product_name` VARCHAR(255) NULL,
+                  `color` VARCHAR(100) NULL,
+                  `size` VARCHAR(50) NULL,
+                  `batch_number` VARCHAR(100) NULL,
+                  `rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `uom` VARCHAR(20) DEFAULT 'PCS',
+                  `rework_reason` VARCHAR(255) NULL,
+                  `rework_remarks` TEXT NULL,
+                  `rework_stage_id` INT NULL,
+                  `destination_process` VARCHAR(255) NULL,
+                  `vendor_id` INT NULL,
+                  `vendor_name` VARCHAR(255) NULL,
+                  `dc_challan_no` VARCHAR(100) NULL,
+                  `sent_date` DATE NULL,
+                  `received_date` DATE NULL,
+                  `reinspection_date` DATE NULL,
+                  `reinspection_result` VARCHAR(100) NULL,
+                  `reinspection_notes` TEXT NULL,
+                  `inspector_name` VARCHAR(150) NULL,
+                  `accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `rejected_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `pending_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `cycle_number` INT NOT NULL DEFAULT 1,
+                  `status` VARCHAR(50) NOT NULL DEFAULT 'Pending Rework',
+                  `reference_type` VARCHAR(100) NULL,
+                  `reference_id` VARCHAR(100) NULL,
+                  `metadata_json` JSON NULL,
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  INDEX `idx_rr_pord` (`production_order_id`),
+                  INDEX `idx_rr_stage` (`stage_id`),
+                  INDEX `idx_rr_status` (`status`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            ");
+
+            try {
+                $pdo->exec("ALTER TABLE `cutting_batches` ADD COLUMN `rework_status` VARCHAR(50) DEFAULT 'Normal' AFTER `status`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `stitching_batches` ADD COLUMN `rework_status` VARCHAR(50) DEFAULT 'Normal' AFTER `status`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `rework_stage_id` INT NULL AFTER `color`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `rework_status` VARCHAR(50) DEFAULT 'Normal' AFTER `remarks`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_receipts` ADD COLUMN `total_accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_received_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_receipts` ADD COLUMN `total_rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_accepted_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` ADD COLUMN `total_accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_received_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` ADD COLUMN `total_rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_accepted_quantity`");
+            } catch (Exception $e) {}
         } catch (Exception $e) {}
     }
 
@@ -1696,7 +2188,26 @@ class ProductionController {
             }
             unset($it);
 
-            Response::success(['order' => $ord, 'items' => $items, 'batches' => $batches]);
+            $rwkStmt = $pdo->prepare("
+                SELECT rw.*, 
+                       COALESCE(bp.product_name, p.name, rw.product_name) as display_product_name,
+                       COALESCE(bp.product_code, p.code) as display_product_code
+                FROM rework_records rw
+                LEFT JOIN production_order_items poi ON rw.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON (rw.product_id = bp.id OR poi.product_id = bp.id)
+                LEFT JOIN products p ON (rw.product_id = p.id OR poi.product_id = p.id)
+                WHERE rw.production_order_id = ? AND rw.stage_id = 5
+                ORDER BY rw.id DESC
+            ");
+            $rwkStmt->execute([$orderId]);
+            $reworks = $rwkStmt->fetchAll();
+
+            Response::success([
+                'order' => $ord, 
+                'items' => $items, 
+                'batches' => $batches,
+                'rework_records' => $reworks
+            ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
 
@@ -1768,15 +2279,70 @@ class ProductionController {
             ]);
             $batchId = (int)$pdo->lastInsertId();
 
-            // Ledger
-            $lStmt = $pdo->prepare("
-                INSERT INTO production_quantity_ledger 
-                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
-                VALUES (?, ?, 5, 'CUT', 'ACCEPTED', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
-            ");
-            $lStmt->execute([$pId, $itemId, $acc, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $batchNo, $data['remarks'] ?? ($data['notes'] ?? '')]);
+            // Ledger for accepted
+            if ($acc > 0) {
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 5, 'CUT', 'ACCEPTED', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
+                ");
+                $lStmt->execute([$pId, $itemId, $acc, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $batchNo, $data['remarks'] ?? ($data['notes'] ?? '')]);
+            }
 
-            Response::success(['id' => $batchId, 'batch_id' => $batchId, 'batch_number' => $batchNo, 'accepted' => $acc], "Cutting batch recorded successfully", 201);
+            // If rework quantity is recorded, create rework_records entry and ledger
+            if ($rwk > 0) {
+                $rwkOrderNo = 'RWK-CUT-' . strtoupper(bin2hex(random_bytes(3)));
+                $rwkReason = trim((string)($data['rework_reason'] ?? 'Cutting Defect / Incorrect Dimensions'));
+                $rwkDest = trim((string)($data['rework_destination'] ?? 'Cutting Recut / Correction'));
+                $rwkRemarks = trim((string)($data['rework_remarks'] ?? ($data['remarks'] ?? '')));
+
+                $insRwk = $pdo->prepare("
+                    INSERT INTO rework_records 
+                    (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, product_id, product_name, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, destination_process, status, reference_type, reference_id)
+                    VALUES (?, ?, ?, 5, 'CUT', ?, ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, 'Pending Rework', 'Cutting Batch', ?)
+                ");
+                $insRwk->execute([
+                    $rwkOrderNo,
+                    $pId,
+                    $itemId,
+                    $item['product_id'] ?? null,
+                    $item['product_name'] ?? null,
+                    $item['color'] ?? ($data['color'] ?? null),
+                    $item['size'] ?? ($data['size'] ?? null),
+                    $batchNo,
+                    $rwk,
+                    $rwk,
+                    $rwkReason,
+                    $rwkRemarks,
+                    $rwkDest,
+                    $batchNo
+                ]);
+
+                $lStmtRwk = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 5, 'CUT', 'REWORK_SENT', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
+                ");
+                $lStmtRwk->execute([$pId, $itemId, $rwk, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $batchNo, "Cutting rework recorded: {$rwkReason}"]);
+            }
+
+            if ($rej > 0) {
+                $lStmtRej = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 5, 'CUT', 'REJECTED', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
+                ");
+                $lStmtRej->execute([$pId, $itemId, $rej, $batchNo, $data['operator'] ?? '', $data['supervisor'] ?? '', $batchNo, "Cutting rejected / scrap"]);
+            }
+
+            Response::success([
+                'id' => $batchId, 
+                'batch_id' => $batchId, 
+                'batch_number' => $batchNo, 
+                'accepted' => $acc,
+                'rework' => $rwk,
+                'rejected' => $rej
+            ], "Cutting batch recorded successfully", 201);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
 
@@ -2193,11 +2759,26 @@ class ProductionController {
 
             $items = array_values($groupedItems);
 
+            $rwkStmt = $pdo->prepare("
+                SELECT rw.*, 
+                       COALESCE(bp.product_name, p.name, rw.product_name) as display_product_name,
+                       COALESCE(bp.product_code, p.code) as display_product_code
+                FROM rework_records rw
+                LEFT JOIN production_order_items poi ON rw.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON (rw.product_id = bp.id OR poi.product_id = bp.id)
+                LEFT JOIN products p ON (rw.product_id = p.id OR poi.product_id = p.id)
+                WHERE rw.production_order_id = ? AND rw.stage_id = 6
+                ORDER BY rw.id DESC
+            ");
+            $rwkStmt->execute([$orderId]);
+            $reworks = $rwkStmt->fetchAll();
+
             Response::success([
                 'order' => $ord,
                 'items' => $items,
                 'job_orders' => $jobs,
-                'receipts' => $receipts
+                'receipts' => $receipts,
+                'rework_records' => $reworks
             ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
@@ -2377,6 +2958,50 @@ class ProductionController {
                         '', 
                         $recNo, 
                         "Rejected in embroidery QC"
+                    ]);
+                }
+
+                $itRwk = (float)($it['rework_quantity'] ?? 0);
+                if ($itRwk > 0) {
+                    $rwkOrderNo = 'RWK-EMB-' . strtoupper(bin2hex(random_bytes(3)));
+                    $rwkReason = trim((string)($it['rework_reason'] ?? ($data['rework_reason'] ?? 'Thread Defect / Missing Stitches')));
+                    $rwkRemarks = trim((string)($it['rework_remarks'] ?? ($data['remarks'] ?? '')));
+
+                    $insRwk = $pdo->prepare("
+                        INSERT INTO rework_records 
+                        (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, product_name, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, vendor_name, destination_process, status, reference_type, reference_id)
+                        VALUES (?, ?, ?, 6, 'EMB', ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, 'Vendor Re-embroidery', 'Pending Rework', 'Embroidery Job Order', ?)
+                    ");
+                    $insRwk->execute([
+                        $rwkOrderNo,
+                        $job['production_order_id'],
+                        $itId,
+                        $it['product_name'] ?? null,
+                        $it['color'] ?? null,
+                        $it['size'] ?? null,
+                        $job['job_order_number'],
+                        $itRwk,
+                        $itRwk,
+                        $rwkReason,
+                        $rwkRemarks,
+                        $job['vendor_name'] ?? 'Embroidery Vendor',
+                        $recNo
+                    ]);
+
+                    $lStmtRwk = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 6, 'EMB', 'REWORK_SENT', ?, ?, ?, ?, 'Embroidery Inward Receipt', ?, ?)
+                    ");
+                    $lStmtRwk->execute([
+                        $job['production_order_id'],
+                        $itId,
+                        $itRwk,
+                        $job['job_order_number'],
+                        $data['received_by'] ?? '',
+                        '',
+                        $recNo,
+                        "Sent for rework correction: {$rwkReason}"
                     ]);
                 }
             }
@@ -2892,10 +3517,25 @@ class ProductionController {
 
             $items = array_values($groupedItems);
 
+            $rwkStmt = $pdo->prepare("
+                SELECT rw.*, 
+                       COALESCE(bp.product_name, p.name, rw.product_name) as display_product_name,
+                       COALESCE(bp.product_code, p.code) as display_product_code
+                FROM rework_records rw
+                LEFT JOIN production_order_items poi ON rw.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON (rw.product_id = bp.id OR poi.product_id = bp.id)
+                LEFT JOIN products p ON (rw.product_id = p.id OR poi.product_id = p.id)
+                WHERE rw.production_order_id = ? AND rw.stage_id = 7
+                ORDER BY rw.id DESC
+            ");
+            $rwkStmt->execute([$orderId]);
+            $reworks = $rwkStmt->fetchAll();
+
             Response::success([
                 'order' => $ord,
                 'items' => $items,
-                'batches' => $batches
+                'batches' => $batches,
+                'rework_records' => $reworks
             ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
@@ -2971,6 +3611,48 @@ class ProductionController {
                     VALUES (?, ?, 7, 'STI', 'ACCEPTED', ?, ?, ?, ?, 'Stitching Passed', ?, ?)
                 ");
                 $lStmtAcc->execute([$pId, $itemId, $acc, $batchNo, $operatorTeam, $supervisor, (string)$bId, "Passed stitching QC"]);
+            }
+
+            // Insert rework record if rework > 0
+            if ($rwk > 0) {
+                $rwkOrderNo = 'RWK-STI-' . strtoupper(bin2hex(random_bytes(3)));
+                $rwkReason = trim((string)($data['rework_reason'] ?? 'Broken Seam / Stitching Defect'));
+                $rwkRemarks = trim((string)($data['rework_remarks'] ?? ($data['remarks'] ?? '')));
+
+                $insRwk = $pdo->prepare("
+                    INSERT INTO rework_records 
+                    (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, destination_process, status, reference_type, reference_id)
+                    VALUES (?, ?, ?, 7, 'STI', ?, ?, ?, ?, ?, 'PCS', ?, ?, 'Stitching Line Correction', 'Pending Rework', 'Stitching Batch', ?)
+                ");
+                $insRwk->execute([
+                    $rwkOrderNo,
+                    $pId,
+                    $itemId,
+                    $data['color'] ?? null,
+                    $data['size'] ?? null,
+                    $batchNo,
+                    $rwk,
+                    $rwk,
+                    $rwkReason,
+                    $rwkRemarks,
+                    (string)$bId
+                ]);
+
+                $lStmtRwk = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 7, 'STI', 'REWORK_SENT', ?, ?, ?, ?, 'Stitching Batch', ?, ?)
+                ");
+                $lStmtRwk->execute([$pId, $itemId, $rwk, $batchNo, $operatorTeam, $supervisor, (string)$bId, "Sent for stitching correction: {$rwkReason}"]);
+            }
+
+            if ($rej > 0) {
+                $lStmtRej = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 7, 'STI', 'REJECTED', ?, ?, ?, ?, 'Stitching Batch', ?, ?)
+                ");
+                $lStmtRej->execute([$pId, $itemId, $rej, $batchNo, $operatorTeam, $supervisor, (string)$bId, "Stitching rejected / scrap"]);
             }
 
             Response::success([
@@ -3282,10 +3964,28 @@ class ProductionController {
 
             $items = array_values($groupedItems);
 
+            $rwkStmt = $pdo->prepare("
+                SELECT rw.*, 
+                       COALESCE(bp.product_name, p.name, rw.product_name) as display_product_name,
+                       COALESCE(bp.product_code, p.code) as display_product_code,
+                       dest_ps.name as target_stage_name,
+                       dest_ps.code as target_stage_code
+                FROM rework_records rw
+                LEFT JOIN production_order_items poi ON rw.production_order_item_id = poi.id
+                LEFT JOIN buyer_products bp ON (rw.product_id = bp.id OR poi.product_id = bp.id)
+                LEFT JOIN products p ON (rw.product_id = p.id OR poi.product_id = p.id)
+                LEFT JOIN production_stages dest_ps ON rw.rework_stage_id = dest_ps.id
+                WHERE rw.production_order_id = ? AND rw.stage_id = 8
+                ORDER BY rw.id DESC
+            ");
+            $rwkStmt->execute([$orderId]);
+            $reworks = $rwkStmt->fetchAll();
+
             Response::success([
                 'order' => $ord,
                 'items' => $items,
-                'inspections' => $inspections
+                'inspections' => $inspections,
+                'rework_records' => $reworks
             ]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
     }
@@ -3353,6 +4053,53 @@ class ProductionController {
                     VALUES (?, ?, 8, 'CHK', 'PASSED', ?, ?, '', ?, 'Quality Passed', ?, 'Passed quality audit')
                 ");
                 $lStmtPass->execute([$pId, $itemId, $passed, $batchNo, $data['inspector'] ?? 'Inspector', (string)$insId]);
+            }
+
+            // Insert rework record if rework > 0
+            if ($rwk > 0) {
+                $rwkOrderNo = 'RWK-CHK-' . strtoupper(bin2hex(random_bytes(3)));
+                $rwkReason = trim((string)($data['rework_reason'] ?? ($data['defect_category'] ?? 'Quality Defect')));
+                $rwkRemarks = trim((string)($data['defect_description'] ?? ($data['remarks'] ?? '')));
+                $destStageId = (int)($data['rework_stage_id'] ?? 7); // Default to Stage 7 Stitching
+                $destProcess = trim((string)($data['rework_destination'] ?? 'Stitching Correction & Alteration'));
+
+                $insRwk = $pdo->prepare("
+                    INSERT INTO rework_records 
+                    (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, status, reference_type, reference_id)
+                    VALUES (?, ?, ?, 8, 'CHK', ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, ?, 'Pending Rework', 'Quality Inspection', ?)
+                ");
+                $insRwk->execute([
+                    $rwkOrderNo,
+                    $pId,
+                    $itemId,
+                    $insId,
+                    $data['color'] ?? null,
+                    $data['size'] ?? null,
+                    $batchNo,
+                    $rwk,
+                    $rwk,
+                    $rwkReason,
+                    $rwkRemarks,
+                    $destStageId,
+                    $destProcess,
+                    (string)$insId
+                ]);
+
+                $lStmtRwk = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 8, 'CHK', 'REWORK_SENT', ?, ?, ?, ?, 'Quality Inspection', ?, ?)
+                ");
+                $lStmtRwk->execute([$pId, $itemId, $rwk, $batchNo, '', $data['inspector'] ?? 'Inspector', (string)$insId, "Rerouted for rework correction: {$rwkReason}"]);
+            }
+
+            if ($rej > 0) {
+                $lStmtRej = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 8, 'CHK', 'REJECTED', ?, ?, '', ?, 'Quality Inspection', ?, ?)
+                ");
+                $lStmtRej->execute([$pId, $itemId, $rej, $batchNo, '', $data['inspector'] ?? 'Inspector', (string)$insId, "Scrapped / Rejected in Quality Audit"]);
             }
 
             Response::success([

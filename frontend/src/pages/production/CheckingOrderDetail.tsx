@@ -46,6 +46,7 @@ import {
   AlertCircle,
   Boxes
 } from 'lucide-react';
+import StageReworkSection from '../../components/production/StageReworkSection';
 
 
 const fmt = (n: number, decimals = 0) =>
@@ -116,8 +117,9 @@ export default function CheckingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Filter tabs: 'ALL' | 'CHECKING'
-  const [activeTab, setActiveTab] = useState<'ALL' | 'CHECKING'>('ALL');
+  // Navigation tabs: 'inspections' | 'rework'
+  const [activeTab, setActiveTab] = useState<'inspections' | 'rework'>('inspections');
+  const [filterMode, setFilterMode] = useState<'ALL' | 'CHECKING'>('ALL');
 
   // New Inspection Modal State
   const [modalOpen, setModalOpen] = useState(false);
@@ -133,6 +135,9 @@ export default function CheckingOrderDetail() {
     rework_quantity: 0,
     defect_category: DEFECT_CATEGORIES[0],
     defect_description: '',
+    rework_stage_id: 7,
+    rework_destination: 'Stitching Correction & Alteration',
+    rework_reason: DEFECT_CATEGORIES[0],
     inspector: '',
     remarks: ''
   });
@@ -260,6 +265,9 @@ export default function CheckingOrderDetail() {
       rework_quantity: 0,
       defect_category: DEFECT_CATEGORIES[0],
       defect_description: '',
+      rework_stage_id: 7,
+      rework_destination: 'Stitching Correction & Alteration',
+      rework_reason: DEFECT_CATEGORIES[0],
       inspector: '',
       remarks: ''
     });
@@ -318,6 +326,9 @@ export default function CheckingOrderDetail() {
         rework_quantity: rwk,
         defect_category: (rej > 0 || rwk > 0) ? form.defect_category : 'Passed Inspection',
         defect_description: form.defect_description,
+        rework_stage_id: Number(form.rework_stage_id || 7),
+        rework_destination: form.rework_destination || 'Stitching Correction & Alteration',
+        rework_reason: form.rework_reason || form.defect_category,
         inspector: form.inspector || 'QC Inspector',
         inspection_date: form.inspection_date,
         is_reinspection: isReinspection,
@@ -392,11 +403,11 @@ export default function CheckingOrderDetail() {
 
   // Filter items
   const filteredItems = useMemo(() => {
-    if (activeTab === 'CHECKING') {
+    if (filterMode === 'CHECKING') {
       return items.filter(it => Number(it.arrived_from_stitching || it.total_arrived || 0) > 0);
     }
     return items;
-  }, [items, activeTab]);
+  }, [items, filterMode]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -571,8 +582,43 @@ export default function CheckingOrderDetail() {
         </div>
       </div>
 
-      {/* TABLE 1: Product-Wise Checking Status & Action */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab('inspections')}
+          className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'inspections'
+              ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <CheckCircle className="w-4 h-4" />
+          Inspections & Passed Output ({inspections.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('rework')}
+          className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+            activeTab === 'rework'
+              ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <RotateCcw className="w-4 h-4" />
+          Stage 08 Rework & Routing
+          {overallTotals.totalRework > 0 && (
+            <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+              {fmt(overallTotals.totalRework)} pcs
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'inspections' && (
+        <>
+          {/* TABLE 1: Product-Wise Checking Status & Action */}
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
@@ -590,9 +636,9 @@ export default function CheckingOrderDetail() {
 
           <div className="flex items-center gap-2 self-start sm:self-center">
             <button
-              onClick={() => setActiveTab('ALL')}
+              onClick={() => setFilterMode('ALL')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'ALL'
+                filterMode === 'ALL'
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
@@ -600,9 +646,9 @@ export default function CheckingOrderDetail() {
               All Products ({items.length})
             </button>
             <button
-              onClick={() => setActiveTab('CHECKING')}
+              onClick={() => setFilterMode('CHECKING')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'CHECKING'
+                filterMode === 'CHECKING'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
@@ -913,6 +959,19 @@ export default function CheckingOrderDetail() {
           </table>
         </div>
       </div>
+    </>
+  )}
+
+  {activeTab === 'rework' && (
+    <StageReworkSection
+      productionOrderId={Number(order?.id || id)}
+      stageId={8}
+      stageCode="CHK"
+      stageName="Checking"
+      uom="PCS"
+      onReload={fetchOrderData}
+    />
+  )}
 
       {/* MODAL 1: Record Quality Inspection */}
       <Modal
@@ -1062,6 +1121,46 @@ export default function CheckingOrderDetail() {
               </div>
             </div>
           </div>
+
+          {Number(form.rework_quantity) > 0 && (
+            <div className="pt-2 border-t border-amber-200/80 bg-amber-50/60 p-3 rounded-lg space-y-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                    Rework Destination Stage *
+                  </label>
+                  <select
+                    value={form.rework_stage_id}
+                    onChange={e => {
+                      const sid = Number(e.target.value);
+                      let destName = 'Stitching Correction & Alteration';
+                      if (sid === 6) destName = 'Embroidery Vendor Re-embroidery';
+                      else if (sid === 5) destName = 'Cutting Recut / Panel Replacement';
+                      else if (sid === 4) destName = 'Dyeing Mill Re-dyeing / Strip';
+                      setForm({ ...form, rework_stage_id: sid, rework_destination: destName });
+                    }}
+                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-amber-900"
+                  >
+                    <option value={7}>Stage 07 — Stitching (Correction & Alteration)</option>
+                    <option value={6}>Stage 06 — Embroidery (Vendor Re-embroidery)</option>
+                    <option value={5}>Stage 05 — Cutting (Panel Replacement / Recutting)</option>
+                    <option value={4}>Stage 04 — Dyeing (Color Stripping & Re-dyeing)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                    Correction Process / Destination Line
+                  </label>
+                  <input
+                    type="text"
+                    value={form.rework_destination}
+                    onChange={e => setForm({ ...form, rework_destination: e.target.value })}
+                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-slate-800"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Defect Category & Protocol */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

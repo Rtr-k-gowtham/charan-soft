@@ -80,6 +80,19 @@ class DyeingController {
                   INDEX `idx_dr_po` (`production_order_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_receipts` ADD COLUMN `total_accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_received_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_receipts` ADD COLUMN `total_rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_accepted_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` ADD COLUMN `total_accepted_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_received_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` ADD COLUMN `total_rework_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `total_accepted_quantity`");
+            } catch (Exception $e) {}
         } catch (Exception $e) {
             // Ignore if tables already exist
         }
@@ -177,6 +190,23 @@ class DyeingController {
             $receiptStmt = $pdo->prepare("SELECT * FROM dyeing_receipts WHERE dyeing_order_id = ? ORDER BY id DESC");
             $receiptStmt->execute([$id]);
             $order['receipts'] = $receiptStmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Fetch rework records for this dyeing order / production order
+            try {
+                $rwStmt = $pdo->prepare("
+                    SELECT rw.*, 
+                           src_ps.name as source_stage_name,
+                           src_ps.code as source_stage_code
+                    FROM rework_records rw
+                    LEFT JOIN production_stages src_ps ON rw.stage_id = src_ps.id
+                    WHERE (rw.production_order_id = ? OR rw.reference_id = ?) AND rw.stage_id = 4
+                    ORDER BY rw.id DESC
+                ");
+                $rwStmt->execute([(int)$order['production_order_id'], $order['dyeing_order_no']]);
+                $order['rework_records'] = $rwStmt->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Exception $reEx) {
+                $order['rework_records'] = [];
+            }
 
             Response::success($order);
         } catch (Exception $e) {
@@ -718,6 +748,38 @@ class DyeingController {
                     $poId = (int)$pLookup->fetchColumn();
                 }
             }
+            // Calculate batch totals for received, accepted, rework
+            $totalBatchReceived = 0.0;
+            $totalBatchAccepted = 0.0;
+            $totalBatchRework = 0.0;
+
+            foreach ($items as &$chkIt) {
+                $rQty = (float)($chkIt['received_quantity'] ?? 0);
+                $rwkQty = (float)($chkIt['rework_quantity'] ?? 0);
+                $accQty = isset($chkIt['accepted_quantity']) 
+                    ? (float)$chkIt['accepted_quantity'] 
+                    : max(0.0, $rQty - $rwkQty);
+
+                if ($rQty < 0 || $accQty < 0 || $rwkQty < 0) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    Response::error("Received, accepted, and rework quantities cannot be negative", 422);
+                    return;
+                }
+
+                if (($accQty + $rwkQty) > ($rQty + 0.001)) {
+                    if ($pdo->inTransaction()) $pdo->rollBack();
+                    Response::error("Accepted ({$accQty}) + Rework ({$rwkQty}) cannot exceed Received quantity ({$rQty})", 422);
+                    return;
+                }
+
+                $chkIt['accepted_quantity'] = $accQty;
+                $chkIt['rework_quantity'] = $rwkQty;
+                $totalBatchReceived += $rQty;
+                $totalBatchAccepted += $accQty;
+                $totalBatchRework += $rwkQty;
+            }
+            unset($chkIt);
+
             $receiptNo = 'DYE-GRN-' . str_pad((string)rand(100, 99999), 5, '0', STR_PAD_LEFT);
             $receiptDate = !empty($data['receipt_date']) ? $data['receipt_date'] : date('Y-m-d');
             $challanNo = trim($data['delivery_challan_no'] ?? $data['challan_no'] ?? '');
@@ -731,8 +793,9 @@ class DyeingController {
                 INSERT INTO dyeing_receipts (
                     receipt_no, dyeing_order_id, production_order_id, receipt_date, 
                     delivery_challan_no, received_by, total_received_quantity, 
+                    total_accepted_quantity, total_rework_quantity,
                     photo_url, shade_condition, remarks, items_data
-                ) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $recStmt->execute([
                 $receiptNo,
@@ -741,6 +804,9 @@ class DyeingController {
                 $receiptDate,
                 $challanNo,
                 $receivedBy,
+                $totalBatchReceived,
+                $totalBatchAccepted,
+                $totalBatchRework,
                 $photoUrl,
                 $shadeCondition,
                 $remarks,
@@ -748,7 +814,6 @@ class DyeingController {
             ]);
             $receiptId = (int)$pdo->lastInsertId();
 
-            $totalBatchReceived = 0.0;
             $itemUpd = $pdo->prepare("
                 UPDATE dyeing_order_items 
                 SET received_quantity = received_quantity + ?,
@@ -760,11 +825,13 @@ class DyeingController {
             foreach ($items as $it) {
                 $itemId = (int)($it['item_id'] ?? $it['id'] ?? 0);
                 $qtyRec = (float)($it['received_quantity'] ?? 0);
+                $qtyAcc = (float)($it['accepted_quantity'] ?? 0);
+                $qtyRwk = (float)($it['rework_quantity'] ?? 0);
                 $shrinkage = (float)($it['shrinkage_loss_percent'] ?? 0);
                 $shade = trim($it['shade_match_status'] ?? 'Approved - Pantone Matched');
+                $colorName = trim($it['color_name'] ?? ($dOrder['fabric_name'] ?? 'Dyed Fabric Material'));
 
                 if ($qtyRec > 0) {
-                    $totalBatchReceived += $qtyRec;
                     if ($itemId > 0) {
                         $itemUpd->execute([$qtyRec, $shrinkage, $shade, $itemId, $dyeingOrderId]);
                     } else {
@@ -776,7 +843,7 @@ class DyeingController {
                         ");
                         $insItem->execute([
                             $dyeingOrderId,
-                            $it['color_name'] ?? ($dOrder['fabric_name'] ?? 'Dyed Fabric Material'),
+                            $colorName,
                             (float)($it['planned_quantity'] ?? $qtyRec),
                             $qtyRec,
                             $shrinkage,
@@ -784,11 +851,78 @@ class DyeingController {
                             $it['notes'] ?? ''
                         ]);
                     }
+
+                    // Ledger for accepted fabric
+                    if ($qtyAcc > 0 && $poId > 0) {
+                        try {
+                            $lStmt = $pdo->prepare("
+                                INSERT INTO production_quantity_ledger 
+                                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                                VALUES (?, ?, 4, 'DYE', 'ACCEPTED', ?, ?, ?, ?, 'Dyeing Receipt', ?, ?)
+                            ");
+                            $lStmt->execute([
+                                $poId,
+                                $itemId,
+                                $qtyAcc,
+                                $dOrder['dyeing_order_no'],
+                                $receivedBy,
+                                '',
+                                $receiptNo,
+                                "Dyed fabric accepted ({$colorName}) from {$dOrder['dyeing_mill_name']}"
+                            ]);
+                        } catch (Exception $lex) {}
+                    }
+
+                    // Create rework record if rework quantity is specified
+                    if ($qtyRwk > 0) {
+                        $rwkOrderNo = 'RWK-DYE-' . strtoupper(bin2hex(random_bytes(3)));
+                        $rwkReason = trim((string)($it['rework_reason'] ?? ($data['rework_reason'] ?? 'Shade Mismatch / Uneven Dyeing')));
+                        $rwkRemarks = trim((string)($it['rework_remarks'] ?? ($data['remarks'] ?? '')));
+                        $millName = $dOrder['dyeing_mill_name'] ?: ($dOrder['supplier_name'] ?? 'Processing Mill');
+
+                        try {
+                            $insRwk = $pdo->prepare("
+                                INSERT INTO rework_records 
+                                (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, color, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, vendor_id, vendor_name, destination_process, status, reference_type, reference_id)
+                                VALUES (?, ?, ?, 4, 'DYE', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Mill Re-dyeing / Color Correction', 'Pending Rework', 'Dyeing Order', ?)
+                            ");
+                            $insRwk->execute([
+                                $rwkOrderNo,
+                                $poId,
+                                $itemId,
+                                $colorName,
+                                $dOrder['dyeing_order_no'],
+                                $qtyRwk,
+                                $qtyRwk,
+                                $dOrder['uom'] ?? 'MTR',
+                                $rwkReason,
+                                $rwkRemarks,
+                                $dOrder['supplier_id'] ?? null,
+                                $millName,
+                                $receiptNo
+                            ]);
+
+                            if ($poId > 0) {
+                                $lStmtRwk = $pdo->prepare("
+                                    INSERT INTO production_quantity_ledger 
+                                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                                    VALUES (?, ?, 4, 'DYE', 'REWORK_SENT', ?, ?, ?, ?, 'Dyeing Receipt', ?, ?)
+                                ");
+                                $lStmtRwk->execute([
+                                    $poId,
+                                    $itemId,
+                                    $qtyRwk,
+                                    $dOrder['dyeing_order_no'],
+                                    $receivedBy,
+                                    '',
+                                    $receiptNo,
+                                    "Dyed fabric sent for rework correction to {$millName}: {$rwkReason}"
+                                ]);
+                            }
+                        } catch (Exception $rwkEx) {}
+                    }
                 }
             }
-
-            // Update total received in dyeing receipt
-            $pdo->prepare("UPDATE dyeing_receipts SET total_received_quantity = ? WHERE id = ?")->execute([$totalBatchReceived, $receiptId]);
 
             // Recompute total received for entire dyeing order
             $sumStmt = $pdo->prepare("SELECT COALESCE(SUM(received_quantity), 0) FROM dyeing_order_items WHERE dyeing_order_id = ?");
@@ -800,13 +934,16 @@ class DyeingController {
 
             $pdo->prepare("
                 UPDATE dyeing_orders 
-                SET total_received_quantity = ?, status = ?
+                SET total_received_quantity = ?, 
+                    total_accepted_quantity = total_accepted_quantity + ?,
+                    total_rework_quantity = total_rework_quantity + ?,
+                    status = ?
                 WHERE id = ?
-            ")->execute([$newTotalReceived, $newStatus, $dyeingOrderId]);
+            ")->execute([$newTotalReceived, $totalBatchAccepted, $totalBatchRework, $newStatus, $dyeingOrderId]);
 
-            // If advance_to_cutting is requested or complete, advance production order items towards Stage 5 (Cutting)
-            $advanceToCutting = !empty($data['advance_to_cutting']) || ($newStatus === 'Received');
-            if ($advanceToCutting) {
+            // Advance production order items towards Stage 5 (Cutting) based on accepted fabric
+            $advanceToCutting = !empty($data['advance_to_cutting']) || ($totalBatchAccepted > 0);
+            if ($advanceToCutting && $poId > 0) {
                 $stage5Stmt = $pdo->query("SELECT id FROM production_stages WHERE code = 'CUT' OR sequence_order = 5 LIMIT 1");
                 $stage5Id = (int)($stage5Stmt->fetchColumn() ?: 5);
 
@@ -825,6 +962,8 @@ class DyeingController {
                 'receipt_no' => $receiptNo,
                 'dyeing_order_id' => $dyeingOrderId,
                 'quantity_received' => $totalBatchReceived,
+                'quantity_accepted' => $totalBatchAccepted,
+                'quantity_rework' => $totalBatchRework,
                 'status' => $newStatus
             ]);
 

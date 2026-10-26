@@ -30,8 +30,10 @@ import {
   ZoomIn,
   Eye,
   CheckCheck,
-  FileText
+  FileText,
+  RotateCcw
 } from 'lucide-react';
+import StageReworkSection from '../../components/production/StageReworkSection';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
@@ -97,6 +99,7 @@ export default function CuttingOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'batches' | 'rework'>('batches');
 
   // New Batch Modal State
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -107,6 +110,9 @@ export default function CuttingOrderDetail() {
     actual_cut_quantity: 0,
     rejected_quantity: 0,
     rework_quantity: 0,
+    rework_reason: 'Incorrect Dimensions / Cutting Defect',
+    rework_destination: 'Cutting Recut / Correction',
+    rework_remarks: '',
     remarks: '',
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
@@ -190,6 +196,9 @@ export default function CuttingOrderDetail() {
       actual_cut_quantity: pending,
       rejected_quantity: 0,
       rework_quantity: 0,
+      rework_reason: 'Incorrect Dimensions / Cutting Defect',
+      rework_destination: 'Cutting Recut / Correction',
+      rework_remarks: '',
       remarks: '',
     });
     setPhotoUrls([]);
@@ -249,6 +258,9 @@ export default function CuttingOrderDetail() {
         actual_cut_quantity: actual,
         rejected_quantity: rej,
         rework_quantity: rwk,
+        rework_reason: batchForm.rework_reason,
+        rework_destination: batchForm.rework_destination,
+        rework_remarks: batchForm.rework_remarks,
         cutting_date: batchForm.cutting_date,
         remarks: batchForm.remarks,
         photo_urls: photoUrls,
@@ -472,8 +484,43 @@ export default function CuttingOrderDetail() {
           </div>
         </div>
 
-        {/* Product-Wise Cutting Breakdown Table */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('batches')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'batches'
+                ? 'border-amber-600 text-amber-700 bg-amber-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Scissors className="w-4 h-4" />
+            Cutting Batches & Output ({batches.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('rework')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'rework'
+                ? 'border-amber-600 text-amber-700 bg-amber-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Stage 05 Rework & Recutting
+            {yieldSummary.totalRework > 0 && (
+              <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                {fmt(yieldSummary.totalRework)} pcs
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'batches' && (
+          <>
+            {/* Product-Wise Cutting Breakdown Table */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Scissors className="w-4 h-4 text-amber-600" />
@@ -673,7 +720,20 @@ export default function CuttingOrderDetail() {
             </div>
           )}
         </div>
-      </div>
+      </>
+    )}
+
+    {activeTab === 'rework' && (
+      <StageReworkSection
+        productionOrderId={Number(order?.id || id)}
+        stageId={5}
+        stageCode="CUT"
+        stageName="Cutting"
+        uom="PCS"
+        onReload={loadData}
+      />
+    )}
+  </div>
 
       {/* MODAL: Record Cutting Batch */}
       <Modal
@@ -754,6 +814,56 @@ export default function CuttingOrderDetail() {
               />
             </FormField>
           </div>
+
+          {Number(batchForm.rework_quantity) > 0 && (
+            <div className="pt-2 border-t border-amber-200/80 bg-amber-50/60 p-3 rounded-lg space-y-2 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-amber-850 block mb-1">
+                    Rework Defect Category *
+                  </label>
+                  <select
+                    value={batchForm.rework_reason}
+                    onChange={(e) => setBatchForm({ ...batchForm, rework_reason: e.target.value })}
+                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-amber-900"
+                  >
+                    <option value="Incorrect Dimensions / Cutting Defect">Incorrect Dimensions / Cutting Defect</option>
+                    <option value="Pattern / Grain Line Misalignment">Pattern / Grain Line Misalignment</option>
+                    <option value="Notch / Drill Mark Missing">Notch / Drill Mark Missing</option>
+                    <option value="Fabric Ply Shifting / Frayed Edges">Fabric Ply Shifting / Frayed Edges</option>
+                    <option value="Bundle Mismatch / Label Defect">Bundle Mismatch / Label Defect</option>
+                    <option value="Other Cutting Defect">Other Cutting Defect</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-850 block mb-1">
+                    Correction Process / Line
+                  </label>
+                  <select
+                    value={batchForm.rework_destination}
+                    onChange={(e) => setBatchForm({ ...batchForm, rework_destination: e.target.value })}
+                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-slate-800"
+                  >
+                    <option value="Cutting Recut / Correction">Cutting Recut / Correction Line</option>
+                    <option value="In-House Alteration / Trimming">In-House Alteration / Trimming</option>
+                    <option value="Fabric Sorting / Re-layering">Fabric Sorting / Re-layering</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-amber-850 block mb-1">
+                  Rework Instructions / Defect Details
+                </label>
+                <input
+                  type="text"
+                  value={batchForm.rework_remarks}
+                  onChange={(e) => setBatchForm({ ...batchForm, rework_remarks: e.target.value })}
+                  placeholder="e.g. Sleeves 0.5cm shorter than pattern spec, recut front plackets..."
+                  className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white text-slate-800"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Calculated Net Accepted Output */}
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs">

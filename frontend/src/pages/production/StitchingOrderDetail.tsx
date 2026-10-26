@@ -39,8 +39,10 @@ import {
   X,
   Sparkles,
   ShieldCheck,
-  Clock
+  Clock,
+  RotateCcw
 } from 'lucide-react';
+import StageReworkSection from '../../components/production/StageReworkSection';
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -111,8 +113,9 @@ export default function StitchingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Filter tabs: 'ALL' | 'STITCHING'
-  const [activeTab, setActiveTab] = useState<'ALL' | 'STITCHING'>('ALL');
+  // Tabs: 'batches' | 'rework'
+  const [activeTab, setActiveTab] = useState<'batches' | 'rework'>('batches');
+  const [filterMode, setFilterMode] = useState<'ALL' | 'STITCHING'>('ALL');
 
   // Record Stitching Batch Modal State
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -124,6 +127,9 @@ export default function StitchingOrderDetail() {
     completed_quantity: 0,
     rejected_quantity: 0,
     rework_quantity: 0,
+    rework_reason: 'Broken Seam / Stitching Defect',
+    rework_destination: 'Stitching Line Correction',
+    rework_remarks: '',
     remarks: ''
   });
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
@@ -227,6 +233,9 @@ export default function StitchingOrderDetail() {
       completed_quantity: assigned,
       rejected_quantity: 0,
       rework_quantity: 0,
+      rework_reason: 'Broken Seam / Stitching Defect',
+      rework_destination: 'Stitching Line Correction',
+      rework_remarks: '',
       remarks: ''
     });
     setPhotoUrls([]);
@@ -285,6 +294,9 @@ export default function StitchingOrderDetail() {
         completed_quantity: comp,
         rejected_quantity: rej,
         rework_quantity: rwk,
+        rework_reason: batchForm.rework_reason,
+        rework_destination: batchForm.rework_destination,
+        rework_remarks: batchForm.rework_remarks,
         start_date: batchForm.start_date,
         completion_date: batchForm.completion_date,
         remarks: batchForm.remarks,
@@ -357,11 +369,11 @@ export default function StitchingOrderDetail() {
 
   // Filter items
   const filteredItems = useMemo(() => {
-    if (activeTab === 'STITCHING') {
+    if (filterMode === 'STITCHING') {
       return items.filter(it => Number(it.total_arrived || it.available_to_stitch || 0) > 0);
     }
     return items;
-  }, [items, activeTab]);
+  }, [items, filterMode]);
 
   return (
     <div className="min-h-screen bg-slate-50/60 pb-16">
@@ -516,8 +528,43 @@ export default function StitchingOrderDetail() {
           </div>
         </div>
 
-        {/* Table 1: Product-Wise Stitching Status & Action (Table View matching Embroidery) */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('batches')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'batches'
+                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Stitching Batches & Output ({batches.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('rework')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'rework'
+                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Stage 07 Rework & Alteration
+            {overallTotals.totalRework > 0 && (
+              <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                {fmt(overallTotals.totalRework)} pcs
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'batches' && (
+          <>
+            {/* Table 1: Product-Wise Stitching Status & Action (Table View matching Embroidery) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700">
@@ -536,9 +583,9 @@ export default function StitchingOrderDetail() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setActiveTab('ALL')}
+                onClick={() => setFilterMode('ALL')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'ALL'
+                  filterMode === 'ALL'
                     ? 'bg-slate-900 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
@@ -547,9 +594,9 @@ export default function StitchingOrderDetail() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('STITCHING')}
+                onClick={() => setFilterMode('STITCHING')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'STITCHING'
+                  filterMode === 'STITCHING'
                     ? 'bg-brand-600 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
@@ -836,7 +883,20 @@ export default function StitchingOrderDetail() {
             </div>
           )}
         </div>
-      </div>
+      </>
+    )}
+
+    {activeTab === 'rework' && (
+      <StageReworkSection
+        productionOrderId={Number(order?.id || id)}
+        stageId={7}
+        stageCode="STI"
+        stageName="Stitching"
+        uom="PCS"
+        onReload={fetchOrderData}
+      />
+    )}
+  </div>
 
       {/* MODAL 1: Record Stitching Batch */}
       <Modal
@@ -965,6 +1025,56 @@ export default function StitchingOrderDetail() {
                 />
               </div>
             </div>
+
+            {Number(batchForm.rework_quantity) > 0 && (
+              <div className="pt-2 border-t border-amber-200/80 bg-amber-50/60 p-3 rounded-lg space-y-2 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                      Rework Defect Category *
+                    </label>
+                    <select
+                      value={batchForm.rework_reason}
+                      onChange={e => setBatchForm({ ...batchForm, rework_reason: e.target.value })}
+                      className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-amber-900"
+                    >
+                      <option value="Broken Seam / Stitching Defect">Broken Seam / Stitching Defect</option>
+                      <option value="Pucker / High Thread Tension">Pucker / High Thread Tension</option>
+                      <option value="Incorrect Label / Hemming">Incorrect Label / Hemming</option>
+                      <option value="Skipped Stitches / Needle Run">Skipped Stitches / Needle Run</option>
+                      <option value="Uneven Topstitching">Uneven Topstitching</option>
+                      <option value="Other Stitching Defect">Other Stitching Defect</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                      Correction Process / Line
+                    </label>
+                    <select
+                      value={batchForm.rework_destination}
+                      onChange={e => setBatchForm({ ...batchForm, rework_destination: e.target.value })}
+                      className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white font-medium text-slate-800"
+                    >
+                      <option value="Stitching Line Correction">Stitching Line Correction</option>
+                      <option value="In-House Alteration / Unpicking">In-House Alteration / Unpicking</option>
+                      <option value="Finishing / Hemming Touch-up">Finishing / Hemming Touch-up</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-amber-900 block mb-1">
+                    Alteration Instructions / Defect Details
+                  </label>
+                  <input
+                    type="text"
+                    value={batchForm.rework_remarks}
+                    onChange={e => setBatchForm({ ...batchForm, rework_remarks: e.target.value })}
+                    placeholder="e.g. Unpick side seam 3 inches, re-stitch with matched thread..."
+                    className="w-full text-xs rounded border border-amber-300 py-1.5 px-2 bg-white text-slate-800"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Dynamic Passed QC Output Banner */}
             <div className="p-3 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/90 rounded-lg flex items-center justify-between">

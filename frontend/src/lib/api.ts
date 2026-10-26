@@ -1,5 +1,5 @@
 // src/lib/api.ts
-import { POTemplateColumn, POTemplateProcessField, POTemplateTerm, POTemplateSignature, POTemplateData } from '../types';
+import { POTemplateColumn, POTemplateProcessField, POTemplateTerm, POTemplateSignature, POTemplateData, ReworkRecord } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -151,6 +151,18 @@ export const api = {
   getStageOrders: (stageCode: string) =>
     request<unknown[]>(`/production/stage/${stageCode}`),
   getReworkList: () => request<unknown[]>('/production/rework'),
+  getReworkRecords: (params?: { production_order_id?: number | string; stage_id?: number | string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.production_order_id) query.append('production_order_id', String(params.production_order_id));
+    if (params?.stage_id) query.append('stage_id', String(params.stage_id));
+    if (params?.status) query.append('status', params.status);
+    const qs = query.toString();
+    return request<ReworkRecord[]>(`/production/rework${qs ? `?${qs}` : ''}`);
+  },
+  createRework: (data: any) => request<any>('/production/rework/create', 'POST', data),
+  sendRework: (data: any) => request<any>('/production/rework/send', 'POST', data),
+  receiveRework: (data: any) => request<any>('/production/rework/receive', 'POST', data),
+  reinspectRework: (data: any) => request<any>('/production/rework/reinspect', 'POST', data),
   getQCList: () => request<unknown[]>('/production/qc'),
   recordQC: (data: unknown) => request<unknown>('/qc', 'POST', data),
 

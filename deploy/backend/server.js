@@ -1810,10 +1810,83 @@ const server = http.createServer(async (req, res) => {
       return sendSuccess(res, stageItems);
     }
 
-    if (pathname === '/production/rework' && method === 'GET') return sendSuccess(res, db.reworkRecords);
-    if (pathname === '/production/qc' && method === 'GET') return sendSuccess(res, db.qcRecords);
+    if (pathname === '/production/rework' && method === 'GET') {
+      if (!db.reworkRecords) db.reworkRecords = [];
+      const poId = parsedUrl.searchParams.get('production_order_id');
+      const stId = parsedUrl.searchParams.get('stage_id');
+      const stStatus = parsedUrl.searchParams.get('status');
+      let list = [...db.reworkRecords];
+      if (poId) list = list.filter(r => String(r.production_order_id) === String(poId));
+      if (stId) list = list.filter(r => String(r.stage_id) === String(stId));
+      if (stStatus) list = list.filter(r => String(r.status) === String(stStatus));
+      return sendSuccess(res, list);
+    }
+
+    if (pathname === '/production/rework/create' && method === 'POST') {
+      if (!db.reworkRecords) db.reworkRecords = [];
+      const newRwk = {
+        id: db.reworkRecords.length + 1,
+        rework_order_no: `RWK-${Date.now().toString().slice(-6)}`,
+        cycle_number: 1,
+        status: 'Pending Rework',
+        created_at: new Date().toISOString(),
+        ...body
+      };
+      db.reworkRecords.unshift(newRwk);
+      saveDB();
+      return sendSuccess(res, newRwk, 'Rework created', 201);
+    }
+
+    if (pathname === '/production/rework/send' && method === 'POST') {
+      if (!db.reworkRecords) db.reworkRecords = [];
+      const rec = db.reworkRecords.find(r => String(r.id) === String(body.rework_id));
+      if (rec) {
+        rec.status = 'Sent for Rework';
+        rec.sent_date = body.sent_date || new Date().toISOString().split('T')[0];
+        rec.dc_challan_no = body.dc_challan_no || rec.dc_challan_no;
+        rec.vendor_name = body.vendor_name || rec.vendor_name;
+        saveDB();
+        return sendSuccess(res, rec, 'Sent for rework');
+      }
+      return sendError(res, 'Rework record not found', 404);
+    }
+
+    if (pathname === '/production/rework/receive' && method === 'POST') {
+      if (!db.reworkRecords) db.reworkRecords = [];
+      const rec = db.reworkRecords.find(r => String(r.id) === String(body.rework_id));
+      if (rec) {
+        rec.status = 'Rework Received';
+        rec.received_date = body.received_date || new Date().toISOString().split('T')[0];
+        saveDB();
+        return sendSuccess(res, rec, 'Rework return received');
+      }
+      return sendError(res, 'Rework record not found', 404);
+    }
+
+    if (pathname === '/production/rework/reinspect' && method === 'POST') {
+      if (!db.reworkRecords) db.reworkRecords = [];
+      const rec = db.reworkRecords.find(r => String(r.id) === String(body.rework_id));
+      if (rec) {
+        const acc = Number(body.accepted_quantity || 0);
+        const rej = Number(body.rejected_quantity || 0);
+        rec.accepted_quantity = Number(rec.accepted_quantity || 0) + acc;
+        rec.rejected_quantity = Number(rec.rejected_quantity || 0) + rej;
+        rec.pending_quantity = Math.max(0, Number(rec.rework_quantity || 0) - rec.accepted_quantity - rec.rejected_quantity);
+        rec.cycle_number = Number(rec.cycle_number || 1) + 1;
+        rec.status = rec.pending_quantity > 0 ? 'Sent for Rework' : (acc > 0 ? 'Accepted After Rework' : 'Rejected');
+        rec.reinspection_date = body.reinspection_date || new Date().toISOString().split('T')[0];
+        rec.reinspection_notes = body.reinspection_notes || '';
+        rec.inspector_name = body.inspector_name || 'QC Inspector';
+        saveDB();
+        return sendSuccess(res, rec, 'Rework reinspection recorded');
+      }
+      return sendError(res, 'Rework record not found', 404);
+    }
+
+    if (pathname === '/production/qc' && method === 'GET') return sendSuccess(res, db.qcRecords || []);
 
     if (pathname === '/qc' && method === 'POST') {
+      if (!db.qcRecords) db.qcRecords = [];
       const qcRec = {
         id: db.qcRecords.length + 1,
         inspector_name: 'S. Divya',
@@ -1821,14 +1894,15 @@ const server = http.createServer(async (req, res) => {
       };
       db.qcRecords.unshift(qcRec);
       if (body.rework_quantity > 0) {
+        if (!db.reworkRecords) db.reworkRecords = [];
         db.reworkRecords.unshift({
           id: db.reworkRecords.length + 1,
           order_number: body.order_number || 'ORD-1002',
           product_name: body.product_name || 'Apparel Lot',
-          quantity: body.rework_quantity,
+          rework_quantity: body.rework_quantity,
           target_stage_name: 'Stitching',
-          status: 'IN REWORK',
-          resolution_notes: body.remarks || 'Remedial fix required',
+          status: 'Pending Rework',
+          rework_reason: body.remarks || 'Remedial fix required',
         });
       }
       saveDB();

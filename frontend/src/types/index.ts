@@ -905,4 +905,62 @@ export interface ProductionDashboardKPIs {
 
 export type ProductionDashboardStats = ProductionDashboardKPIs;
 
+// Rework Management across Stages 04, 05, 06, 07, 08
+export type ReworkStatus = 
+  | 'Pending Rework'
+  | 'Sent for Rework'
+  | 'Rework Received'
+  | 'Reinspection Pending'
+  | 'Accepted After Rework'
+  | 'Rejected'
+  | 'Scrapped';
+
+export interface ReworkRecord {
+  id: number;
+  rework_order_no: string;
+  production_order_id: number;
+  production_order_item_id?: number;
+  stage_id: number;
+  stage_code: string;
+  qc_record_id?: number;
+  product_id?: number;
+  product_name?: string;
+  display_product_name?: string;
+  display_product_code?: string;
+  order_number?: string;
+  item_color?: string;
+  color?: string;
+  size?: string;
+  batch_number?: string;
+  rework_quantity: number;
+  uom: string;
+  rework_reason?: string;
+  rework_remarks?: string;
+  rework_stage_id?: number;
+  source_stage_name?: string;
+  source_stage_code?: string;
+  target_stage_name?: string;
+  target_stage_code?: string;
+  destination_process?: string;
+  vendor_id?: number;
+  vendor_name?: string;
+  dc_challan_no?: string;
+  sent_date?: string;
+  received_date?: string;
+  reinspection_date?: string;
+  reinspection_result?: string;
+  reinspection_notes?: string;
+  inspector_name?: string;
+  accepted_quantity: number;
+  rejected_quantity: number;
+  pending_quantity: number;
+  cycle_number: number;
+  status: ReworkStatus;
+  reference_type?: string;
+  reference_id?: string;
+  metadata_json?: any;
+  created_at: string;
+  updated_at?: string;
+}
+
 

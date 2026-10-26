@@ -46,8 +46,10 @@ import {
   Building2,
   Save,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  RotateCcw
 } from 'lucide-react';
+import StageReworkSection from '../../components/production/StageReworkSection';
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -139,8 +141,9 @@ export default function EmbroideryOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Filter tabs: 'ALL' | 'EMBROIDERY'
-  const [activeTab, setActiveTab] = useState<'ALL' | 'EMBROIDERY'>('ALL');
+  // Filter tabs: 'job_orders' | 'rework'
+  const [activeTab, setActiveTab] = useState<'job_orders' | 'rework'>('job_orders');
+  const [productFilter, setProductFilter] = useState<'ALL' | 'EMBROIDERY'>('ALL');
 
   // Document Print / Preview Modal State
   const [printModalOpen, setPrintModalOpen] = useState(false);
@@ -185,7 +188,7 @@ export default function EmbroideryOrderDetail() {
     remarks: ''
   });
   const [inwardItemQuantities, setInwardItemQuantities] = useState<{
-    [key: string]: { received: number; accepted: number; rejected: number; rework: number }
+    [key: string]: { received: number; accepted: number; rejected: number; rework: number; rework_reason?: string; rework_remarks?: string }
   }>({});
   const [inwardPhotos, setInwardPhotos] = useState<string[]>([]);
   const [savingInward, setSavingInward] = useState(false);
@@ -569,7 +572,7 @@ export default function EmbroideryOrderDetail() {
   const handleOpenInwardModal = (job: any) => {
     setSelectedJobOrder(job);
     const jItems = Array.isArray(job.items_json) ? job.items_json : [];
-    const initQty: { [key: string]: { received: number; accepted: number; rejected: number; rework: number } } = {};
+    const initQty: { [key: string]: { received: number; accepted: number; rejected: number; rework: number; rework_reason?: string; rework_remarks?: string } } = {};
 
     jItems.forEach((ji: any, idx: number) => {
       const key = String(ji.production_order_item_id || idx);
@@ -580,13 +583,15 @@ export default function EmbroideryOrderDetail() {
         received: pending,
         accepted: pending,
         rejected: 0,
-        rework: 0
+        rework: 0,
+        rework_reason: 'Thread Breakage / Missing Stitches',
+        rework_remarks: ''
       };
     });
 
     if (jItems.length === 0) {
       const out = Number(job.total_quantity_outstanding || job.total_quantity_sent || 0);
-      initQty['0'] = { received: out, accepted: out, rejected: 0, rework: 0 };
+      initQty['0'] = { received: out, accepted: out, rejected: 0, rework: 0, rework_reason: 'Thread Breakage / Missing Stitches', rework_remarks: '' };
     }
 
     setInwardItemQuantities(initQty);
@@ -637,7 +642,9 @@ export default function EmbroideryOrderDetail() {
             received_quantity: Number(q.received),
             accepted_quantity: Number(q.accepted),
             rejected_quantity: Number(q.rejected),
-            rework_quantity: Number(q.rework)
+            rework_quantity: Number(q.rework),
+            rework_reason: q.rework_reason || 'Thread Breakage / Missing Stitches',
+            rework_remarks: q.rework_remarks || ''
           });
         }
       });
@@ -648,7 +655,9 @@ export default function EmbroideryOrderDetail() {
         received_quantity: Number(q.received),
         accepted_quantity: Number(q.accepted),
         rejected_quantity: Number(q.rejected),
-        rework_quantity: Number(q.rework)
+        rework_quantity: Number(q.rework),
+        rework_reason: q.rework_reason || 'Thread Breakage / Missing Stitches',
+        rework_remarks: q.rework_remarks || ''
       });
     }
 
@@ -740,11 +749,11 @@ export default function EmbroideryOrderDetail() {
 
   // Filtered product items
   const filteredItems = useMemo(() => {
-    if (activeTab === 'EMBROIDERY') {
+    if (productFilter === 'EMBROIDERY') {
       return items.filter(it => Number(it.arrived_from_cutting || 0) > 0 || it.at_embroidery_stage);
     }
     return items;
-  }, [items, activeTab]);
+  }, [items, productFilter]);
 
   // =========================================================================
   // FULL PAGE: CREATE EMBROIDERY JOB ORDER (MATCHING CREATE DYEING ORDER UI)
@@ -1381,8 +1390,43 @@ export default function EmbroideryOrderDetail() {
           </div>
         </div>
 
-        {/* Table 1: Product-Wise Embroidery Status & Dispatch */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('job_orders')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'job_orders'
+                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Embroidery Job Orders & Inward ({jobOrders.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('rework')}
+            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
+              activeTab === 'rework'
+                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Stage 06 Rework & Vendor Correction
+            {overallTotals.reworkQty > 0 && (
+              <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                {fmt(overallTotals.reworkQty)} pcs
+              </span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'job_orders' && (
+          <>
+            {/* Table 1: Product-Wise Embroidery Status & Dispatch */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700">
@@ -1401,9 +1445,9 @@ export default function EmbroideryOrderDetail() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setActiveTab('ALL')}
+                onClick={() => setProductFilter('ALL')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'ALL'
+                  productFilter === 'ALL'
                     ? 'bg-slate-900 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
@@ -1412,9 +1456,9 @@ export default function EmbroideryOrderDetail() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('EMBROIDERY')}
+                onClick={() => setProductFilter('EMBROIDERY')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  activeTab === 'EMBROIDERY'
+                  productFilter === 'EMBROIDERY'
                     ? 'bg-brand-600 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
@@ -1837,7 +1881,20 @@ export default function EmbroideryOrderDetail() {
             </div>
           )}
         </div>
-      </div>
+      </>
+    )}
+
+    {activeTab === 'rework' && (
+      <StageReworkSection
+        productionOrderId={Number(order?.id || id)}
+        stageId={6}
+        stageCode="EMB"
+        stageName="Embroidery"
+        uom="PCS"
+        onReload={fetchOrderData}
+      />
+    )}
+  </div>
 
       {/* MODAL 1: Receive Inward & QC */}
       <Modal
@@ -2026,6 +2083,52 @@ export default function EmbroideryOrderDetail() {
                           />
                         </div>
                       </div>
+
+                      {Number(q.rework) > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-amber-200/70 bg-amber-50/50 p-2.5 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="text-[10px] font-bold text-amber-800 block mb-1">
+                              Rework Defect Reason *
+                            </label>
+                            <select
+                              value={q.rework_reason || 'Thread Breakage / Missing Stitches'}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setInwardItemQuantities(prev => ({
+                                  ...prev,
+                                  [key]: { ...q, rework_reason: val }
+                                }));
+                              }}
+                              className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white font-medium text-amber-900"
+                            >
+                              <option value="Thread Breakage / Missing Stitches">Thread Breakage / Missing Stitches</option>
+                              <option value="Design Misalignment / Skewed">Design Misalignment / Skewed</option>
+                              <option value="Wrong Thread Color / Shade Mismatch">Wrong Thread Color / Shade Mismatch</option>
+                              <option value="Fabric Hole / Needle Cut">Fabric Hole / Needle Cut</option>
+                              <option value="Puckering / High Tension">Puckering / High Tension</option>
+                              <option value="Other Embroidery Defect">Other Embroidery Defect</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-amber-800 block mb-1">
+                              Correction Instructions for Vendor
+                            </label>
+                            <input
+                              type="text"
+                              value={q.rework_remarks || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setInwardItemQuantities(prev => ({
+                                  ...prev,
+                                  [key]: { ...q, rework_remarks: val }
+                                }));
+                              }}
+                              placeholder="e.g. Fill missing leaf motif on left chest..."
+                              className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white text-slate-800"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })

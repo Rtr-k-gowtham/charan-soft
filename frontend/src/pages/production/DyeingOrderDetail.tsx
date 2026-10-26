@@ -26,8 +26,10 @@ import {
   VERIFIED_PANTONE_LIBRARY 
 } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
+import StageReworkSection from '../../components/production/StageReworkSection';
 import {
   ArrowLeft,
+  RotateCcw,
   Droplets,
   RefreshCw,
   Printer,
@@ -140,8 +142,8 @@ export default function DyeingOrderDetail() {
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
-  // Tabs: 'orders' | 'history'
-  const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders');
+  // Tabs: 'orders' | 'history' | 'rework'
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'rework'>('orders');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [expandedOrderIds, setExpandedOrderIds] = useState<Set<number>>(new Set());
@@ -183,6 +185,9 @@ export default function DyeingOrderDetail() {
     planned_quantity: number;
     already_received: number;
     received_quantity: number;
+    accepted_quantity?: number;
+    rework_quantity?: number;
+    rework_reason?: string;
     shrinkage_loss_percent: number;
     shade_match_status: string;
     notes: string;
@@ -748,6 +753,9 @@ export default function DyeingOrderDetail() {
         planned_quantity: planned,
         already_received: rec,
         received_quantity: remaining,
+        accepted_quantity: remaining,
+        rework_quantity: 0,
+        rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
         notes: ''
@@ -767,6 +775,9 @@ export default function DyeingOrderDetail() {
         planned_quantity: planned,
         already_received: rec,
         received_quantity: remaining,
+        accepted_quantity: remaining,
+        rework_quantity: 0,
+        rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
         notes: ''
@@ -783,13 +794,27 @@ export default function DyeingOrderDetail() {
 
     // Auto calculate shrinkage loss % if received_quantity changes
     if (field === 'received_quantity') {
-      const sent = Number(updated[index].planned_quantity || 0);
       const rec = value === '' ? 0 : Number(value);
+      const rwk = Number(updated[index].rework_quantity || 0);
+      updated[index].accepted_quantity = Math.max(0, Number((rec - rwk).toFixed(2)));
+      const sent = Number(updated[index].planned_quantity || 0);
       if (sent > 0 && rec >= 0) {
         const diff = sent - rec;
         const shrinkage = diff > 0 ? Number(((diff / sent) * 100).toFixed(2)) : 0;
         updated[index].shrinkage_loss_percent = shrinkage;
       }
+    }
+
+    if (field === 'rework_quantity') {
+      const rwk = value === '' ? 0 : Number(value);
+      const rec = Number(updated[index].received_quantity || 0);
+      updated[index].accepted_quantity = Math.max(0, Number((rec - rwk).toFixed(2)));
+    }
+
+    if (field === 'accepted_quantity') {
+      const acc = value === '' ? 0 : Number(value);
+      const rec = Number(updated[index].received_quantity || 0);
+      updated[index].rework_quantity = Math.max(0, Number((rec - acc).toFixed(2)));
     }
 
     setReceivingItems(updated);
@@ -799,20 +824,37 @@ export default function DyeingOrderDetail() {
     const updated = [...receivingItems];
     const it = updated[index];
     const remaining = Math.max(0, Number((it.planned_quantity - it.already_received).toFixed(2)));
-    updated[index] = { ...it, received_quantity: remaining, shrinkage_loss_percent: 0 };
+    updated[index] = { 
+      ...it, 
+      received_quantity: remaining, 
+      accepted_quantity: remaining, 
+      rework_quantity: 0, 
+      shrinkage_loss_percent: 0 
+    };
     setReceivingItems(updated);
   };
 
   const handleFillAllRemaining = () => {
     const updated = receivingItems.map(it => {
       const remaining = Math.max(0, Number((it.planned_quantity - it.already_received).toFixed(2)));
-      return { ...it, received_quantity: remaining, shrinkage_loss_percent: 0 };
+      return { 
+        ...it, 
+        received_quantity: remaining, 
+        accepted_quantity: remaining, 
+        rework_quantity: 0, 
+        shrinkage_loss_percent: 0 
+      };
     });
     setReceivingItems(updated);
   };
 
   const handleClearAllQuantities = () => {
-    const updated = receivingItems.map(it => ({ ...it, received_quantity: 0 }));
+    const updated = receivingItems.map(it => ({ 
+      ...it, 
+      received_quantity: 0, 
+      accepted_quantity: 0, 
+      rework_quantity: 0 
+    }));
     setReceivingItems(updated);
   };
 
@@ -827,6 +869,9 @@ export default function DyeingOrderDetail() {
         planned_quantity: 0,
         already_received: 0,
         received_quantity: 0,
+        accepted_quantity: 0,
+        rework_quantity: 0,
+        rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
         notes: ''
@@ -851,6 +896,17 @@ export default function DyeingOrderDetail() {
       return;
     }
 
+    // Validate each row for Accepted + Rework = Received
+    for (const it of receivingItems) {
+      const rQty = Number(it.received_quantity || 0);
+      const accQty = Number(it.accepted_quantity ?? it.received_quantity ?? 0);
+      const rwkQty = Number(it.rework_quantity || 0);
+      if (rQty > 0 && Math.abs((accQty + rwkQty) - rQty) > 0.01) {
+        setReceiveError(`Color "${it.color_name}": Accepted (${accQty}) + Rework (${rwkQty}) must equal Received quantity (${rQty}).`);
+        return;
+      }
+    }
+
     setSavingReceive(true);
     try {
       const numericPoId = Number(order?.id) || Number(selectedDyeingOrder.production_order_id) || (Number.isFinite(Number(id)) ? Number(id) : undefined);
@@ -869,6 +925,9 @@ export default function DyeingOrderDetail() {
           color_name: it.color_name,
           planned_quantity: Number(it.planned_quantity || 0),
           received_quantity: Number(it.received_quantity || 0),
+          accepted_quantity: Number(it.accepted_quantity ?? it.received_quantity ?? 0),
+          rework_quantity: Number(it.rework_quantity || 0),
+          rework_reason: it.rework_reason || 'Shade Mismatch / Uneven Dyeing',
           shrinkage_loss_percent: Number(it.shrinkage_loss_percent || 0),
           shade_match_status: it.shade_match_status,
           notes: it.notes
@@ -1664,6 +1723,18 @@ export default function DyeingOrderDetail() {
                 {allDyeingReceipts.length}
               </span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('rework')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                activeTab === 'rework'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Fabric Rework & Re-dyeing</span>
+            </button>
           </div>
 
           {/* Search and Filters */}
@@ -2321,6 +2392,18 @@ export default function DyeingOrderDetail() {
             </div>
           </div>
         )}
+
+        {/* TAB 3: FABRIC REWORK & RE-DYEING */}
+        {activeTab === 'rework' && (
+          <StageReworkSection
+            productionOrderId={Number(order?.id || id)}
+            stageId={4}
+            stageCode="DYE"
+            stageName="Dyeing"
+            uom={dyeingOrders[0]?.uom || 'MTR'}
+            onReload={loadData}
+          />
+        )}
       </div>
 
 
@@ -2478,7 +2561,7 @@ export default function DyeingOrderDetail() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-2 border-t border-slate-200/60">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-2 border-t border-slate-200/60">
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-[11px] font-semibold text-slate-700">
@@ -2505,39 +2588,93 @@ export default function DyeingOrderDetail() {
                         />
                       </div>
 
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                        Shrinkage / Loss %
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={it.shrinkage_loss_percent}
-                        onChange={e => handleReceiveItemChange(idx, 'shrinkage_loss_percent', e.target.value)}
-                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 bg-white"
-                        placeholder="e.g. 2.0"
-                      />
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-emerald-700">
+                            Accepted Qty ({selectedDyeingOrder?.uom}) *
+                          </label>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.accepted_quantity}
+                          onChange={e => handleReceiveItemChange(idx, 'accepted_quantity', e.target.value)}
+                          className="w-full text-xs font-bold rounded-lg border border-emerald-300 py-1.5 px-2.5 bg-emerald-50/40 text-emerald-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-2xs"
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[11px] font-semibold text-amber-700">
+                            Rework Qty ({selectedDyeingOrder?.uom})
+                          </label>
+                        </div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={it.rework_quantity}
+                          onChange={e => handleReceiveItemChange(idx, 'rework_quantity', e.target.value)}
+                          className="w-full text-xs font-bold rounded-lg border border-amber-300 py-1.5 px-2.5 bg-amber-50/40 text-amber-900 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-2xs"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                          Pantone Shade Check
+                        </label>
+                        <select
+                          value={it.shade_match_status}
+                          onChange={e => handleReceiveItemChange(idx, 'shade_match_status', e.target.value)}
+                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800 bg-white"
+                        >
+                          <option value="Approved - Pantone Matched">Approved - Pantone Matched</option>
+                          <option value="Approved with Minor Variation">Approved with Minor Variation</option>
+                          <option value="Shade Variation (Pending Approval)">Shade Variation</option>
+                          <option value="Rejected - Off Shade">Rejected - Off Shade</option>
+                        </select>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                        Pantone Shade Check
-                      </label>
-                      <select
-                        value={it.shade_match_status}
-                        onChange={e => handleReceiveItemChange(idx, 'shade_match_status', e.target.value)}
-                        className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800 bg-white"
-                      >
-                        <option value="Approved - Pantone Matched">Approved - Pantone Matched</option>
-                        <option value="Approved with Minor Variation">Approved with Minor Variation</option>
-                        <option value="Shade Variation (Pending Approval)">Shade Variation</option>
-                        <option value="Rejected - Off Shade">Rejected - Off Shade</option>
-                      </select>
-                    </div>
+                    {Number(it.rework_quantity) > 0 && (
+                      <div className="pt-2 border-t border-amber-200/80 bg-amber-50/50 p-2.5 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="text-[11px] font-bold text-amber-800 block mb-1">
+                            Rework Reason / Defect Category *
+                          </label>
+                          <select
+                            value={it.rework_reason || 'Shade Mismatch / Uneven Dyeing'}
+                            onChange={e => handleReceiveItemChange(idx, 'rework_reason', e.target.value)}
+                            className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white font-medium text-amber-900"
+                          >
+                            <option value="Shade Mismatch / Uneven Dyeing">Shade Mismatch / Uneven Dyeing</option>
+                            <option value="Patchiness / Streaks in Fabric">Patchiness / Streaks in Fabric</option>
+                            <option value="Excessive Shrinkage / Width Loss">Excessive Shrinkage / Width Loss</option>
+                            <option value="Fabric Hand Feel / Stiff Finish">Fabric Hand Feel / Stiff Finish</option>
+                            <option value="Color Fastness / Rubbing Bleed">Color Fastness / Rubbing Bleed</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-amber-800 block mb-1">
+                            Correction Notes for Mill
+                          </label>
+                          <input
+                            type="text"
+                            value={it.notes || ''}
+                            onChange={e => handleReceiveItemChange(idx, 'notes', e.target.value)}
+                            placeholder="e.g. Needs 1 tone darker to match TCX..."
+                            className="w-full text-xs rounded border border-amber-300 py-1 px-2 bg-white text-slate-800"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
             </div>
           </div>
 
