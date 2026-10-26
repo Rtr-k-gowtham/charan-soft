@@ -9,6 +9,7 @@ import Modal from '../ui/Modal';
 import StatusBadge from '../ui/StatusBadge';
 import SearchableSelect, { SelectOption } from '../ui/SearchableSelect';
 import { getCategoryVisual } from '../../pages/masters/Categories';
+import UnorderedBOMItemsSection from '../purchase/UnorderedBOMItemsSection';
 import {
   ShoppingCart,
   Building2,
@@ -33,7 +34,8 @@ import {
   PackageCheck,
   Eye,
   Ban,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 
 export interface CategorySupplierGroup {
@@ -100,6 +102,9 @@ export default function CategoryPOIssuer({
   const [updatingPOStatus, setUpdatingPOStatus] = useState<Record<number, boolean>>({});
 
 
+  const [activeIssuerTab, setActiveIssuerTab] = useState<'GROUPS' | 'UNORDERED'>('GROUPS');
+  const [pendingUnorderedCount, setPendingUnorderedCount] = useState<number>(0);
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
@@ -142,6 +147,16 @@ export default function CategoryPOIssuer({
   useEffect(() => {
     loadDependencies();
   }, [orderId, orderNumber]);
+
+  useEffect(() => {
+    if (orderId) {
+      api.getUnorderedItems(orderId).then((res: any) => {
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const pending = list.filter((it: any) => Number(it.remaining_unordered_quantity) > 0.001);
+        setPendingUnorderedCount(pending.length);
+      }).catch(() => {});
+    }
+  }, [orderId, existingPOs]);
 
   useEffect(() => {
     if (location.state?.successMessage) {
@@ -635,13 +650,88 @@ export default function CategoryPOIssuer({
 
       {/* CATEGORY & SUPPLIER-BASED MATERIAL PROCUREMENT & PO GENERATION (STRUCTURED TABLE VIEW) */}
       <div className="p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            Purchase Order Stage ({categorySupplierGroups.length} {categorySupplierGroups.length === 1 ? 'Group' : 'Groups'})
-          </h4>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-semibold">
+            <button
+              onClick={() => setActiveIssuerTab('GROUPS')}
+              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${activeIssuerTab === 'GROUPS' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <span>Category PO Groups</span>
+              <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">
+                {categorySupplierGroups.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveIssuerTab('UNORDERED')}
+              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${activeIssuerTab === 'UNORDERED' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <span>Unordered Materials Tracking</span>
+              {pendingUnorderedCount > 0 ? (
+                <span className="font-mono text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.2 rounded-full animate-pulse">
+                  {pendingUnorderedCount}
+                </span>
+              ) : (
+                <span className="font-mono text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
+                  0
+                </span>
+              )}
+            </button>
+          </div>
+
+          {pendingUnorderedCount > 0 && activeIssuerTab === 'GROUPS' && (
+            <button
+              onClick={() => setActiveIssuerTab('UNORDERED')}
+              className="text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition self-start sm:self-auto shadow-2xs"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>{pendingUnorderedCount} material line(s) pending order</span>
+              <ChevronRight className="w-3 h-3 text-amber-500 shrink-0" />
+            </button>
+          )}
         </div>
 
-        {categorySupplierGroups.length === 0 ? (
+        {activeIssuerTab === 'UNORDERED' ? (
+          <UnorderedBOMItemsSection
+            productionOrderId={orderId}
+            productionOrderNumber={orderNumber}
+            onOrderMaterial={(item) => {
+              navigate('/purchase/orders?create=true', {
+                state: {
+                  production_order_id: orderId,
+                  production_order_number: orderNumber,
+                  supplier_id: item.supplier_id,
+                  target_delivery_date: targetDeliveryDate,
+                  from: location.pathname,
+                  materials: [{
+                    material_id: item.material_id,
+                    material_code: item.material_code,
+                    item_description: item.material_name,
+                    category: item.category_name,
+                    uom: item.uom,
+                    quantity: item.remaining_unordered_quantity,
+                    rate: item.unit_cost || 0,
+                    size: item.size,
+                    model: item.model,
+                    length: item.length,
+                    thickness: item.thickness,
+                    tax_percent: 5,
+                  }]
+                }
+              });
+            }}
+            onRefreshParent={() => {
+              api.getPurchaseOrders().then((all: any) => {
+                const list = Array.isArray(all) ? all : (all?.data || []);
+                const rel = list.filter((p: any) => {
+                  if (p.production_order_id && String(p.production_order_id) === String(orderId)) return true;
+                  if (p.production_order_number && p.production_order_number === orderNumber) return true;
+                  return false;
+                });
+                setExistingPOs(rel);
+              });
+            }}
+          />
+        ) : categorySupplierGroups.length === 0 ? (
           <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-200">
             No raw material requirements found for this order. Please verify BOM master configuration.
           </div>

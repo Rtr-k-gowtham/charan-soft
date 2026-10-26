@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../core/AuditLogger.php';
+require_once __DIR__ . '/ProductionController.php';
 
 class PurchaseOrderController {
     private function enrichPaymentStatus(array &$po): void {
@@ -381,6 +382,11 @@ class PurchaseOrderController {
                 }
             }
 
+            // Record any excluded/removed materials before issuing PO
+            if (!empty($data['excluded_materials']) && is_array($data['excluded_materials']) && !empty($data['production_order_id'])) {
+                $this->recordExcludedMaterials($pdo, (int)$data['production_order_id'], $poId, $poNumber, $data['excluded_materials']);
+            }
+
             if ($pdo->inTransaction()) {
                 $pdo->commit();
             }
@@ -541,6 +547,14 @@ class PurchaseOrderController {
             // Save PO Terms snapshot if provided in update payload
             if (array_key_exists('terms', $data) && is_array($data['terms'])) {
                 $this->savePOTerms($pdo, $poId, $data['terms']);
+            }
+
+            // Record any excluded/removed materials when editing PO
+            if (!empty($data['excluded_materials']) && is_array($data['excluded_materials'])) {
+                $pOrdId = !empty($data['production_order_id']) ? (int)$data['production_order_id'] : (int)($po['production_order_id'] ?? 0);
+                if ($pOrdId > 0) {
+                    $this->recordExcludedMaterials($pdo, $pOrdId, $poId, $po['po_number'], $data['excluded_materials']);
+                }
             }
 
             if ($pdo->inTransaction()) {
@@ -1472,6 +1486,375 @@ class PurchaseOrderController {
                 ':display_order' => $order,
                 ':is_active' => $active
             ]);
+        }
+    }
+
+    private function normalizeName(?string $str): string {
+        if ($str === null || $str === '') return '';
+        $clean = preg_replace('/\s*\[[A-Za-z0-9_-]+\]\s*/', ' ', $str);
+        $clean = preg_replace('/[^a-zA-Z0-9]/', '', $clean);
+        return strtolower(trim((string)$clean));
+    }
+
+    private function ensureExcludedMaterialsTable(PDO $pdo): void {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `po_excluded_materials` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `production_order_id` INT NOT NULL,
+                  `purchase_order_id` INT NULL,
+                  `purchase_order_number` VARCHAR(100) NULL,
+                  `material_id` INT NULL,
+                  `material_code` VARCHAR(50) NULL,
+                  `material_name` VARCHAR(150) NOT NULL,
+                  `category_name` VARCHAR(100) NULL,
+                  `uom` VARCHAR(20) NOT NULL DEFAULT 'PCS',
+                  `required_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `excluded_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                  `supplier_id` INT NULL,
+                  `supplier_name` VARCHAR(150) NULL,
+                  `reason` VARCHAR(255) DEFAULT 'Removed from purchase order before issuance',
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  INDEX `idx_po_excl_pord` (`production_order_id`),
+                  INDEX `idx_po_excl_po` (`purchase_order_id`),
+                  INDEX `idx_po_excl_mat` (`material_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (\Throwable $e) {
+            error_log("ensureExcludedMaterialsTable failed: " . $e->getMessage());
+        }
+    }
+
+    private function recordExcludedMaterials(PDO $pdo, int $productionOrderId, int $poId, string $poNumber, array $excludedMaterials): void {
+        try {
+            $this->ensureExcludedMaterialsTable($pdo);
+            $stmt = $pdo->prepare("
+                INSERT INTO po_excluded_materials 
+                (production_order_id, purchase_order_id, purchase_order_number, material_id, material_code, material_name, category_name, uom, required_quantity, excluded_quantity, supplier_id, supplier_name, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            foreach ($excludedMaterials as $ex) {
+                $matId = !empty($ex['material_id']) ? (int)$ex['material_id'] : null;
+                $matCode = $ex['material_code'] ?? null;
+                $matName = trim((string)($ex['name'] ?? ($ex['item_description'] ?? ($ex['material_name'] ?? 'Material'))));
+                $catName = trim((string)($ex['category'] ?? ($ex['category_name'] ?? 'General')));
+                $uom = trim((string)($ex['uom'] ?? 'PCS'));
+                $reqQty = (float)($ex['total_required_qty'] ?? ($ex['required_quantity'] ?? ($ex['quantity'] ?? 0)));
+                $exQty = (float)($ex['quantity'] ?? ($ex['total_required_qty'] ?? 0));
+                $supId = !empty($ex['preferred_supplier_id']) ? (int)$ex['preferred_supplier_id'] : (!empty($ex['supplier_id']) ? (int)$ex['supplier_id'] : null);
+                $supName = $ex['preferred_supplier_name'] ?? ($ex['supplier_name'] ?? null);
+                $reason = $ex['reason'] ?? 'Removed from purchase order before issuance';
+
+                if (!empty($matName)) {
+                    $stmt->execute([
+                        $productionOrderId,
+                        $poId,
+                        $poNumber,
+                        $matId,
+                        $matCode,
+                        $matName,
+                        $catName,
+                        $uom,
+                        $reqQty,
+                        $exQty,
+                        $supId,
+                        $supName,
+                        $reason
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log("Failed to record excluded materials: " . $e->getMessage());
+        }
+    }
+
+    public function recordExclusion(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureExcludedMaterialsTable($pdo);
+            $data = json_decode(file_get_contents('php://input'), true) ?? [];
+
+            $productionOrderId = (int)($data['production_order_id'] ?? 0);
+            if ($productionOrderId <= 0) {
+                Response::error("Production order ID is required", 400);
+                return;
+            }
+
+            $poId = !empty($data['purchase_order_id']) ? (int)$data['purchase_order_id'] : 0;
+            $poNumber = $data['purchase_order_number'] ?? '';
+            $materials = !empty($data['materials']) && is_array($data['materials']) ? $data['materials'] : [$data];
+
+            $this->recordExcludedMaterials($pdo, $productionOrderId, $poId, $poNumber, $materials);
+
+            Response::success(['recorded' => true], "Material exclusion recorded successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function unorderedItems(int $productionOrderId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureExcludedMaterialsTable($pdo);
+
+            $poStmt = $pdo->prepare("SELECT id, order_number, title FROM production_orders WHERE id = ? AND deleted_at IS NULL");
+            $poStmt->execute([$productionOrderId]);
+            $prodOrder = $poStmt->fetch();
+            if (!$prodOrder) {
+                Response::error("Production order not found", 404);
+                return;
+            }
+
+            // Get material requirements using ProductionController
+            $prodController = new ProductionController();
+            $reqData = $prodController->calculateMaterialRequirements($productionOrderId, $pdo);
+            $totalMaterials = $reqData['total_materials'] ?? [];
+
+            // Fetch active non-cancelled POs for this order
+            $orderNo = $prodOrder['order_number'];
+            $activePoStmt = $pdo->prepare("
+                SELECT id, po_number, status, supplier_id, category_id, remarks
+                FROM purchase_orders
+                WHERE deleted_at IS NULL 
+                  AND LOWER(status) != 'cancelled'
+                  AND (production_order_id = ? OR remarks LIKE ? OR remarks LIKE ?)
+            ");
+            $activePoStmt->execute([$productionOrderId, "%{$orderNo}%", "%ORD-{$productionOrderId}%"]);
+            $activePOs = $activePoStmt->fetchAll();
+
+            $poIds = array_column($activePOs, 'id');
+            $poItems = [];
+            if (!empty($poIds)) {
+                $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
+                $poiStmt = $pdo->prepare("
+                    SELECT id, purchase_order_id, material_id, item_description, accessory_name, description,
+                           quantity, uom, size, model, length, thickness, rate
+                    FROM purchase_order_items
+                    WHERE purchase_order_id IN ($inPlaceholders)
+                ");
+                $poiStmt->execute($poIds);
+                $poItems = $poiStmt->fetchAll();
+            }
+
+            // Fetch exclusion records
+            $exclStmt = $pdo->prepare("
+                SELECT * FROM po_excluded_materials
+                WHERE production_order_id = ?
+                ORDER BY id DESC
+            ");
+            $exclStmt->execute([$productionOrderId]);
+            $exclusionRecords = $exclStmt->fetchAll();
+
+            $unorderedList = [];
+
+            foreach ($totalMaterials as $m) {
+                $reqQty = (float)($m['total_required_qty'] ?? 0);
+                $matId = !empty($m['material_id']) ? (int)$m['material_id'] : null;
+                $matName = trim((string)($m['name'] ?? ''));
+                $matNameNorm = $this->normalizeName($matName);
+
+                $orderedQty = 0.0;
+                $matchingPoNumbers = [];
+
+                foreach ($poItems as $poi) {
+                    $poiMatId = !empty($poi['material_id']) ? (int)$poi['material_id'] : null;
+                    $poiName = $poi['item_description'] ?: ($poi['accessory_name'] ?: ($poi['description'] ?: ''));
+                    $poiNameNorm = $this->normalizeName($poiName);
+
+                    $isMatch = false;
+                    if ($matId && $poiMatId) {
+                        $isMatch = ($matId === $poiMatId);
+                    } else {
+                        $isMatch = (!empty($matNameNorm) && $matNameNorm === $poiNameNorm);
+                    }
+
+                    if ($isMatch) {
+                        // Check specification match if present
+                        if (!empty($m['size']) && !empty($poi['size']) && strtolower(trim((string)$m['size'])) !== strtolower(trim((string)$poi['size']))) {
+                            $isMatch = false;
+                        }
+                    }
+
+                    if ($isMatch) {
+                        $orderedQty += (float)($poi['quantity'] ?? 0);
+                        foreach ($activePOs as $apo) {
+                            if ((int)$apo['id'] === (int)$poi['purchase_order_id'] && !in_array($apo['po_number'], $matchingPoNumbers)) {
+                                $matchingPoNumbers[] = $apo['po_number'];
+                            }
+                        }
+                    }
+                }
+
+                $remainingUnordered = max(0.0, round($reqQty - $orderedQty, 3));
+
+                // Check if explicitly recorded as excluded
+                $excludedInfo = null;
+                foreach ($exclusionRecords as $er) {
+                    $erMatId = !empty($er['material_id']) ? (int)$er['material_id'] : null;
+                    $erNameNorm = $this->normalizeName($er['material_name'] ?? '');
+                    if (($matId && $erMatId && $matId === $erMatId) || (!empty($matNameNorm) && $matNameNorm === $erNameNorm)) {
+                        $excludedInfo = $er;
+                        break;
+                    }
+                }
+
+                $status = 'Unordered';
+                if ($remainingUnordered <= 0.001) {
+                    $status = 'Fully Ordered';
+                } elseif ($orderedQty > 0.001) {
+                    $status = 'Partially Ordered';
+                }
+
+                $unorderedList[] = [
+                    'id' => $matId ? "mat_{$matId}" : "name_" . md5($matName . ($m['category'] ?? '')),
+                    'production_order_id' => $productionOrderId,
+                    'production_order_number' => $prodOrder['order_number'],
+                    'production_order_title' => $prodOrder['title'],
+                    'material_id' => $matId,
+                    'material_code' => $m['material_code'] ?? null,
+                    'material_name' => $matName,
+                    'category_name' => $m['category'] ?? 'General',
+                    'category_id' => $m['category_id'] ?? null,
+                    'required_quantity' => $reqQty,
+                    'uom' => $m['uom'] ?? 'PCS',
+                    'supplier_id' => $m['preferred_supplier_id'] ?? null,
+                    'supplier_name' => $m['preferred_supplier_name'] ?? null,
+                    'supplier_code' => $m['preferred_supplier_code'] ?? null,
+                    'previously_ordered_quantity' => round($orderedQty, 3),
+                    'remaining_unordered_quantity' => $remainingUnordered,
+                    'unit_cost' => (float)($m['unit_cost'] ?? 0),
+                    'size' => $m['size'] ?? null,
+                    'model' => $m['model'] ?? null,
+                    'length' => $m['length'] ?? null,
+                    'thickness' => $m['thickness'] ?? null,
+                    'status' => $status,
+                    'po_numbers' => $matchingPoNumbers,
+                    'excluded_from_po_number' => $excludedInfo['purchase_order_number'] ?? null,
+                    'excluded_reason' => $excludedInfo['reason'] ?? null,
+                    'excluded_at' => $excludedInfo['created_at'] ?? null,
+                ];
+            }
+
+            Response::success($unorderedList);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function allUnorderedItems(): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureExcludedMaterialsTable($pdo);
+
+            $pOrdId = !empty($_GET['production_order_id']) ? (int)$_GET['production_order_id'] : 0;
+            if ($pOrdId > 0) {
+                $this->unorderedItems($pOrdId);
+                return;
+            }
+
+            // Get active production orders (not completed)
+            $ordersStmt = $pdo->query("
+                SELECT id FROM production_orders 
+                WHERE deleted_at IS NULL AND (status IS NULL OR LOWER(status) != 'completed')
+                ORDER BY id DESC LIMIT 50
+            ");
+            $orderIds = $ordersStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            $prodController = new ProductionController();
+            $allUnordered = [];
+
+            foreach ($orderIds as $ordId) {
+                try {
+                    $poStmt = $pdo->prepare("SELECT id, order_number, title FROM production_orders WHERE id = ?");
+                    $poStmt->execute([(int)$ordId]);
+                    $prodOrder = $poStmt->fetch();
+                    if (!$prodOrder) continue;
+
+                    $reqData = $prodController->calculateMaterialRequirements((int)$ordId, $pdo);
+                    $totalMaterials = $reqData['total_materials'] ?? [];
+
+                    $orderNo = $prodOrder['order_number'];
+                    $activePoStmt = $pdo->prepare("
+                        SELECT id, po_number, status, supplier_id, category_id, remarks
+                        FROM purchase_orders
+                        WHERE deleted_at IS NULL AND LOWER(status) != 'cancelled'
+                          AND (production_order_id = ? OR remarks LIKE ?)
+                    ");
+                    $activePoStmt->execute([(int)$ordId, "%{$orderNo}%"]);
+                    $activePOs = $activePoStmt->fetchAll();
+
+                    $poIds = array_column($activePOs, 'id');
+                    $poItems = [];
+                    if (!empty($poIds)) {
+                        $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
+                        $poiStmt = $pdo->prepare("
+                            SELECT id, purchase_order_id, material_id, item_description, accessory_name, description, quantity, uom, size, model
+                            FROM purchase_order_items
+                            WHERE purchase_order_id IN ($inPlaceholders)
+                        ");
+                        $poiStmt->execute($poIds);
+                        $poItems = $poiStmt->fetchAll();
+                    }
+
+                    foreach ($totalMaterials as $m) {
+                        $reqQty = (float)($m['total_required_qty'] ?? 0);
+                        $matId = !empty($m['material_id']) ? (int)$m['material_id'] : null;
+                        $matName = trim((string)($m['name'] ?? ''));
+                        $matNameNorm = $this->normalizeName($matName);
+
+                        $orderedQty = 0.0;
+                        $matchingPoNumbers = [];
+
+                        foreach ($poItems as $poi) {
+                            $poiMatId = !empty($poi['material_id']) ? (int)$poi['material_id'] : null;
+                            $poiName = $poi['item_description'] ?: ($poi['accessory_name'] ?: ($poi['description'] ?: ''));
+                            $poiNameNorm = $this->normalizeName($poiName);
+
+                            $isMatch = ($matId && $poiMatId) ? ($matId === $poiMatId) : (!empty($matNameNorm) && $matNameNorm === $poiNameNorm);
+                            if ($isMatch) {
+                                $orderedQty += (float)($poi['quantity'] ?? 0);
+                                foreach ($activePOs as $apo) {
+                                    if ((int)$apo['id'] === (int)$poi['purchase_order_id'] && !in_array($apo['po_number'], $matchingPoNumbers)) {
+                                        $matchingPoNumbers[] = $apo['po_number'];
+                                    }
+                                }
+                            }
+                        }
+
+                        $remainingUnordered = max(0.0, round($reqQty - $orderedQty, 3));
+                        if ($remainingUnordered > 0.001) {
+                            $allUnordered[] = [
+                                'id' => $matId ? "mat_{$matId}_{$ordId}" : "name_" . md5($matName . $ordId),
+                                'production_order_id' => (int)$ordId,
+                                'production_order_number' => $prodOrder['order_number'],
+                                'production_order_title' => $prodOrder['title'],
+                                'material_id' => $matId,
+                                'material_code' => $m['material_code'] ?? null,
+                                'material_name' => $matName,
+                                'category_name' => $m['category'] ?? 'General',
+                                'required_quantity' => $reqQty,
+                                'uom' => $m['uom'] ?? 'PCS',
+                                'supplier_id' => $m['preferred_supplier_id'] ?? null,
+                                'supplier_name' => $m['preferred_supplier_name'] ?? null,
+                                'previously_ordered_quantity' => round($orderedQty, 3),
+                                'remaining_unordered_quantity' => $remainingUnordered,
+                                'unit_cost' => (float)($m['unit_cost'] ?? 0),
+                                'size' => $m['size'] ?? null,
+                                'model' => $m['model'] ?? null,
+                                'status' => ($orderedQty > 0.001) ? 'Partially Ordered' : 'Unordered',
+                                'po_numbers' => $matchingPoNumbers,
+                            ];
+                        }
+                    }
+                } catch (\Throwable $skipEx) {
+                    continue;
+                }
+            }
+
+            Response::success($allUnordered);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
         }
     }
 }

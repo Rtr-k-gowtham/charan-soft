@@ -142,6 +142,10 @@ export const api = {
     request<any>(`/production-orders/${id}/material-requirements${force ? '?force=1' : ''}`),
   saveOrderMaterialRequirements: (id: number | string, data: unknown) =>
     request<unknown>(`/production-orders/${id}/material-requirements`, 'POST', data),
+  getUnorderedItems: (productionOrderId?: number | string) =>
+    request<any[]>(productionOrderId ? `/production-orders/${productionOrderId}/unordered-items` : '/production/unordered-items'),
+  recordPoExcludedMaterials: (data: { production_order_id: number; purchase_order_id?: number; purchase_order_number?: string; materials: any[] }) =>
+    request<any>('/purchase-orders/record-exclusion', 'POST', data),
   createProductionOrder: (data: unknown) =>
     request<unknown>('/production-orders', 'POST', data),
   updateProductionOrderStatus: (id: number | string, stageId: number | string, data?: any) =>

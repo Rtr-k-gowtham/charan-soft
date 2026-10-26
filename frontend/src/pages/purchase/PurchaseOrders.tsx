@@ -13,6 +13,7 @@ import FormField from '../../components/ui/FormField';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
 import Modal from '../../components/ui/Modal';
 import DynamicPOTemplate from '../../components/purchase/DynamicPOTemplate';
+import UnorderedBOMItemsSection, { UnorderedItem } from '../../components/purchase/UnorderedBOMItemsSection';
 import { printHtmlElement } from '../../lib/printUtils';
 import { getBuyerAvatarDataUri } from '../../lib/avatarService';
 import { 
@@ -23,6 +24,7 @@ import {
   ArrowLeft, 
   CreditCard, 
   ExternalLink,
+  Package,
   Receipt,
   Building2,
   Calendar,
@@ -325,8 +327,13 @@ export default function PurchaseOrders() {
   const [printPO, setPrintPO] = useState<PurchaseOrder | null>(null);
   const [templateData, setTemplateData] = useState<any>(null);
   const [saving, setSaving] = useState(false);
-  const [transitioning, setTransitioning] = useState(false);
   const [error, setError] = useState('');
+
+  // Unordered BOM Items & Excluded Materials Tracking
+  const [unorderedModalOpen, setUnorderedModalOpen] = useState(false);
+  const [pendingUnorderedCount, setPendingUnorderedCount] = useState<number>(0);
+  const [excludedMaterials, setExcludedMaterials] = useState<any[]>([]);
+  const [editExcludedMaterials, setEditExcludedMaterials] = useState<any[]>([]);
 
   // Approval state
   const [approveModalOpen, setApproveModalOpen] = useState(false);
@@ -442,6 +449,13 @@ export default function PurchaseOrders() {
         supplier_id: prev.supplier_id || (loadedSups.length > 0 ? String(loadedSups[0].id) : ''),
         category_id: prev.category_id || (loadedCats.length > 0 ? String(loadedCats[0].id) : ''),
       }));
+
+      // Fetch pending unordered BOM materials count
+      api.getUnorderedItems().then((res: any) => {
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const pending = list.filter((it: any) => Number(it.remaining_unordered_quantity) > 0.001);
+        setPendingUnorderedCount(pending.length);
+      }).catch(() => {});
     } catch {
       setPOs([]);
       setSuppliers([]);
@@ -1246,10 +1260,12 @@ export default function PurchaseOrders() {
         status: poStatus,
         items: preparedItems,
         terms: poTerms,
+        excluded_materials: excludedMaterials.length > 0 ? excludedMaterials : undefined,
       });
       const createdPO = (res as any)?.data || res;
 
       setCreateOpen(false);
+      setExcludedMaterials([]);
       setPoTermsDirty(false);
       setForm({ 
         supplier_id: suppliers.length > 0 ? String(suppliers[0].id) : '', 
@@ -1590,8 +1606,10 @@ export default function PurchaseOrders() {
         remarks: editForm.remarks,
         items: preparedEditItems,
         terms: editPOTerms,
+        excluded_materials: editExcludedMaterials.length > 0 ? editExcludedMaterials : undefined,
       });
 
+      setEditExcludedMaterials([]);
       await load();
       if (viewPO && viewPO.id === editPO.id) {
         const refreshed: any = await api.getPurchaseOrder(editPO.id);
@@ -2355,7 +2373,13 @@ export default function PurchaseOrders() {
                         {items.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              const removed = items[idx];
+                              if (removed && form.production_order_id) {
+                                setExcludedMaterials(prev => [...prev, removed]);
+                              }
+                              setItems(prev => prev.filter((_, i) => i !== idx));
+                            }}
                             className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
                             title="Remove line item"
                           >
@@ -3077,7 +3101,13 @@ export default function PurchaseOrders() {
                         {editItems.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => setEditItems(prev => prev.filter((_, i) => i !== idx))}
+                            onClick={() => {
+                              const removed = editItems[idx];
+                              if (removed && editForm.production_order_id) {
+                                setEditExcludedMaterials(prev => [...prev, removed]);
+                              }
+                              setEditItems(prev => prev.filter((_, i) => i !== idx));
+                            }}
                             className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
                             title="Remove line item"
                           >
@@ -4153,6 +4183,21 @@ export default function PurchaseOrders() {
               PO Template Settings
             </Button>
 
+            {/* Unordered BOM Items Button */}
+            <Button 
+              variant="secondary" 
+              icon={<Package className="w-3.5 h-3.5 text-amber-600" />} 
+              onClick={() => setUnorderedModalOpen(true)}
+              className="relative border-amber-300 bg-amber-50/70 hover:bg-amber-100/80 text-amber-900 font-semibold shadow-2xs"
+            >
+              <span>Unordered BOM Items</span>
+              {pendingUnorderedCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                  {pendingUnorderedCount}
+                </span>
+              )}
+            </Button>
+
             {/* Create Purchase Order Button */}
             <Button 
               icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />} 
@@ -4484,6 +4529,59 @@ export default function PurchaseOrders() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Unordered Production BOM Materials Modal */}
+      <Modal
+        open={unorderedModalOpen}
+        onClose={() => setUnorderedModalOpen(false)}
+        title="Unordered Production BOM Materials"
+        subtitle="Track, filter and issue purchase orders for pending BOM components across all active production orders."
+        size="xl"
+      >
+        <UnorderedBOMItemsSection
+          onOrderMaterial={(item) => {
+            setUnorderedModalOpen(false);
+            const matchedCat = categories.find(c => c.name.toLowerCase() === (item.category_name || '').toLowerCase());
+            const catId = item.category_id ? String(item.category_id) : (matchedCat ? String(matchedCat.id) : (categories.length > 0 ? String(categories[0].id) : ''));
+            const supId = item.supplier_id ? String(item.supplier_id) : (suppliers.length > 0 ? String(suppliers[0].id) : '');
+            
+            setForm(prev => ({
+              ...prev,
+              supplier_id: supId,
+              category_id: catId,
+              production_order_id: String(item.production_order_id),
+              remarks: `PO for ${item.material_name} (Order ${item.production_order_number})`,
+            }));
+            if (catId) {
+              applyCategorySelection(catId);
+            }
+            setItems([
+              calcItem({
+                order_no: item.production_order_number || 'ORD-001',
+                material_id: item.material_id || undefined,
+                material_code: item.material_code || undefined,
+                item_code: item.material_code || undefined,
+                item_description: item.material_name,
+                description: item.material_name,
+                accessory_name: item.material_name,
+                size: item.size || '',
+                model: item.model || '',
+                length: item.length || '',
+                thickness: item.thickness || '',
+                quantity: Number(item.remaining_unordered_quantity) || 1,
+                qty: Number(item.remaining_unordered_quantity) || 1,
+                uom: item.uom || 'PCS',
+                rate: Number(item.unit_cost) || 0,
+                tax_percent: 5,
+              })
+            ]);
+            setCreateOpen(true);
+          }}
+          onRefreshParent={() => {
+            load();
+          }}
+        />
       </Modal>
 
       {/* Cancel PO & Reissue PO Modals for Listing */}

@@ -90,6 +90,9 @@ try {
         $r0 === 'purchase' && $r1 === 'payments' && $method === 'GET' => (new PurchaseOrderController)->paymentsList(),
         $r0 === 'purchase' && $r1 === 'returns' && $method === 'GET' => (new PurchaseOrderController)->returnsList(),
         $r0 === 'purchase' && $r1 === 'returns' && $method === 'POST' => (new PurchaseOrderController)->storeReturn(),
+        $r0 === 'purchase-orders' && ($r1 === 'record-exclusion' || $action === 'record-exclusion') && $method === 'POST' => (new PurchaseOrderController)->recordExclusion(),
+        $r0 === 'production-orders' && $id && ($r2 === 'unordered-items' || $action === 'unordered-items') && $method === 'GET' => (new PurchaseOrderController)->unorderedItems($id),
+        $r0 === 'production' && $r1 === 'unordered-items' && $method === 'GET' => (new PurchaseOrderController)->allUnorderedItems(),
 
         // ---------------- INVENTORY ----------------
         $r0 === 'inventory' && $method === 'GET' && empty($r1) => (new InventoryController)->index(),

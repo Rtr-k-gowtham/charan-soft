@@ -1146,7 +1146,17 @@ class ProductionController {
 
     public function materialRequirements(int $orderId): void {
         try {
+            $data = $this->calculateMaterialRequirements($orderId);
+            Response::success($data);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function calculateMaterialRequirements(int $orderId, ?PDO $pdo = null): array {
+        if ($pdo === null) {
             $pdo = Database::getConnection();
+        }
 
             // 1. Fetch Order Details
             $stmt = $pdo->prepare("
@@ -1160,8 +1170,7 @@ class ProductionController {
             $stmt->execute([$orderId]);
             $order = $stmt->fetch();
             if (!$order) {
-                Response::error("Production order not found", 404);
-                return;
+                throw new Exception("Production order not found", 404);
             }
 
             // 2. Fetch Order Items
@@ -1439,15 +1448,14 @@ class ProductionController {
                     'total_estimated_cost' => array_sum(array_column($totalMaterialsList, 'total_estimated_cost')),
                 ];
 
-                Response::success([
+                return [
                     'order' => $order,
                     'products' => !empty($savedBom['products']) ? $savedBom['products'] : $productsBreakdown,
                     'total_materials' => $totalMaterialsList,
                     'summary' => $summary,
                     'generated_at' => $savedBom['updated_at'] ?? date('Y-m-d H:i:s'),
                     'is_persisted' => true,
-                ]);
-                return;
+                ];
             }
 
             // Calculate Stock, Shortage, and Status for each aggregated material
@@ -1500,7 +1508,7 @@ class ProductionController {
                 return ($cmp !== 0) ? $cmp : strcmp($a['name'], $b['name']);
             });
 
-            Response::success([
+            return [
                 'order' => $order,
                 'products' => $productsBreakdown,
                 'total_materials' => $totalMaterialsList,
@@ -1513,10 +1521,7 @@ class ProductionController {
                     'total_estimated_cost' => round($totalEstimatedCost, 2),
                 ],
                 'generated_at' => date('Y-m-d H:i:s'),
-            ]);
-        } catch (Exception $e) {
-            Response::error($e->getMessage(), 500);
-        }
+            ];
     }
 
     public function saveMaterialRequirements(int $orderId): void {
