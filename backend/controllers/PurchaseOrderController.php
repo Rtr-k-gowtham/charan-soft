@@ -1628,13 +1628,24 @@ class PurchaseOrderController {
             if (!empty($poIds)) {
                 $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
                 $poiStmt = $pdo->prepare("
-                    SELECT id, purchase_order_id, material_id, item_description, accessory_name, description,
-                           quantity, uom, size, model, length, thickness, rate
-                    FROM purchase_order_items
+                    SELECT * FROM purchase_order_items
                     WHERE purchase_order_id IN ($inPlaceholders)
                 ");
                 $poiStmt->execute($poIds);
                 $poItems = $poiStmt->fetchAll();
+                foreach ($poItems as &$poi) {
+                    if (!empty($poi['dynamic_data'])) {
+                        $dyn = json_decode($poi['dynamic_data'], true);
+                        if (is_array($dyn)) {
+                            foreach ($dyn as $k => $v) {
+                                if (!array_key_exists($k, $poi) || $poi[$k] === null || $poi[$k] === '') {
+                                    $poi[$k] = $v;
+                                }
+                            }
+                        }
+                    }
+                }
+                unset($poi);
             }
 
             // Fetch exclusion records
@@ -1659,7 +1670,7 @@ class PurchaseOrderController {
 
                 foreach ($poItems as $poi) {
                     $poiMatId = !empty($poi['material_id']) ? (int)$poi['material_id'] : null;
-                    $poiName = $poi['item_description'] ?: ($poi['accessory_name'] ?: ($poi['description'] ?: ''));
+                    $poiName = ($poi['item_description'] ?? '') ?: (($poi['accessory_name'] ?? '') ?: (($poi['description'] ?? '') ?: ''));
                     $poiNameNorm = $this->normalizeName($poiName);
 
                     $isMatch = false;
@@ -1789,12 +1800,24 @@ class PurchaseOrderController {
                     if (!empty($poIds)) {
                         $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
                         $poiStmt = $pdo->prepare("
-                            SELECT id, purchase_order_id, material_id, item_description, accessory_name, description, quantity, uom, size, model
-                            FROM purchase_order_items
+                            SELECT * FROM purchase_order_items
                             WHERE purchase_order_id IN ($inPlaceholders)
                         ");
                         $poiStmt->execute($poIds);
                         $poItems = $poiStmt->fetchAll();
+                        foreach ($poItems as &$poi) {
+                            if (!empty($poi['dynamic_data'])) {
+                                $dyn = json_decode($poi['dynamic_data'], true);
+                                if (is_array($dyn)) {
+                                    foreach ($dyn as $k => $v) {
+                                        if (!array_key_exists($k, $poi) || $poi[$k] === null || $poi[$k] === '') {
+                                            $poi[$k] = $v;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        unset($poi);
                     }
 
                     foreach ($totalMaterials as $m) {
@@ -1808,7 +1831,7 @@ class PurchaseOrderController {
 
                         foreach ($poItems as $poi) {
                             $poiMatId = !empty($poi['material_id']) ? (int)$poi['material_id'] : null;
-                            $poiName = $poi['item_description'] ?: ($poi['accessory_name'] ?: ($poi['description'] ?: ''));
+                            $poiName = ($poi['item_description'] ?? '') ?: (($poi['accessory_name'] ?? '') ?: (($poi['description'] ?? '') ?: ''));
                             $poiNameNorm = $this->normalizeName($poiName);
 
                             $isMatch = ($matId && $poiMatId) ? ($matId === $poiMatId) : (!empty($matNameNorm) && $matNameNorm === $poiNameNorm);
