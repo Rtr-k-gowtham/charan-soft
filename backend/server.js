@@ -2023,15 +2023,7 @@ const server = http.createServer(async (req, res) => {
       }
       totalFabricQty = Number(totalFabricQty.toFixed(2));
 
-      // Validate fabric material
-      const matId = Number(body.fabric_material_id || 0);
-      const mat = (db.materials || []).find(m => m.id === matId);
-      if (mat) {
-        const catName = (mat.category_name || '').toUpperCase();
-        if (catName.includes('TRIM') || catName.includes('PACK') || catName.includes('THREAD') || catName.includes('DYE')) {
-          return sendError(res, 'Selected material is not a valid fabric material for dyeing', 422);
-        }
-      }
+
 
       // Calculate total inwarded fabric for this order
       let totalInwarded = 0;

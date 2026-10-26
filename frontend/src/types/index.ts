@@ -343,7 +343,6 @@ export interface DyeingOrder {
   id: number;
   dyeing_order_no: string;
   production_order_id: number;
-  fabric_material_id?: number;
   fabric_name: string;
   fabric_code?: string;
   uom: string;

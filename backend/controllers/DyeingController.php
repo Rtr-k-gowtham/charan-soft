@@ -19,8 +19,7 @@ class DyeingController {
                   `id` INT AUTO_INCREMENT PRIMARY KEY,
                   `dyeing_order_no` VARCHAR(50) NOT NULL UNIQUE,
                   `production_order_id` INT NOT NULL,
-                  `fabric_material_id` INT NULL,
-                  `fabric_name` VARCHAR(255) NOT NULL,
+                  `fabric_name` VARCHAR(255) NULL DEFAULT 'Fabric Material',
                   `fabric_code` VARCHAR(50) NULL,
                   `uom` VARCHAR(20) DEFAULT 'MTR',
                   `supplier_id` INT NULL,
@@ -41,6 +40,13 @@ class DyeingController {
                   INDEX `idx_dye_status` (`status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` DROP COLUMN `fabric_material_id`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `dyeing_orders` MODIFY COLUMN `fabric_name` VARCHAR(255) NULL DEFAULT 'Fabric Material'");
+            } catch (Exception $e) {}
 
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `dyeing_order_items` (
@@ -372,7 +378,7 @@ class DyeingController {
 
             // Fetch existing dyeing orders for this production order to allocate outward quantity accurately
             $dOrderStmt = $pdo->prepare("
-                SELECT id, fabric_material_id, fabric_name, total_fabric_quantity
+                SELECT id, fabric_name, total_fabric_quantity
                 FROM dyeing_orders
                 WHERE production_order_id = ? AND status != 'Cancelled' AND deleted_at IS NULL
             ");
@@ -384,14 +390,7 @@ class DyeingController {
             foreach ($existingDyeOrders as $edo) {
                 $edoQty = (float)($edo['total_fabric_quantity'] ?? 0);
                 $matched = false;
-                if (!empty($edo['fabric_material_id'])) {
-                    $k = (string)$edo['fabric_material_id'];
-                    if (isset($fabricMap[$k])) {
-                        $fabricMap[$k]['outward_quantity'] += $edoQty;
-                        $matched = true;
-                    }
-                }
-                if (!$matched && !empty($edo['fabric_name'])) {
+                if (!empty($edo['fabric_name'])) {
                     foreach ($fabricMap as $k => &$fm) {
                         if (stripos($fm['material_name'], $edo['fabric_name']) !== false || stripos($edo['fabric_name'], $fm['material_name']) !== false) {
                             $fm['outward_quantity'] += $edoQty;
@@ -551,21 +550,7 @@ class DyeingController {
                 return;
             }
 
-            // Validate fabric material eligibility
-            $matId = !empty($data['fabric_material_id']) ? (int)$data['fabric_material_id'] : null;
-            if ($matId) {
-                $matStmt = $pdo->prepare("SELECT m.*, c.name as category_name FROM materials m LEFT JOIN categories c ON m.category_id = c.id WHERE m.id = ?");
-                $matStmt->execute([$matId]);
-                $matRow = $matStmt->fetch(PDO::FETCH_ASSOC);
-                if ($matRow) {
-                    $catUpper = strtoupper((string)($matRow['category_name'] ?? ''));
-                    if (str_contains($catUpper, 'TRIM') || str_contains($catUpper, 'PACK') || str_contains($catUpper, 'THREAD') || str_contains($catUpper, 'DYE')) {
-                        if ($pdo->inTransaction()) $pdo->rollBack();
-                        Response::error("Selected material is not a valid fabric material for dyeing", 422);
-                        return;
-                    }
-                }
-            }
+
 
             // Calculate total inwarded fabric for this production order
             $fabInwardStmt = $pdo->prepare("
@@ -630,17 +615,16 @@ class DyeingController {
 
             $insStmt = $pdo->prepare("
                 INSERT INTO dyeing_orders (
-                    dyeing_order_no, production_order_id, fabric_material_id, fabric_name, 
+                    dyeing_order_no, production_order_id, fabric_name, 
                     fabric_code, uom, supplier_id, dyeing_mill_name, challan_no, 
                     order_date, expected_delivery_date, total_fabric_quantity, total_received_quantity, 
                     status, process_type, remarks
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, 'Sent to Dyeing', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, 'Sent to Dyeing', ?, ?)
             ");
             $insStmt->execute([
                 $dyeingOrderNo,
                 $poId,
-                $data['fabric_material_id'] ?? null,
-                $fabricName,
+                $fabricName ?: 'Fabric Material',
                 $data['fabric_code'] ?? null,
                 $uom,
                 $supplierId,

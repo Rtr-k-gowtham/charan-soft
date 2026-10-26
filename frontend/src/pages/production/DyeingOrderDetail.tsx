@@ -562,17 +562,8 @@ export default function DyeingOrderDetail() {
     setFabricSearchQuery('');
     setIsAdditionalLot(true);
 
-    // Pre-select first eligible fabric if not yet selected
-    if (!fabricMaterialId && eligibleFabrics.length > 0) {
-      const first = eligibleFabrics[0];
-      setFabricMaterialId(first.material_id);
-      setFabricName(first.material_name);
-      setUom(first.uom);
-      setColorRows(buildOrderColors(order, fabricStockData, first.available_quantity));
-    } else {
-      if (colorRows.length === 0) {
-        setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
-      }
+    if (colorRows.length === 0) {
+      setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
     }
     setShowCreatePage(true);
     setShowCreateModal(false);
@@ -714,11 +705,6 @@ export default function DyeingOrderDetail() {
       return;
     }
 
-    if (!fabricMaterialId && !fabricName.trim()) {
-      setCreateError('Please select an eligible Fabric Material from the dropdown.');
-      return;
-    }
-
     if (colorRows.length === 0) {
       setCreateError('Please specify at least one color item.');
       return;
@@ -746,8 +732,7 @@ export default function DyeingOrderDetail() {
         supplier_id: Number(selectedSupplierId),
         dyeing_mill_name: selectedMill?.name || 'Processing Mill',
         category_name: categoryType,
-        fabric_material_id: fabricMaterialId,
-        fabric_name: fabricName || selectedFabric?.material_name || 'Fabric Material',
+        fabric_name: fabricName || 'Fabric Material',
         fabric_code: selectedFabric?.material_code || undefined,
         uom,
         challan_no: challanNo,
@@ -1229,24 +1214,6 @@ export default function DyeingOrderDetail() {
                 onChange={e => setExpectedDate(e.target.value)}
               />
 
-              <SearchableSelect
-                label="Fabric Material (Eligible for Dyeing)"
-                required
-                value={fabricMaterialId ? String(fabricMaterialId) : ''}
-                onChange={val => {
-                  const num = Number(val);
-                  const sel = eligibleFabrics.find(f => f.material_id === num);
-                  if (sel) {
-                    setFabricMaterialId(sel.material_id);
-                    setFabricName(sel.material_name);
-                    setUom(sel.uom);
-                    setColorRows(buildOrderColors(order, fabricStockData, sel.available_quantity));
-                  }
-                }}
-                options={fabricOptions}
-                placeholder="— Select Fabric Material with Search —"
-                searchPlaceholder="Search fabric name or code..."
-              />
 
               <FormField label="Outward DC No" required>
                 <div className="relative flex items-center">
