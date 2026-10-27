@@ -230,6 +230,204 @@ class DyeingController {
     }
 
     /**
+     * Compute Required, Allocated, and Remaining Eligible Quantities for each Color/Pantone requirement
+     * under a Production Order.
+     * 
+     * Concurrency-safe when run within a transaction with row locking ($forUpdate = true).
+     */
+    public function calculateOrderColorAllocations(PDO $pdo, int $poId, ?int $excludeDyeingOrderId = null, bool $forUpdate = false): array {
+        // 1. Fetch Production Order
+        $lockSql = $forUpdate ? " FOR UPDATE" : "";
+        $poStmt = $pdo->prepare("SELECT id, order_number, title, total_quantity, customer_id FROM production_orders WHERE id = ?" . $lockSql);
+        $poStmt->execute([$poId]);
+        $prodOrder = $poStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$prodOrder) {
+            return [];
+        }
+
+        // 2. Fetch distinct colors and their garment quantities from PO items
+        // Group strictly by poi.color to avoid duplicate cartesian joins across multiple Pantone records
+        $colorStmt = $pdo->prepare("
+            SELECT 
+                poi.color as color_name,
+                MAX(COALESCE(col.pantone_code, '')) as pantone_code,
+                MAX(COALESCE(col.hex_code, '#6366f1')) as hex_code,
+                SUM(poi.total_quantity) as total_garment_qty
+            FROM production_order_items poi
+            LEFT JOIN colors col ON (
+                LOWER(TRIM(poi.color)) = LOWER(TRIM(col.name)) 
+                OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.code))
+                OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.pantone_code))
+            )
+            WHERE poi.production_order_id = ?
+            GROUP BY poi.color
+            ORDER BY poi.color ASC
+        ");
+        $colorStmt->execute([$poId]);
+        $colors = $colorStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Enrich missing Pantone codes
+        foreach ($colors as &$c) {
+            if (empty($c['pantone_code']) && !empty($c['color_name'])) {
+                try {
+                    $pSearch = $pdo->prepare("SELECT pantone_code, hex_code FROM pantone_colors WHERE LOWER(pantone_name) LIKE ? OR LOWER(pantone_code) LIKE ? LIMIT 1");
+                    $cTerm = '%' . strtolower(trim((string)$c['color_name'])) . '%';
+                    $pSearch->execute([$cTerm, $cTerm]);
+                    $foundP = $pSearch->fetch(PDO::FETCH_ASSOC);
+                    if ($foundP) {
+                        $c['pantone_code'] = $foundP['pantone_code'];
+                        if (!empty($foundP['hex_code'])) $c['hex_code'] = $foundP['hex_code'];
+                    }
+                } catch (Exception $e) {}
+            }
+        }
+        unset($c);
+
+        // 3. Gather total inwarded fabric from Stage 03 Purchase Orders
+        $fabInwardStmt = $pdo->prepare("
+            SELECT COALESCE(SUM(poi.received_quantity), 0)
+            FROM purchase_order_items poi
+            JOIN purchase_orders po ON poi.purchase_order_id = po.id
+            LEFT JOIN categories c ON po.category_id = c.id
+            WHERE (po.production_order_id = ? OR po.remarks LIKE ?)
+              AND (
+                  UPPER(COALESCE(c.name, '')) LIKE '%FABRIC%' 
+                  OR UPPER(COALESCE(poi.item_description, '')) LIKE '%FABRIC%'
+                  OR UPPER(COALESCE(poi.item_description, '')) LIKE '%COTTON%'
+                  OR UPPER(COALESCE(poi.item_description, '')) LIKE '%JERSEY%'
+                  OR UPPER(COALESCE(poi.item_description, '')) LIKE '%MAT-FAB%'
+              )
+        ");
+        $likeOrder = '%' . $prodOrder['order_number'] . '%';
+        $fabInwardStmt->execute([$poId, $likeOrder]);
+        $totalFabricInwarded = (float)$fabInwardStmt->fetchColumn();
+
+        $totalOrderGarments = 0.0;
+        foreach ($colors as $c) {
+            $totalOrderGarments += (float)($c['total_garment_qty'] ?? 0);
+        }
+
+        // Total fabric requirement: if inwarded > 0, use inwarded fabric; else order total quantity
+        $totalFabricRequired = ($totalFabricInwarded > 0) ? $totalFabricInwarded : (($totalOrderGarments > 0) ? $totalOrderGarments : (float)($prodOrder['total_quantity'] ?? 100));
+
+        // 4. Fetch all active Dyeing Order Items for this Production Order
+        // Exclude cancelled and soft-deleted orders. Also exclude $excludeDyeingOrderId if specified.
+        $excludeSql = ($excludeDyeingOrderId !== null && $excludeDyeingOrderId > 0) ? " AND d.id != " . (int)$excludeDyeingOrderId : "";
+        $activeDoiStmt = $pdo->prepare("
+            SELECT 
+                doi.id,
+                doi.dyeing_order_id,
+                doi.color_id,
+                doi.color_name,
+                doi.pantone_code,
+                doi.hex_code,
+                doi.planned_quantity,
+                doi.received_quantity,
+                d.dyeing_order_no,
+                d.status as order_status,
+                d.fabric_name
+            FROM dyeing_order_items doi
+            JOIN dyeing_orders d ON doi.dyeing_order_id = d.id
+            WHERE d.production_order_id = ?
+              AND d.status != 'Cancelled'
+              AND d.deleted_at IS NULL
+              {$excludeSql}
+            " . $lockSql);
+        $activeDoiStmt->execute([$poId]);
+        $activeItems = $activeDoiStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 5. Match active dyeing order items to each required color variant
+        $allocations = [];
+        $totalRequiredSum = 0.0;
+        $totalAllocatedSum = 0.0;
+        $totalRemainingSum = 0.0;
+
+        foreach ($colors as $c) {
+            $cName = trim((string)$c['color_name']);
+            $pCode = trim((string)$c['pantone_code']);
+            $gQty = (float)($c['total_garment_qty'] ?? 0);
+
+            // Proportional fabric requirement
+            if ($totalOrderGarments > 0 && $totalFabricRequired > 0) {
+                $reqQty = round($totalFabricRequired * ($gQty / $totalOrderGarments), 2);
+            } else {
+                $reqQty = $gQty;
+            }
+
+            // Find matching active order items
+            $allocatedQty = 0.0;
+            $matchingOrders = [];
+            $cLower = strtolower($cName);
+            $pLower = strtolower($pCode);
+
+            foreach ($activeItems as $ai) {
+                $aiColor = strtolower(trim((string)$ai['color_name']));
+                $aiPantone = strtolower(trim((string)$ai['pantone_code']));
+
+                $isMatch = false;
+                if ($cLower !== '' && $aiColor === $cLower) {
+                    $isMatch = true;
+                } elseif ($pLower !== '' && ($aiPantone === $pLower || $aiColor === $pLower)) {
+                    $isMatch = true;
+                } elseif ($aiPantone !== '' && $cLower === $aiPantone) {
+                    $isMatch = true;
+                } elseif ($cLower !== '' && ($aiPantone !== '' && (str_contains($cLower, $aiPantone) || str_contains($aiPantone, $cLower)))) {
+                    $isMatch = true;
+                } elseif ($cLower !== '' && ($aiColor !== '' && (str_contains($cLower, $aiColor) || str_contains($aiColor, $cLower)))) {
+                    $isMatch = true;
+                }
+
+                if ($isMatch) {
+                    $planQty = (float)($ai['planned_quantity'] ?? 0);
+                    $recQty = (float)($ai['received_quantity'] ?? 0);
+                    $allocatedQty += max($planQty, $recQty);
+                    $matchingOrders[$ai['dyeing_order_no']] = $ai['order_status'];
+                }
+            }
+
+            $allocatedQty = round($allocatedQty, 2);
+            $remainingEligible = max(0.0, round($reqQty - $allocatedQty, 2));
+
+            $totalRequiredSum += $reqQty;
+            $totalAllocatedSum += $allocatedQty;
+            $totalRemainingSum += $remainingEligible;
+
+            $allocations[] = [
+                'color_name' => $cName,
+                'pantone_code' => $pCode,
+                'hex_code' => $c['hex_code'],
+                'garment_quantity' => $gQty,
+                'required_quantity' => $reqQty,
+                'allocated_quantity' => $allocatedQty,
+                'remaining_eligible_quantity' => $remainingEligible,
+                'is_fully_allocated' => ($remainingEligible <= 0.001),
+                'existing_orders' => array_keys($matchingOrders)
+            ];
+        }
+
+        // Adjust rounding drift on total required
+        $drift = round($totalFabricRequired - $totalRequiredSum, 2);
+        if (abs($drift) > 0 && abs($drift) < 1 && count($allocations) > 0) {
+            $lastIdx = count($allocations) - 1;
+            $allocations[$lastIdx]['required_quantity'] = round($allocations[$lastIdx]['required_quantity'] + $drift, 2);
+            $allocations[$lastIdx]['remaining_eligible_quantity'] = max(0.0, round($allocations[$lastIdx]['required_quantity'] - $allocations[$lastIdx]['allocated_quantity'], 2));
+            $allocations[$lastIdx]['is_fully_allocated'] = ($allocations[$lastIdx]['remaining_eligible_quantity'] <= 0.001);
+            $totalRequiredSum = round($totalRequiredSum + $drift, 2);
+            $totalRemainingSum = max(0.0, round($totalRequiredSum - $totalAllocatedSum, 2));
+        }
+
+        return [
+            'total_fabric_required' => round($totalFabricRequired, 2),
+            'total_fabric_inwarded' => round($totalFabricInwarded, 2),
+            'total_allocated_fabric' => round($totalAllocatedSum, 2),
+            'total_remaining_eligible_fabric' => round($totalRemainingSum, 2),
+            'has_eligible_quantity' => ($totalRemainingSum > 0.001),
+            'color_allocations' => $allocations,
+            'active_orders_count' => count(array_unique(array_column($activeItems, 'dyeing_order_no')))
+        ];
+    }
+
+    /**
      * Compute Inwarded Fabric vs Outward to Dyeing for a Production Order
      */
     public function fabricStock(): void {
@@ -421,43 +619,10 @@ class DyeingController {
             $dyeingReceivedStmt->execute([$poId]);
             $totalFabricReceivedFromDyeing = (float)$dyeingReceivedStmt->fetchColumn();
 
-            $balanceAvailableForDyeing = max(0.0, round($totalFabricInwarded - $totalFabricOutward, 2));
-
-            // 4. Fetch distinct colors from the Production Order items (with Pantone codes)
-            $colorStmt = $pdo->prepare("
-                SELECT DISTINCT 
-                    poi.color as color_name,
-                    COALESCE(col.pantone_code, '') as pantone_code,
-                    COALESCE(col.hex_code, '#6366f1') as hex_code,
-                    SUM(poi.total_quantity) as total_garment_qty
-                FROM production_order_items poi
-                LEFT JOIN colors col ON (
-                    LOWER(TRIM(poi.color)) = LOWER(TRIM(col.name)) 
-                    OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.code))
-                    OR LOWER(TRIM(poi.color)) = LOWER(TRIM(col.pantone_code))
-                )
-                WHERE poi.production_order_id = ?
-                GROUP BY poi.color, col.pantone_code, col.hex_code
-                ORDER BY poi.color ASC
-            ");
-            $colorStmt->execute([$poId]);
-            $suggestedColors = $colorStmt->fetchAll(PDO::FETCH_ASSOC);
-
-            // Enrich any missing pantone codes from pantone_colors reference table
-            foreach ($suggestedColors as &$sc) {
-                if (empty($sc['pantone_code']) && !empty($sc['color_name'])) {
-                    try {
-                        $pSearch = $pdo->prepare("SELECT pantone_code, hex_code FROM pantone_colors WHERE LOWER(pantone_name) LIKE ? OR LOWER(pantone_code) LIKE ? LIMIT 1");
-                        $cTerm = '%' . strtolower(trim((string)$sc['color_name'])) . '%';
-                        $pSearch->execute([$cTerm, $cTerm]);
-                        $foundP = $pSearch->fetch(PDO::FETCH_ASSOC);
-                        if ($foundP) {
-                            $sc['pantone_code'] = $foundP['pantone_code'];
-                            if (!empty($foundP['hex_code'])) $sc['hex_code'] = $foundP['hex_code'];
-                        }
-                    } catch (Exception $e) {}
-                }
-            }
+            // Calculate comprehensive variant & quantity allocations
+            $allocData = $this->calculateOrderColorAllocations($pdo, $poId);
+            $suggestedColors = $allocData['color_allocations'] ?? [];
+            $balanceAvailableForDyeing = (float)($allocData['total_remaining_eligible_fabric'] ?? 0.0);
 
             // 5. Fetch dyeing suppliers / mills
             $suppStmt = $pdo->query("
@@ -482,9 +647,14 @@ class DyeingController {
                 'total_fabric_outward' => $totalFabricOutward,
                 'balance_available_for_dyeing' => $balanceAvailableForDyeing,
                 'total_fabric_received_from_dyeing' => $totalFabricReceivedFromDyeing,
+                'total_fabric_required' => $allocData['total_fabric_required'] ?? $totalFabricInwarded,
+                'total_allocated_fabric' => $allocData['total_allocated_fabric'] ?? $totalFabricOutward,
+                'total_remaining_eligible_fabric' => $allocData['total_remaining_eligible_fabric'] ?? 0.0,
+                'has_eligible_quantity' => $allocData['has_eligible_quantity'] ?? false,
                 'fabric_materials' => $fabricMaterialsList,
                 'raw_inward_items' => $fabricItems,
                 'suggested_colors' => $suggestedColors,
+                'color_allocations' => $suggestedColors,
                 'dyeing_mills' => $dyeingMills
             ]);
         } catch (Exception $e) {
@@ -552,50 +722,89 @@ class DyeingController {
 
 
 
-            // Calculate total inwarded fabric for this production order
-            $fabInwardStmt = $pdo->prepare("
-                SELECT COALESCE(SUM(poi.received_quantity), 0)
-                FROM purchase_order_items poi
-                JOIN purchase_orders po ON poi.purchase_order_id = po.id
-                LEFT JOIN categories c ON po.category_id = c.id
-                WHERE (po.production_order_id = ? OR po.remarks LIKE ?)
-                  AND (
-                      UPPER(COALESCE(c.name, '')) LIKE '%FABRIC%' 
-                      OR UPPER(COALESCE(poi.item_description, '')) LIKE '%FABRIC%'
-                      OR UPPER(COALESCE(poi.item_description, '')) LIKE '%COTTON%'
-                      OR UPPER(COALESCE(poi.item_description, '')) LIKE '%JERSEY%'
-                      OR UPPER(COALESCE(poi.item_description, '')) LIKE '%MAT-FAB%'
-                  )
-            ");
-            $likeOrder = '%' . $pOrder['order_number'] . '%';
-            $fabInwardStmt->execute([$poId, $likeOrder]);
-            $totalInwarded = (float)$fabInwardStmt->fetchColumn();
-            if ($totalInwarded <= 0) {
-                $totalInwarded = (float)($pOrder['total_quantity'] ?? 100);
+            // Concurrency-safe calculation of authoritative color & material allocations for this production order
+            $allocData = $this->calculateOrderColorAllocations($pdo, $poId, null, true);
+            $allocations = $allocData['color_allocations'] ?? [];
+            $totalRemainingEligible = (float)($allocData['total_remaining_eligible_fabric'] ?? 0.0);
+
+            // Collect all existing active dyeing order numbers across the PO for clear user guidance
+            $allExistingOrders = [];
+            foreach ($allocations as $al) {
+                if (!empty($al['existing_orders'])) {
+                    foreach ($al['existing_orders'] as $ordNo) {
+                        $allExistingOrders[$ordNo] = true;
+                    }
+                }
             }
+            $existingOrdersRef = !empty($allExistingOrders) ? " (" . implode(', ', array_keys($allExistingOrders)) . ")" : "";
 
-            // Calculate total outward fabric for this order
-            $fabOutwardStmt = $pdo->prepare("
-                SELECT COALESCE(SUM(total_fabric_quantity), 0)
-                FROM dyeing_orders
-                WHERE production_order_id = ? AND status != 'Cancelled' AND deleted_at IS NULL
-            ");
-            $fabOutwardStmt->execute([$poId]);
-            $totalOutward = (float)$fabOutwardStmt->fetchColumn();
-
-            $balanceAvailable = max(0.0, round($totalInwarded - $totalOutward, 2));
-            $allowAdditional = !empty($data['allow_overdraft']) || !empty($data['is_additional_lot']) || !empty($data['force_create']) || !empty($data['is_redyeing']);
-
-            if ($balanceAvailable <= 0 && !$allowAdditional) {
+            // 1. Overall PO quantity check: if zero eligible balance remains
+            if ($totalRemainingEligible <= 0.001) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Selected fabric material has no eligible quantity remaining for dyeing (balance exhausted). Enable 'Additional Lot / Re-dyeing' to authorize outward.", 422);
+                Response::error("A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed. Please check the existing dyeing order{$existingOrdersRef} before creating another.", 422);
                 return;
             }
 
-            if ($balanceAvailable > 0 && $totalFabricQty > $balanceAvailable && !$allowAdditional) {
+            // If total requested exceeds total eligible remaining
+            if ($totalFabricQty > ($totalRemainingEligible + 0.01)) {
                 if ($pdo->inTransaction()) $pdo->rollBack();
-                Response::error("Requested outward quantity ({$totalFabricQty} {$uom}) exceeds available inward fabric balance ({$balanceAvailable} {$uom}). Enable 'Additional Lot / Re-dyeing' to authorize.", 422);
+                Response::error("Total requested outward quantity ({$totalFabricQty} {$uom}) exceeds the remaining eligible requirement ({$totalRemainingEligible} {$uom}) under this production order.{$existingOrdersRef} Please check the existing dyeing order before creating another.", 422);
                 return;
+            }
+
+            // 2. Per-color variant validation (quantity-aware & variant-aware)
+            foreach ($items as $it) {
+                $qty = (float)($it['planned_quantity'] ?? $it['quantity'] ?? 0);
+                $cName = trim($it['color_name'] ?? '');
+                $pantone = trim($it['pantone_code'] ?? '');
+
+                $matchedIdx = -1;
+                $cLower = strtolower($cName);
+                $pLower = strtolower($pantone);
+
+                foreach ($allocations as $idx => $v) {
+                    $vColor = strtolower(trim((string)$v['color_name']));
+                    $vPantone = strtolower(trim((string)$v['pantone_code']));
+
+                    $isMatch = false;
+                    if ($cLower !== '' && $vColor === $cLower) {
+                        $isMatch = true;
+                    } elseif ($pLower !== '' && ($vPantone === $pLower || $vColor === $pLower)) {
+                        $isMatch = true;
+                    } elseif ($vPantone !== '' && $cLower === $vPantone) {
+                        $isMatch = true;
+                    } elseif ($cLower !== '' && ($vPantone !== '' && (str_contains($cLower, $vPantone) || str_contains($vPantone, $cLower)))) {
+                        $isMatch = true;
+                    } elseif ($cLower !== '' && ($vColor !== '' && (str_contains($cLower, $vColor) || str_contains($vColor, $cLower)))) {
+                        $isMatch = true;
+                    }
+
+                    if ($isMatch) {
+                        $matchedIdx = $idx;
+                        break;
+                    }
+                }
+
+                if ($matchedIdx >= 0) {
+                    $variant = $allocations[$matchedIdx];
+                    $rem = (float)$variant['remaining_eligible_quantity'];
+                    $varExisting = !empty($variant['existing_orders']) ? " (" . implode(', ', $variant['existing_orders']) . ")" : $existingOrdersRef;
+
+                    if ($rem <= 0.001) {
+                        if ($pdo->inTransaction()) $pdo->rollBack();
+                        Response::error("A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed. Please check the existing dyeing order{$varExisting} before creating another.", 422);
+                        return;
+                    }
+
+                    if ($qty > ($rem + 0.01)) {
+                        if ($pdo->inTransaction()) $pdo->rollBack();
+                        Response::error("Requested quantity ({$qty} {$uom}) for '{$cName}' exceeds remaining eligible requirement ({$rem} {$uom}) under this production order.{$varExisting} Please check the existing dyeing order before creating another.", 422);
+                        return;
+                    }
+
+                    // Deduct from variant pool in case multiple rows request the same color
+                    $allocations[$matchedIdx]['remaining_eligible_quantity'] = max(0.0, round($rem - $qty, 2));
+                }
             }
 
             // Generate clean unique Dyeing Order Number

@@ -89,6 +89,11 @@ interface NewColorRow {
   rate_per_unit: number | '';
   tax_percent?: number;
   notes: string;
+  required_quantity?: number;
+  allocated_quantity?: number;
+  remaining_eligible_quantity?: number;
+  is_fully_allocated?: boolean;
+  existing_orders?: string[];
 }
 
 // Helper to compress and convert image file to lightweight Base64 data URL
@@ -369,15 +374,48 @@ export default function DyeingOrderDetail() {
 
   // Helper: Automatically build color rows from production order & available fabric balance
   const buildOrderColors = (ord: any, stock: any, customAvail?: number): NewColorRow[] => {
+    // 1. Authoritative color allocations from backend
+    const allocations = stock?.color_allocations || stock?.suggested_colors;
+    if (allocations && Array.isArray(allocations) && allocations.length > 0 && (allocations[0].remaining_eligible_quantity !== undefined || allocations[0].required_quantity !== undefined)) {
+      return allocations.map((c: any) => {
+        const cName = (c.color_name || '').trim();
+        const pLookup = lookupPantone(cName);
+        const verified = VERIFIED_PANTONE_LIBRARY.find(
+          p => p.name.toLowerCase() === cName.toLowerCase() || p.name.toLowerCase().includes(cName.toLowerCase())
+        );
+        const rem = Number(c.remaining_eligible_quantity);
+        const req = Number(c.required_quantity);
+        const alloc = Number(c.allocated_quantity);
+        const eligibleQty = (!isNaN(rem) && rem > 0) ? rem : 0;
+
+        return {
+          color_name: cName || 'Standard Color',
+          pantone_code: c.pantone_code || pLookup.pantone_code || verified?.code || '',
+          hex_code: c.hex_code || pLookup.hex_code || verified?.hex || '#6366f1',
+          planned_quantity: eligibleQty,
+          rate_per_unit: '',
+          tax_percent: 5,
+          notes: (c.existing_orders && c.existing_orders.length > 0)
+            ? `Existing orders: ${c.existing_orders.join(', ')}`
+            : '',
+          required_quantity: !isNaN(req) ? req : undefined,
+          allocated_quantity: !isNaN(alloc) ? alloc : undefined,
+          remaining_eligible_quantity: !isNaN(rem) ? rem : 0,
+          is_fully_allocated: Boolean(c.is_fully_allocated ?? (rem <= 0.001)),
+          existing_orders: c.existing_orders || []
+        };
+      });
+    }
+
     const avail = customAvail !== undefined
       ? customAvail
       : (Number(stock?.balance_available_for_dyeing) > 0 
           ? Number(stock.balance_available_for_dyeing) 
-          : (Number(stock?.total_fabric_inwarded) > 0 ? Number(stock.total_fabric_inwarded) : 100));
+          : 0);
 
     let candidateList: { color_name: string; pantone_code: string; hex_code: string; garment_qty: number }[] = [];
 
-    // 1. Try stock.suggested_colors from backend
+    // Fallback 1: Try stock.suggested_colors
     if (stock?.suggested_colors && Array.isArray(stock.suggested_colors) && stock.suggested_colors.length > 0) {
       candidateList = stock.suggested_colors.map((c: any) => {
         const cName = (c.color_name || '').trim();
@@ -393,7 +431,7 @@ export default function DyeingOrderDetail() {
         };
       });
     } 
-    // 2. Or fallback to ord.items (production_order_items)
+    // Fallback 2: Or fallback to ord.items (production_order_items)
     else if (ord?.items && Array.isArray(ord.items) && ord.items.length > 0) {
       const colorMap = new Map<string, number>();
       ord.items.forEach((it: any) => {
@@ -418,7 +456,6 @@ export default function DyeingOrderDetail() {
       });
     }
 
-    // 3. If no colors found on order items at all, return empty or single unassigned row
     if (candidateList.length === 0) {
       if (avail > 0) {
         return [{
@@ -448,20 +485,11 @@ export default function DyeingOrderDetail() {
         color_name: c.color_name,
         pantone_code: c.pantone_code,
         hex_code: c.hex_code,
-        planned_quantity: allocatedQty > 0 ? allocatedQty : 1,
+        planned_quantity: allocatedQty > 0 ? allocatedQty : 0,
         rate_per_unit: '',
         notes: c.garment_qty > 0 ? `For ${c.garment_qty} pcs in order` : ''
       };
     });
-
-    // Adjust any rounding drift on the last item so the total matches exactly
-    const currentSum = rows.reduce((s, r) => s + (Number(r.planned_quantity) || 0), 0);
-    const drift = Math.round((avail - currentSum) * 100) / 100;
-    if (rows.length > 0 && Math.abs(drift) > 0 && Math.abs(drift) < 5) {
-      const lastIdx = rows.length - 1;
-      const newLastQty = Math.max(0.1, Math.round(((Number(rows[lastIdx].planned_quantity) || 0) + drift) * 100) / 100);
-      rows[lastIdx].planned_quantity = newLastQty;
-    }
 
     return rows;
   };
@@ -555,16 +583,16 @@ export default function DyeingOrderDetail() {
     }
   }, [successToast]);
 
-  // Open Create Dyeing Order Full Page with auto-populated colors
+  // Open Create Dyeing Order Full Page with auto-populated colors & duplicate protection
   const handleOpenCreateModal = () => {
     setChallanNo(`DC-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
     setCreateError('');
     setFabricSearchQuery('');
-    setIsAdditionalLot(true);
+    setIsAdditionalLot(false);
 
-    if (colorRows.length === 0) {
-      setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
-    }
+    // Refresh color rows with latest authoritative allocations
+    setColorRows(buildOrderColors(order, fabricStockData, availableFabricBalance));
+
     setShowCreatePage(true);
     setShowCreateModal(false);
     const next = new URLSearchParams(searchParams);
@@ -696,9 +724,52 @@ export default function DyeingOrderDetail() {
   // Total planned across color rows
   const totalPlannedInModal = colorRows.reduce((sum, r) => sum + (Number(r.planned_quantity) || 0), 0);
 
+  // Authoritative quantities and allocation status from backend
+  const totalRemainingEligibleFabric = Number(
+    fabricStockData?.total_remaining_eligible_fabric !== undefined
+      ? fabricStockData.total_remaining_eligible_fabric
+      : (fabricStockData?.balance_available_for_dyeing ?? availableFabricBalance ?? 0)
+  );
+
+  const hasEligibleAllocation = fabricStockData?.has_eligible_quantity !== undefined
+    ? Boolean(fabricStockData.has_eligible_quantity)
+    : (totalRemainingEligibleFabric > 0.001);
+
+  const existingAllocatedOrders: string[] = useMemo(() => {
+    const set = new Set<string>();
+    if (fabricStockData?.color_allocations) {
+      fabricStockData.color_allocations.forEach((ca: any) => {
+        if (ca.existing_orders) {
+          ca.existing_orders.forEach((o: string) => set.add(o));
+        }
+      });
+    }
+    dyeingOrders.forEach((d: any) => {
+      if (d.status !== 'Cancelled' && d.dyeing_order_no) set.add(d.dyeing_order_no);
+    });
+    return Array.from(set);
+  }, [fabricStockData, dyeingOrders]);
+
+  const hasAnyOverAllocation = useMemo(() => {
+    if (!hasEligibleAllocation) return true;
+    return colorRows.some(r => {
+      const rem = r.remaining_eligible_quantity !== undefined ? Number(r.remaining_eligible_quantity) : undefined;
+      if (rem !== undefined && rem <= 0.001) return true;
+      if (rem !== undefined && (Number(r.planned_quantity) || 0) > rem + 0.01) return true;
+      return false;
+    });
+  }, [hasEligibleAllocation, colorRows]);
+
   // Submit Create Dyeing Order (supports Draft and Confirmed outward)
   const handleCreateDyeingOrder = async (orderStatus: 'Draft' | 'Sent to Dyeing' = 'Sent to Dyeing') => {
     setCreateError('');
+
+    // Pre-submission duplicate check
+    if (!hasEligibleAllocation || totalRemainingEligibleFabric <= 0.001) {
+      const ordsText = existingAllocatedOrders.length > 0 ? ` (${existingAllocatedOrders.join(', ')})` : '';
+      setCreateError(`A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed. Please check the existing dyeing order${ordsText} before creating another.`);
+      return;
+    }
 
     if (!selectedSupplierId) {
       setCreateError('Please select a Dyeing Processor / Mill.');
@@ -716,8 +787,28 @@ export default function DyeingOrderDetail() {
       return;
     }
 
+    // Check if any row exceeds its eligible remaining requirement
+    for (const r of colorRows) {
+      const rem = r.remaining_eligible_quantity !== undefined ? Number(r.remaining_eligible_quantity) : undefined;
+      const planned = Number(r.planned_quantity) || 0;
+      if (rem !== undefined && rem <= 0.001) {
+        const ordsText = (r.existing_orders && r.existing_orders.length > 0) ? ` (${r.existing_orders.join(', ')})` : '';
+        setCreateError(`A dyeing order already exists for this material and Pantone color (${r.color_name}${ordsText}) under this production order. The quantity has already been processed. Please check the existing dyeing order before creating another.`);
+        return;
+      }
+      if (rem !== undefined && planned > rem + 0.01) {
+        setCreateError(`Requested quantity (${planned} ${uom}) for '${r.color_name}' exceeds remaining eligible quantity (${rem} ${uom}). Please check existing dyeing orders.`);
+        return;
+      }
+    }
+
     if (totalPlannedInModal <= 0) {
       setCreateError('Total dyeing outward quantity must be greater than 0.');
+      return;
+    }
+
+    if (totalPlannedInModal > totalRemainingEligibleFabric + 0.01) {
+      setCreateError(`Total outward quantity (${totalPlannedInModal} ${uom}) exceeds the remaining eligible requirement (${totalRemainingEligibleFabric} ${uom}) for this production order.`);
       return;
     }
 
@@ -741,9 +832,9 @@ export default function DyeingOrderDetail() {
         process_type: processType,
         remarks,
         status: orderStatus,
-        is_additional_lot: true,
-        allow_overdraft: true,
-        force_create: true,
+        is_additional_lot: false,
+        allow_overdraft: false,
+        force_create: false,
         items: colorRows.map(r => ({
           color_name: r.color_name.trim(),
           pantone_code: r.pantone_code.trim(),
@@ -1118,8 +1209,15 @@ export default function DyeingOrderDetail() {
             <button
               type="button"
               onClick={() => handleCreateDyeingOrder('Draft')}
-              disabled={creating}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs"
+              disabled={creating || !hasEligibleAllocation || hasAnyOverAllocation}
+              title={
+                !hasEligibleAllocation
+                  ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
+                  : hasAnyOverAllocation
+                  ? "One or more colors exceed eligible remaining quantity."
+                  : undefined
+              }
+              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-3.5 h-3.5" />
               <span>Save as Draft</span>
@@ -1128,9 +1226,17 @@ export default function DyeingOrderDetail() {
             <Button
               type="button"
               loading={creating}
+              disabled={!hasEligibleAllocation || hasAnyOverAllocation}
+              title={
+                !hasEligibleAllocation
+                  ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
+                  : hasAnyOverAllocation
+                  ? "One or more colors exceed eligible remaining quantity."
+                  : undefined
+              }
               onClick={() => handleCreateDyeingOrder('Sent to Dyeing')}
               icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-4 py-2"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <span>+ Create Dyeing Order</span>
             </Button>
@@ -1139,6 +1245,45 @@ export default function DyeingOrderDetail() {
 
         {/* Full Page Body matching Image 2 */}
         <div className="max-w-7xl w-full mx-auto p-6 space-y-6">
+          {!hasEligibleAllocation && (
+            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-sm text-amber-900 flex items-center gap-2">
+                    <span>⚠️ Dyeing Order Duplicate Prevention</span>
+                    <span className="px-2 py-0.5 text-[10px] uppercase font-extrabold bg-amber-200 text-amber-900 rounded">Quantity Processed</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreatePage(false);
+                      setActiveTab('orders');
+                    }}
+                    className="text-xs font-bold text-brand-700 hover:text-brand-900 underline"
+                  >
+                    View Existing Orders &rarr;
+                  </button>
+                </div>
+                <p className="text-amber-800 leading-relaxed font-medium">
+                  A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed. Please check the existing dyeing order before creating another.
+                </p>
+                {existingAllocatedOrders.length > 0 && (
+                  <div className="flex items-center gap-2 pt-1 text-[11px] text-amber-900">
+                    <span className="font-bold">Existing Order(s):</span>
+                    <div className="flex flex-wrap gap-1.5 font-mono font-bold">
+                      {existingAllocatedOrders.map(ordNo => (
+                        <span key={ordNo} className="px-2 py-0.5 bg-white border border-amber-300 rounded shadow-2xs text-amber-950">
+                          {ordNo}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {createError && (
             <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 shadow-2xs">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -1355,6 +1500,17 @@ export default function DyeingOrderDetail() {
                               required
                             />
                           </div>
+                          {row.required_quantity !== undefined && (
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-500 font-medium">
+                              <span>Req: <strong className="text-slate-700">{row.required_quantity}</strong> {uom}</span>
+                              <span>&bull;</span>
+                              <span>Allocated: <strong className="text-slate-700">{row.allocated_quantity || 0}</strong> {uom}</span>
+                              <span>&bull;</span>
+                              <span className={row.remaining_eligible_quantity && row.remaining_eligible_quantity > 0 ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                                Eligible: {row.remaining_eligible_quantity || 0} {uom}
+                              </span>
+                            </div>
+                          )}
                         </td>
 
                         {/* 3. Pantone Code */}
@@ -1375,12 +1531,32 @@ export default function DyeingOrderDetail() {
                             type="number"
                             step="0.01"
                             min="0.01"
+                            max={row.remaining_eligible_quantity !== undefined ? row.remaining_eligible_quantity : undefined}
                             value={row.planned_quantity}
                             onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
                             placeholder="0.00"
-                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono font-bold text-slate-900 bg-white focus:ring-brand-500 focus:border-brand-500"
+                            className={`w-full text-xs rounded-lg py-1.5 px-2 text-right font-mono font-bold focus:ring-brand-500 focus:border-brand-500 ${
+                              row.remaining_eligible_quantity !== undefined && (Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
+                                ? 'border-red-500 bg-red-50 text-red-700'
+                                : row.remaining_eligible_quantity !== undefined && row.remaining_eligible_quantity <= 0.001
+                                ? 'border-amber-300 bg-amber-50/50 text-slate-500'
+                                : 'border-slate-300 text-slate-900 bg-white'
+                            }`}
                             required
                           />
+                          {row.remaining_eligible_quantity !== undefined && (
+                            <div className={`text-[10px] text-right font-semibold mt-0.5 ${
+                              (Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
+                                ? 'text-red-600 font-bold'
+                                : row.remaining_eligible_quantity <= 0.001
+                                ? 'text-amber-700 font-bold'
+                                : 'text-slate-400'
+                            }`}>
+                              {row.remaining_eligible_quantity <= 0.001
+                                ? '0.00 eligible'
+                                : `Max: ${row.remaining_eligible_quantity} ${uom}`}
+                            </div>
+                          )}
                         </td>
 
                         {/* 5. UOM */}
