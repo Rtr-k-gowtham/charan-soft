@@ -264,6 +264,8 @@ export const api = {
     request<any>('/production/dispatch/record', 'POST', data),
   getDispatchHistory: (orderId?: number | string) =>
     request<any[]>(`/production/dispatch/history${orderId ? `?production_order_id=${orderId}` : ''}`),
+  getDispatchDocumentUrl: (dispatchId: number | string, docIndex: number = 0) =>
+    `/api/production/dispatch/document?dispatch_id=${dispatchId}&doc_index=${docIndex}`,
 
   // Production Reports
   getDetailedProductionReports: (params?: Record<string, string>) => {

@@ -1670,6 +1670,81 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    const prodOrdUnorderedMatch = pathname.match(/^\/production-orders\/(\d+)\/unordered-items$/);
+    if (prodOrdUnorderedMatch && method === 'GET') {
+      const ordId = Number(prodOrdUnorderedMatch[1]);
+      const ord = (db.productionOrders || []).find(o => o.id === ordId);
+      if (!ord) return sendError(res, 'Production order not found', 404);
+
+      const totalMaterials = ord.generated_bom?.total_materials || [];
+      const activePOs = (db.purchaseOrders || []).filter(p => 
+        (p.production_order_id === ordId || p.production_order_number === ord.order_number) && 
+        (p.status || '').toLowerCase() !== 'cancelled'
+      );
+
+      const poItems = [];
+      activePOs.forEach(p => {
+        (p.items || []).forEach(it => poItems.push({ ...it, po_number: p.po_number }));
+      });
+
+      const normalize = s => (s || '').replace(/\s*\[[A-Za-z0-9_-]+\]\s*/g, ' ').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+      const unorderedList = totalMaterials.map(m => {
+        const reqQty = Number(m.total_required_qty || 0);
+        const matId = m.material_id ? Number(m.material_id) : null;
+        const normName = normalize(m.name);
+
+        let orderedQty = 0;
+        const matchingPoNumbers = [];
+
+        poItems.forEach(it => {
+          const itMatId = it.material_id ? Number(it.material_id) : null;
+          const itName = it.item_description || it.accessory_name || it.name;
+          const itNorm = normalize(itName);
+
+          const isMatch = (matId && itMatId) ? (matId === itMatId) : (normName && normName === itNorm);
+          if (isMatch) {
+            orderedQty += Number(it.quantity || 0);
+            if (it.po_number && !matchingPoNumbers.includes(it.po_number)) {
+              matchingPoNumbers.push(it.po_number);
+            }
+          }
+        });
+
+        const remaining = Math.max(0, Number((reqQty - orderedQty).toFixed(3)));
+        let status = 'Unordered';
+        if (remaining <= 0.001) status = 'Fully Ordered';
+        else if (orderedQty > 0.001) status = 'Partially Ordered';
+
+        return {
+          id: matId ? `mat_${matId}` : `name_${normName}`,
+          production_order_id: ordId,
+          production_order_number: ord.order_number,
+          production_order_title: ord.title,
+          material_id: matId,
+          material_code: m.material_code || null,
+          material_name: m.name,
+          category_name: m.category || 'General',
+          required_quantity: reqQty,
+          uom: m.uom || 'PCS',
+          supplier_id: m.preferred_supplier_id || null,
+          supplier_name: m.preferred_supplier_name || null,
+          supplier_code: m.preferred_supplier_code || null,
+          previously_ordered_quantity: Number(orderedQty.toFixed(3)),
+          remaining_unordered_quantity: remaining,
+          unit_cost: Number(m.unit_cost || 0),
+          size: m.size || null,
+          model: m.model || null,
+          length: m.length || null,
+          thickness: m.thickness || null,
+          status,
+          po_numbers: matchingPoNumbers,
+        };
+      });
+
+      return sendSuccess(res, unorderedList);
+    }
+
     const prodOrdMatch = pathname.match(/^\/production-orders\/(\d+)$/);
     if (prodOrdMatch && method === 'GET') {
       const ordId = Number(prodOrdMatch[1]);
@@ -1948,15 +2023,7 @@ const server = http.createServer(async (req, res) => {
       }
       totalFabricQty = Number(totalFabricQty.toFixed(2));
 
-      // Validate fabric material
-      const matId = Number(body.fabric_material_id || 0);
-      const mat = (db.materials || []).find(m => m.id === matId);
-      if (mat) {
-        const catName = (mat.category_name || '').toUpperCase();
-        if (catName.includes('TRIM') || catName.includes('PACK') || catName.includes('THREAD') || catName.includes('DYE')) {
-          return sendError(res, 'Selected material is not a valid fabric material for dyeing', 422);
-        }
-      }
+
 
       // Calculate total inwarded fabric for this order
       let totalInwarded = 0;

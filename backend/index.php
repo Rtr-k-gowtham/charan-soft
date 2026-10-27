@@ -161,6 +161,8 @@ try {
         $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->dispatchOrders(),
         $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'record' && $method === 'POST' => (new ProductionController)->recordOrderDispatch(),
         $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'history' && $method === 'GET' => (new ProductionController)->dispatchHistory(),
+        $r0 === 'production' && $r1 === 'dispatch' && $r2 === 'document' && $method === 'GET' => (new ProductionController)->dispatchDocument(),
+        $r0 === 'production' && $r1 === 'dispatch' && is_numeric($r2) && ($segments[3] ?? '') === 'document' && $method === 'GET' => (new ProductionController)->dispatchDocument((int)$r2),
         $r0 === 'production' && $r1 === 'dispatch' && is_numeric($r2) && $method === 'GET' => (new ProductionController)->dispatchOrderDetails((int)$r2),
 
         // ---------------- REPORTS ----------------

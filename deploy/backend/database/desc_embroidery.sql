@@ -1,0 +1,2 @@
+DESCRIBE embroidery_job_orders;
+DESCRIBE embroidery_receipts;

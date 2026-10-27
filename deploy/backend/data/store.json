@@ -1760,7 +1760,6 @@
       "total_received_quantity": 0,
       "created_at": "2026-10-21T11:05:39.835Z",
       "production_order_id": 1,
-      "fabric_material_id": 1,
       "fabric_name": "100% Combed Cotton Single Jersey 180 GSM",
       "fabric_code": "MAT-FAB-001",
       "uom": "MTR",

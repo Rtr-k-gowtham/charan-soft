@@ -91,22 +91,38 @@ export const EwayBillPdfUpload: React.FC<EwayBillPdfUploadProps> = ({
         return;
       }
 
-      // 4. Read complete file as base64 Data URL
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setIsProcessing(false);
-        onChange({
-          dataUrl,
-          filename: file.name,
-          fileSize: file.size
-        });
-      };
-      reader.onerror = () => {
-        setIsProcessing(false);
-        setInternalError('Failed to read the selected PDF file.');
-      };
-      reader.readAsDataURL(file);
+      // 4. Read complete file as ArrayBuffer and auto-repair UTF-8 encoding distortion if present
+      const fullBuffer = await file.arrayBuffer();
+      let uint8 = new Uint8Array(fullBuffer);
+
+      // Auto-repair check: If binary PDF streams contain UTF-8 sequence bytes
+      try {
+        const text = new TextDecoder('latin1').decode(uint8);
+        const streamMatch = text.match(/stream[\r\n]+([\s\S]*?)[\r\n]+endstream/);
+        if (streamMatch && /[\xC2\xC3][\x80-\xBF]/.test(streamMatch[1])) {
+          const utf8Decoded = new TextDecoder('utf-8').decode(uint8);
+          const repaired = new Uint8Array(utf8Decoded.length);
+          for (let i = 0; i < utf8Decoded.length; i++) {
+            repaired[i] = utf8Decoded.charCodeAt(i) & 0xff;
+          }
+          uint8 = repaired;
+        }
+      } catch (repairErr) {
+        console.warn('PDF stream auto-repair notice:', repairErr);
+      }
+
+      let binaryStr = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < uint8.length; i += chunkSize) {
+        binaryStr += String.fromCharCode.apply(null, Array.from(uint8.subarray(i, i + chunkSize)));
+      }
+      const dataUrl = `data:application/pdf;base64,${btoa(binaryStr)}`;
+      setIsProcessing(false);
+      onChange({
+        dataUrl,
+        filename: file.name,
+        fileSize: uint8.length
+      });
     } catch (err: any) {
       setIsProcessing(false);
       console.error('Error validating PDF:', err);

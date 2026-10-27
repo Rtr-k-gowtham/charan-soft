@@ -11,8 +11,16 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # 3. All other requests fallback to React SPA index.html
+  # 3. Missing uploaded files must return HTTP 404, never fallback to React SPA index.html
+  RewriteRule ^uploads/ - [R=404,L]
+
+  # 4. All other application requests fallback to React SPA index.html
   RewriteRule ^ index.html [L]
+</IfModule>
+
+# MIME type mapping
+<IfModule mod_mime.c>
+  AddType application/pdf .pdf
 </IfModule>
 
 # Security: Deny direct access to SQL and database migration files
@@ -25,3 +33,4 @@
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
 </IfModule>
+

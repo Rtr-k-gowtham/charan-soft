@@ -1096,11 +1096,10 @@ export default function CreateProductionOrder() {
                           type="button"
                           disabled={productGroups.length <= 1}
                           onClick={() => handleRemoveProductGroup(gIdx)}
-                          className={`p-1.5 rounded-md transition-colors ${
-                            productGroups.length <= 1
+                          className={`p-1.5 rounded-md transition-colors ${productGroups.length <= 1
                               ? 'text-slate-300 cursor-not-allowed'
                               : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                          }`}
+                            }`}
                           title={productGroups.length <= 1 ? 'Order must have at least one product line' : 'Remove product line'}
                         >
                           <Trash2 className="w-4 h-4 text-red-500" />
@@ -1118,10 +1117,10 @@ export default function CreateProductionOrder() {
                             !form.customer_id
                               ? 'Select a buyer first'
                               : loadingBuyerProducts
-                              ? 'Loading buyer products...'
-                              : buyerProducts.length === 0
-                              ? 'No products configured for this buyer'
-                              : '— Select Product —'
+                                ? 'Loading buyer products...'
+                                : buyerProducts.length === 0
+                                  ? 'No products configured for this buyer'
+                                  : '— Select Product —'
                           }
                           searchPlaceholder={
                             !form.customer_id
@@ -1164,11 +1163,10 @@ export default function CreateProductionOrder() {
                             return (
                               <div
                                 key={variant.id}
-                                className={`p-2.5 rounded-lg border transition-all ${
-                                  isDup
+                                className={`p-2.5 rounded-lg border transition-all ${isDup
                                     ? 'border-red-300 bg-red-50/50'
                                     : 'border-slate-200 bg-white hover:border-slate-300'
-                                }`}
+                                  }`}
                               >
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
                                   {/* Line Index & Swatch Thumbnail */}
@@ -1285,11 +1283,10 @@ export default function CreateProductionOrder() {
                                       type="button"
                                       disabled={group.variants.length <= 1}
                                       onClick={() => handleRemoveColorVariant(gIdx, vIdx)}
-                                      className={`p-1.5 rounded transition-colors ${
-                                        group.variants.length <= 1
+                                      className={`p-1.5 rounded transition-colors ${group.variants.length <= 1
                                           ? 'text-slate-300 cursor-not-allowed'
                                           : 'text-slate-400 hover:text-red-600 hover:bg-red-50'
-                                      }`}
+                                        }`}
                                       title={group.variants.length <= 1 ? 'Product must have at least one color variant' : 'Remove color variant'}
                                     >
                                       <Trash2 className="w-4 h-4 text-red-500" />
@@ -1417,13 +1414,12 @@ export default function CreateProductionOrder() {
                 value={colorPantoneInput}
                 onChange={(e) => setColorPantoneInput(e.target.value)}
                 placeholder="Enter Pantone code (e.g., 19-4052 TCX, 100 C, or custom code)"
-                className={`w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border transition-all duration-150 pr-9 ${
-                  colorIsVerified
+                className={`w-full px-3 py-2 text-xs font-mono font-medium rounded-lg border transition-all duration-150 pr-9 ${colorIsVerified
                     ? 'border-emerald-400 bg-emerald-50/20 text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-200'
                     : colorIsCustomMode
-                    ? 'border-amber-300 bg-amber-50/15 text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-200'
-                    : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
-                }`}
+                      ? 'border-amber-300 bg-amber-50/15 text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-200'
+                      : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
+                  }`}
                 autoFocus
               />
               <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
@@ -1485,14 +1481,13 @@ export default function CreateProductionOrder() {
                   colorLookupLoading
                     ? 'Looking up color name...'
                     : colorIsVerified
-                    ? colorName
-                    : 'Enter color name (e.g. Classic Navy, Custom Red)'
+                      ? colorName
+                      : 'Enter color name (e.g. Classic Navy, Custom Red)'
                 }
-                className={`w-full px-3 py-2 text-xs rounded-lg border transition-all ${
-                  colorIsVerified
+                className={`w-full px-3 py-2 text-xs rounded-lg border transition-all ${colorIsVerified
                     ? 'bg-slate-50 border-slate-200 text-slate-900 font-semibold cursor-default select-text'
                     : 'bg-white border-slate-300 text-slate-800 focus:border-brand-500 focus:ring-1 focus:ring-brand-200'
-                }`}
+                  }`}
               />
               {colorIsVerified && (
                 <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -1549,11 +1544,10 @@ export default function CreateProductionOrder() {
                   readOnly={colorIsVerified}
                   maxLength={7}
                   placeholder="#000000"
-                  className={`w-full px-2 py-1 text-xs font-mono font-semibold rounded border ${
-                    colorIsVerified
+                  className={`w-full px-2 py-1 text-xs font-mono font-semibold rounded border ${colorIsVerified
                       ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
                       : 'bg-white border-slate-300 text-slate-800 focus:border-brand-500'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -1568,11 +1562,10 @@ export default function CreateProductionOrder() {
                   value={colorRgb.r}
                   onChange={(e) => handleColorRgbChange('r', e.target.value)}
                   readOnly={colorIsVerified}
-                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
-                    colorIsVerified
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${colorIsVerified
                       ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
                       : 'bg-white border-slate-300 text-slate-800 focus:border-red-400'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -1587,11 +1580,10 @@ export default function CreateProductionOrder() {
                   value={colorRgb.g}
                   onChange={(e) => handleColorRgbChange('g', e.target.value)}
                   readOnly={colorIsVerified}
-                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
-                    colorIsVerified
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${colorIsVerified
                       ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
                       : 'bg-white border-slate-300 text-slate-800 focus:border-emerald-400'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -1606,11 +1598,10 @@ export default function CreateProductionOrder() {
                   value={colorRgb.b}
                   onChange={(e) => handleColorRgbChange('b', e.target.value)}
                   readOnly={colorIsVerified}
-                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${
-                    colorIsVerified
+                  className={`w-full px-2 py-1 text-xs font-mono rounded border ${colorIsVerified
                       ? 'bg-slate-100 border-slate-200 text-slate-700 cursor-default'
                       : 'bg-white border-slate-300 text-slate-800 focus:border-blue-400'
-                  }`}
+                    }`}
                 />
               </div>
             </div>

@@ -1053,53 +1053,140 @@ class ProductionController {
             }
 
             // Stage-specific quantity reconciliation:
-            if ($acceptedQty > 0) {
+            if ($acceptedQty > 0 || $rejectedQty > 0) {
                 if ($stageId === 4) {
-                    // Stage 04 Dyeing: update total_accepted_quantity in dyeing_orders
+                    // Stage 04 Dyeing: update dyeing_receipts & dyeing_orders
                     $refId = trim((string)$rwk['reference_id']);
                     if (!empty($refId)) {
-                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ? WHERE id = ? OR dyeing_order_no = ?")
-                            ->execute([$acceptedQty, $refId, $refId]);
-                    } else {
-                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ? WHERE production_order_id = ? ORDER BY id DESC LIMIT 1")
-                            ->execute([$acceptedQty, $pId]);
+                        $pdo->prepare("UPDATE dyeing_receipts SET total_accepted_quantity = total_accepted_quantity + ?, total_rework_quantity = GREATEST(0.0, total_rework_quantity - ?) WHERE id = ? OR receipt_no = ?")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $refId, $refId]);
+
+                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ?, total_rework_quantity = GREATEST(0.0, total_rework_quantity - ?) WHERE id = (SELECT dyeing_order_id FROM dyeing_receipts WHERE id = ? OR receipt_no = ? LIMIT 1) OR id = ? OR dyeing_order_no = ?")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $refId, $refId, $refId, $refId]);
+                    } else if ($pId > 0) {
+                        $pdo->prepare("UPDATE dyeing_orders SET total_accepted_quantity = total_accepted_quantity + ?, total_rework_quantity = GREATEST(0.0, total_rework_quantity - ?) WHERE production_order_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $pId]);
                     }
                 } else if ($stageId === 5) {
                     // Stage 05 Cutting: update cutting_batches accepted_output_quantity
                     if (!empty($batchNo)) {
-                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
-                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $batchNo, (int)$rwk['reference_id']]);
                     } else if ($itemId > 0) {
-                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
-                            ->execute([$acceptedQty, $itemId]);
+                        $pdo->prepare("UPDATE cutting_batches SET accepted_output_quantity = accepted_output_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $itemId]);
                     }
                 } else if ($stageId === 6) {
-                    // Stage 06 Embroidery: update embroidery_job_orders / receipts
+                    // Stage 06 Embroidery: update embroidery_receipts & embroidery_job_orders
                     $refId = trim((string)$rwk['reference_id']);
+                    $targetJobOrderId = 0;
+                    $targetRcptId = 0;
+                    $rcpt = null;
+
+                    // 1. Locate matching receipt
                     if (!empty($refId)) {
-                        $pdo->prepare("UPDATE embroidery_job_orders SET total_quantity_accepted = total_quantity_accepted + ? WHERE id = ? OR job_order_number = ?")
-                            ->execute([$acceptedQty, $refId, $refId]);
-                    } else {
-                        $pdo->prepare("UPDATE embroidery_job_orders SET total_quantity_accepted = total_quantity_accepted + ? WHERE production_order_id = ? ORDER BY id DESC LIMIT 1")
-                            ->execute([$acceptedQty, $pId]);
+                        $rcptStmt = $pdo->prepare("SELECT id, job_order_id, items_data, total_accepted_qty, total_rework_qty, total_rejected_qty FROM embroidery_receipts WHERE receipt_number = ? OR id = ? LIMIT 1");
+                        $rcptStmt->execute([$refId, is_numeric($refId) ? (int)$refId : 0]);
+                        $rcpt = $rcptStmt->fetch();
+                        if ($rcpt) {
+                            $targetRcptId = (int)$rcpt['id'];
+                            $targetJobOrderId = (int)$rcpt['job_order_id'];
+                        }
+                    }
+
+                    if ($targetRcptId <= 0 && $pId > 0) {
+                        $rcptStmt = $pdo->prepare("SELECT id, job_order_id, items_data, total_accepted_qty, total_rework_qty, total_rejected_qty FROM embroidery_receipts WHERE production_order_id = ? ORDER BY id DESC LIMIT 1");
+                        $rcptStmt->execute([$pId]);
+                        $rcpt = $rcptStmt->fetch();
+                        if ($rcpt) {
+                            $targetRcptId = (int)$rcpt['id'];
+                            $targetJobOrderId = (int)$rcpt['job_order_id'];
+                        }
+                    }
+
+                    // Update receipt accepted and rework quantities
+                    if ($targetRcptId > 0) {
+                        $pdo->prepare("
+                            UPDATE embroidery_receipts 
+                            SET total_accepted_qty = total_accepted_qty + ?,
+                                total_rework_qty = GREATEST(0.0, total_rework_qty - ?),
+                                total_rejected_qty = total_rejected_qty + ?
+                            WHERE id = ?
+                        ")->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $targetRcptId]);
+
+                        if ($rcpt && !empty($rcpt['items_data'])) {
+                            $rItems = json_decode($rcpt['items_data'], true);
+                            if (is_array($rItems)) {
+                                foreach ($rItems as &$rit) {
+                                    if (($itemId > 0 && ($rit['production_order_item_id'] ?? 0) == $itemId) || count($rItems) === 1) {
+                                        $rit['accepted_quantity'] = (float)($rit['accepted_quantity'] ?? 0) + $acceptedQty;
+                                        $rit['rework_quantity'] = max(0.0, (float)($rit['rework_quantity'] ?? 0) - ($acceptedQty + $rejectedQty));
+                                        $rit['rejected_quantity'] = (float)($rit['rejected_quantity'] ?? 0) + $rejectedQty;
+                                        break;
+                                    }
+                                }
+                                unset($rit);
+                                $pdo->prepare("UPDATE embroidery_receipts SET items_data = ? WHERE id = ?")
+                                    ->execute([json_encode($rItems), $targetRcptId]);
+                            }
+                        }
+                    }
+
+                    // 2. Locate and update job order
+                    if ($targetJobOrderId > 0) {
+                        $pdo->prepare("
+                            UPDATE embroidery_job_orders 
+                            SET total_quantity_accepted = total_quantity_accepted + ?,
+                                total_quantity_rework = GREATEST(0.0, total_quantity_rework - ?),
+                                total_quantity_rejected = total_quantity_rejected + ?
+                            WHERE id = ?
+                        ")->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $targetJobOrderId]);
+                    } else if (!empty($refId)) {
+                        $updJob = $pdo->prepare("
+                            UPDATE embroidery_job_orders 
+                            SET total_quantity_accepted = total_quantity_accepted + ?,
+                                total_quantity_rework = GREATEST(0.0, total_quantity_rework - ?),
+                                total_quantity_rejected = total_quantity_rejected + ?
+                            WHERE id = ? OR job_order_number = ?
+                        ");
+                        $updJob->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, is_numeric($refId) ? (int)$refId : 0, $refId]);
+                        if ($updJob->rowCount() === 0 && $pId > 0) {
+                            $pdo->prepare("
+                                UPDATE embroidery_job_orders 
+                                SET total_quantity_accepted = total_quantity_accepted + ?,
+                                    total_quantity_rework = GREATEST(0.0, total_quantity_rework - ?),
+                                    total_quantity_rejected = total_quantity_rejected + ?
+                                WHERE production_order_id = ?
+                                ORDER BY id DESC LIMIT 1
+                            ")->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $pId]);
+                        }
+                    } else if ($pId > 0) {
+                        $pdo->prepare("
+                            UPDATE embroidery_job_orders 
+                            SET total_quantity_accepted = total_quantity_accepted + ?,
+                                total_quantity_rework = GREATEST(0.0, total_quantity_rework - ?),
+                                total_quantity_rejected = total_quantity_rejected + ?
+                            WHERE production_order_id = ?
+                            ORDER BY id DESC LIMIT 1
+                        ")->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $pId]);
                     }
                 } else if ($stageId === 7) {
                     // Stage 07 Stitching: update stitching_batches accepted_quantity
                     if (!empty($batchNo)) {
-                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
-                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $batchNo, (int)$rwk['reference_id']]);
                     } else if ($itemId > 0) {
-                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
-                            ->execute([$acceptedQty, $itemId]);
+                        $pdo->prepare("UPDATE stitching_batches SET accepted_quantity = accepted_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $itemId]);
                     }
                 } else if ($stageId === 8) {
                     // Stage 08 Checking: update quality_inspections passed_quantity
                     if (!empty($batchNo)) {
-                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
-                            ->execute([$acceptedQty, $batchNo, (int)$rwk['reference_id']]);
+                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE batch_number = ? OR id = ?")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $batchNo, (int)$rwk['reference_id']]);
                     } else if ($itemId > 0) {
-                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
-                            ->execute([$acceptedQty, $itemId]);
+                        $pdo->prepare("UPDATE quality_inspections SET passed_quantity = passed_quantity + ?, rework_quantity = GREATEST(0.0, rework_quantity - ?), rejected_quantity = rejected_quantity + ?, rework_status = 'Accepted After Rework' WHERE production_order_item_id = ? ORDER BY id DESC LIMIT 1")
+                            ->execute([$acceptedQty, $acceptedQty + $rejectedQty, $rejectedQty, $itemId]);
                     }
                 }
             }
@@ -2667,7 +2754,13 @@ class ProductionController {
             unset($job);
 
             // Fetch Receipts
-            $rStmt = $pdo->prepare("SELECT * FROM embroidery_receipts WHERE production_order_id = ? ORDER BY id DESC");
+            $rStmt = $pdo->prepare("
+                SELECT er.*, ejo.job_order_number 
+                FROM embroidery_receipts er 
+                LEFT JOIN embroidery_job_orders ejo ON er.job_order_id = ejo.id 
+                WHERE er.production_order_id = ? 
+                ORDER BY er.id DESC
+            ");
             $rStmt->execute([$orderId]);
             $receipts = $rStmt->fetchAll();
             foreach ($receipts as &$rcpt) {
@@ -2723,6 +2816,16 @@ class ProductionController {
             $trfStmt->execute([$orderId]);
             $transferredOutRows = $trfStmt->fetchAll();
             $totalOrderTransferredToStitching = array_reduce($transferredOutRows, fn($acc, $r) => $acc + (float)$r['quantity'], 0.0);
+
+            // Fetch accepted rework records for this order
+            $rwkStmt = $pdo->prepare("
+                SELECT reference_id, reference_type, SUM(accepted_quantity) as sum_accepted 
+                FROM rework_records 
+                WHERE production_order_id = ? AND stage_id = 6 AND status = 'Accepted After Rework'
+                GROUP BY reference_id, reference_type
+            ");
+            $rwkStmt->execute([$orderId]);
+            $acceptedReworks = $rwkStmt->fetchAll();
 
             // Aggregate items by product_id and color
             $groupedItems = [];
@@ -2794,17 +2897,102 @@ class ProductionController {
 
                 foreach ($receipts as $rcpt) {
                     $rItems = $rcpt['items_data'] ?? [];
+                    $matchedInReceipt = false;
+                    $itemAcceptedFound = false;
+
                     foreach ($rItems as $ri) {
                         $m = false;
                         if (!empty($ri['production_order_item_id']) && $ri['production_order_item_id'] == $gIt['active_embroidery_item_id']) $m = true;
                         if (!empty($ri['product_id']) && $ri['product_id'] == $pId && trim((string)($ri['color'] ?? '')) === $color) $m = true;
                         if ($m) {
+                            $matchedInReceipt = true;
                             $received += (float)($ri['received_quantity'] ?? 0);
-                            $accepted += (float)($ri['accepted_quantity'] ?? 0);
+                            if (isset($ri['accepted_quantity']) && (float)$ri['accepted_quantity'] > 0) {
+                                $accepted += (float)$ri['accepted_quantity'];
+                                $itemAcceptedFound = true;
+                            }
                             $rejected += (float)($ri['rejected_quantity'] ?? 0);
                             $rework += (float)($ri['rework_quantity'] ?? 0);
                         }
                     }
+
+                    if (!$matchedInReceipt && count($groupedItems) === 1) {
+                        $matchedInReceipt = true;
+                        $received += (float)($rcpt['total_received_qty'] ?? 0);
+                    }
+
+                    // Fallback to receipt-level totals if items_data has no accepted_quantity key
+                    if ($matchedInReceipt && !$itemAcceptedFound && (float)($rcpt['total_accepted_qty'] ?? 0) > 0) {
+                        $accepted += (float)$rcpt['total_accepted_qty'];
+                        $rejected += (float)($rcpt['total_rejected_qty'] ?? 0);
+                        $rework += (float)($rcpt['total_rework_qty'] ?? 0);
+                    }
+                }
+
+                // Cross-check: If accepted quantity is still 0 or less than job orders' accepted quantity
+                $jobAccForThisItem = 0.0;
+                $jobRejForThisItem = 0.0;
+                $jobRwkForThisItem = 0.0;
+                foreach ($jobs as $job) {
+                    $jItems = $job['items_json'] ?? [];
+                    $jMatched = false;
+                    foreach ($jItems as $ji) {
+                        $m = false;
+                        if (!empty($ji['production_order_item_id']) && $ji['production_order_item_id'] == $gIt['active_embroidery_item_id']) $m = true;
+                        if (!empty($ji['product_id']) && (int)$ji['product_id'] === $pId && trim((string)($ji['color'] ?? '')) === $color) $m = true;
+                        if ($m) {
+                            $jMatched = true;
+                            if (isset($ji['accepted_quantity']) && (float)$ji['accepted_quantity'] > 0) {
+                                $jobAccForThisItem += (float)$ji['accepted_quantity'];
+                            }
+                        }
+                    }
+                    if (!$jMatched && count($groupedItems) === 1) {
+                        $jobAccForThisItem += (float)($job['total_quantity_accepted'] ?? 0);
+                        $jobRejForThisItem += (float)($job['total_quantity_rejected'] ?? 0);
+                        $jobRwkForThisItem += (float)($job['total_quantity_rework'] ?? 0);
+                    }
+                }
+
+                if ($jobAccForThisItem > $accepted) {
+                    $accepted = $jobAccForThisItem;
+                    if ($rejected <= 0) $rejected = $jobRejForThisItem;
+                    if ($rework <= 0) $rework = $jobRwkForThisItem;
+                }
+
+                // If single-item order, reconcile with total receipts accepted
+                if (count($groupedItems) === 1) {
+                    $totalAllReceiptsAccepted = array_reduce($receipts, fn($s, $r) => $s + (float)($r['total_accepted_qty'] ?? 0), 0.0);
+                    if ($totalAllReceiptsAccepted > $accepted) {
+                        $accepted = $totalAllReceiptsAccepted;
+                    }
+                }
+
+                // Check accepted rework matching this item or job orders
+                foreach ($acceptedReworks as $ar) {
+                    $ref = trim((string)$ar['reference_id']);
+                    $matchesRwk = false;
+                    foreach ($jobs as $job) {
+                        if ($ref === (string)$job['id'] || $ref === (string)$job['job_order_number']) {
+                            $matchesRwk = true;
+                            break;
+                        }
+                    }
+                    if (!$matchesRwk) {
+                        foreach ($receipts as $rc) {
+                            if ($ref === (string)$rc['id'] || $ref === (string)$rc['receipt_number']) {
+                                $matchesRwk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ($matchesRwk && $accepted < $sent) {
+                        $accepted = min($sent, $accepted + (float)$ar['sum_accepted']);
+                    }
+                }
+
+                if ($received < $accepted) {
+                    $received = $accepted;
                 }
 
                 if ($sent > $gIt['arrived_from_cutting']) {
@@ -2833,9 +3021,43 @@ class ProductionController {
             }
             unset($gIt);
 
-            // Update each job order with transferred and ready_to_transfer quantities
+            // Update each job order with transferred, accepted, and ready_to_transfer quantities
             foreach ($jobs as &$job) {
                 $jAcc = (float)($job['total_quantity_accepted'] ?? 0);
+
+                // Cross-check: find receipts for this job order
+                $jobReceiptsAcc = 0.0;
+                foreach ($receipts as $rc) {
+                    if ((int)$rc['job_order_id'] === (int)$job['id']) {
+                        $jobReceiptsAcc += (float)($rc['total_accepted_qty'] ?? 0);
+                    }
+                }
+
+                if ($jobReceiptsAcc > $jAcc) {
+                    $jAcc = $jobReceiptsAcc;
+                    $job['total_quantity_accepted'] = $jAcc;
+                }
+
+                // Check accepted rework matching this job order or its receipts
+                foreach ($acceptedReworks as $ar) {
+                    $ref = trim((string)$ar['reference_id']);
+                    $matchesRework = false;
+                    if ($ref === (string)$job['id'] || $ref === (string)$job['job_order_number']) {
+                        $matchesRework = true;
+                    } else {
+                        foreach ($receipts as $rc) {
+                            if ((int)$rc['job_order_id'] === (int)$job['id'] && ($ref === (string)$rc['id'] || $ref === (string)$rc['receipt_number'])) {
+                                $matchesRework = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ($matchesRework && $jAcc < (float)$job['total_quantity_received']) {
+                        $jAcc = min((float)$job['total_quantity_received'], $jAcc + (float)$ar['sum_accepted']);
+                        $job['total_quantity_accepted'] = $jAcc;
+                    }
+                }
+
                 $jTrf = (float)($job['transferred_to_stitching_quantity'] ?? 0);
                 if ($jTrf <= 0 && $totalOrderTransferredToStitching > 0) {
                     $jTrf = min($jAcc, $totalOrderTransferredToStitching);
@@ -3067,11 +3289,15 @@ class ProductionController {
             $accStmt->execute([$pId]);
             $totalAccepted = (float)$accStmt->fetchColumn();
 
-            if ($totalAccepted <= 0.001) {
-                $jAccStmt = $pdo->prepare("SELECT COALESCE(SUM(total_quantity_accepted), 0) FROM embroidery_job_orders WHERE production_order_id = ?");
-                $jAccStmt->execute([$pId]);
-                $totalAccepted = (float)$jAccStmt->fetchColumn();
-            }
+            $jAccStmt = $pdo->prepare("SELECT COALESCE(SUM(total_quantity_accepted), 0) FROM embroidery_job_orders WHERE production_order_id = ?");
+            $jAccStmt->execute([$pId]);
+            $jobAccepted = (float)$jAccStmt->fetchColumn();
+
+            $rwkStmt = $pdo->prepare("SELECT COALESCE(SUM(accepted_quantity), 0) FROM rework_records WHERE production_order_id = ? AND stage_id = 6 AND status = 'Accepted After Rework'");
+            $rwkStmt->execute([$pId]);
+            $reworkAccepted = (float)$rwkStmt->fetchColumn();
+
+            $totalAccepted = max($totalAccepted, $jobAccepted, $reworkAccepted);
 
             $trfStmt = $pdo->prepare("
                 SELECT COALESCE(SUM(quantity), 0) 
@@ -3132,29 +3358,34 @@ class ProductionController {
                     $pdo->prepare("
                         UPDATE production_order_items 
                         SET current_stage_quantity = current_stage_quantity + ?,
-                            total_quantity = total_quantity + ?
+                            total_quantity = total_quantity + ?,
+                            status = 'In Progress'
                         WHERE id = ?
                     ")->execute([$qty, $qty, $existingDestItemId]);
 
                     // Deduct from current item at Embroidery stage
                     $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
                     $remTotal = max(0.0, (float)$item['total_quantity'] - $qty);
-                    if ($remQty <= 0.001) {
+                    if ($remQty <= 0.001 && (int)$item['current_stage_id'] === 6) {
                         $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
                     } else {
                         $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")->execute([$remQty, $remTotal, $item['id']]);
                     }
                 } else {
                     $curStageQty = (float)($item['current_stage_quantity'] ?? 0);
-                    if ($qty >= $curStageQty - 0.001 && $curStageQty > 0) {
+                    $totalItemQty = (float)($item['total_quantity'] ?? 0);
+                    $effectiveItemQty = max($curStageQty, $totalItemQty);
+
+                    if (($qty >= $curStageQty - 0.001 && $curStageQty > 0) || ($qty >= $effectiveItemQty - 0.001 && (int)$item['current_stage_id'] === 6)) {
                         // Entire item advances to destination stage
                         $pdo->prepare("
                             UPDATE production_order_items 
                             SET current_stage_id = ?,
                                 current_stage_quantity = ?,
+                                total_quantity = GREATEST(total_quantity, ?),
                                 status = 'In Progress'
                             WHERE id = ?
-                        ")->execute([$destStageId, $qty, $item['id']]);
+                        ")->execute([$destStageId, $qty, $qty, $item['id']]);
                         $effectiveDestItemId = (int)$item['id'];
                     } else {
                         // Split item: reduce current item in embroidery, create new item in stitching
@@ -3462,6 +3693,16 @@ class ProductionController {
                                 $accEmbThisItem += (float)($ji['total_quantity_accepted'] ?? $ji['received_quantity'] ?? 0);
                             }
                         }
+                    }
+                }
+                if ($accEmbThisItem <= 0.001 && count($groupedItems) === 1) {
+                    foreach ($embReceipts as $rcpt) {
+                        $accEmbThisItem += (float)($rcpt['total_accepted_qty'] ?? 0);
+                    }
+                }
+                if ($accEmbThisItem <= 0.001) {
+                    foreach ($embJobs as $job) {
+                        $accEmbThisItem += (float)($job['total_quantity_accepted'] ?? 0);
                     }
                 }
                 if ($accEmbThisItem > 0) {
@@ -4156,6 +4397,27 @@ class ProductionController {
                             total_quantity_rejected = total_quantity_rejected + ?
                         WHERE id = (SELECT job_order_id FROM embroidery_receipts WHERE id = ? OR receipt_number = ? LIMIT 1)
                     ")->execute([$passed, $rwk, $rej, $refId, $refId]);
+
+                    // Update items_data inside receipt
+                    $rcptStmt = $pdo->prepare("SELECT id, items_data FROM embroidery_receipts WHERE id = ? OR receipt_number = ? LIMIT 1");
+                    $rcptStmt->execute([$refId, $refId]);
+                    $rcptRow = $rcptStmt->fetch();
+                    if ($rcptRow && !empty($rcptRow['items_data'])) {
+                        $rItems = json_decode($rcptRow['items_data'], true);
+                        if (is_array($rItems)) {
+                            foreach ($rItems as &$rit) {
+                                if (($itemId > 0 && ($rit['production_order_item_id'] ?? 0) == $itemId) || count($rItems) === 1) {
+                                    $rit['accepted_quantity'] = (float)($rit['accepted_quantity'] ?? 0) + $passed;
+                                    $rit['rework_quantity'] = (float)($rit['rework_quantity'] ?? 0) + $rwk;
+                                    $rit['rejected_quantity'] = (float)($rit['rejected_quantity'] ?? 0) + $rej;
+                                    break;
+                                }
+                            }
+                            unset($rit);
+                            $pdo->prepare("UPDATE embroidery_receipts SET items_data = ? WHERE id = ?")
+                                ->execute([json_encode($rItems), $rcptRow['id']]);
+                        }
+                    }
                 }
             } else if ($stageId === 7) {
                 // Stage 07 Stitching: update stitching_batches
@@ -4790,8 +5052,13 @@ class ProductionController {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
 
-            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
-            $dispatches = $pdo->query("SELECT * FROM dispatch_records WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $ordStmt = $pdo->prepare("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = ?");
+            $ordStmt->execute([$orderId]);
+            $ord = $ordStmt->fetch();
+
+            $dispStmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC");
+            $dispStmt->execute([$orderId]);
+            $dispatches = $dispStmt->fetchAll();
             foreach ($dispatches as &$dsp) {
                 foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'eway_bill_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
                     if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
@@ -4800,7 +5067,10 @@ class ProductionController {
                 }
             }
             unset($dsp);
-            $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $cartonStmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE production_order_id = ? ORDER BY id DESC");
+            $cartonStmt->execute([$orderId]);
+            $cartons = $cartonStmt->fetchAll();
 
             Response::success(['order' => $ord, 'dispatches' => $dispatches, 'cartons' => $cartons]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
@@ -4907,6 +5177,11 @@ class ProductionController {
                 if (!$isPdf && !$isJpeg && !$isPng) {
                     Response::error("Invalid file format. The uploaded E-Way Bill document must be a valid PDF file.", 422);
                     return;
+                }
+
+                if ($isPdf) {
+                    $binary = $this->repairPdfBytesIfNeeded($binary);
+                    $binSize = strlen($binary);
                 }
 
                 if ($fileSize <= 0) $fileSize = $binSize;
@@ -5159,9 +5434,158 @@ class ProductionController {
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
-            $stmt = $pdo->query("SELECT * FROM dispatch_records ORDER BY id DESC");
-            Response::success($stmt->fetchAll());
+            $pId = isset($_GET['production_order_id']) ? (int)$_GET['production_order_id'] : (isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0);
+            if ($pId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC");
+                $stmt->execute([$pId]);
+            } else {
+                $stmt = $pdo->query("SELECT * FROM dispatch_records ORDER BY id DESC");
+            }
+            $dispatches = $stmt->fetchAll();
+            foreach ($dispatches as &$dsp) {
+                foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'eway_bill_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
+                    if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
+                        $dsp[$fld] = json_decode($dsp[$fld], true) ?: [];
+                    }
+                }
+            }
+            unset($dsp);
+            Response::success($dispatches);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function dispatchDocument(?int $routeId = null): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $dispatchId = $routeId ?: (int)($_GET['dispatch_id'] ?? $_GET['id'] ?? 0);
+            $orderId = (int)($_GET['production_order_id'] ?? $_GET['order_id'] ?? 0);
+
+            $record = null;
+            if ($dispatchId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE id = ?");
+                $stmt->execute([$dispatchId]);
+                $record = $stmt->fetch();
+            } else if ($orderId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC LIMIT 1");
+                $stmt->execute([$orderId]);
+                $record = $stmt->fetch();
+            }
+
+            if (!$record) {
+                http_response_code(404);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'Dispatch record not found']);
+                exit;
+            }
+
+            // Extract document URLs
+            $docs = [];
+            foreach (['document_urls', 'eway_bill_photo_urls'] as $col) {
+                if (!empty($record[$col])) {
+                    $val = is_string($record[$col]) ? (json_decode($record[$col], true) ?: [$record[$col]]) : (array)$record[$col];
+                    if (is_array($val)) {
+                        foreach ($val as $u) {
+                            if (is_string($u) && trim($u) !== '') {
+                                $docs[] = trim($u);
+                            }
+                        }
+                    }
+                }
+            }
+
+            $docIndex = (int)($_GET['doc_index'] ?? 0);
+            $targetDoc = $docs[$docIndex] ?? ($docs[0] ?? '');
+
+            if (empty($targetDoc)) {
+                http_response_code(404);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'No document attached to this dispatch record']);
+                exit;
+            }
+
+            $filename = !empty($record['eway_bill_filename']) 
+                ? $record['eway_bill_filename'] 
+                : (!empty($record['eway_bill_number']) ? 'Eway_Bill_' . preg_replace('/[^a-zA-Z0-9_-]/', '', $record['eway_bill_number']) . '.pdf' : 'Eway_Bill_Document.pdf');
+
+            // Case 1: Base64 data URL
+            if (preg_match('/^data:([^;]+);base64,(.+)$/', $targetDoc, $matches)) {
+                $mimeType = $matches[1] ?: 'application/pdf';
+                $binary = base64_decode($matches[2], true);
+                if ($binary !== false) {
+                    $this->streamDocumentBytes($binary, $mimeType, $filename);
+                    return;
+                }
+            }
+
+            // Case 2: Stored file path on server
+            $targetPath = ltrim(str_replace(['\\', '..'], ['/', ''], parse_url($targetDoc, PHP_URL_PATH) ?: $targetDoc), '/');
+            
+            $possibleRoots = [
+                dirname(__DIR__, 2),
+                dirname(__DIR__, 2) . '/deploy',
+                dirname(__DIR__, 1),
+            ];
+
+            $foundFilePath = null;
+            foreach ($possibleRoots as $root) {
+                $checkPath = $root . '/' . $targetPath;
+                if (file_exists($checkPath) && is_file($checkPath)) {
+                    $foundFilePath = realpath($checkPath);
+                    break;
+                }
+            }
+
+            if ($foundFilePath && is_file($foundFilePath)) {
+                $mime = mime_content_type($foundFilePath) ?: 'application/pdf';
+                $handle = @fopen($foundFilePath, 'rb');
+                if ($handle) {
+                    $header = fread($handle, 5);
+                    fclose($handle);
+                    if (strncmp($header, '%PDF-', 5) === 0) {
+                        $mime = 'application/pdf';
+                    }
+                }
+
+                header('Content-Type: ' . $mime);
+                header('Content-Length: ' . filesize($foundFilePath));
+                header('Content-Disposition: inline; filename="' . basename($filename) . '"');
+                header('Cache-Control: private, max-age=3600');
+                header('X-Content-Type-Options: nosniff');
+                readfile($foundFilePath);
+                exit;
+            }
+
+            // Case 3: External URL redirect
+            if (filter_var($targetDoc, FILTER_VALIDATE_URL)) {
+                header('Location: ' . $targetDoc);
+                exit;
+            }
+
+            http_response_code(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'error' => 'Document file not found on storage server']);
+            exit;
+        } catch (Exception $e) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit;
+        }
+    }
+
+    private function streamDocumentBytes(string $bytes, string $mimeType, string $filename): void {
+        if (strncmp($bytes, '%PDF-', 5) === 0) {
+            $mimeType = 'application/pdf';
+        }
+        header('Content-Type: ' . $mimeType);
+        header('Content-Length: ' . strlen($bytes));
+        header('Content-Disposition: inline; filename="' . basename($filename) . '"');
+        header('Cache-Control: private, max-age=3600');
+        header('X-Content-Type-Options: nosniff');
+        echo $bytes;
+        exit;
     }
 
     public function detailedReports(): void {

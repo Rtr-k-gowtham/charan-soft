@@ -2929,6 +2929,72 @@ class ProductionController {
                     }
                 }
 
+                // Cross-check: If accepted quantity is still 0 or less than job orders' accepted quantity
+                $jobAccForThisItem = 0.0;
+                $jobRejForThisItem = 0.0;
+                $jobRwkForThisItem = 0.0;
+                foreach ($jobs as $job) {
+                    $jItems = $job['items_json'] ?? [];
+                    $jMatched = false;
+                    foreach ($jItems as $ji) {
+                        $m = false;
+                        if (!empty($ji['production_order_item_id']) && $ji['production_order_item_id'] == $gIt['active_embroidery_item_id']) $m = true;
+                        if (!empty($ji['product_id']) && (int)$ji['product_id'] === $pId && trim((string)($ji['color'] ?? '')) === $color) $m = true;
+                        if ($m) {
+                            $jMatched = true;
+                            if (isset($ji['accepted_quantity']) && (float)$ji['accepted_quantity'] > 0) {
+                                $jobAccForThisItem += (float)$ji['accepted_quantity'];
+                            }
+                        }
+                    }
+                    if (!$jMatched && count($groupedItems) === 1) {
+                        $jobAccForThisItem += (float)($job['total_quantity_accepted'] ?? 0);
+                        $jobRejForThisItem += (float)($job['total_quantity_rejected'] ?? 0);
+                        $jobRwkForThisItem += (float)($job['total_quantity_rework'] ?? 0);
+                    }
+                }
+
+                if ($jobAccForThisItem > $accepted) {
+                    $accepted = $jobAccForThisItem;
+                    if ($rejected <= 0) $rejected = $jobRejForThisItem;
+                    if ($rework <= 0) $rework = $jobRwkForThisItem;
+                }
+
+                // If single-item order, reconcile with total receipts accepted
+                if (count($groupedItems) === 1) {
+                    $totalAllReceiptsAccepted = array_reduce($receipts, fn($s, $r) => $s + (float)($r['total_accepted_qty'] ?? 0), 0.0);
+                    if ($totalAllReceiptsAccepted > $accepted) {
+                        $accepted = $totalAllReceiptsAccepted;
+                    }
+                }
+
+                // Check accepted rework matching this item or job orders
+                foreach ($acceptedReworks as $ar) {
+                    $ref = trim((string)$ar['reference_id']);
+                    $matchesRwk = false;
+                    foreach ($jobs as $job) {
+                        if ($ref === (string)$job['id'] || $ref === (string)$job['job_order_number']) {
+                            $matchesRwk = true;
+                            break;
+                        }
+                    }
+                    if (!$matchesRwk) {
+                        foreach ($receipts as $rc) {
+                            if ($ref === (string)$rc['id'] || $ref === (string)$rc['receipt_number']) {
+                                $matchesRwk = true;
+                                break;
+                            }
+                        }
+                    }
+                    if ($matchesRwk && $accepted < $sent) {
+                        $accepted = min($sent, $accepted + (float)$ar['sum_accepted']);
+                    }
+                }
+
+                if ($received < $accepted) {
+                    $received = $accepted;
+                }
+
                 if ($sent > $gIt['arrived_from_cutting']) {
                     $gIt['arrived_from_cutting'] = $sent;
                 }
@@ -3227,7 +3293,11 @@ class ProductionController {
             $jAccStmt->execute([$pId]);
             $jobAccepted = (float)$jAccStmt->fetchColumn();
 
-            $totalAccepted = max($totalAccepted, $jobAccepted);
+            $rwkStmt = $pdo->prepare("SELECT COALESCE(SUM(accepted_quantity), 0) FROM rework_records WHERE production_order_id = ? AND stage_id = 6 AND status = 'Accepted After Rework'");
+            $rwkStmt->execute([$pId]);
+            $reworkAccepted = (float)$rwkStmt->fetchColumn();
+
+            $totalAccepted = max($totalAccepted, $jobAccepted, $reworkAccepted);
 
             $trfStmt = $pdo->prepare("
                 SELECT COALESCE(SUM(quantity), 0) 
@@ -3288,29 +3358,34 @@ class ProductionController {
                     $pdo->prepare("
                         UPDATE production_order_items 
                         SET current_stage_quantity = current_stage_quantity + ?,
-                            total_quantity = total_quantity + ?
+                            total_quantity = total_quantity + ?,
+                            status = 'In Progress'
                         WHERE id = ?
                     ")->execute([$qty, $qty, $existingDestItemId]);
 
                     // Deduct from current item at Embroidery stage
                     $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
                     $remTotal = max(0.0, (float)$item['total_quantity'] - $qty);
-                    if ($remQty <= 0.001) {
+                    if ($remQty <= 0.001 && (int)$item['current_stage_id'] === 6) {
                         $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
                     } else {
                         $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")->execute([$remQty, $remTotal, $item['id']]);
                     }
                 } else {
                     $curStageQty = (float)($item['current_stage_quantity'] ?? 0);
-                    if ($qty >= $curStageQty - 0.001 && $curStageQty > 0) {
+                    $totalItemQty = (float)($item['total_quantity'] ?? 0);
+                    $effectiveItemQty = max($curStageQty, $totalItemQty);
+
+                    if (($qty >= $curStageQty - 0.001 && $curStageQty > 0) || ($qty >= $effectiveItemQty - 0.001 && (int)$item['current_stage_id'] === 6)) {
                         // Entire item advances to destination stage
                         $pdo->prepare("
                             UPDATE production_order_items 
                             SET current_stage_id = ?,
                                 current_stage_quantity = ?,
+                                total_quantity = GREATEST(total_quantity, ?),
                                 status = 'In Progress'
                             WHERE id = ?
-                        ")->execute([$destStageId, $qty, $item['id']]);
+                        ")->execute([$destStageId, $qty, $qty, $item['id']]);
                         $effectiveDestItemId = (int)$item['id'];
                     } else {
                         // Split item: reduce current item in embroidery, create new item in stitching
@@ -3618,6 +3693,16 @@ class ProductionController {
                                 $accEmbThisItem += (float)($ji['total_quantity_accepted'] ?? $ji['received_quantity'] ?? 0);
                             }
                         }
+                    }
+                }
+                if ($accEmbThisItem <= 0.001 && count($groupedItems) === 1) {
+                    foreach ($embReceipts as $rcpt) {
+                        $accEmbThisItem += (float)($rcpt['total_accepted_qty'] ?? 0);
+                    }
+                }
+                if ($accEmbThisItem <= 0.001) {
+                    foreach ($embJobs as $job) {
+                        $accEmbThisItem += (float)($job['total_quantity_accepted'] ?? 0);
                     }
                 }
                 if ($accEmbThisItem > 0) {
@@ -4312,6 +4397,27 @@ class ProductionController {
                             total_quantity_rejected = total_quantity_rejected + ?
                         WHERE id = (SELECT job_order_id FROM embroidery_receipts WHERE id = ? OR receipt_number = ? LIMIT 1)
                     ")->execute([$passed, $rwk, $rej, $refId, $refId]);
+
+                    // Update items_data inside receipt
+                    $rcptStmt = $pdo->prepare("SELECT id, items_data FROM embroidery_receipts WHERE id = ? OR receipt_number = ? LIMIT 1");
+                    $rcptStmt->execute([$refId, $refId]);
+                    $rcptRow = $rcptStmt->fetch();
+                    if ($rcptRow && !empty($rcptRow['items_data'])) {
+                        $rItems = json_decode($rcptRow['items_data'], true);
+                        if (is_array($rItems)) {
+                            foreach ($rItems as &$rit) {
+                                if (($itemId > 0 && ($rit['production_order_item_id'] ?? 0) == $itemId) || count($rItems) === 1) {
+                                    $rit['accepted_quantity'] = (float)($rit['accepted_quantity'] ?? 0) + $passed;
+                                    $rit['rework_quantity'] = (float)($rit['rework_quantity'] ?? 0) + $rwk;
+                                    $rit['rejected_quantity'] = (float)($rit['rejected_quantity'] ?? 0) + $rej;
+                                    break;
+                                }
+                            }
+                            unset($rit);
+                            $pdo->prepare("UPDATE embroidery_receipts SET items_data = ? WHERE id = ?")
+                                ->execute([json_encode($rItems), $rcptRow['id']]);
+                        }
+                    }
                 }
             } else if ($stageId === 7) {
                 // Stage 07 Stitching: update stitching_batches
@@ -4946,8 +5052,13 @@ class ProductionController {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
 
-            $ord = $pdo->query("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = {$orderId}")->fetch();
-            $dispatches = $pdo->query("SELECT * FROM dispatch_records WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+            $ordStmt = $pdo->prepare("SELECT po.*, cu.name as customer_name FROM production_orders po LEFT JOIN customers cu ON po.customer_id = cu.id WHERE po.id = ?");
+            $ordStmt->execute([$orderId]);
+            $ord = $ordStmt->fetch();
+
+            $dispStmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC");
+            $dispStmt->execute([$orderId]);
+            $dispatches = $dispStmt->fetchAll();
             foreach ($dispatches as &$dsp) {
                 foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'eway_bill_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
                     if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
@@ -4956,7 +5067,10 @@ class ProductionController {
                 }
             }
             unset($dsp);
-            $cartons = $pdo->query("SELECT * FROM packing_cartons WHERE production_order_id = {$orderId} ORDER BY id DESC")->fetchAll();
+
+            $cartonStmt = $pdo->prepare("SELECT * FROM packing_cartons WHERE production_order_id = ? ORDER BY id DESC");
+            $cartonStmt->execute([$orderId]);
+            $cartons = $cartonStmt->fetchAll();
 
             Response::success(['order' => $ord, 'dispatches' => $dispatches, 'cartons' => $cartons]);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
@@ -5063,6 +5177,11 @@ class ProductionController {
                 if (!$isPdf && !$isJpeg && !$isPng) {
                     Response::error("Invalid file format. The uploaded E-Way Bill document must be a valid PDF file.", 422);
                     return;
+                }
+
+                if ($isPdf) {
+                    $binary = $this->repairPdfBytesIfNeeded($binary);
+                    $binSize = strlen($binary);
                 }
 
                 if ($fileSize <= 0) $fileSize = $binSize;
@@ -5315,9 +5434,158 @@ class ProductionController {
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
-            $stmt = $pdo->query("SELECT * FROM dispatch_records ORDER BY id DESC");
-            Response::success($stmt->fetchAll());
+            $pId = isset($_GET['production_order_id']) ? (int)$_GET['production_order_id'] : (isset($_GET['order_id']) ? (int)$_GET['order_id'] : 0);
+            if ($pId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC");
+                $stmt->execute([$pId]);
+            } else {
+                $stmt = $pdo->query("SELECT * FROM dispatch_records ORDER BY id DESC");
+            }
+            $dispatches = $stmt->fetchAll();
+            foreach ($dispatches as &$dsp) {
+                foreach (['truck_photo_urls', 'loaded_cartons_photo_urls', 'eway_bill_photo_urls', 'labels_photo_urls', 'document_urls', 'carton_serial_numbers', 'items_breakdown'] as $fld) {
+                    if (isset($dsp[$fld]) && is_string($dsp[$fld])) {
+                        $dsp[$fld] = json_decode($dsp[$fld], true) ?: [];
+                    }
+                }
+            }
+            unset($dsp);
+            Response::success($dispatches);
         } catch (Exception $e) { Response::error($e->getMessage(), 500); }
+    }
+
+    public function dispatchDocument(?int $routeId = null): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $dispatchId = $routeId ?: (int)($_GET['dispatch_id'] ?? $_GET['id'] ?? 0);
+            $orderId = (int)($_GET['production_order_id'] ?? $_GET['order_id'] ?? 0);
+
+            $record = null;
+            if ($dispatchId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE id = ?");
+                $stmt->execute([$dispatchId]);
+                $record = $stmt->fetch();
+            } else if ($orderId > 0) {
+                $stmt = $pdo->prepare("SELECT * FROM dispatch_records WHERE production_order_id = ? ORDER BY id DESC LIMIT 1");
+                $stmt->execute([$orderId]);
+                $record = $stmt->fetch();
+            }
+
+            if (!$record) {
+                http_response_code(404);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'Dispatch record not found']);
+                exit;
+            }
+
+            // Extract document URLs
+            $docs = [];
+            foreach (['document_urls', 'eway_bill_photo_urls'] as $col) {
+                if (!empty($record[$col])) {
+                    $val = is_string($record[$col]) ? (json_decode($record[$col], true) ?: [$record[$col]]) : (array)$record[$col];
+                    if (is_array($val)) {
+                        foreach ($val as $u) {
+                            if (is_string($u) && trim($u) !== '') {
+                                $docs[] = trim($u);
+                            }
+                        }
+                    }
+                }
+            }
+
+            $docIndex = (int)($_GET['doc_index'] ?? 0);
+            $targetDoc = $docs[$docIndex] ?? ($docs[0] ?? '');
+
+            if (empty($targetDoc)) {
+                http_response_code(404);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'No document attached to this dispatch record']);
+                exit;
+            }
+
+            $filename = !empty($record['eway_bill_filename']) 
+                ? $record['eway_bill_filename'] 
+                : (!empty($record['eway_bill_number']) ? 'Eway_Bill_' . preg_replace('/[^a-zA-Z0-9_-]/', '', $record['eway_bill_number']) . '.pdf' : 'Eway_Bill_Document.pdf');
+
+            // Case 1: Base64 data URL
+            if (preg_match('/^data:([^;]+);base64,(.+)$/', $targetDoc, $matches)) {
+                $mimeType = $matches[1] ?: 'application/pdf';
+                $binary = base64_decode($matches[2], true);
+                if ($binary !== false) {
+                    $this->streamDocumentBytes($binary, $mimeType, $filename);
+                    return;
+                }
+            }
+
+            // Case 2: Stored file path on server
+            $targetPath = ltrim(str_replace(['\\', '..'], ['/', ''], parse_url($targetDoc, PHP_URL_PATH) ?: $targetDoc), '/');
+            
+            $possibleRoots = [
+                dirname(__DIR__, 2),
+                dirname(__DIR__, 2) . '/deploy',
+                dirname(__DIR__, 1),
+            ];
+
+            $foundFilePath = null;
+            foreach ($possibleRoots as $root) {
+                $checkPath = $root . '/' . $targetPath;
+                if (file_exists($checkPath) && is_file($checkPath)) {
+                    $foundFilePath = realpath($checkPath);
+                    break;
+                }
+            }
+
+            if ($foundFilePath && is_file($foundFilePath)) {
+                $mime = mime_content_type($foundFilePath) ?: 'application/pdf';
+                $handle = @fopen($foundFilePath, 'rb');
+                if ($handle) {
+                    $header = fread($handle, 5);
+                    fclose($handle);
+                    if (strncmp($header, '%PDF-', 5) === 0) {
+                        $mime = 'application/pdf';
+                    }
+                }
+
+                header('Content-Type: ' . $mime);
+                header('Content-Length: ' . filesize($foundFilePath));
+                header('Content-Disposition: inline; filename="' . basename($filename) . '"');
+                header('Cache-Control: private, max-age=3600');
+                header('X-Content-Type-Options: nosniff');
+                readfile($foundFilePath);
+                exit;
+            }
+
+            // Case 3: External URL redirect
+            if (filter_var($targetDoc, FILTER_VALIDATE_URL)) {
+                header('Location: ' . $targetDoc);
+                exit;
+            }
+
+            http_response_code(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'error' => 'Document file not found on storage server']);
+            exit;
+        } catch (Exception $e) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            exit;
+        }
+    }
+
+    private function streamDocumentBytes(string $bytes, string $mimeType, string $filename): void {
+        if (strncmp($bytes, '%PDF-', 5) === 0) {
+            $mimeType = 'application/pdf';
+        }
+        header('Content-Type: ' . $mimeType);
+        header('Content-Length: ' . strlen($bytes));
+        header('Content-Disposition: inline; filename="' . basename($filename) . '"');
+        header('Cache-Control: private, max-age=3600');
+        header('X-Content-Type-Options: nosniff');
+        echo $bytes;
+        exit;
     }
 
     public function detailedReports(): void {

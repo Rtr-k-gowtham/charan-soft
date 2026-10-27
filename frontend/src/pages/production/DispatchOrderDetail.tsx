@@ -37,7 +37,9 @@ import {
   Printer,
   ChevronDown,
   ChevronUp,
-  ExternalLink
+  ExternalLink,
+  Download,
+  AlertCircle
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -100,6 +102,253 @@ function isPdfAttachment(url: string, filename?: string): boolean {
   return false;
 }
 
+
+interface PdfViewerDoc {
+  url: string;
+  title: string;
+  size?: string;
+  dispatchId?: number;
+  docIndex?: number;
+}
+
+function PdfViewerModalContent({
+  doc,
+  onClose,
+}: {
+  doc: PdfViewerDoc;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let createdUrl: string | null = null;
+    const abortCtrl = new AbortController();
+
+    const loadDocument = async () => {
+      setLoading(true);
+      setError(null);
+
+      // Case 1: Data URL (base64)
+      if (doc.url && doc.url.startsWith('data:')) {
+        try {
+          const parts = doc.url.split(',');
+          if (parts.length < 2) {
+            throw new Error('Malformed base64 document URL');
+          }
+          const mimeMatch = parts[0].match(/:(.*?);/);
+          const mime = mimeMatch ? mimeMatch[1] : 'application/pdf';
+          const binaryString = atob(parts[1]);
+          let bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          // Auto-repair check for UTF-8 encoded PDF bytes
+          try {
+            const text = new TextDecoder('latin1').decode(bytes);
+            const streamMatch = text.match(/stream[\r\n]+([\s\S]*?)[\r\n]+endstream/);
+            if (streamMatch && /[\xC2\xC3][\x80-\xBF]/.test(streamMatch[1])) {
+              const utf8Decoded = new TextDecoder('utf-8').decode(bytes);
+              const repaired = new Uint8Array(utf8Decoded.length);
+              for (let i = 0; i < utf8Decoded.length; i++) {
+                repaired[i] = utf8Decoded.charCodeAt(i) & 0xff;
+              }
+              bytes = repaired;
+            }
+          } catch {}
+
+          const blob = new Blob([bytes], { type: mime });
+          createdUrl = URL.createObjectURL(blob);
+          if (active) {
+            setBlobUrl(createdUrl);
+            setLoading(false);
+          }
+          return;
+        } catch (err: any) {
+          if (active) {
+            setError(err?.message || 'Failed to decode base64 document data');
+            setLoading(false);
+          }
+          return;
+        }
+      }
+
+      // Case 2: Remote / API endpoint URL
+      const candidateUrls: string[] = [];
+      if (doc.dispatchId) {
+        candidateUrls.push(
+          `/api/production/dispatch/document?dispatch_id=${doc.dispatchId}&doc_index=${doc.docIndex || 0}`
+        );
+      }
+      if (doc.url && !candidateUrls.includes(doc.url)) {
+        candidateUrls.push(doc.url);
+      }
+
+      let fetchedBlob: Blob | null = null;
+      let lastErrMsg = 'Unable to fetch document from server.';
+
+      for (const targetUrl of candidateUrls) {
+        try {
+          const res = await fetch(targetUrl, {
+            signal: abortCtrl.signal,
+            headers: { Accept: 'application/pdf, application/octet-stream, */*' },
+          });
+
+          const contentType = (res.headers.get('content-type') || '').toLowerCase();
+
+          // Reject SPA index.html fallback
+          if (contentType.includes('text/html')) {
+            lastErrMsg =
+              'The server returned an HTML dashboard page (SPA fallback) instead of binary PDF bytes. The document file may be missing from storage.';
+            continue;
+          }
+
+          if (!res.ok) {
+            lastErrMsg = `Server returned HTTP ${res.status}: ${res.statusText}`;
+            continue;
+          }
+
+          const blobData = await res.blob();
+          if (blobData.size === 0) {
+            lastErrMsg = 'The downloaded document is 0 bytes.';
+            continue;
+          }
+
+          const arrayBuf = await blobData.arrayBuffer();
+          let bytes = new Uint8Array(arrayBuf);
+          try {
+            const text = new TextDecoder('latin1').decode(bytes);
+            const streamMatch = text.match(/stream[\r\n]+([\s\S]*?)[\r\n]+endstream/);
+            if (streamMatch && /[\xC2\xC3][\x80-\xBF]/.test(streamMatch[1])) {
+              const utf8Decoded = new TextDecoder('utf-8').decode(bytes);
+              const repaired = new Uint8Array(utf8Decoded.length);
+              for (let i = 0; i < utf8Decoded.length; i++) {
+                repaired[i] = utf8Decoded.charCodeAt(i) & 0xff;
+              }
+              bytes = repaired;
+            }
+          } catch {}
+
+          fetchedBlob = new Blob([bytes], { type: 'application/pdf' });
+          break;
+        } catch (fetchErr: any) {
+          if (fetchErr.name === 'AbortError') return;
+          lastErrMsg = fetchErr?.message || 'Network error fetching document.';
+        }
+      }
+
+      if (!active) return;
+
+      if (fetchedBlob) {
+        createdUrl = URL.createObjectURL(fetchedBlob);
+        setBlobUrl(createdUrl);
+        setLoading(false);
+      } else {
+        setError(lastErrMsg);
+        setLoading(false);
+      }
+    };
+
+    loadDocument();
+
+    return () => {
+      active = false;
+      abortCtrl.abort();
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [doc]);
+
+  const directViewUrl = blobUrl || doc.url;
+
+  return (
+    <div className="space-y-3">
+      {/* Action / Information Bar */}
+      <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs flex-wrap gap-2">
+        <div className="flex items-center gap-2 text-slate-700 min-w-0">
+          <FileText className="w-4 h-4 text-rose-600 shrink-0" />
+          <span className="font-semibold truncate max-w-[260px] sm:max-w-md" title={doc.title}>
+            {doc.title}
+          </span>
+          {doc.size && <span className="text-slate-400 font-mono text-[11px] shrink-0">({doc.size})</span>}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {blobUrl && (
+            <a
+              href={blobUrl}
+              download={doc.title || 'Eway_Bill.pdf'}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded shadow-2xs transition"
+              title="Download original PDF document"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Download</span>
+            </a>
+          )}
+
+          <a
+            href={directViewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded shadow-2xs transition"
+            title="Open PDF in a new browser tab"
+          >
+            <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Open in New Window</span>
+          </a>
+        </div>
+      </div>
+
+      {/* Main Viewer Body */}
+      <div className="w-full h-[65vh] sm:h-[72vh] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center relative">
+        {loading && (
+          <div className="flex flex-col items-center justify-center p-6 text-slate-500">
+            <RefreshCw className="w-8 h-8 animate-spin text-rose-600 mb-2" />
+            <span className="text-xs font-medium">Loading E-Way Bill PDF pages...</span>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="max-w-md p-6 text-center bg-white rounded-xl border border-rose-200 shadow-sm mx-4">
+            <AlertCircle className="w-10 h-10 text-rose-600 mx-auto mb-2.5" />
+            <h4 className="text-sm font-bold text-slate-800 mb-1">PDF Preview Unavailable</h4>
+            <p className="text-xs text-rose-700 mb-3">{error}</p>
+            <p className="text-[11px] text-slate-500 mb-4">
+              The requested document could not be rendered as a PDF. The physical file may not be available on storage, or an invalid path was referenced.
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <a
+                href={doc.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Try Direct Link</span>
+              </a>
+              <Button size="sm" variant="outline" onClick={onClose}>
+                Close Viewer
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {blobUrl && !loading && !error && (
+          <iframe
+            src={blobUrl}
+            title={doc.title}
+            className="w-full h-full border-0 rounded-lg bg-slate-900"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DispatchOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -138,32 +387,46 @@ export default function DispatchOrderDetail() {
 
   // Evidence Preview Modals (Images and PDFs)
   const [previewImage, setPreviewImage] = useState<string | null>(null);
-  const [previewPdfDoc, setPreviewPdfDoc] = useState<{ url: string; title: string; size?: string } | null>(null);
+  const [previewPdfDoc, setPreviewPdfDoc] = useState<PdfViewerDoc | null>(null);
 
   const fetchOrderData = async () => {
     if (!id) return;
+    const orderIdNum = Number(id);
+    if (!orderIdNum || isNaN(orderIdNum)) {
+      setError('Invalid production order ID');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
+
       const [orderRes, stagesRes, dispRes, cartonsRes] = await Promise.all([
-        api.getProductionOrder(Number(id)),
+        api.getProductionOrder(orderIdNum),
         api.getProductionStages(),
-        api.getDispatchHistory(Number(id)),
-        api.getPackingCartons(Number(id))
+        api.getDispatchHistory(orderIdNum),
+        api.getPackingCartons(orderIdNum)
       ]);
 
       const ord = (orderRes as any)?.data || orderRes;
       setOrder(ord);
-      setItems(ord.items || []);
+      setItems(ord?.items || []);
 
       const st = (stagesRes as any)?.data || stagesRes;
       setStages(Array.isArray(st) ? st : []);
 
       const dData = (dispRes as any)?.data || dispRes;
-      setDispatches(Array.isArray(dData) ? dData : []);
+      const rawDispatches = Array.isArray(dData) ? dData : [];
+      // Strictly isolate dispatch records to this order only
+      const orderDispatches = rawDispatches.filter(d => Number(d.production_order_id) === orderIdNum);
+      setDispatches(orderDispatches);
 
       const cData = (cartonsRes as any)?.data || cartonsRes;
-      setCartons(Array.isArray(cData) ? cData : []);
+      const rawCartons = Array.isArray(cData) ? cData : [];
+      // Strictly isolate packing cartons to this order only
+      const orderCartons = rawCartons.filter(c => Number(c.production_order_id) === orderIdNum);
+      setCartons(orderCartons);
     } catch (err: any) {
       console.error('Failed to load dispatch stage data:', err);
       setError(err?.message || 'Failed to load dispatch stage data.');
@@ -173,6 +436,14 @@ export default function DispatchOrderDetail() {
   };
 
   useEffect(() => {
+    // Clear stale order state immediately on route change to prevent cross-order flash
+    setOrder(null);
+    setItems([]);
+    setDispatches([]);
+    setCartons([]);
+    setError('');
+    setPreviewImage(null);
+    setPreviewPdfDoc(null);
     fetchOrderData();
   }, [id]);
 
@@ -188,6 +459,20 @@ export default function DispatchOrderDetail() {
 
   // Total Dispatched Metrics
   const metrics = useMemo(() => {
+    if (!order) {
+      return {
+        orderedQty: 0,
+        dispatchedQty: 0,
+        totalPackedCartons: 0,
+        dispatchedCartons: 0,
+        remainingCartons: 0,
+        remainingToDispatchQty: 0,
+        completionStatus: 'Packed / Awaiting Dispatch' as const,
+        hasValidEwayProof: false
+      };
+    }
+
+    const orderIdNum = Number(id);
     let orderedQty = 0;
     items.forEach(it => {
       orderedQty += Number(it.total_quantity || it.order_quantity || it.quantity || 0);
@@ -196,13 +481,17 @@ export default function DispatchOrderDetail() {
       orderedQty = Number(order.total_quantity || 0);
     }
 
-    const dispatchedQty = dispatches.reduce((sum, d) => sum + Number(d.total_dispatched_quantity || 0), 0);
-    const totalPackedCartons = cartons.length;
-    const dispatchedCartons = cartons.filter(c => c.status === 'Dispatched').length;
+    // Defensive order scoping
+    const orderDispatches = dispatches.filter(d => Number(d.production_order_id) === orderIdNum);
+    const orderCartons = cartons.filter(c => Number(c.production_order_id) === orderIdNum);
+
+    const dispatchedQty = orderDispatches.reduce((sum, d) => sum + Number(d.total_dispatched_quantity || 0), 0);
+    const totalPackedCartons = orderCartons.length;
+    const dispatchedCartons = orderCartons.filter(c => c.status === 'Dispatched').length;
     const remainingCartons = Math.max(0, totalPackedCartons - dispatchedCartons);
     const remainingToDispatchQty = Math.max(0, orderedQty - dispatchedQty);
 
-    const hasValidEwayProof = dispatches.length > 0 && dispatches.every(d =>
+    const hasValidEwayProof = orderDispatches.length > 0 && orderDispatches.every(d =>
       Boolean((d.eway_bill_number || '').trim()) &&
       ((d.eway_bill_photo_urls && d.eway_bill_photo_urls.length > 0) || (d.document_urls && d.document_urls.length > 0))
     );
@@ -226,7 +515,7 @@ export default function DispatchOrderDetail() {
       completionStatus,
       hasValidEwayProof
     };
-  }, [order, items, dispatches, cartons]);
+  }, [order, items, dispatches, cartons, id]);
 
   // Open Dispatch Modal
   const handleOpenDispatchModal = () => {
@@ -652,7 +941,7 @@ export default function DispatchOrderDetail() {
                               return (
                                 <div
                                   key={idx}
-                                  onClick={() => setPreviewPdfDoc({ url: docUrl, title: docTitle, size: docSizeStr })}
+                                  onClick={() => setPreviewPdfDoc({ url: docUrl, title: docTitle, size: docSizeStr, dispatchId: disp.id, docIndex: idx })}
                                   className="group flex items-center gap-2 px-3 py-2 rounded-lg border border-rose-200 bg-rose-50/70 hover:bg-rose-100 hover:border-rose-300 cursor-pointer shadow-2xs transition"
                                   title={`Click to preview multi-page PDF: ${docTitle}`}
                                 >
@@ -1004,32 +1293,10 @@ export default function DispatchOrderDetail() {
           title={`E-Way Bill Document — ${previewPdfDoc.title}`}
           size="xl"
         >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
-              <div className="flex items-center gap-2 text-slate-700">
-                <FileText className="w-4 h-4 text-rose-600" />
-                <span className="font-semibold">{previewPdfDoc.title}</span>
-                {previewPdfDoc.size && <span className="text-slate-400 font-mono">({previewPdfDoc.size})</span>}
-              </div>
-              <a
-                href={previewPdfDoc.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-emerald-700 hover:underline font-semibold"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open in New Window</span>
-              </a>
-            </div>
-
-            <div className="w-full h-[65vh] sm:h-[72vh] rounded-lg overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
-              <iframe
-                src={previewPdfDoc.url}
-                title="E-Way Bill PDF Document"
-                className="w-full h-full border-0"
-              />
-            </div>
-          </div>
+          <PdfViewerModalContent
+            doc={previewPdfDoc}
+            onClose={() => setPreviewPdfDoc(null)}
+          />
         </Modal>
       )}
     </div>

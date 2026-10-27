@@ -694,16 +694,34 @@ export default function EmbroideryOrderDetail() {
   const handleOpenTransferModal = (itemOrJob: any) => {
     let it = itemOrJob;
     let jId: number | undefined = undefined;
+    let maxQty = 0;
+
     if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
+      // Called from Job Order row
       jId = itemOrJob.id;
-      it = items.find(i => Number(i.ready_to_transfer || 0) > 0) || items[0];
+      const jobReady = Number(
+        itemOrJob.ready_to_transfer !== undefined
+          ? itemOrJob.ready_to_transfer
+          : Math.max(0, Number(itemOrJob.total_quantity_accepted || 0) - Number(itemOrJob.transferred_to_stitching_quantity || 0))
+      );
+      const jobItemId = Array.isArray(itemOrJob.items_json) && itemOrJob.items_json[0]?.production_order_item_id;
+      it = (jobItemId && items.find(i => i.id === jobItemId || i.active_embroidery_item_id === jobItemId)) ||
+           items.find(i => Number(i.ready_to_transfer || 0) > 0) ||
+           items[0];
+
+      const itemReady = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
+      maxQty = jobReady > 0 ? jobReady : itemReady;
+    } else {
+      // Called from Product Item row
+      maxQty = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
     }
-    const maxQty = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
+
     if (maxQty <= 0) {
       showToast('All accepted embroidery pieces have already been transferred to Stitching.');
       return;
     }
-    setTransferItem({ ...it, job_order_id: jId });
+
+    setTransferItem({ ...it, job_order_id: jId, ready_to_transfer: maxQty });
     setTransferQuantity(maxQty);
     setTransferRemarks('Embroidery completed and QC approved. Transferred to Stage 07: Stitching.');
     setTransferError('');
@@ -722,7 +740,7 @@ export default function EmbroideryOrderDetail() {
       setTransferError('');
       await api.transferEmbroideryOutput({
         production_order_id: order.id,
-        item_id: transferItem?.active_embroidery_item_id || transferItem?.id,
+        item_id: transferItem?.active_embroidery_item_id || transferItem?.id || items[0]?.active_embroidery_item_id || items[0]?.id || 0,
         job_order_id: transferItem?.job_order_id,
         transfer_quantity: Number(transferQuantity),
         destination_stage_id: 7,
