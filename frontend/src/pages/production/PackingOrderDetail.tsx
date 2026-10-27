@@ -524,6 +524,28 @@ export default function PackingOrderDetail() {
 
   const isFullyPacked = overallTotals.availableToPackQty === 0 && overallTotals.packedQty > 0;
 
+  // Active packing form calculation helpers
+  const packedQty = Number(batchForm.packed_quantity || 0);
+  const unitsPerBox = Math.max(1, Number(batchForm.units_per_box || 1));
+  const fullBoxesCount = Math.floor(packedQty / unitsPerBox);
+  const remainderQty = packedQty % unitsPerBox;
+  const boxesNeeded = Math.ceil(packedQty / unitsPerBox);
+  const remainingSpaceInBox = packedQty > 0 ? (remainderQty === 0 ? 0 : unitsPerBox - remainderQty) : 0;
+
+  const boxesNeededSubtitle = packedQty <= 0
+    ? 'Enter quantity'
+    : fullBoxesCount > 0 && remainderQty > 0
+    ? `${fullBoxesCount} full + 1 partial (${remainderQty} pcs)`
+    : fullBoxesCount > 0
+    ? `${fullBoxesCount} full box${fullBoxesCount > 1 ? 'es' : ''}`
+    : `1 partial box (${remainderQty} pcs)`;
+
+  const remainingSpaceSubtitle = packedQty <= 0
+    ? 'Capacity available'
+    : remainderQty === 0
+    ? '0 pcs (All boxes full)'
+    : `${remainingSpaceInBox} pcs empty space in last box`;
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       {/* Toast Notification */}
@@ -1080,12 +1102,13 @@ export default function PackingOrderDetail() {
               </span>
               <span>→</span>
               <span className="font-mono bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded font-bold">
-                {batchForm.number_of_boxes} boxes
+                {boxesNeeded} boxes
               </span>
-              <span>→</span>
-              <span className="font-mono bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded font-black">
-                {batchForm.number_of_master_cartons} Master Cartons
-              </span>
+              {remainingSpaceInBox > 0 && (
+                <span className="font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[11px] font-semibold">
+                  {remainingSpaceInBox} pcs space remaining
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <Button
@@ -1106,7 +1129,7 @@ export default function PackingOrderDetail() {
                 className="bg-amber-600 hover:bg-amber-700 text-white gap-2 font-semibold shadow-xs min-w-[220px]"
               >
                 {savingBatch ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}
-                <span>Save & Generate Master Cartons</span>
+                <span>Save & Generate Boxes</span>
               </Button>
             </div>
           </div>
@@ -1253,7 +1276,9 @@ export default function PackingOrderDetail() {
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Units per Inner Box</label>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                  Units per Box <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="number"
                   min="1"
@@ -1267,94 +1292,43 @@ export default function PackingOrderDetail() {
                     handleUnitsPerBoxChange(val);
                   }}
                 />
-                <span className="text-[10px] text-slate-500 mt-1 block">Pieces per inner box</span>
+                <span className="text-[10px] text-slate-500 mt-1 block">Pieces per box</span>
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 block mb-1">Boxes per Carton</label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  placeholder="5"
-                  className="w-full font-mono text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 font-bold text-slate-800 bg-white"
-                  value={batchForm.boxes_per_master_carton || ''}
-                  onChange={e => {
-                    const raw = e.target.value;
-                    const val = raw === '' ? 0 : parseInt(raw) || 0;
-                    handleBoxesPerCartonChange(val);
-                  }}
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">Boxes in master ctn</span>
+                <label className="text-[11px] font-semibold text-amber-900 block mb-1">
+                  Boxes Needed
+                </label>
+                <div className="px-3 py-2 bg-amber-50/80 rounded-lg border border-amber-300 flex items-center justify-between">
+                  <div>
+                    <span className="font-mono text-base font-black text-amber-800">
+                      {boxesNeeded}
+                    </span>
+                    <span className="text-xs font-semibold text-amber-900 ml-1.5">Boxes</span>
+                  </div>
+                  <Box className="w-4 h-4 text-amber-600" />
+                </div>
+                <span className="text-[10px] text-amber-700 mt-1 block font-medium truncate" title={boxesNeededSubtitle}>
+                  {boxesNeededSubtitle}
+                </span>
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-emerald-800 block mb-1">Cartons Generated</label>
+                <label className="text-[11px] font-semibold text-emerald-900 block mb-1">
+                  Remaining Space in Box
+                </label>
                 <div className="px-3 py-2 bg-emerald-50/80 rounded-lg border border-emerald-300 flex items-center justify-between">
                   <div>
-                    <span className="font-mono text-base font-black text-emerald-700">
-                      {batchForm.number_of_master_cartons}
+                    <span className="font-mono text-base font-black text-emerald-800">
+                      {remainingSpaceInBox}
                     </span>
-                    <span className="text-xs font-semibold text-emerald-800 ml-1.5">Cartons</span>
+                    <span className="text-xs font-semibold text-emerald-900 ml-1.5">Pcs</span>
                   </div>
                   <Package className="w-4 h-4 text-emerald-600" />
                 </div>
-                <span className="text-[10px] text-emerald-700 mt-1 block font-medium">To be registered</span>
-              </div>
-            </div>
-
-            {/* Calculated Breakdown Display - 4 Modern Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-amber-200/70">
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Inner Boxes</div>
-                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
-                  {batchForm.number_of_boxes} <span className="text-[11px] font-normal text-slate-500">boxes</span>
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                  {batchForm.units_per_box} pcs / box
-                </div>
-              </div>
-
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Full Boxes</div>
-                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
-                  {Math.floor((batchForm.packed_quantity || 0) / (batchForm.units_per_box || 1))} <span className="text-[11px] font-normal text-slate-500">boxes</span>
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                  @{batchForm.units_per_box} pcs each
-                </div>
-              </div>
-
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Partial Box Qty</div>
-                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
-                  {batchForm.partial_box_quantity > 0 ? (
-                    <span className="text-amber-700 font-bold">{batchForm.partial_box_quantity} <span className="text-[11px] font-normal text-slate-600">pcs (1 box)</span></span>
-                  ) : (
-                    <span className="text-emerald-600 text-xs font-semibold flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> None (All full)
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                  {batchForm.partial_box_quantity > 0 ? 'Last box has remainder' : 'Zero partial boxes'}
-                </div>
-              </div>
-
-              <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Partial Carton</div>
-                <div className="text-sm font-black font-mono text-slate-800 mt-0.5">
-                  {batchForm.partial_carton_quantity > 0 ? (
-                    <span className="text-amber-700 font-bold">{batchForm.partial_carton_quantity} <span className="text-[11px] font-normal text-slate-600">boxes</span></span>
-                  ) : (
-                    <span className="text-emerald-600 text-xs font-semibold flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> None (All full)
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                  {batchForm.partial_carton_quantity > 0 ? 'In last master carton' : 'All master cartons full'}
-                </div>
+                <span className="text-[10px] text-emerald-700 mt-1 block font-medium truncate" title={remainingSpaceSubtitle}>
+                  {remainingSpaceSubtitle}
+                </span>
               </div>
             </div>
           </div>
