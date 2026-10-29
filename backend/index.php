@@ -30,6 +30,9 @@ require_once __DIR__ . '/controllers/ReportsController.php';
 require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/POTemplateController.php';
 require_once __DIR__ . '/controllers/DyeingController.php';
+require_once __DIR__ . '/core/Auth.php';
+require_once __DIR__ . '/core/NotificationService.php';
+require_once __DIR__ . '/controllers/NotificationController.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -109,7 +112,12 @@ try {
         $r0 === 'production-orders' && $method === 'GET' && $id => (new ProductionController)->show($id),
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && ($action === 'stage' || $r1 === 'stage' || $r2 === 'stage') && $method === 'POST' => (new ProductionController)->moveStage(),
-        $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
+        // Tasks & Notifications
+$r0 === 'notifications' && empty($r1) && $method === 'GET' => (new NotificationController)->index(),
+$r0 === 'notifications' && $r1 === 'unread-count' && $method === 'GET' => (new NotificationController)->unreadCount(),
+$r0 === 'notifications' && $r1 === 'read' && $method === 'POST' => (new NotificationController)->markRead(),
+($r0 === 'tasks' || ($r0 === 'production' && $r1 === 'tasks')) && $method === 'GET' => (new ProductionController)->tasks(),
+$r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'product-quantities' && $method === 'GET' => (new ProductionController)->orderProductQuantities((int)$r2),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'quantity-ledger' && $method === 'GET' => (new ProductionController)->orderQuantityLedger((int)$r2),
         $r0 === 'production' && $r1 === 'stage' && !empty($r2) => (new ProductionController)->stageOrders($r2),

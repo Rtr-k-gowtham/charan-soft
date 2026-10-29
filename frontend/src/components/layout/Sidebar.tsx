@@ -1,111 +1,20 @@
 // src/components/layout/Sidebar.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, Package, Factory,
   Settings, FileText, ChevronDown, ChevronRight,
-  Layers, Users, BarChart2, ClipboardList, X
+  Layers, Users, BarChart2, ClipboardList, ClipboardCheck, X
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 interface NavItem {
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
   path?: string;
+  stageId?: number;
   children?: NavItem[];
 }
-
-const navItems: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
-
-  {
-    label: 'Purchase', icon: ClipboardList,
-    children: [
-      { label: 'Purchase Orders', path: '/purchase/orders' },
-      { label: 'Material Receipts', path: '/purchase/receipts' },
-      { label: 'Supplier Payments', path: '/purchase/payments' },
-      { label: 'Purchase Returns', path: '/purchase/returns' },
-    ],
-  },
-  {
-    label: 'Inventory', icon: Package,
-    children: [
-      { label: 'Materials', path: '/inventory/materials' },
-      { label: 'Stock', path: '/inventory/stock' },
-      { label: 'Stock Ledger', path: '/inventory/ledger' },
-      { label: 'Material Consumption', path: '/inventory/consumption' },
-      { label: 'Stock Adjustment', path: '/inventory/adjustment' },
-      { label: 'Low Stock', path: '/inventory/low-stock' },
-    ],
-  },
-  {
-    label: 'Production', icon: Factory,
-    children: [
-      { label: 'Production Orders', path: '/production/orders' },
-      { label: 'Production Board', path: '/production/board' },
-      {
-        label: 'Production Stages',
-        children: [
-          { label: '01. Requirement gathering', path: '/production/requirement' },
-          { label: '02. PO (Purchase Order)', path: '/production/po' },
-          { label: '03. Inward', path: '/production/inward' },
-          { label: '04. Dyeing', path: '/production/dyeing' },
-          { label: '05. Cutting — Product-wise', path: '/production/cutting' },
-          { label: '06. Embroidery — Out/In', path: '/production/embroidery' },
-          { label: '07. Stitching — Color-wise', path: '/production/stitching' },
-          { label: '08. Checking', path: '/production/checking' },
-          { label: '09. Packing', path: '/production/packing' },
-          { label: '10. Completed', path: '/production/completed' },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Masters', icon: Layers,
-    children: [
-      { label: 'Products', path: '/masters/products' },
-      { label: 'Materials', path: '/masters/materials' },
-      { label: 'Categories', path: '/masters/categories' },
-      { label: 'Suppliers', path: '/masters/suppliers' },
-      { label: 'Dyeing Mills', path: '/masters/dyeing-mills' },
-      { label: 'Embroidery Works', path: '/masters/embroidery-works' },
-      { label: 'Buyer Master', path: '/masters/buyers' },
-      { label: 'Pantone Colors', path: '/masters/colors' },
-      { label: 'Sizes', path: '/masters/sizes' },
-      { label: 'Units', path: '/masters/units' },
-      { label: 'Designs', path: '/masters/designs' },
-    ],
-  },
-  {
-    label: 'Templates', icon: FileText,
-    children: [
-      { label: 'Material Templates', path: '/templates/material' },
-      { label: 'Product Templates', path: '/templates/product' },
-      { label: 'Order Templates', path: '/templates/order' },
-      { label: 'PO Templates', path: '/templates/po' },
-    ],
-  },
-  {
-    label: 'Reports', icon: BarChart2,
-    children: [
-      { label: 'Purchase Reports', path: '/reports/purchase' },
-      { label: 'Inventory Reports', path: '/reports/inventory' },
-      { label: 'Production Reports', path: '/reports/production' },
-      { label: 'QC Reports', path: '/reports/qc' },
-      { label: 'Payment Reports', path: '/reports/payments' },
-    ],
-  },
-  {
-    label: 'Settings', icon: Settings,
-    children: [
-      { label: 'Users', path: '/settings/users' },
-      { label: 'Roles', path: '/settings/roles' },
-      { label: 'Permissions', path: '/settings/permissions' },
-      { label: 'Production Stages', path: '/settings/stages' },
-      { label: 'Company Settings', path: '/settings/company' },
-      { label: 'PO Template', path: '/settings/po-template' },
-    ],
-  },
-];
 
 interface SidebarProps {
   collapsed: boolean;
@@ -165,8 +74,9 @@ function NavNode({
             `flex items-center gap-2.5 px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0
             ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`
           }
+          title={collapsed ? item.label : undefined}
         >
-          {Icon && <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />}
+          {Icon && <Icon className="w-4 h-4 shrink-0" />}
           {!collapsed && <span className="truncate">{item.label}</span>}
         </NavLink>
       );
@@ -178,36 +88,40 @@ function NavNode({
         end
         onClick={onItemClick}
         className={({ isActive }) =>
-          `block px-2.5 py-1.5 sm:py-1 rounded-md text-[11px] font-medium transition-all duration-150 truncate min-h-[30px] sm:min-h-0 flex items-center
-          ${isActive ? 'text-brand-700 bg-brand-50 font-bold' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`
+          `flex items-center gap-2 px-2.5 py-1.5 sm:py-1 rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0
+          ${isActive ? 'text-brand-700 font-bold bg-brand-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`
         }
       >
-        {item.label}
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0" />
+        <span className="truncate">{item.label}</span>
       </NavLink>
     );
   }
 
-  // Item with children at top level (depth === 0)
+  // Top-level item with children
   if (depth === 0) {
-    const isTopActive = isDirectActive || hasActiveChild;
     return (
       <div>
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
-          className={`w-full flex items-center gap-2.5 px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0
-            ${isTopActive ? 'text-brand-700 bg-brand-50 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`}
+          className={`w-full flex items-center justify-between px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0 ${hasActiveChild ? 'text-brand-700 bg-brand-50' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+            }`}
+          title={collapsed ? item.label : undefined}
         >
-          {Icon && <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />}
+          <div className="flex items-center gap-2.5 truncate">
+            {Icon && <Icon className="w-4 h-4 shrink-0" />}
+            {!collapsed && <span className="truncate">{item.label}</span>}
+          </div>
           {!collapsed && (
-            <>
-              <span className="truncate flex-1 text-left">{item.label}</span>
-              {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" />}
-            </>
+            <span className="text-slate-400 shrink-0 ml-1">
+              {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            </span>
           )}
         </button>
+
         {!collapsed && open && (
-          <div className="ml-4 mt-0.5 mb-1 flex flex-col gap-0.5 border-l border-slate-200 pl-2">
+          <div className="ml-3 pl-2.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5">
             {item.children.map(child => (
               <NavNode
                 key={child.label + (child.path || '')}
@@ -280,7 +194,146 @@ function NavNode({
 }
 
 export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: SidebarProps) {
+  const { user } = useAuth();
   const width = collapsed ? 'w-12' : 'w-60';
+
+  const userRole = (user?.role || '').trim();
+  const isAdmin = userRole === 'Admin' || userRole === 'admin' || user?.id === 1;
+  const isRole1 = userRole === 'Role 1';
+  const isRole2 = userRole === 'Role 2';
+
+  // Compute allowed stages for user
+  const allowedStages = useMemo(() => {
+    if (isAdmin) return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    if (isRole1) return [1, 2, 3, 9, 10];
+    if (isRole2) return [4, 5, 6, 7, 8];
+    return user?.allowed_stages || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  }, [isAdmin, isRole1, isRole2, user?.allowed_stages]);
+
+  // Dynamic Navigation Items
+  const navItems = useMemo<NavItem[]>(() => {
+    const allStages: NavItem[] = [
+      { label: '01. Requirement gathering', path: '/production/requirement', stageId: 1 },
+      { label: '02. PO (Purchase Order)', path: '/production/po', stageId: 2 },
+      { label: '03. Inward', path: '/production/inward', stageId: 3 },
+      { label: '04. Dyeing', path: '/production/dyeing', stageId: 4 },
+      { label: '05. Cutting — Product-wise', path: '/production/cutting', stageId: 5 },
+      { label: '06. Embroidery — Out/In', path: '/production/embroidery', stageId: 6 },
+      { label: '07. Stitching — Color-wise', path: '/production/stitching', stageId: 7 },
+      { label: '08. Checking', path: '/production/checking', stageId: 8 },
+      { label: '09. Packing', path: '/production/packing', stageId: 9 },
+      { label: '10. Completed', path: '/production/completed', stageId: 10 },
+    ];
+
+    const filteredStages = allStages.filter(s => allowedStages.includes(s.stageId!));
+
+    const items: NavItem[] = [];
+
+    // For operational roles (Role 1 and Role 2), prioritize My Tasks
+    if (!isAdmin) {
+      items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
+    } else {
+      items.push({ label: 'Dashboard', icon: LayoutDashboard, path: '/' });
+      items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
+    }
+
+    // Purchase - allow for Admin and Role 1
+    if (isAdmin || isRole1) {
+      items.push({
+        label: 'Purchase', icon: ClipboardList,
+        children: [
+          { label: 'Purchase Orders', path: '/purchase/orders' },
+          { label: 'Material Receipts', path: '/purchase/receipts' },
+          { label: 'Supplier Payments', path: '/purchase/payments' },
+          { label: 'Purchase Returns', path: '/purchase/returns' },
+        ],
+      });
+    }
+
+    // Inventory - allow for Admin and Role 1
+    if (isAdmin || isRole1) {
+      items.push({
+        label: 'Inventory', icon: Package,
+        children: [
+          { label: 'Materials', path: '/inventory/materials' },
+          { label: 'Stock', path: '/inventory/stock' },
+          { label: 'Stock Ledger', path: '/inventory/ledger' },
+          { label: 'Material Consumption', path: '/inventory/consumption' },
+          { label: 'Stock Adjustment', path: '/inventory/adjustment' },
+          { label: 'Low Stock', path: '/inventory/low-stock' },
+        ],
+      });
+    }
+
+    // Production menu (contains permitted stages)
+    items.push({
+      label: 'Production', icon: Factory,
+      children: [
+        { label: 'Production Orders', path: '/production/orders' },
+        { label: 'Production Board', path: '/production/board' },
+        {
+          label: 'Production Stages',
+          children: filteredStages,
+        },
+      ],
+    });
+
+    // Masters (Admin only or view)
+    if (isAdmin) {
+      items.push({
+        label: 'Masters', icon: Layers,
+        children: [
+          { label: 'Products', path: '/masters/products' },
+          { label: 'Materials', path: '/masters/materials' },
+          { label: 'Categories', path: '/masters/categories' },
+          { label: 'Suppliers', path: '/masters/suppliers' },
+          { label: 'Dyeing Mills', path: '/masters/dyeing-mills' },
+          { label: 'Embroidery Works', path: '/masters/embroidery-works' },
+          { label: 'Buyer Master', path: '/masters/buyers' },
+          { label: 'Pantone Colors', path: '/masters/colors' },
+          { label: 'Sizes', path: '/masters/sizes' },
+          { label: 'Units', path: '/masters/units' },
+          { label: 'Designs', path: '/masters/designs' },
+        ],
+      });
+
+      items.push({
+        label: 'Templates', icon: FileText,
+        children: [
+          { label: 'Material Templates', path: '/templates/material' },
+          { label: 'Product Templates', path: '/templates/product' },
+          { label: 'Order Templates', path: '/templates/order' },
+          { label: 'PO Templates', path: '/templates/po' },
+        ],
+      });
+
+      items.push({
+        label: 'Reports', icon: BarChart2,
+        children: [
+          { label: 'Purchase Reports', path: '/reports/purchase' },
+          { label: 'Inventory Reports', path: '/reports/inventory' },
+          { label: 'Production Reports', path: '/reports/production' },
+          { label: 'QC Reports', path: '/reports/qc' },
+          { label: 'Payment Reports', path: '/reports/payments' },
+        ],
+      });
+
+      // Settings: ONLY for Admin
+      items.push({
+        label: 'Settings', icon: Settings,
+        children: [
+          { label: 'Users', path: '/settings/users' },
+          { label: 'Roles', path: '/settings/roles' },
+          { label: 'Permissions', path: '/settings/permissions' },
+          { label: 'Production Stages', path: '/settings/stages' },
+          { label: 'Company Settings', path: '/settings/company' },
+          { label: 'PO Template', path: '/settings/po-template' },
+        ],
+      });
+    }
+
+    return items;
+  }, [isAdmin, isRole1, isRole2, allowedStages]);
 
   const content = (
     <div className={`${width} h-full flex flex-col bg-white border-r border-slate-200 transition-all duration-200 overflow-hidden`}>

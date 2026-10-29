@@ -1,5 +1,5 @@
 // src/lib/api.ts
-import { POTemplateColumn, POTemplateProcessField, POTemplateTerm, POTemplateSignature, POTemplateData, ReworkRecord } from '../types';
+import { TaskItem, ProductionNotification, POTemplateColumn, POTemplateProcessField, POTemplateTerm, POTemplateSignature, POTemplateData, ReworkRecord } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -355,4 +355,14 @@ export const api = {
   getPOTemplateSettings: () => request<POTemplateData>('/settings/po-template'),
   savePOTemplateSettings: (data: unknown) => request<unknown>('/settings/po-template', 'POST', data),
   restorePOTemplateDefaults: () => request<unknown>('/settings/po-template/restore-defaults', 'POST'),
+
+  // Production Tasks & Notifications
+  getTasks: () => request<TaskItem[]>('/production/tasks'),
+  getNotifications: (limit?: number) =>
+    request<{ notifications: ProductionNotification[]; unread_count: number }>(
+      limit ? `/notifications?limit=${limit}` : '/notifications'
+    ),
+  getUnreadNotificationCount: () => request<{ unread_count: number }>('/notifications/unread-count'),
+  markNotificationRead: (id?: number, markAll?: boolean) =>
+    request<{ success: boolean; unread_count: number }>('/notifications/read', 'POST', { id, all: markAll }),
 };

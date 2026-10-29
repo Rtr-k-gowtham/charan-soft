@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../core/Response.php';
+require_once __DIR__ . '/../core/Auth.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../core/AuditLogger.php';
 
@@ -12,11 +13,10 @@ class SettingsController {
     // -------------------------------------------------------------
     public function getUsers(): void {
         try {
+            // Require Admin role
+            Auth::requireRole('Admin');
+
             $pdo = Database::getConnection();
-            try {
-                $pdo->exec("UPDATE users SET name = 'Admin' WHERE id = 1 OR email = 'admin@cheransoftgoods.com'");
-                $pdo->exec("DELETE FROM users WHERE id > 1 AND (email LIKE '%@cheransoftgoods.com' OR name IN ('M. Ramesh Kumar', 'P. Anand', 'S. Divya', 'R. Muralidharan', 'P. Arumugam', 'V. Kannan', 'S. Vijayalakshmi'))");
-            } catch (Exception $cleanupEx) {}
 
             $stmt = $pdo->query("
                 SELECT u.id, u.name, u.email, u.phone, u.status, u.role_id, r.name as role_name, r.display_name as role_display_name, u.created_at
@@ -25,8 +25,9 @@ class SettingsController {
                 WHERE u.deleted_at IS NULL
                 ORDER BY u.id ASC
             ");
-            $users = $stmt->fetchAll();
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($users as &$u) {
+                $u['role_name'] = Auth::normalizeRoleName((string)$u['role_name']);
                 if ($u['id'] == 1 || $u['email'] === 'admin@cheransoftgoods.com') {
                     $u['name'] = 'Admin';
                     $u['username'] = 'admin';
@@ -39,6 +40,9 @@ class SettingsController {
     }
 
     public function createUser(): void {
+        // Require Admin role
+        Auth::requireRole('Admin');
+
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
         $email = trim($data['email'] ?? '');
@@ -51,6 +55,12 @@ class SettingsController {
             return;
         }
 
+        // Validate role_id: Must be 1 (Admin), 2 (Role 1), or 3 (Role 2)
+        if (!in_array($roleId, [1, 2, 3], true)) {
+            Response::error("Invalid role ID. Allowed roles are: 1 (Admin), 2 (Role 1), 3 (Role 2)", 422);
+            return;
+        }
+
         try {
             $pdo = Database::getConnection();
             $hash = password_hash($password, PASSWORD_BCRYPT);
@@ -60,26 +70,37 @@ class SettingsController {
             ");
             $stmt->execute([$roleId, $name, $email, $hash, $phone]);
             $id = (int)$pdo->lastInsertId();
-            AuditLogger::log('Users', 'CREATE', $id, null, ['name' => $name, 'email' => $email]);
-            Response::success(['id' => $id, 'name' => $name, 'email' => $email], "User created successfully", 201);
+            AuditLogger::log('Users', 'CREATE', $id, null, ['name' => $name, 'email' => $email, 'role_id' => $roleId]);
+            Response::success(['id' => $id, 'name' => $name, 'email' => $email, 'role_id' => $roleId], "User created successfully", 201);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
     }
 
     public function updateUser(int $id): void {
+        // Require Admin role
+        Auth::requireRole('Admin');
+
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        $roleId = (int)($data['role_id'] ?? 2);
+
+        // Validate role_id: Must be 1 (Admin), 2 (Role 1), or 3 (Role 2)
+        if (!in_array($roleId, [1, 2, 3], true)) {
+            Response::error("Invalid role ID. Allowed roles are: 1 (Admin), 2 (Role 1), 3 (Role 2)", 422);
+            return;
+        }
+
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ? WHERE id = ?");
             $stmt->execute([
                 $data['name'] ?? 'User',
                 $data['phone'] ?? null,
-                (int)($data['role_id'] ?? 2),
+                $roleId,
                 $data['status'] ?? 'active',
                 $id
             ]);
-            Response::success(['id' => $id], "User updated successfully");
+            Response::success(['id' => $id, 'role_id' => $roleId], "User updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -91,8 +112,19 @@ class SettingsController {
     public function getRoles(): void {
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->query("SELECT * FROM roles ORDER BY id ASC");
-            Response::success($stmt->fetchAll());
+            // Return only the 3 supported roles
+            $stmt = $pdo->query("SELECT id, name, display_name, description, status FROM roles WHERE id IN (1, 2, 3) ORDER BY id ASC");
+            $roles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Add stage access matrix metadata
+            foreach ($roles as &$r) {
+                $norm = Auth::normalizeRoleName((string)$r['name']);
+                $r['name'] = $norm;
+                $r['display_name'] = $norm;
+                $r['allowed_stages'] = Auth::STAGE_MATRIX[$norm] ?? [];
+            }
+
+            Response::success($roles);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -102,7 +134,7 @@ class SettingsController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("SELECT * FROM permissions ORDER BY module ASC, name ASC");
-            Response::success($stmt->fetchAll());
+            Response::success($stmt->fetchAll(PDO::FETCH_ASSOC));
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -115,13 +147,15 @@ class SettingsController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("SELECT * FROM production_stages ORDER BY sequence_order ASC");
-            Response::success($stmt->fetchAll());
+            Response::success($stmt->fetchAll(PDO::FETCH_ASSOC));
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
     }
 
     public function createStage(): void {
+        Auth::requireRole('Admin');
+
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         $name = trim($data['name'] ?? '');
         $code = strtoupper(trim($data['code'] ?? 'STG'));
@@ -154,7 +188,7 @@ class SettingsController {
         try {
             $pdo = Database::getConnection();
             $stmt = $pdo->query("SELECT * FROM company_settings LIMIT 1");
-            $settings = $stmt->fetch() ?: [
+            $settings = $stmt->fetch(PDO::FETCH_ASSOC) ?: [
                 'company_name' => 'Cheran Soft Goods Private Limited',
                 'address' => '124, Textile Park, Palladam Road, Tiruppur - 641604, Tamil Nadu',
                 'gstin' => '33AABCC1234F1Z5',
@@ -170,6 +204,8 @@ class SettingsController {
     }
 
     public function updateCompanySettings(): void {
+        Auth::requireRole('Admin');
+
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
         try {
             $pdo = Database::getConnection();

@@ -8,6 +8,7 @@ export interface User {
   role_name: string;
   token?: string;
   permissions?: string[];
+  allowed_stages?: number[];
 }
 
 export interface Category {
@@ -971,3 +972,52 @@ export interface ReworkRecord {
 }
 
 
+
+
+export interface TaskProduct {
+  item_id: number;
+  product_name: string;
+  product_code: string;
+  color: string;
+  quantity: number;
+}
+
+export interface TaskItem {
+  task_id: string;
+  order_id: number;
+  order_number: string;
+  order_title: string;
+  customer_name: string;
+  customer_code?: string;
+  target_delivery_date: string;
+  order_quantity: number;
+  status: string;
+  stage_id: number;
+  stage_name: string;
+  stage_code: string;
+  stage_sequence: number;
+  stage_quantity: number;
+  stage_status: string;
+  color_badge: string;
+  action_url: string;
+  products: TaskProduct[];
+}
+
+export interface ProductionNotification {
+  id: number;
+  user_id: number;
+  event_type: 'ORDER_CREATED' | 'STAGE_TRANSITION' | string;
+  production_order_id: number;
+  order_number: string;
+  order_title: string;
+  source_stage_id?: number | null;
+  destination_stage_id?: number | null;
+  source_stage_name?: string | null;
+  destination_stage_name?: string | null;
+  title: string;
+  message: string;
+  action_url: string;
+  is_read: number | boolean;
+  created_at: string;
+  read_at?: string | null;
+}

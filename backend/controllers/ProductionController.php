@@ -5,8 +5,129 @@ declare(strict_types=1);
 require_once __DIR__ . '/../core/Response.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../core/AuditLogger.php';
+require_once __DIR__ . '/../core/Auth.php';
+require_once __DIR__ . '/../core/NotificationService.php';
 
 class ProductionController {
+    
+    public function tasks(): void {
+        $user = Auth::requireUser();
+        $allowedStages = $user['allowed_stages'] ?? Auth::getAllowedStagesForRole($user['role'] ?? 'Admin');
+        if (empty($allowedStages)) {
+            Response::success([]);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+            $inStages = implode(',', array_map('intval', $allowedStages));
+
+            $stmt = $pdo->prepare("
+                SELECT 
+                    po.id as order_id,
+                    po.order_number,
+                    po.title as order_title,
+                    po.target_delivery_date,
+                    po.total_quantity as order_quantity,
+                    po.status as order_status,
+                    cu.name as customer_name,
+                    cu.code as customer_code,
+                    poi.id as item_id,
+                    poi.current_stage_id,
+                    poi.current_stage_quantity,
+                    poi.status as item_status,
+                    poi.color,
+                    COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                    COALESCE(bp.product_code, p.code, '') as product_code,
+                    ps.name as stage_name,
+                    ps.code as stage_code,
+                    ps.sequence_order as stage_sequence,
+                    ps.color_badge
+                FROM production_order_items poi
+                JOIN production_orders po ON poi.production_order_id = po.id
+                JOIN production_stages ps ON poi.current_stage_id = ps.id
+                LEFT JOIN customers cu ON po.customer_id = cu.id
+                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                LEFT JOIN products p ON poi.product_id = p.id
+                WHERE po.deleted_at IS NULL
+                  AND po.status != 'Cancelled'
+                  AND poi.current_stage_id IN ({$inStages})
+                  AND poi.status != 'Completed'
+                  AND poi.current_stage_id != 10
+                  AND (poi.current_stage_quantity > 0 OR poi.total_quantity > 0)
+                ORDER BY po.id DESC, ps.sequence_order ASC
+            ");
+            $stmt->execute();
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $stageRoutes = [
+                1 => '/production/requirement',
+                2 => '/production/po',
+                3 => '/production/inward',
+                4 => '/production/dyeing',
+                5 => '/production/cutting',
+                6 => '/production/embroidery',
+                7 => '/production/stitching',
+                8 => '/production/checking',
+                9 => '/production/packing',
+                10 => '/production/completed'
+            ];
+
+            $tasksMap = [];
+            foreach ($rows as $r) {
+                $taskKey = $r['order_id'] . '_' . $r['current_stage_id'];
+                $qty = (float)($r['current_stage_quantity'] > 0 ? $r['current_stage_quantity'] : $r['order_quantity']);
+
+                if (!isset($tasksMap[$taskKey])) {
+                    $seqPadded = str_pad((string)$r['stage_sequence'], 2, '0', STR_PAD_LEFT);
+                    $tasksMap[$taskKey] = [
+                        'task_id' => $taskKey,
+                        'order_id' => (int)$r['order_id'],
+                        'order_number' => $r['order_number'],
+                        'order_title' => $r['order_title'],
+                        'customer_name' => $r['customer_name'] ?: 'Customer',
+                        'customer_code' => $r['customer_code'] ?: '',
+                        'target_delivery_date' => $r['target_delivery_date'] ?: '2026-12-05',
+                        'order_quantity' => (float)$r['order_quantity'],
+                        'status' => $r['order_status'] ?: 'IN PRODUCTION',
+                        'stage_id' => (int)$r['current_stage_id'],
+                        'stage_name' => $r['stage_name'],
+                        'stage_code' => $r['stage_code'],
+                        'stage_sequence' => (int)$r['stage_sequence'],
+                        'stage_quantity' => $qty,
+                        'stage_status' => "{$seqPadded}. {$r['stage_name']} (" . number_format($qty) . " pcs)",
+                        'color_badge' => $r['color_badge'] ?: '#3b82f6',
+                        'action_url' => ($stageRoutes[(int)$r['current_stage_id']] ?? '/tasks') . '/' . $r['order_id'],
+                        'products' => [
+                            [
+                                'item_id' => (int)$r['item_id'],
+                                'product_name' => $r['product_name'],
+                                'product_code' => $r['product_code'],
+                                'color' => $r['color'],
+                                'quantity' => $qty
+                            ]
+                        ]
+                    ];
+                } else {
+                    $tasksMap[$taskKey]['stage_quantity'] += $qty;
+                    $seqPadded = str_pad((string)$tasksMap[$taskKey]['stage_sequence'], 2, '0', STR_PAD_LEFT);
+                    $tasksMap[$taskKey]['stage_status'] = "{$seqPadded}. {$tasksMap[$taskKey]['stage_name']} (" . number_format($tasksMap[$taskKey]['stage_quantity']) . " pcs)";
+                    $tasksMap[$taskKey]['products'][] = [
+                        'item_id' => (int)$r['item_id'],
+                        'product_name' => $r['product_name'],
+                        'product_code' => $r['product_code'],
+                        'color' => $r['color'],
+                        'quantity' => $qty
+                    ];
+                }
+            }
+
+            Response::success(array_values($tasksMap));
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
     public function stages(): void {
         try {
             $pdo = Database::getConnection();
@@ -359,6 +480,7 @@ class ProductionController {
 
             $pdo->commit();
             AuditLogger::log('ProductionOrders', 'CREATE', $orderId, null, ['order_number' => $orderNo, 'customer_id' => $customerId, 'total_qty' => $totalQty]);
+            try { NotificationService::notifyOrderCreated($pdo, $orderId, $orderNo, $title); } catch (Throwable $ne) {}
             Response::success(['id' => $orderId, 'order_number' => $orderNo], "Production order created successfully", 201);
         } catch (Exception $e) {
             if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
@@ -467,6 +589,13 @@ class ProductionController {
 
                 $pdo->commit();
                 AuditLogger::log('ProductionStages', 'MOVE_ALL', $prodOrderId, [], ['to_stage_id' => $toStageId, 'total_moved' => $totalMoved]);
+                try {
+                    $pInfo = $pdo->query("SELECT order_number, title FROM production_orders WHERE id = {$prodOrderId}")->fetch();
+                    if ($pInfo) {
+                        $fStg = isset($items[0]['current_stage_id']) ? (int)$items[0]['current_stage_id'] : null;
+                        NotificationService::notifyStageTransition($pdo, $prodOrderId, $fStg, $toStageId, $pInfo['order_number'], $pInfo['title'], $remarks);
+                    }
+                } catch (Throwable $ne) {}
                 Response::success([
                     'moved_items_count' => count($items),
                     'total_moved_quantity' => $totalMoved,
@@ -2356,6 +2485,7 @@ class ProductionController {
     }
 
     public function cuttingOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(5);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -3010,6 +3140,7 @@ class ProductionController {
     }
 
     public function embroideryOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(6);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -3750,6 +3881,12 @@ class ProductionController {
 
             $pdo->commit();
 
+            try {
+                $pInfo = $pdo->query("SELECT order_number, title FROM production_orders WHERE id = {$pId}")->fetch();
+                if ($pInfo) {
+                    NotificationService::notifyStageTransition($pdo, $pId, 6, $destStageId, $pInfo['order_number'], $pInfo['title'], "Transferred {$qty} pcs from Embroidery to Stitching");
+                }
+            } catch (Throwable $ne) {}
             $newRemaining = max(0.0, $eligibleToTransfer - $qty);
             Response::success([
                 'transferred_quantity' => $qty,
@@ -3800,6 +3937,7 @@ class ProductionController {
     }
 
     public function stitchingOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(7);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -4498,6 +4636,12 @@ class ProductionController {
             $lStmtIn->execute([$pId, $realItemId, $qty, "Received from Stitching; Ready for Quality Inspection"]);
 
             $pdo->commit();
+            try {
+                $pInfo = $pdo->query("SELECT order_number, title FROM production_orders WHERE id = {$pId}")->fetch();
+                if ($pInfo) {
+                    NotificationService::notifyStageTransition($pdo, $pId, 7, 8, $pInfo['order_number'], $pInfo['title'], "Transferred {$qty} pcs from Stitching to Checking");
+                }
+            } catch (Throwable $ne) {}
             Response::success([
                 'transferred_quantity' => $qty,
                 'destination_stage_id' => 8,
@@ -4519,6 +4663,7 @@ class ProductionController {
     }
 
     public function checkingOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(8);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -5407,6 +5552,12 @@ class ProductionController {
             $lStmtIn->execute([$pId, $realItemId, $qty, "Received from Checking"]);
 
             $pdo->commit();
+            try {
+                $pInfo = $pdo->query("SELECT order_number, title FROM production_orders WHERE id = {$pId}")->fetch();
+                if ($pInfo) {
+                    NotificationService::notifyStageTransition($pdo, $pId, 8, 9, $pInfo['order_number'], $pInfo['title'], "Transferred {$qty} pcs from Checking to Packing");
+                }
+            } catch (Throwable $ne) {}
             Response::success([
                 'transferred_quantity' => $qty,
                 'destination_stage_id' => 9,
@@ -5441,6 +5592,7 @@ class ProductionController {
     }
 
     public function packingOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(9);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -5724,6 +5876,12 @@ class ProductionController {
             $lStmtIn->execute([$pId, $realItemId, $qty, "Received from Packing"]);
 
             $pdo->commit();
+            try {
+                $pInfo = $pdo->query("SELECT order_number, title FROM production_orders WHERE id = {$pId}")->fetch();
+                if ($pInfo) {
+                    NotificationService::notifyStageTransition($pdo, $pId, 9, 10, $pInfo['order_number'], $pInfo['title'], "Transferred {$qty} pcs from Packing to Completed / Dispatch");
+                }
+            } catch (Throwable $ne) {}
             Response::success([
                 'transferred_quantity' => $qty,
                 'destination_stage_id' => 10,
@@ -5771,6 +5929,7 @@ class ProductionController {
     }
 
     public function dispatchOrderDetails(int $orderId): void {
+        Auth::requireStageAccess(10);
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);

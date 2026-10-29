@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
+import { User } from '../types';
 
 export default function Login() {
   const { login } = useAuth();
@@ -19,12 +20,32 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate('/');
+      // Read saved user role from localStorage
+      let userRole = 'Admin';
+      try {
+        const stored = localStorage.getItem('cheran_user');
+        if (stored) {
+          const u = JSON.parse(stored);
+          userRole = u.role || u.role_name || 'Admin';
+        }
+      } catch {}
+
+      if (userRole === 'Role 1' || userRole === 'Role 2') {
+        navigate('/tasks');
+      } else {
+        navigate('/');
+      }
     } catch (err: unknown) {
       setError((err as Error).message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const setPresetUser = (username: string, pass: string) => {
+    setEmail(username);
+    setPassword(pass);
+    setError('');
   };
 
   return (
@@ -45,10 +66,10 @@ export default function Login() {
 
           <div className="mt-10 flex flex-col gap-4">
             {[
-              { label: 'Dynamic Category Engine', desc: 'Fully configurable forms and templates' },
-              { label: 'Real-time Production Board', desc: 'Track partial quantities across all stages' },
-              { label: 'Auto Inventory Updates', desc: 'Stock ledger updated on every receipt' },
-              { label: 'Enterprise QC & Rework', desc: 'Full pass / reject / rework tracking' },
+              { label: 'Role-Based Access Control', desc: 'Dedicated operational workflows for Role 1, Role 2 & Admin' },
+              { label: 'Operational Tasks Screen', desc: 'Focused task view for pending stage batches' },
+              { label: 'Real-time Production Notifications', desc: 'Instant stage transition & order alerts' },
+              { label: 'Integrated Textile Workflow', desc: '10 seamless stages from requirement to dispatch' },
             ].map(f => (
               <div key={f.label} className="flex items-start gap-3">
                 <div className="w-1.5 h-1.5 rounded-full bg-brand-300 mt-1.5 shrink-0" />
@@ -93,7 +114,7 @@ export default function Login() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                placeholder="admin or admin@cheransoftgoods.com"
+                placeholder="admin, role1, or role2"
                 className="w-full px-3 py-2 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200"
               />
             </div>
@@ -131,16 +152,47 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="mt-5 p-3 bg-slate-50 border border-slate-200 rounded-md">
-            <p className="text-[10px] font-semibold text-slate-500 mb-1.5">Sign In Credentials:</p>
-            <div className="flex flex-col gap-1">
+          {/* Quick Demo Sign In Credentials */}
+          <div className="mt-5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-brand-600" />
+              Quick Demo Accounts:
+            </p>
+            <div className="flex flex-col gap-1.5">
               <button
                 type="button"
-                onClick={() => { setEmail('admin'); setPassword('admin123'); }}
-                className="text-left text-xs font-semibold text-brand-700 hover:underline flex items-center justify-between"
+                onClick={() => setPresetUser('admin', 'admin123')}
+                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
               >
-                <span>Username: <code className="bg-brand-50 px-1.5 py-0.5 rounded text-brand-800">admin</code></span>
-                <span className="text-[11px] text-slate-500 font-normal">Password: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">admin123</code></span>
+                <div>
+                  <span className="font-bold text-slate-800">Admin</span>
+                  <span className="text-[10px] text-slate-400 block">Full 10 Stages & Settings</span>
+                </div>
+                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">admin / admin123</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPresetUser('role1', 'password')}
+                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
+              >
+                <div>
+                  <span className="font-bold text-slate-800">Role 1</span>
+                  <span className="text-[10px] text-slate-400 block">Stages 01, 02, 03, 09, 10</span>
+                </div>
+                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">role1 / password</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPresetUser('role2', 'password')}
+                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
+              >
+                <div>
+                  <span className="font-bold text-slate-800">Role 2</span>
+                  <span className="text-[10px] text-slate-400 block">Stages 04, 05, 06, 07, 08</span>
+                </div>
+                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">role2 / password</span>
               </button>
             </div>
           </div>
