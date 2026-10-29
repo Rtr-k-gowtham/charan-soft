@@ -347,14 +347,14 @@ export default function ProductionOrders() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                    <td colSpan={11} className="py-12 text-center text-slate-400">
                       <RefreshCw className="w-6 h-6 animate-spin text-brand-600 mx-auto mb-2" />
                       <span>Loading production orders...</span>
                     </td>
                   </tr>
                 ) : filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                    <td colSpan={11} className="py-12 text-center text-slate-400">
                       No production orders found matching your criteria.
                     </td>
                   </tr>
@@ -446,6 +446,20 @@ export default function ProductionOrders() {
                             <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             <span>{ord.target_delivery_date || '—'}</span>
                           </div>
+                        </td>
+                        <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                          {(() => {
+                            const dInfo = getDaysLeftForDelivery(ord.target_delivery_date, getProductionOrderStage(ord), ord.status);
+                            if (!dInfo) {
+                              return <span className="text-slate-400 font-mono text-[11px]">—</span>;
+                            }
+                            return (
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] border ${dInfo.badgeClass}`}>
+                                <Clock className="w-3 h-3 shrink-0" />
+                                <span>{dInfo.text}</span>
+                              </span>
+                            );
+                          })()}
                         </td>
 
                         <td className="px-2 py-2.5 text-center whitespace-nowrap">
