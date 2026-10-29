@@ -742,6 +742,8 @@ export interface EmbroideryReceipt {
 
 // Stage 7: Stitching
 export interface StitchingBatch {
+  product_id?: number;
+  transferred_quantity?: number;
   id?: number;
   production_order_id: number;
   production_order_item_id: number;

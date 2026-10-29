@@ -40,3 +40,4 @@ Thumbs.db
 # Scratch and temporary scripts
 scratch/
 deploy.js
+deploy-fast.js

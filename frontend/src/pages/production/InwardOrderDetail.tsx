@@ -30,7 +30,6 @@ import {
   FileText,
   Camera,
   Image as ImageIcon,
-  Upload,
   Eye,
   Trash2,
   X,

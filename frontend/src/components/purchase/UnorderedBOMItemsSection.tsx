@@ -63,6 +63,8 @@ interface Props {
   onRefreshParent?: () => void;
   className?: string;
   compact?: boolean;
+  hideMetrics?: boolean;
+  hideToolbar?: boolean;
 }
 
 export default function UnorderedBOMItemsSection({
@@ -72,6 +74,8 @@ export default function UnorderedBOMItemsSection({
   onRefreshParent,
   className = '',
   compact = false,
+  hideMetrics = false,
+  hideToolbar = false,
 }: Props) {
   const [items, setItems] = useState<UnorderedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,6 +195,7 @@ export default function UnorderedBOMItemsSection({
       )}
 
       {/* Metric Cards Banner */}
+      {!hideMetrics && (
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
           <div>
@@ -242,8 +247,10 @@ export default function UnorderedBOMItemsSection({
           </div>
         </div>
       </div>
+      )}
 
       {/* Filter and Search Bar */}
+      {!hideToolbar && (
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {/* Status Tab Pills */}
@@ -306,6 +313,7 @@ export default function UnorderedBOMItemsSection({
           </Button>
         </div>
       </div>
+      )}
 
       {/* Main Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">

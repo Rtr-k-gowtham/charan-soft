@@ -28,6 +28,7 @@ interface LivePhotoCaptureFieldProps {
   error?: string;
   helperText?: string;
   buttonText?: string;
+  placeholderText?: string;
 }
 
 export const LivePhotoCaptureField: React.FC<LivePhotoCaptureFieldProps> = ({
@@ -41,6 +42,9 @@ export const LivePhotoCaptureField: React.FC<LivePhotoCaptureFieldProps> = ({
   stageName,
   orderNumber,
   error,
+  helperText,
+  buttonText,
+  placeholderText,
 }) => {
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -93,20 +97,33 @@ export const LivePhotoCaptureField: React.FC<LivePhotoCaptureFieldProps> = ({
         )}
       </div>
 
-      {/* When NO photos are taken yet: Simple "Camera" button */}
+      {/* When NO photos are taken yet: Clean camera-only prompt box */}
       {!hasPhotos ? (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-0.5">
-          <button
-            type="button"
-            onClick={() => setIsCameraOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-xs transition cursor-pointer shrink-0"
-          >
-            <Camera className="w-4 h-4" />
-            <span>Camera</span>
-          </button>
-          <span className="text-[11px] text-slate-500">
-            {required ? 'Tap Camera to take photo with automatic GPS location' : 'Take photo via camera'}
-          </span>
+        <div 
+          onClick={() => setIsCameraOpen(true)}
+          className="border-2 border-dashed border-slate-300 hover:border-brand-500 rounded-xl p-4 bg-slate-50/80 hover:bg-brand-50/20 transition-all cursor-pointer text-center group"
+        >
+          <div className="flex flex-col items-center justify-center space-y-1.5">
+            <div className="w-10 h-10 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center text-brand-600 group-hover:scale-105 transition-transform">
+              <Camera className="w-5 h-5" />
+            </div>
+            <div className="font-bold text-xs text-slate-800 group-hover:text-brand-700">
+              {placeholderText || 'Tap here to open camera'}
+            </div>
+            <div className="text-[11px] text-slate-400">
+              {helperText || 'Live GPS coordinates & timestamp recorded automatically'}
+            </div>
+            <div className="pt-1.5" onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={() => setIsCameraOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-600 hover:bg-brand-700 active:scale-95 text-white text-xs font-bold rounded-lg shadow-2xs transition cursor-pointer"
+              >
+                <Camera className="w-4 h-4" />
+                <span>{buttonText || 'Open Camera'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         /* When photo IS taken: Clean preview cards with coordinates */

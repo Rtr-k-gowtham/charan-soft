@@ -3,15 +3,17 @@
 // Redesigned to strict Cheran Soft Goods ERP design system: Table-based layout, ERP palette,
 // dynamic fabric material dropdown, and Total Outward Fabric field removed from Create form.
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
-import { 
-  ProductionOrder, 
-  ProductionStage, 
-  DyeingOrder, 
-  DyeingOrderItem, 
-  DyeingReceipt 
+import {
+  ProductionOrder,
+  ProductionStage,
+  DyeingOrder,
+  DyeingOrderItem,
+  DyeingReceipt,
+  ReworkRecord
 } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -21,15 +23,16 @@ import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
-import { 
-  lookupPantone, 
-  VERIFIED_PANTONE_LIBRARY 
+import {
+  lookupPantone,
+  VERIFIED_PANTONE_LIBRARY
 } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
 import StageReworkSection from '../../components/production/StageReworkSection';
 import StageInspectionModal from '../../components/production/StageInspectionModal';
 import {
   ArrowLeft,
+  MoreVertical,
   RotateCcw,
   Droplets,
   RefreshCw,
@@ -46,7 +49,6 @@ import {
   Truck,
   FileText,
   Camera,
-  Upload,
   Eye,
   Trash2,
   X,
@@ -197,10 +199,12 @@ export default function DyeingOrderDetail() {
     rework_reason?: string;
     shrinkage_loss_percent: number;
     shade_match_status: string;
+    lot_number?: string;
     notes: string;
   }[]>([]);
   const [receiptChallanNo, setReceiptChallanNo] = useState('');
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [receiptLotNo, setReceiptLotNo] = useState('');
   const [receivedBy, setReceivedBy] = useState('');
   const [shadeCondition, setShadeCondition] = useState('Approved - Pantone Matched');
   const [receiptRemarks, setReceiptRemarks] = useState('');
@@ -211,6 +215,334 @@ export default function DyeingOrderDetail() {
   // Quality Inspection Modal State (Stage 04: Dyeing)
   const [showInspectModal, setShowInspectModal] = useState(false);
   const [selectedReceiptForInspect, setSelectedReceiptForInspect] = useState<any>(null);
+
+  // 3-dot Action Menu state for Dyeing Orders table
+  const [activeDyeingMenu, setActiveDyeingMenu] = useState<{
+    orderId: number;
+    top: number;
+    left: number;
+    dOrder: any;
+  } | null>(null);
+
+  const handleToggleDyeingMenu = (e: React.MouseEvent<HTMLButtonElement>, dOrder: any) => {
+    e.stopPropagation();
+    if (activeDyeingMenu?.orderId === dOrder.id) {
+      setActiveDyeingMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const menuWidth = 144;
+      const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
+      const totalRec = Number(dOrder.total_received_quantity || 0);
+      const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
+      const menuHeight = isFullyReceived ? 165 : 125;
+
+      let top = rect.bottom + 4;
+      if (top + menuHeight > window.innerHeight && rect.top > menuHeight) {
+        top = rect.top - menuHeight - 4;
+      }
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+
+      setActiveDyeingMenu({
+        orderId: dOrder.id,
+        top,
+        left,
+        dOrder,
+      });
+    }
+  };
+
+  // 3-dot Action Menu state for Rework table
+  const [activeReworkMenu, setActiveReworkMenu] = useState<{
+    recordId: number;
+    top: number;
+    left: number;
+    record: ReworkRecord;
+  } | null>(null);
+
+  const handleToggleReworkMenu = (e: React.MouseEvent<HTMLButtonElement>, record: ReworkRecord) => {
+    e.stopPropagation();
+    if (activeReworkMenu?.recordId === record.id) {
+      setActiveReworkMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const menuWidth = 144;
+      const menuHeight = 125;
+
+      let top = rect.bottom + 4;
+      if (top + menuHeight > window.innerHeight && rect.top > menuHeight) {
+        top = rect.top - menuHeight - 4;
+      }
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+
+      setActiveReworkMenu({
+        recordId: record.id,
+        top,
+        left,
+        record,
+      });
+    }
+  };
+
+  // Click outside / scroll / escape listener for floating menus
+  useEffect(() => {
+    if (!activeDyeingMenu && !activeReworkMenu) return;
+    const closeAll = () => {
+      setActiveDyeingMenu(null);
+      setActiveReworkMenu(null);
+    };
+    window.addEventListener('scroll', closeAll, true);
+    window.addEventListener('resize', closeAll);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('scroll', closeAll, true);
+      window.removeEventListener('resize', closeAll);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeDyeingMenu, activeReworkMenu]);
+
+  // Rework Records State & Loader
+  const [reworkRecords, setReworkRecords] = useState<ReworkRecord[]>([]);
+  const [loadingRework, setLoadingRework] = useState(false);
+
+  const loadReworkRecords = async () => {
+    const poId = Number(order?.id || id);
+    if (!poId) return;
+    try {
+      setLoadingRework(true);
+      const res = await api.getReworkRecords({
+        production_order_id: poId,
+        stage_id: 4,
+      });
+      setReworkRecords(Array.isArray(res) ? res : ((res as any)?.data || []));
+    } catch (err) {
+      console.warn('Failed to load rework records', err);
+    } finally {
+      setLoadingRework(false);
+    }
+  };
+
+  useEffect(() => {
+    if (order?.id || id) {
+      loadReworkRecords();
+    }
+  }, [order?.id, id]);
+
+  // Popup Form: Send Fabric for Rework
+  const [reworkModalOpen, setReworkModalOpen] = useState(false);
+  const [selectedOrderForRework, setSelectedOrderForRework] = useState<any>(null);
+  const [reworkForm, setReworkForm] = useState({
+    rework_quantity: 0,
+    rework_reason: 'Shade Mismatch / Uneven Dyeing',
+    expected_return_date: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+    dc_challan_no: '',
+    remarks: '',
+    selected_color: '',
+  });
+  const [submittingRework, setSubmittingRework] = useState(false);
+  const [reworkError, setReworkError] = useState('');
+
+  const handleOpenReworkModal = (dOrder: any) => {
+    setSelectedOrderForRework(dOrder);
+    const totalRec = Number(dOrder.total_received_quantity || dOrder.total_fabric_quantity || 0);
+    const firstColor = dOrder.items?.[0]?.pantone_code || dOrder.items?.[0]?.color_name || dOrder.color_name || '';
+    setReworkForm({
+      rework_quantity: totalRec > 0 ? totalRec : 10,
+      rework_reason: 'Shade Mismatch / Uneven Dyeing',
+      expected_return_date: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      dc_challan_no: `DC-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+      remarks: '',
+      selected_color: firstColor,
+    });
+    setReworkError('');
+    setReworkModalOpen(true);
+  };
+
+  const handleConfirmCreateRework = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedOrderForRework) return;
+    const poId = Number(order?.id || id);
+    const qty = Number(reworkForm.rework_quantity);
+    const maxAvailable = Number(selectedOrderForRework.total_received_quantity || selectedOrderForRework.total_fabric_quantity || 0);
+
+    if (qty <= 0) {
+      setReworkError('Please enter a valid rework quantity greater than 0.');
+      return;
+    }
+    if (qty > maxAvailable) {
+      setReworkError(`Rework quantity cannot exceed received quantity (${maxAvailable} ${selectedOrderForRework.uom || 'MTR'}).`);
+      return;
+    }
+
+    setSubmittingRework(true);
+    setReworkError('');
+    try {
+      const created = await api.createRework({
+        production_order_id: poId,
+        stage_id: 4,
+        stage_code: 'DYE',
+        product_name: selectedOrderForRework.fabric_name,
+        color: reworkForm.selected_color || selectedOrderForRework.items?.[0]?.pantone_code || 'General',
+        rework_quantity: qty,
+        uom: selectedOrderForRework.uom || 'MTR',
+        rework_reason: reworkForm.rework_reason,
+        rework_remarks: reworkForm.remarks,
+        destination_process: 'Fabric Re-dyeing & Color Correction',
+        vendor_name: selectedOrderForRework.dyeing_mill_name || selectedOrderForRework.supplier_name,
+      });
+
+      const reworkId = created?.id || (created as any)?.data?.id;
+      if (reworkId) {
+        await api.sendRework({
+          rework_id: reworkId,
+          sent_date: new Date().toISOString().split('T')[0],
+          vendor_name: selectedOrderForRework.dyeing_mill_name || selectedOrderForRework.supplier_name,
+          dc_challan_no: reworkForm.dc_challan_no || `DC-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+          remarks: reworkForm.remarks,
+        });
+      }
+
+      setReworkModalOpen(false);
+      setSuccessToast(`Rework order of ${qty} ${selectedOrderForRework.uom || 'MTR'} sent to ${selectedOrderForRework.dyeing_mill_name || 'mill'} successfully!`);
+      await loadData();
+      await loadReworkRecords();
+    } catch (err: any) {
+      setReworkError(err?.message || 'Failed to dispatch rework');
+    } finally {
+      setSubmittingRework(false);
+    }
+  };
+
+  // Popup Form: Receive Reworked Fabric Return (Matches Dyeing Order Inward Modal)
+  const [receiveReworkModalOpen, setReceiveReworkModalOpen] = useState(false);
+  const [selectedReworkForReceive, setSelectedReworkForReceive] = useState<ReworkRecord | null>(null);
+  const [reworkReceiptChallanNo, setReworkReceiptChallanNo] = useState('');
+  const [reworkReceiptDate, setReworkReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reworkLotNo, setReworkLotNo] = useState('');
+  const [reworkReceivedBy, setReworkReceivedBy] = useState('');
+  const [reworkReceivedQty, setReworkReceivedQty] = useState(0);
+  const [reworkPhotoUrl, setReworkPhotoUrl] = useState<string | null>(null);
+  const [reworkRemarks, setReworkRemarks] = useState('');
+  const [reworkReceiveError, setReworkReceiveError] = useState('');
+  const [submittingReceiveRework, setSubmittingReceiveRework] = useState(false);
+
+  const handleOpenReceiveReworkModal = (rec: ReworkRecord) => {
+    setSelectedReworkForReceive(rec);
+    const rQty = Number(rec.rework_quantity || 0);
+    setReworkReceiptChallanNo(rec.dc_challan_no ? `INW-${rec.dc_challan_no}` : `INW-RWK-${Math.floor(1000 + Math.random() * 9000)}`);
+    setReworkReceiptDate(new Date().toISOString().split('T')[0]);
+    setReworkLotNo(rec.batch_number || `LOT-RWK-${rec.id || 1}`);
+    setReworkReceivedBy(receivedBy || 'Quality Inspector');
+    setReworkReceivedQty(rQty);
+    setReworkPhotoUrl(null);
+    setReworkRemarks('');
+    setReworkReceiveError('');
+    setReceiveReworkModalOpen(true);
+  };
+
+  const handleConfirmReceiveRework = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedReworkForReceive) return;
+    setReworkReceiveError('');
+
+    if (reworkReceivedQty <= 0) {
+      setReworkReceiveError('Received quantity must be greater than 0');
+      return;
+    }
+    if (!reworkPhotoUrl) {
+      setReworkReceiveError('Real-time camera photograph with live GPS coordinates is mandatory before confirming rework receipt.');
+      return;
+    }
+
+    setSubmittingReceiveRework(true);
+    try {
+      await api.receiveRework({
+        rework_id: selectedReworkForReceive.id,
+        received_date: reworkReceiptDate,
+        dc_challan_no: reworkReceiptChallanNo,
+        lot_number: reworkLotNo,
+        received_by: reworkReceivedBy,
+        photo_url: reworkPhotoUrl,
+        remarks: reworkRemarks,
+      });
+      await api.reinspectRework({
+        rework_id: selectedReworkForReceive.id,
+        reinspection_date: reworkReceiptDate,
+        accepted_quantity: Number(reworkReceivedQty || 0),
+        rejected_quantity: 0,
+        inspector_name: reworkReceivedBy || 'Dyeing QC Inspector',
+        reinspection_result: 'Passed Quality Audit',
+        reinspection_notes: reworkRemarks || 'Reworked fabric received & approved',
+        batch_number: reworkLotNo
+      });
+      setReceiveReworkModalOpen(false);
+      setSuccessToast(`Rework #${selectedReworkForReceive.rework_order_no} (${reworkReceivedQty} ${selectedReworkForReceive.uom || 'MTR'}) inward received & accepted! Fabric is now in-hand.`);
+      await loadData();
+      await loadReworkRecords();
+    } catch (err: any) {
+      console.error('Failed to process rework return:', err);
+      setReworkReceiveError(err?.message || 'Failed to process rework return');
+    } finally {
+      setSubmittingReceiveRework(false);
+    }
+  };
+
+  // Popup Modal: View Rework Record Details
+  const [viewReworkModalOpen, setViewReworkModalOpen] = useState(false);
+  const [selectedReworkForView, setSelectedReworkForView] = useState<ReworkRecord | null>(null);
+
+  const handleOpenViewReworkModal = (rec: ReworkRecord) => {
+    setSelectedReworkForView(rec);
+    setViewReworkModalOpen(true);
+  };
+
+  // Active rework currently out at mill (status: 'Sent for Rework' or 'Pending Rework')
+  const activeReworkOutAtMill = useMemo(() => {
+    return reworkRecords
+      .filter(r => r.status === 'Sent for Rework' || r.status === 'Pending Rework')
+      .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
+  }, [reworkRecords]);
+
+  // Total fabric already transferred to Stage 05 (Cutting)
+  const totalTransferredToCutting = useMemo(() => {
+    const fromStock = Number(fabricStockData?.total_transferred_to_cutting ?? 0);
+    if (fromStock > 0) return fromStock;
+    // Check if order items have already advanced to Stage 05 (Cutting) or beyond
+    const itemsAdvanced = (order?.items || []).filter((it: any) => Number(it.current_stage_id) >= 5);
+    if (itemsAdvanced.length > 0) {
+      const advancedQty = itemsAdvanced.reduce((sum: number, it: any) => sum + Number(it.total_quantity || 0), 0);
+      if (advancedQty > 0) return advancedQty;
+    }
+    if (order && Number(order.current_stage_id) >= 5 && Number(order.total_quantity) > 0) {
+      return Number(order.total_quantity);
+    }
+    return 0;
+  }, [fabricStockData, order]);
+
+  // Total received fabric from dyeing orders
+  const totalDyeingReceived = useMemo(() => {
+    const fromStock = Number(fabricStockData?.total_fabric_received_from_dyeing ?? fabricStockData?.total_fabric_received ?? 0);
+    const fromOrders = dyeingOrders.reduce((sum, o) => sum + Number(o.total_received_quantity || 0), 0);
+    return Math.max(fromStock, fromOrders);
+  }, [fabricStockData, dyeingOrders]);
+
+  // In-hand available fabric to transfer to Cutting
+  // Formula: Max(0, Total Received from Dyeing - Active Rework Out at Mill - Already Transferred to Cutting)
+  const availableInHandForCutting = useMemo(() => {
+    return Math.max(0, Number((totalDyeingReceived - activeReworkOutAtMill - totalTransferredToCutting).toFixed(2)));
+  }, [totalDyeingReceived, activeReworkOutAtMill, totalTransferredToCutting]);
 
   // Transfer to Cutting Modal State
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -223,10 +555,7 @@ export default function DyeingOrderDetail() {
 
   const handleOpenTransferModal = (rec?: any) => {
     setTransferReceipt(rec || null);
-    const available = rec 
-      ? Number(rec.total_accepted_quantity || rec.total_received_quantity || 0)
-      : Number(totalFabricReceived || 0);
-    setTransferQty(available > 0 ? available : (totalFabricReceived || 150));
+    setTransferQty(availableInHandForCutting);
     setTransferredBy('Dyeing Stores / Inward');
     setTransferNotes(`Dyed fabric transferred to Stage 05 Cutting for ${order?.order_number || 'order'}`);
     setTransferError('');
@@ -240,6 +569,10 @@ export default function DyeingOrderDetail() {
       setTransferError('Transfer quantity must be greater than zero');
       return;
     }
+    if (transferQty > (availableInHandForCutting + 0.05)) {
+      setTransferError(`Cannot transfer ${transferQty} MTR. Only ${availableInHandForCutting} MTR is available in hand (Total Received: ${totalDyeingReceived} MTR, Active Rework at Mill: ${activeReworkOutAtMill} MTR, Already Transferred: ${totalTransferredToCutting} MTR).`);
+      return;
+    }
     setSavingTransfer(true);
     setTransferError('');
     try {
@@ -250,8 +583,13 @@ export default function DyeingOrderDetail() {
         transferred_by: transferredBy,
         notes: transferNotes,
       });
+      setFabricStockData((prev: any) => prev ? {
+        ...prev,
+        total_transferred_to_cutting: (Number(prev.total_transferred_to_cutting || 0) + transferQty),
+        available_to_transfer_to_cutting: Math.max(0, Number(prev.available_to_transfer_to_cutting || 0) - transferQty)
+      } : prev);
       setTransferModalOpen(false);
-      setSuccessToast('Dyed fabric transferred to Cutting! Navigating to Stage 05 Cutting...');
+      setSuccessToast(`Dyed fabric (${transferQty} MTR) transferred to Cutting! Navigating to Stage 05 Cutting...`);
       setTimeout(() => {
         navigate(`/production/cutting/${poId}`);
       }, 700);
@@ -288,14 +626,14 @@ export default function DyeingOrderDetail() {
       .filter((f: any) => {
         const name = (f.material_name || f.item_description || '').toUpperCase();
         // Exclude non-fabric categories & accessories
-        const isExcluded = 
-          name.includes('THREAD') || 
-          name.includes('TRIM') || 
-          name.includes('ZIPPER') || 
-          name.includes('BUTTON') || 
-          name.includes('LABEL') || 
-          name.includes('POLYBAG') || 
-          name.includes('DYE') || 
+        const isExcluded =
+          name.includes('THREAD') ||
+          name.includes('TRIM') ||
+          name.includes('ZIPPER') ||
+          name.includes('BUTTON') ||
+          name.includes('LABEL') ||
+          name.includes('POLYBAG') ||
+          name.includes('DYE') ||
           name.includes('CARTON');
         return !isExcluded;
       })
@@ -355,8 +693,8 @@ export default function DyeingOrderDetail() {
   const searchedFabrics = useMemo(() => {
     if (!fabricSearchQuery.trim()) return eligibleFabrics;
     const q = fabricSearchQuery.toLowerCase();
-    return eligibleFabrics.filter(f => 
-      f.material_name.toLowerCase().includes(q) || 
+    return eligibleFabrics.filter(f =>
+      f.material_name.toLowerCase().includes(q) ||
       (f.material_code || '').toLowerCase().includes(q)
     );
   }, [eligibleFabrics, fabricSearchQuery]);
@@ -409,9 +747,9 @@ export default function DyeingOrderDetail() {
 
     const avail = customAvail !== undefined
       ? customAvail
-      : (Number(stock?.balance_available_for_dyeing) > 0 
-          ? Number(stock.balance_available_for_dyeing) 
-          : 0);
+      : (Number(stock?.balance_available_for_dyeing) > 0
+        ? Number(stock.balance_available_for_dyeing)
+        : 0);
 
     let candidateList: { color_name: string; pantone_code: string; hex_code: string; garment_qty: number }[] = [];
 
@@ -430,7 +768,7 @@ export default function DyeingOrderDetail() {
           garment_qty: Number(c.total_garment_qty) || 0
         };
       });
-    } 
+    }
     // Fallback 2: Or fallback to ord.items (production_order_items)
     else if (ord?.items && Array.isArray(ord.items) && ord.items.length > 0) {
       const colorMap = new Map<string, number>();
@@ -521,8 +859,8 @@ export default function DyeingOrderDetail() {
       const stock = (stockRes as any)?.data || stockRes;
       setFabricStockData(stock);
 
-      const dyeList = Array.isArray((dyeListRes as any)?.data) 
-        ? (dyeListRes as any).data 
+      const dyeList = Array.isArray((dyeListRes as any)?.data)
+        ? (dyeListRes as any).data
         : (Array.isArray(dyeListRes) ? dyeListRes : []);
       setDyeingOrders(dyeList);
 
@@ -676,7 +1014,7 @@ export default function DyeingOrderDetail() {
         } else {
           const verified = VERIFIED_PANTONE_LIBRARY.find(
             p => p.code.toLowerCase() === clean.toLowerCase() ||
-                 p.code.toLowerCase().replace(/\s+/g, '') === clean.toLowerCase().replace(/\s+/g, '')
+              p.code.toLowerCase().replace(/\s+/g, '') === clean.toLowerCase().replace(/\s+/g, '')
           );
           if (verified) {
             if (!updated[index].color_name) updated[index].color_name = verified.name;
@@ -701,8 +1039,8 @@ export default function DyeingOrderDetail() {
         } else {
           const verified = VERIFIED_PANTONE_LIBRARY.find(
             p => p.name.toLowerCase() === clean.toLowerCase() ||
-                 p.name.toLowerCase().startsWith(clean.toLowerCase()) ||
-                 p.name.toLowerCase().includes(clean.toLowerCase())
+              p.name.toLowerCase().startsWith(clean.toLowerCase()) ||
+              p.name.toLowerCase().includes(clean.toLowerCase())
           );
           if (verified) {
             updated[index].pantone_code = verified.code;
@@ -870,6 +1208,8 @@ export default function DyeingOrderDetail() {
     setSelectedDyeingOrder(dOrder);
     setReceiptChallanNo(`INW-DYE-${Math.floor(1000 + Math.random() * 9000)}`);
     setReceiptDate(new Date().toISOString().split('T')[0]);
+    const defaultLot = dOrder.dyeing_order_no ? `LOT-${dOrder.dyeing_order_no.replace('DYE-', '')}` : '';
+    setReceiptLotNo(defaultLot);
     setPhotoUrl(null);
     setReceiveError('');
 
@@ -890,6 +1230,7 @@ export default function DyeingOrderDetail() {
         rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
+        lot_number: defaultLot,
         notes: ''
       };
     });
@@ -912,6 +1253,7 @@ export default function DyeingOrderDetail() {
         rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
+        lot_number: defaultLot,
         notes: ''
       }];
     }
@@ -956,12 +1298,12 @@ export default function DyeingOrderDetail() {
     const updated = [...receivingItems];
     const it = updated[index];
     const remaining = Math.max(0, Number((it.planned_quantity - it.already_received).toFixed(2)));
-    updated[index] = { 
-      ...it, 
-      received_quantity: remaining, 
-      accepted_quantity: remaining, 
-      rework_quantity: 0, 
-      shrinkage_loss_percent: 0 
+    updated[index] = {
+      ...it,
+      received_quantity: remaining,
+      accepted_quantity: remaining,
+      rework_quantity: 0,
+      shrinkage_loss_percent: 0
     };
     setReceivingItems(updated);
   };
@@ -969,23 +1311,23 @@ export default function DyeingOrderDetail() {
   const handleFillAllRemaining = () => {
     const updated = receivingItems.map(it => {
       const remaining = Math.max(0, Number((it.planned_quantity - it.already_received).toFixed(2)));
-      return { 
-        ...it, 
-        received_quantity: remaining, 
-        accepted_quantity: remaining, 
-        rework_quantity: 0, 
-        shrinkage_loss_percent: 0 
+      return {
+        ...it,
+        received_quantity: remaining,
+        accepted_quantity: remaining,
+        rework_quantity: 0,
+        shrinkage_loss_percent: 0
       };
     });
     setReceivingItems(updated);
   };
 
   const handleClearAllQuantities = () => {
-    const updated = receivingItems.map(it => ({ 
-      ...it, 
-      received_quantity: 0, 
-      accepted_quantity: 0, 
-      rework_quantity: 0 
+    const updated = receivingItems.map(it => ({
+      ...it,
+      received_quantity: 0,
+      accepted_quantity: 0,
+      rework_quantity: 0
     }));
     setReceivingItems(updated);
   };
@@ -1006,6 +1348,7 @@ export default function DyeingOrderDetail() {
         rework_reason: 'Shade Mismatch / Uneven Dyeing',
         shrinkage_loss_percent: 0,
         shade_match_status: 'Approved - Pantone Matched',
+        lot_number: receiptLotNo || '',
         notes: ''
       }
     ]);
@@ -1036,6 +1379,7 @@ export default function DyeingOrderDetail() {
         order_number: order?.order_number,
         receipt_date: receiptDate,
         delivery_challan_no: receiptChallanNo,
+        lot_number: receiptLotNo,
         received_by: receivedBy,
         photo_url: photoUrl,
         shade_condition: shadeCondition,
@@ -1046,7 +1390,8 @@ export default function DyeingOrderDetail() {
           planned_quantity: Number(it.planned_quantity || 0),
           received_quantity: Number(it.received_quantity || 0),
           shrinkage_loss_percent: Number(it.shrinkage_loss_percent || 0),
-          shade_match_status: it.shade_match_status,
+          shade_match_status: it.shade_match_status || 'Approved - Pantone Matched',
+          lot_number: it.lot_number || receiptLotNo,
           notes: it.notes
         }))
       };
@@ -1093,7 +1438,7 @@ export default function DyeingOrderDetail() {
       const matchMill = (d.dyeing_mill_name || d.supplier_name || '').toLowerCase().includes(q);
       const matchFab = d.fabric_name.toLowerCase().includes(q);
       const matchDC = (d.challan_no || '').toLowerCase().includes(q);
-      const matchColors = (d.items || []).some(it => 
+      const matchColors = (d.items || []).some(it =>
         it.color_name.toLowerCase().includes(q) || (it.pantone_code || '').toLowerCase().includes(q)
       );
       return matchNo || matchMill || matchFab || matchDC || matchColors;
@@ -1104,7 +1449,7 @@ export default function DyeingOrderDetail() {
   const filteredReceipts = useMemo(() => {
     if (!searchQuery.trim()) return allDyeingReceipts;
     const q = searchQuery.toLowerCase();
-    return allDyeingReceipts.filter(r => 
+    return allDyeingReceipts.filter(r =>
       (r.receipt_no || '').toLowerCase().includes(q) ||
       (r.dyeing_order_no || '').toLowerCase().includes(q) ||
       (r.dyeing_mill_name || '').toLowerCase().includes(q) ||
@@ -1214,8 +1559,8 @@ export default function DyeingOrderDetail() {
                 !hasEligibleAllocation
                   ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
                   : hasAnyOverAllocation
-                  ? "One or more colors exceed eligible remaining quantity."
-                  : undefined
+                    ? "One or more colors exceed eligible remaining quantity."
+                    : undefined
               }
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1231,8 +1576,8 @@ export default function DyeingOrderDetail() {
                 !hasEligibleAllocation
                   ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
                   : hasAnyOverAllocation
-                  ? "One or more colors exceed eligible remaining quantity."
-                  : undefined
+                    ? "One or more colors exceed eligible remaining quantity."
+                    : undefined
               }
               onClick={() => handleCreateDyeingOrder('Sent to Dyeing')}
               icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
@@ -1535,23 +1880,21 @@ export default function DyeingOrderDetail() {
                             value={row.planned_quantity}
                             onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
                             placeholder="0.00"
-                            className={`w-full text-xs rounded-lg py-1.5 px-2 text-right font-mono font-bold focus:ring-brand-500 focus:border-brand-500 ${
-                              row.remaining_eligible_quantity !== undefined && (Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
-                                ? 'border-red-500 bg-red-50 text-red-700'
-                                : row.remaining_eligible_quantity !== undefined && row.remaining_eligible_quantity <= 0.001
+                            className={`w-full text-xs rounded-lg py-1.5 px-2 text-right font-mono font-bold focus:ring-brand-500 focus:border-brand-500 ${row.remaining_eligible_quantity !== undefined && (Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
+                              ? 'border-red-500 bg-red-50 text-red-700'
+                              : row.remaining_eligible_quantity !== undefined && row.remaining_eligible_quantity <= 0.001
                                 ? 'border-amber-300 bg-amber-50/50 text-slate-500'
                                 : 'border-slate-300 text-slate-900 bg-white'
-                            }`}
+                              }`}
                             required
                           />
                           {row.remaining_eligible_quantity !== undefined && (
-                            <div className={`text-[10px] text-right font-semibold mt-0.5 ${
-                              (Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
-                                ? 'text-red-600 font-bold'
-                                : row.remaining_eligible_quantity <= 0.001
+                            <div className={`text-[10px] text-right font-semibold mt-0.5 ${(Number(row.planned_quantity) || 0) > row.remaining_eligible_quantity + 0.01
+                              ? 'text-red-600 font-bold'
+                              : row.remaining_eligible_quantity <= 0.001
                                 ? 'text-amber-700 font-bold'
                                 : 'text-slate-400'
-                            }`}>
+                              }`}>
                               {row.remaining_eligible_quantity <= 0.001
                                 ? '0.00 eligible'
                                 : `Max: ${row.remaining_eligible_quantity} ${uom}`}
@@ -1791,51 +2134,17 @@ export default function DyeingOrderDetail() {
           </div>
         </div>
 
-        
-        {/* Tab Navigation */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2">
+
+        {/* DYEING ORDERS SECTION HEADER & TOOLBAR */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('orders')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'orders'
-                  ? 'bg-brand-600 text-white shadow-2xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Droplets className="w-3.5 h-3.5" />
-              <span>Dyeing Orders</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 ml-1">
-                {dyeingOrders.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'history'
-                  ? 'bg-brand-600 text-white shadow-2xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Dyed Fabric Inward Receipts</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 ml-1">
-                {allDyeingReceipts.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('rework')}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                activeTab === 'rework'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Fabric Rework & Re-dyeing</span>
-            </button>
+            <Droplets className="w-4 h-4 text-brand-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              Dyeing Orders
+            </h3>
+            <span className="font-mono text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+              {dyeingOrders.length}
+            </span>
           </div>
 
           {/* Search and Filters */}
@@ -1851,626 +2160,278 @@ export default function DyeingOrderDetail() {
               />
             </div>
 
-            {activeTab === 'orders' && (
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                className="px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Sent to Dyeing">Sent to Dyeing</option>
-                <option value="Partially Received">Partially Received</option>
-                <option value="Received">Received</option>
-              </select>
-            )}
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="px-2 py-1 text-xs bg-white border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500 shadow-2xs"
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="Sent to Dyeing">Sent to Dyeing</option>
+              <option value="Partially Received">Partially Received</option>
+              <option value="Received">Received</option>
+            </select>
           </div>
         </div>
 
-        {/* TAB 1: DYEING ORDERS TABLE */}
-        {activeTab === 'orders' && (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+        {/* TABLE 1: DYEING ORDERS TABLE (FIXED LAYOUT WITH REDUCED COLUMN GAPS) */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs">
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse table-fixed">
+              <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                <tr>
+                  <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                  <th className="py-2.5 px-2.5 w-[150px]">Mill</th>
+                  <th className="py-2.5 px-2.5 w-[160px]">Material</th>
+                  <th className="py-2.5 px-2 text-right w-[95px]">Qty</th>
+                  <th className="py-2.5 px-2.5 w-[140px]">Color</th>
+                  <th className="py-2.5 px-2 w-[95px]">Out Date</th>
+                  <th className="py-2.5 px-2 w-[95px]">Exp Date</th>
+                  <th className="py-2.5 px-2 text-center w-[115px]">Status</th>
+                  <th className="py-2.5 px-2 text-center w-[65px]">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredDyeingOrders.length === 0 ? (
                   <tr>
-                    <th className="py-3 px-3 w-10 text-center">#</th>
-                    <th className="py-3 px-3 min-w-[130px]">Dyeing Order #</th>
-                    <th className="py-3 px-3 min-w-[180px]">Dyeing Processor / Mill</th>
-                    <th className="py-3 px-3 min-w-[170px]">Fabric Material</th>
-                    <th className="py-3 px-3 min-w-[140px]">Process Type</th>
-                    <th className="py-3 px-3 text-right min-w-[110px]">Outward Qty</th>
-                    <th className="py-3 px-3 min-w-[220px]">Pantone / Color Information</th>
-                    <th className="py-3 px-3 min-w-[110px]">Outward Date</th>
-                    <th className="py-3 px-3 min-w-[110px]">Expected Date</th>
-                    <th className="py-3 px-3 text-center min-w-[120px]">Status</th>
-                    <th className="py-3 px-3 text-right min-w-[130px]">Actions</th>
+                    <td colSpan={9} className="py-10 text-center text-slate-400">
+                      <Droplets className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="font-semibold text-xs text-slate-700">No Dyeing Orders Found</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                        {searchQuery || statusFilter !== 'ALL'
+                          ? 'No dyeing orders match your search or filter. Try resetting filters.'
+                          : 'Create a dyeing order to split inwarded fabric by color and Pantone code for processing.'}
+                      </p>
+                      {!searchQuery && statusFilter === 'ALL' && (
+                        <Button
+                          onClick={handleOpenCreateModal}
+                          className="mt-3 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1" />
+                          <span>Create First Dyeing Order</span>
+                        </Button>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredDyeingOrders.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="py-12 text-center text-slate-400">
-                        <Droplets className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <p className="font-semibold text-xs text-slate-700">No Dyeing Orders Found</p>
-                        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                          {searchQuery || statusFilter !== 'ALL'
-                            ? 'No dyeing orders match your search or filter. Try resetting filters.'
-                            : 'Create a dyeing order to split inwarded fabric by color and Pantone code for processing.'}
-                        </p>
-                        {!searchQuery && statusFilter === 'ALL' && (
-                          <Button
-                            onClick={handleOpenCreateModal}
-                            className="mt-3 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold"
-                          >
-                            <Plus className="w-3.5 h-3.5 mr-1" />
-                            <span>Create First Dyeing Order</span>
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredDyeingOrders.map((dOrder, idx) => {
-                      const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
-                      const totalRec = Number(dOrder.total_received_quantity || 0);
-                      const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
-                      const isExpanded = expandedOrderIds.has(dOrder.id);
+                ) : (
+                  filteredDyeingOrders.map((dOrder, idx) => {
+                    const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
+                    const totalRec = Number(dOrder.total_received_quantity || 0);
+                    const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
+                    const isExpanded = expandedOrderIds.has(dOrder.id);
 
-                      return (
-                        <React.Fragment key={dOrder.id}>
-                          <tr className={`hover:bg-slate-50/80 transition ${isExpanded ? 'bg-slate-50/50' : ''}`}>
-                            <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
-                              {idx + 1}
-                            </td>
+                    return (
+                      <React.Fragment key={dOrder.id}>
+                        <tr className={`hover:bg-slate-50/80 transition ${isExpanded ? 'bg-slate-50/50' : ''}`}>
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
 
-                            <td className="py-3 px-3">
-                              <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                                {dOrder.dyeing_order_no}
-                              </span>
-                              {dOrder.challan_no && (
-                                <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
-                                  DC: {dOrder.challan_no}
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <span className="font-semibold text-slate-800 block text-xs">
-                                {dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <span className="font-medium text-slate-800 block text-xs">
-                                {dOrder.fabric_name}
-                              </span>
-                              {dOrder.fabric_code && (
-                                <span className="font-mono text-[10px] text-slate-400 block">
-                                  {dOrder.fabric_code}
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <span className="text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                                {dOrder.process_type || 'Fabric Dyeing'}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3 text-right">
-                              <span className="font-mono font-bold text-slate-900 text-xs">
-                                {fmt(totalPlanned, 1)} {dOrder.uom}
-                              </span>
-                            </td>
-
-                            <td className="py-3 px-3">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {(dOrder.items || []).slice(0, 3).map((it, cIdx) => (
-                                  <span
-                                    key={cIdx}
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-slate-100 border border-slate-200"
-                                    title={`${it.color_name}: ${it.planned_quantity} ${dOrder.uom}${it.pantone_code ? ` (Pantone: ${it.pantone_code})` : ''}`}
-                                  >
-                                    <span
-                                      className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
-                                      style={{ backgroundColor: it.hex_code || '#3b82f6' }}
-                                    />
-                                    <span className="font-medium text-slate-700">{it.color_name}</span>
-                                    <span className="font-mono text-slate-500 font-semibold">{fmt(it.planned_quantity, 0)}</span>
-                                  </span>
-                                ))}
-                                {(dOrder.items || []).length > 3 && (
-                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                    +{(dOrder.items || []).length - 3} more
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-
-                            <td className="py-3 px-3 text-slate-700 font-medium">
-                              {dOrder.order_date}
-                            </td>
-
-                            <td className="py-3 px-3 text-slate-600">
-                              {dOrder.expected_delivery_date || '—'}
-                            </td>
-
-                            <td className="py-3 px-3 text-center">
-                              <StatusBadge status={dOrder.status} />
-                              <span className="block text-[10px] font-mono text-slate-400 mt-0.5">
-                                Recv: {fmt(totalRec, 1)} / {fmt(totalPlanned, 1)}
-                              </span>
-                            </td>
-
-                             <td className="py-3 px-3 text-right">
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenPrintModal('DYEING_OUTWARD', dOrder)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition shadow-2xs"
-                                  title="Print / Download Dyeing Job Work Order & Outward Challan"
-                                >
-                                  <Printer className="w-3 h-3 text-brand-600" />
-                                  <span>Challan</span>
-                                </button>
-                                {!isFullyReceived ? (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => handleOpenReceive(dOrder)}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-1 px-2.5 shadow-2xs"
-                                  >
-                                    <CheckCheck className="w-3 h-3 mr-1" />
-                                    <span>Receive</span>
-                                  </Button>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                    <span>Completed</span>
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExpandOrder(dOrder.id)}
-                                  className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
-                                  title={isExpanded ? 'Hide color details' : 'View color details'}
-                                >
-                                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* Expandable Color Breakdown Details */}
-                          {isExpanded && (
-                            <tr className="bg-slate-50/60">
-                              <td colSpan={11} className="py-3 px-4 border-t border-b border-slate-200/80">
-                                <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                                    <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                                      <Palette className="w-3.5 h-3.5 text-brand-600" />
-                                      Color Breakdown for {dOrder.dyeing_order_no}
-                                    </h4>
-                                    <span className="text-xs text-slate-500 font-medium">
-                                      Total Outward: <strong className="text-slate-900 font-mono">{fmt(totalPlanned, 1)} {dOrder.uom}</strong>
-                                    </span>
-                                  </div>
-
-                                  <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-xs border border-slate-200 rounded-lg">
-                                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
-                                        <tr>
-                                          <th className="py-2 px-3">Color & Pantone Standard</th>
-                                          <th className="py-2 px-3 text-right">Planned Outward</th>
-                                          <th className="py-2 px-3 text-right">Received Inward</th>
-                                          <th className="py-2 px-3 text-right">Shrinkage %</th>
-                                          <th className="py-2 px-3">Shade Match Status</th>
-                                          <th className="py-2 px-3">Notes</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {(dOrder.items || []).map((it, idx2) => (
-                                          <tr key={it.id || idx2} className="hover:bg-slate-50/50">
-                                            <td className="py-2 px-3">
-                                              <div className="flex items-center gap-2">
-                                                <span
-                                                  className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0"
-                                                  style={{ backgroundColor: it.hex_code || '#3b82f6' }}
-                                                />
-                                                <span className="font-bold text-slate-800">{it.color_name}</span>
-                                                {it.pantone_code && (
-                                                  <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
-                                                    {it.pantone_code}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </td>
-                                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
-                                              {fmt(it.planned_quantity, 1)} {dOrder.uom}
-                                            </td>
-                                            <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-700">
-                                              {fmt(Number(it.received_quantity || 0), 1)} {dOrder.uom}
-                                            </td>
-                                            <td className="py-2 px-3 text-right font-mono text-slate-600">
-                                              {it.shrinkage_loss_percent ? `${fmt(it.shrinkage_loss_percent, 1)}%` : '0%'}
-                                            </td>
-                                            <td className="py-2 px-3">
-                                              <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                                                it.shade_match_status?.includes('Approved') || it.shade_match_status?.includes('Matched')
-                                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                              }`}>
-                                                {it.shade_match_status || 'Pending Verification'}
-                                              </span>
-                                            </td>
-                                            <td className="py-2 px-3 text-slate-500 text-[11px]">
-                                              {it.notes || '—'}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Cards for Dyeing Orders */}
-            <div className="md:hidden space-y-3 p-3">
-              {filteredDyeingOrders.length === 0 ? (
-                <div className="py-8 text-center text-slate-400">
-                  <Droplets className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="font-semibold text-xs text-slate-700">No Dyeing Orders Found</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {searchQuery || statusFilter !== 'ALL'
-                      ? 'No dyeing orders match your filter.'
-                      : 'Create a dyeing order to begin processing.'}
-                  </p>
-                </div>
-              ) : (
-                filteredDyeingOrders.map((dOrder, idx) => {
-                  const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
-                  const totalRec = Number(dOrder.total_received_quantity || 0);
-                  const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
-                  const isExpanded = expandedOrderIds.has(dOrder.id);
-
-                  return (
-                    <div
-                      key={`mob_dye_${dOrder.id}`}
-                      className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
-                              {dOrder.dyeing_order_no}
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={dOrder.dyeing_mill_name || dOrder.supplier_name}>
+                              {dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}
                             </span>
-                            <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
-                            {dOrder.challan_no && (
-                              <span className="font-mono text-[10px] text-slate-500">
-                                DC: {dOrder.challan_no}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-medium text-slate-800 block text-xs truncate" title={dOrder.fabric_name}>
+                              {dOrder.fabric_name}
+                            </span>
+                            {dOrder.fabric_code && (
+                              <span className="font-mono text-[10px] text-slate-400 block truncate">
+                                {dOrder.fabric_code}
                               </span>
                             )}
-                          </div>
-                          <h4 className="font-semibold text-slate-900 text-xs mt-1">
-                            {dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}
-                          </h4>
-                        </div>
-                        <StatusBadge
-                          status={
-                            isFullyReceived
-                              ? 'Received'
-                              : totalRec > 0
-                              ? 'Partially Received'
-                              : 'Sent to Dyeing'
-                          }
-                        />
-                      </div>
+                          </td>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                            Fabric Material
-                          </span>
-                          <span className="font-medium text-slate-800 text-xs mt-0.5 block truncate">
-                            {dOrder.fabric_name}
-                          </span>
-                          <span className="text-[10px] text-slate-500">{dOrder.process_type || 'Fabric Dyeing'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                            Quantities
-                          </span>
-                          <div className="text-slate-900 font-mono font-bold text-xs mt-0.5">
-                            Sent: {fmt(totalPlanned, 1)} {dOrder.uom}
-                          </div>
-                          <div className="text-emerald-700 font-mono font-semibold text-[11px]">
-                            Recv: {fmt(totalRec, 1)} {dOrder.uom}
-                          </div>
-                        </div>
-                        <div className="col-span-2 pt-1 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-600">
-                          <span>Outward: {dOrder.order_date || '—'}</span>
-                          <span>Expected: <strong>{dOrder.expected_delivery_date || '—'}</strong></span>
-                        </div>
-                      </div>
-
-                      {/* Color badges */}
-                      {dOrder.items && dOrder.items.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          {dOrder.items.map((it, cIdx) => (
-                            <span
-                              key={cIdx}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-slate-100 border border-slate-200"
-                            >
-                              <span
-                                className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
-                                style={{ backgroundColor: it.hex_code || '#3b82f6' }}
-                              />
-                              <span className="font-medium text-slate-700">{it.color_name}</span>
-                              {it.pantone_code && (
-                                <span className="font-mono text-[9px] text-slate-400">({it.pantone_code})</span>
-                              )}
-                              <span className="font-mono font-bold text-slate-800 ml-0.5">{it.planned_quantity}</span>
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap">
+                            <span className="font-mono font-bold text-slate-900 text-xs">
+                              {fmt(totalPlanned, 1)} {dOrder.uom}
                             </span>
-                          ))}
-                        </div>
-                      )}
+                          </td>
 
-                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                        {!isFullyReceived && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenReceive(dOrder)}
-                            className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>Receive Dyed Fabric</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPrintModal('DYEING_OUTWARD', dOrder)}
-                          className="p-2 text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition"
-                          title="Print Dyeing Job Work Order & Outward Challan"
-                        >
-                          <Printer className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleExpandOrder(dOrder.id)}
-                          className="p-2 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-                          title={isExpanded ? 'Hide details' : 'Show details'}
-                        >
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                      </div>
-
-                      {/* Expandable color breakdown on mobile */}
-                      {isExpanded && (
-                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2 mt-2">
-                          <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1">
-                            <Palette className="w-3.5 h-3.5 text-brand-600" />
-                            Color Breakdown ({dOrder.items?.length || 0})
-                          </h5>
-                          <div className="space-y-1.5 divide-y divide-slate-200">
-                            {(dOrder.items || []).map((it, idx2) => (
-                              <div key={it.id || idx2} className="pt-1.5 flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1.5">
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {(dOrder.items || []).slice(0, 3).map((it, cIdx) => (
+                                <span
+                                  key={cIdx}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
+                                  title={`${it.color_name || ''} ${it.pantone_code ? `(${it.pantone_code})` : ''}`}
+                                >
                                   <span
                                     className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
                                     style={{ backgroundColor: it.hex_code || '#3b82f6' }}
                                   />
-                                  <span className="font-semibold text-slate-800">{it.color_name}</span>
+                                  {it.pantone_code && (
+                                    <span className="font-mono text-[10px] text-slate-600 hidden lg:inline truncate max-w-[80px]">
+                                      {it.pantone_code}
+                                    </span>
+                                  )}
+                                </span>
+                              ))}
+                              {(dOrder.items || []).length > 3 && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  +{(dOrder.items || []).length - 3}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-slate-700 font-medium align-middle whitespace-nowrap">
+                            {dOrder.order_date}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-slate-600 align-middle whitespace-nowrap">
+                            {dOrder.expected_delivery_date || '—'}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
+                            <StatusBadge status={dOrder.status} />
+                            <span className="block text-[10px] font-mono text-slate-400 mt-0.5">
+                              Recv: {fmt(totalRec, 1)} / {fmt(totalPlanned, 1)}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleDyeingMenu(e, dOrder)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                activeDyeingMenu?.orderId === dOrder.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Action Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Expandable Color Breakdown Details */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50/60">
+                            <td colSpan={9} className="py-3 px-4 border-t border-b border-slate-200/80">
+                              <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                    <Palette className="w-3.5 h-3.5 text-brand-600" />
+                                    Color Breakdown for {dOrder.dyeing_order_no}
+                                  </h4>
+                                  <span className="text-xs text-slate-500 font-medium">
+                                    Total Outward: <strong className="text-slate-900 font-mono">{fmt(totalPlanned, 1)} {dOrder.uom}</strong>
+                                  </span>
                                 </div>
-                                <div className="text-right">
-                                  <span className="font-mono font-bold text-slate-900">{it.planned_quantity} {dOrder.uom}</span>
-                                  <span className="text-[10px] text-emerald-700 block">Recv: {it.received_quantity || 0}</span>
+
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-xs border border-slate-200 rounded-lg">
+                                    <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
+                                      <tr>
+                                        <th className="py-2 px-3">Color & Pantone Standard</th>
+                                        <th className="py-2 px-3 text-right">Planned Outward</th>
+                                        <th className="py-2 px-3 text-right">Received Inward</th>
+                                        <th className="py-2 px-3 text-right">Shrinkage %</th>
+                                        <th className="py-2 px-3">Shade Match Status</th>
+                                        <th className="py-2 px-3">Notes</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {(dOrder.items || []).map((it) => (
+                                        <tr key={it.id} className="hover:bg-slate-50/50">
+                                          <td className="py-2 px-3">
+                                            <div className="flex items-center gap-2">
+                                              <span
+                                                className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
+                                                style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                                              />
+                                              <span className="font-semibold text-slate-800">{it.color_name}</span>
+                                              {it.pantone_code && (
+                                                <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                                                  {it.pantone_code}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
+                                            {fmt(it.planned_quantity, 1)} {dOrder.uom}
+                                          </td>
+                                          <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-700">
+                                            {fmt(Number(it.received_quantity || 0), 1)} {dOrder.uom}
+                                          </td>
+                                          <td className="py-2 px-3 text-right font-mono text-slate-600">
+                                            {it.shrinkage_loss_percent ? `${fmt(it.shrinkage_loss_percent, 1)}%` : '0%'}
+                                          </td>
+                                          <td className="py-2 px-3">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${it.shade_match_status?.includes('Approved') || it.shade_match_status?.includes('Matched')
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                              }`}>
+                                              {it.shade_match_status || 'Pending Verification'}
+                                            </span>
+                                          </td>
+                                          <td className="py-2 px-3 text-slate-500 text-[11px]">
+                                            {it.notes || '—'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
 
-        {/* TAB 2: DYED FABRIC INWARD RECEIPTS TABLE */}
-        {activeTab === 'history' && (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-3 w-10 text-center">#</th>
-                    <th className="py-3 px-3 min-w-[140px]">Receipt Number</th>
-                    <th className="py-3 px-3 min-w-[130px]">Related Dyeing Order</th>
-                    <th className="py-3 px-3 min-w-[170px]">Fabric Material</th>
-                    <th className="py-3 px-3 text-right min-w-[120px]">Received Quantity</th>
-                    <th className="py-3 px-3 min-w-[120px]">Receipt Date</th>
-                    <th className="py-3 px-3 min-w-[180px]">Status / Shade Condition</th>
-                    <th className="py-3 px-3 min-w-[120px]">Received By</th>
-                    <th className="py-3 px-3 text-right min-w-[120px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredReceipts.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400">
-                        <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <p className="font-semibold text-xs text-slate-700">No Inward Receipts Recorded</p>
-                        <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                          Once processed fabric is delivered by dyeing mills, click "Receive" on any active dyeing order to log received yardage and photo proof.
-                        </p>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredReceipts.map((rec, idx) => (
-                      <tr key={rec.id || idx} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3 px-3 text-center font-mono text-slate-400 text-[11px]">
-                          {idx + 1}
-                        </td>
+          {/* Mobile Cards for Dyeing Orders */}
+          <div className="md:hidden space-y-3 p-3">
+            {filteredDyeingOrders.length === 0 ? (
+              <div className="py-8 text-center text-slate-400">
+                <Droplets className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="font-semibold text-xs text-slate-700">No Dyeing Orders Found</p>
+              </div>
+            ) : (
+              filteredDyeingOrders.map((dOrder, idx) => {
+                const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
+                const totalRec = Number(dOrder.total_received_quantity || 0);
+                const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
 
-                        <td className="py-3 px-3">
-                          <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            {rec.receipt_no}
-                          </span>
-                          {rec.delivery_challan_no && (
-                            <span className="block font-mono text-[10px] text-slate-400 mt-0.5">
-                              DC: {rec.delivery_challan_no}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <span className="font-mono text-xs font-semibold text-slate-700">
-                            {rec.dyeing_order_no}
-                          </span>
-                          {rec.dyeing_mill_name && (
-                            <span className="block text-[11px] text-slate-500 mt-0.5">
-                              {rec.dyeing_mill_name}
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <span className="font-medium text-slate-800 block text-xs">
-                            {rec.fabric_name || 'Fabric Material'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-3 text-right">
-                          <span className="font-mono font-bold text-emerald-700 text-xs">
-                            {fmt(rec.total_received_quantity, 1)} {rec.uom || 'MTR'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-3 text-slate-700 font-medium">
-                          {rec.receipt_date}
-                        </td>
-
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">
-                            {rec.shade_condition || 'Approved - Pantone Matched'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-3 text-slate-600 text-xs">
-                          {rec.received_by || 'Stores & QC Inward'}
-                        </td>
-
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {Math.max(0, Number(rec.total_received_quantity || 0) - Number(rec.total_accepted_quantity || 0) - Number(rec.total_rework_quantity || 0)) > 0 ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedReceiptForInspect(rec);
-                                  setShowInspectModal(true);
-                                }}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition shadow-2xs"
-                                title="Perform Quality Inspection on Received Fabric"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                                <span>Inspect</span>
-                              </button>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                <span>Inspected</span>
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenTransferModal(rec)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition shadow-2xs"
-                              title="Handover & Transfer Dyed Fabric to Stage 05 Cutting"
-                            >
-                              <Scissors className="w-3.5 h-3.5" />
-                              <span>To Cutting</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition shadow-2xs"
-                              title="Print Inward Receipt & Inspection Report"
-                            >
-                              <Printer className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Receipt</span>
-                            </button>
-                            {rec.photo_url ? (
-                              <button
-                                type="button"
-                                onClick={() => setZoomedPhoto(rec.photo_url)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition shadow-2xs"
-                                title="Click to view full photo proof"
-                              >
-                                <Camera className="w-3.5 h-3.5 text-brand-600" />
-                                <span>Photo</span>
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-400 italic">No Photo</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Cards for Inward Receipts */}
-            <div className="md:hidden space-y-3 p-3">
-              {filteredReceipts.length === 0 ? (
-                <div className="py-8 text-center text-slate-400">
-                  <ShieldCheck className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="font-semibold text-xs text-slate-700">No Inward Receipts Recorded</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Click "Receive" on any active dyeing order to log received yardage and photo proof.
-                  </p>
-                </div>
-              ) : (
-                filteredReceipts.map((rec, idx) => (
+                return (
                   <div
-                    key={`mob_rec_${rec.id || idx}`}
-                    className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2.5"
+                    key={`mob_dye_${dOrder.id}`}
+                    className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-3"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            {rec.receipt_no}
+                          <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                            {dOrder.dyeing_order_no}
                           </span>
                           <span className="text-[10px] text-slate-400 font-mono">#{idx + 1}</span>
-                          {rec.delivery_challan_no && (
+                          {dOrder.challan_no && (
                             <span className="font-mono text-[10px] text-slate-500">
-                              DC: {rec.delivery_challan_no}
+                              DC: {dOrder.challan_no}
                             </span>
                           )}
                         </div>
-                        <span className="font-mono text-xs font-semibold text-slate-700 block mt-1">
-                          {rec.dyeing_order_no}
-                          {rec.dyeing_mill_name && (
-                            <span className="text-slate-500 font-sans font-normal ml-1">
-                              • {rec.dyeing_mill_name}
-                            </span>
-                          )}
-                        </span>
+                        <h4 className="font-semibold text-slate-900 text-xs mt-1">
+                          {dOrder.dyeing_mill_name || dOrder.supplier_name || 'Processing Mill'}
+                        </h4>
                       </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 shrink-0">
-                        {rec.shade_condition || 'Approved'}
-                      </span>
+                      <StatusBadge
+                        status={
+                          isFullyReceived
+                            ? 'Received'
+                            : totalRec > 0
+                              ? 'Partially Received'
+                              : 'Sent to Dyeing'
+                        }
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
@@ -2479,88 +2440,279 @@ export default function DyeingOrderDetail() {
                           Fabric Material
                         </span>
                         <span className="font-medium text-slate-800 text-xs mt-0.5 block truncate">
-                          {rec.fabric_name || 'Fabric Material'}
+                          {dOrder.fabric_name}
                         </span>
-                        <span className="text-[10px] text-slate-500">By: {rec.received_by || 'Stores & QC'}</span>
                       </div>
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Received Qty
+                          Quantities
                         </span>
-                        <span className="font-mono font-bold text-emerald-700 text-sm mt-0.5 block">
-                          {fmt(rec.total_received_quantity, 1)} {rec.uom || 'MTR'}
-                        </span>
-                        <span className="text-[10px] text-slate-500">{rec.receipt_date}</span>
+                        <div className="text-slate-900 font-mono font-bold text-xs mt-0.5">
+                          Sent: {fmt(totalPlanned, 1)} {dOrder.uom}
+                        </div>
+                        <div className="text-emerald-700 font-mono font-semibold text-[11px]">
+                          Recv: {fmt(totalRec, 1)} {dOrder.uom}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
-                      {Math.max(0, Number(rec.total_received_quantity || 0) - Number(rec.total_accepted_quantity || 0) - Number(rec.total_rework_quantity || 0)) > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedReceiptForInspect(rec);
-                            setShowInspectModal(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 rounded-lg transition shadow-2xs"
-                          title="Perform Quality Inspection on Received Fabric"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          <span>Inspect Fabric</span>
-                        </button>
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                      {!isFullyReceived ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReceive(dOrder)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5" />
+                            <span>Receive</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPrintModal('DYEING_OUTWARD', dOrder)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Order</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandOrder(dOrder.id)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
+                        </>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Inspected</span>
-                        </span>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReworkModal(dOrder)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg shadow-2xs transition"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Rework</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTransferModal()}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs transition"
+                          >
+                            <ArrowRight className="w-3 h-3" />
+                            <span>Transfer</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPrintModal('DYEING_OUTWARD', dOrder)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
+                          >
+                            <Printer className="w-3 h-3" />
+                            <span>Order</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandOrder(dOrder.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View</span>
+                          </button>
+                        </>
                       )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* TABLE 2: FABRIC REWORK & RE-DYEING DETAILS TABLE (DOWN NEXT TO DYEING ORDERS) */}
+        <div className="space-y-3 pt-6 border-t border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-amber-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Fabric Rework & Re-dyeing Details
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                {reworkRecords.length} {reworkRecords.length === 1 ? 'record' : 'records'}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[140px]">Rework # / DC</th>
+                    <th className="py-2.5 px-2.5 w-[150px]">Mill / Vendor</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Material & Color</th>
+                    <th className="py-2.5 px-2 text-right w-[95px]">Rework Qty</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Defect Reason</th>
+                    <th className="py-2.5 px-2 text-center w-[125px]">Status</th>
+                    <th className="py-2.5 px-2 text-center w-[65px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {reworkRecords.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        <RotateCcw className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                        <p className="font-semibold text-xs text-slate-700">No Rework Quantities Recorded</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          When a received fabric has shade or quality defects, click "Rework" from the 3-dot action menu on the dyeing order.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    reworkRecords.map((rec, idx) => {
+                      return (
+                        <tr key={rec.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono font-bold text-xs text-brand-700 block truncate" title={rec.rework_order_no}>
+                              {rec.rework_order_no}
+                            </span>
+                            {rec.dc_challan_no && (
+                              <span className="font-mono text-[10px] text-slate-500 block truncate">
+                                DC: {rec.dc_challan_no}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-medium text-slate-800 block text-xs truncate" title={rec.vendor_name || 'Processing Mill'}>
+                              {rec.vendor_name || 'Processing Mill'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={rec.product_name || rec.display_product_name}>
+                              {rec.product_name || rec.display_product_name || 'Fabric Material'}
+                            </span>
+                            {rec.color && (
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                Color: {rec.color}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap">
+                            <span className="font-mono font-bold text-amber-700 text-xs">
+                              {fmt(rec.rework_quantity, 1)} {rec.uom || 'MTR'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="text-slate-700 text-xs block truncate" title={rec.rework_reason || 'Defect Correction'}>
+                              {rec.rework_reason || 'Defect Correction'}
+                            </span>
+                            {rec.rework_remarks && (
+                              <span className="text-[10px] text-slate-400 block truncate" title={rec.rework_remarks}>
+                                {rec.rework_remarks}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                              rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : rec.status === 'Sent for Rework'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : rec.status === 'Rework Received'
+                                ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {rec.status || 'Pending Rework'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleReworkMenu(e, rec)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                                activeReworkMenu?.recordId === rec.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Rework Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards for Rework Records */}
+            <div className="md:hidden space-y-3 p-3">
+              {reworkRecords.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No rework records registered.
+                </div>
+              ) : (
+                reworkRecords.map((rec, idx) => (
+                  <div key={`mob_rwk_${rec.id || idx}`} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-mono text-xs font-bold text-brand-700">{rec.rework_order_no}</div>
+                        <div className="text-xs text-slate-800 font-semibold mt-0.5">{rec.vendor_name || 'Processing Mill'}</div>
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        {rec.status}
+                      </span>
+                    </div>
+
+                    <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between">
+                      <span>{rec.product_name} ({rec.color || 'All Colors'})</span>
+                      <span className="font-mono font-bold text-slate-900">{fmt(rec.rework_quantity, 1)} {rec.uom || 'MTR'}</span>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
                       <button
                         type="button"
-                        onClick={() => handleOpenTransferModal(rec)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition shadow-2xs"
-                        title="Handover & Transfer Dyed Fabric to Stage 05 Cutting"
+                        onClick={() => handleOpenReceiveReworkModal(rec)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs"
                       >
-                        <Scissors className="w-3.5 h-3.5" />
-                        <span>To Cutting</span>
+                        <CheckCheck className="w-3 h-3" />
+                        <span>Receive</span>
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleOpenPrintModal('DYEING_INWARD', rec)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition shadow-2xs"
-                        title="Print Inward Receipt & Inspection Report"
+                        onClick={() => handleOpenTransferModal()}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs"
                       >
-                        <Printer className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Print Receipt</span>
+                        <ArrowRight className="w-3 h-3" />
+                        <span>Transfer</span>
                       </button>
-                      {rec.photo_url && (
-                        <button
-                          type="button"
-                          onClick={() => setZoomedPhoto(rec.photo_url)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg transition"
-                        >
-                          <Camera className="w-3.5 h-3.5 text-brand-600" />
-                          <span>View Photo</span>
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenViewReworkModal(rec)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs"
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>View</span>
+                      </button>
                     </div>
                   </div>
                 ))
               )}
             </div>
           </div>
-        )}
-
-        {/* TAB 3: FABRIC REWORK & RE-DYEING */}
-        {activeTab === 'rework' && (
-          <StageReworkSection
-            productionOrderId={Number(order?.id || id)}
-            stageId={4}
-            stageCode="DYE"
-            stageName="Dyeing"
-            uom={dyeingOrders[0]?.uom || 'MTR'}
-            onReload={loadData}
-          />
-        )}
+        </div>
       </div>
 
 
@@ -2581,13 +2733,13 @@ export default function DyeingOrderDetail() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <FormField label="Inward Delivery Challan (DC No)" required>
               <input
                 type="text"
                 value={receiptChallanNo}
                 onChange={e => setReceiptChallanNo(e.target.value)}
-                className="w-full text-xs font-mono rounded-xl border-slate-300 py-2 px-3"
+                className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
                 placeholder="e.g. INW-DYE-402"
                 required
               />
@@ -2598,8 +2750,18 @@ export default function DyeingOrderDetail() {
                 type="date"
                 value={receiptDate}
                 onChange={e => setReceiptDate(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
+                className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
                 required
+              />
+            </FormField>
+
+            <FormField label="Lot #">
+              <input
+                type="text"
+                value={receiptLotNo}
+                onChange={e => setReceiptLotNo(e.target.value)}
+                className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                placeholder="e.g. LOT-492"
               />
             </FormField>
 
@@ -2608,7 +2770,8 @@ export default function DyeingOrderDetail() {
                 type="text"
                 value={receivedBy}
                 onChange={e => setReceivedBy(e.target.value)}
-                className="w-full text-xs rounded-xl border-slate-300 py-2 px-3"
+                className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                placeholder="e.g. Quality Inspector"
               />
             </FormField>
           </div>
@@ -2746,19 +2909,16 @@ export default function DyeingOrderDetail() {
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                          Pantone Shade Check
+                        <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                          Lot # / Roll Batch #
                         </label>
-                        <select
-                          value={it.shade_match_status}
-                          onChange={e => handleReceiveItemChange(idx, 'shade_match_status', e.target.value)}
-                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800 bg-white"
-                        >
-                          <option value="Approved - Pantone Matched">Approved - Pantone Matched</option>
-                          <option value="Approved with Minor Variation">Approved with Minor Variation</option>
-                          <option value="Shade Variation (Pending Approval)">Shade Variation</option>
-                          <option value="Rejected - Off Shade">Rejected - Off Shade</option>
-                        </select>
+                        <input
+                          type="text"
+                          value={it.lot_number || receiptLotNo || ''}
+                          onChange={e => handleReceiveItemChange(idx, 'lot_number', e.target.value)}
+                          className="w-full text-xs font-mono rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                          placeholder="e.g. LOT-492 / Roll 1"
+                        />
                       </div>
                     </div>
                   </div>
@@ -2776,7 +2936,8 @@ export default function DyeingOrderDetail() {
             stageName="Dyeing Fabric Inward (Stage 04)"
             orderNumber={order?.order_number || selectedDyeingOrder?.dyeing_order_no}
             error={receiveError && !photoUrl ? 'Real-time camera photograph with live GPS coordinates is mandatory before receiving fabric.' : undefined}
-            helperText="Photograph of received dyed fabric roll swatches against Pantone standards must be captured live via camera. File upload from device storage is disabled."
+            placeholderText="Tap here to open camera"
+            helperText="Photograph of received dyed fabric roll swatches against Pantone standards must be captured live via camera."
             buttonText="Take Real-Time Fabric Photo"
           />
 
@@ -2835,7 +2996,7 @@ export default function DyeingOrderDetail() {
 
       {/* PHOTO ZOOM MODAL */}
       {zoomedPhoto && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-xs"
           onClick={() => setZoomedPhoto(null)}
         >
@@ -2883,6 +3044,678 @@ export default function DyeingOrderDetail() {
         />
       )}
 
+      {/* Portaled 3-Dot Action Menu for Dyeing Orders Table */}
+      {activeDyeingMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveDyeingMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeDyeingMenu.top}px`,
+                left: `${activeDyeingMenu.left}px`,
+                width: '144px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              {(() => {
+                const dOrder = activeDyeingMenu.dOrder;
+                const totalPlanned = Number(dOrder.total_fabric_quantity || 0);
+                const totalRec = Number(dOrder.total_received_quantity || 0);
+                const isFullyReceived = dOrder.status === 'Received' || (totalRec >= totalPlanned && totalPlanned > 0);
+
+                if (!isFullyReceived) {
+                  return (
+                    <div className="py-0.5">
+                      {/* Receive */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDyeingMenu(null);
+                          handleOpenReceive(dOrder);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-emerald-700 font-medium transition text-left"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Receive</span>
+                      </button>
+
+                      {/* Order */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDyeingMenu(null);
+                          handleOpenPrintModal('DYEING_OUTWARD', dOrder);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Order</span>
+                      </button>
+
+                      {/* View */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDyeingMenu(null);
+                          toggleExpandOrder(dOrder.id);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-brand-600" />
+                        <span>View</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                // After receiving dyeing products: rework, transfer, order, view
+                return (
+                  <div className="py-0.5">
+                    {/* Rework */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDyeingMenu(null);
+                        handleOpenReworkModal(dOrder);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-800 font-medium transition text-left"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Rework</span>
+                    </button>
+
+                    {/* Transfer */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDyeingMenu(null);
+                        handleOpenTransferModal();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-800 font-medium transition text-left"
+                    >
+                      <ArrowRight className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Transfer</span>
+                    </button>
+
+                    {/* Order */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDyeingMenu(null);
+                        handleOpenPrintModal('DYEING_OUTWARD', dOrder);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Order</span>
+                    </button>
+
+                    {/* View */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDyeingMenu(null);
+                        toggleExpandOrder(dOrder.id);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-brand-600" />
+                      <span>View</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Portaled 3-Dot Action Menu for Rework Details Table */}
+      {activeReworkMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveReworkMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeReworkMenu.top}px`,
+                left: `${activeReworkMenu.left}px`,
+                width: '144px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* Receive */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenReceiveReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 font-semibold transition text-left"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Receive</span>
+                </button>
+
+                {/* Transfer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveReworkMenu(null);
+                    handleOpenTransferModal();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-indigo-50 hover:text-indigo-800 font-medium transition text-left"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Transfer</span>
+                </button>
+
+                {/* View */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenViewReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+                >
+                  <Eye className="w-3.5 h-3.5 text-brand-600" />
+                  <span>View</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* MODAL: CREATE / SEND FABRIC FOR REWORK */}
+      <Modal
+        isOpen={reworkModalOpen}
+        onClose={() => setReworkModalOpen(false)}
+        title="Fabric Rework & Re-dyeing Order"
+        size="lg"
+      >
+        {selectedOrderForRework && (
+          <form onSubmit={handleConfirmCreateRework} className="space-y-4">
+            {/* Basic Details Container */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Processing Mill
+                </span>
+                <span className="font-semibold text-slate-800 mt-0.5 block truncate" title={selectedOrderForRework.dyeing_mill_name || selectedOrderForRework.supplier_name}>
+                  {selectedOrderForRework.dyeing_mill_name || selectedOrderForRework.supplier_name || 'Processing Mill'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Fabric Material
+                </span>
+                <span className="font-semibold text-slate-800 mt-0.5 block truncate" title={selectedOrderForRework.fabric_name}>
+                  {selectedOrderForRework.fabric_name}
+                </span>
+                {selectedOrderForRework.fabric_code && (
+                  <span className="text-[10px] font-mono text-slate-400">{selectedOrderForRework.fabric_code}</span>
+                )}
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Order / Recv Qty
+                </span>
+                <span className="font-mono font-bold text-slate-900 mt-0.5 block">
+                  {fmt(Number(selectedOrderForRework.total_fabric_quantity || 0), 1)} {selectedOrderForRework.uom || 'MTR'}
+                </span>
+                <span className="text-[10px] font-mono text-emerald-700 block">
+                  Recv: {fmt(Number(selectedOrderForRework.total_received_quantity || 0), 1)} {selectedOrderForRework.uom || 'MTR'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Color / Standard
+                </span>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  {(selectedOrderForRework.items || []).slice(0, 2).map((it: any, cIdx: number) => (
+                    <span key={cIdx} className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                        style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                      />
+                      <span className="truncate max-w-[70px]">{it.color_name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {reworkError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs font-semibold text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                <span>{reworkError}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Color Selection if multiple colors in order */}
+              {(selectedOrderForRework.items || []).length > 1 && (
+                <div className="col-span-1 sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Select Color Variant to Rework <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={reworkForm.selected_color}
+                    onChange={(e) => setReworkForm({ ...reworkForm, selected_color: e.target.value })}
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white font-medium"
+                  >
+                    {(selectedOrderForRework.items || []).map((it: any, cIdx: number) => (
+                      <option key={cIdx} value={it.pantone_code || it.color_name}>
+                        {it.color_name} {it.pantone_code ? `(${it.pantone_code})` : ''} — Planned: {it.planned_quantity} {selectedOrderForRework.uom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Rework Quantity */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Rework Quantity ({selectedOrderForRework.uom || 'MTR'}) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max={Number(selectedOrderForRework.total_received_quantity || selectedOrderForRework.total_fabric_quantity || 0)}
+                  value={reworkForm.rework_quantity}
+                  onChange={(e) => setReworkForm({ ...reworkForm, rework_quantity: Number(e.target.value) })}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono font-bold bg-white"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Eligible inwarded quantity: {fmt(Number(selectedOrderForRework.total_received_quantity || selectedOrderForRework.total_fabric_quantity || 0), 1)} {selectedOrderForRework.uom || 'MTR'}
+                </span>
+              </div>
+
+              {/* Defect Reason */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Rework Defect Reason <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reworkForm.rework_reason}
+                  onChange={(e) => setReworkForm({ ...reworkForm, rework_reason: e.target.value })}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white font-medium"
+                >
+                  <option value="Shade Mismatch / Uneven Dyeing">Shade Mismatch / Uneven Dyeing</option>
+                  <option value="Color Patchiness / Streaks">Color Patchiness / Streaks</option>
+                  <option value="Shrinkage & Width Variation">Shrinkage & Width Variation</option>
+                  <option value="Rubbing / Washing Fastness Failure">Rubbing / Washing Fastness Failure</option>
+                  <option value="Chemical Stains / Water Spotting">Chemical Stains / Water Spotting</option>
+                  <option value="Fiber Weakening / Harsh Handfeel">Fiber Weakening / Harsh Handfeel</option>
+                  <option value="Other Dyeing Specification Defect">Other Dyeing Specification Defect</option>
+                </select>
+              </div>
+
+              {/* Target Return Date */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Target Return Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={reworkForm.expected_return_date}
+                  onChange={(e) => setReworkForm({ ...reworkForm, expected_return_date: e.target.value })}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white font-medium"
+                  required
+                />
+              </div>
+
+              {/* DC Challan No */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Outward DC Challan No
+                </label>
+                <input
+                  type="text"
+                  value={reworkForm.dc_challan_no}
+                  onChange={(e) => setReworkForm({ ...reworkForm, dc_challan_no: e.target.value })}
+                  placeholder="e.g. DC-RWK-4001"
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white font-mono"
+                />
+              </div>
+
+              {/* Remarks / Mill Instructions */}
+              <div className="col-span-1 sm:col-span-2">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Remarks & Technical Instructions for Re-dyeing
+                </label>
+                <textarea
+                  rows={2}
+                  value={reworkForm.remarks}
+                  onChange={(e) => setReworkForm({ ...reworkForm, remarks: e.target.value })}
+                  placeholder="Enter specific shading, chemical correction, or washing guidelines for the dyeing mill..."
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                onClick={() => setReworkModalOpen(false)}
+                disabled={submittingRework}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                loading={submittingRework}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                <span>Send for Rework / Re-dyeing</span>
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: INWARD RECEIVE REWORKED FABRIC RETURN (MATCHES DYEING ORDER RECEIVE MODAL) */}
+      <Modal
+        isOpen={receiveReworkModalOpen}
+        onClose={() => !submittingReceiveRework && setReceiveReworkModalOpen(false)}
+        title={`Inward Receive Reworked Fabric — ${selectedReworkForReceive?.rework_order_no}`}
+        subtitle="Record received yardage from mill correction, challan number and live photo proof"
+        size="lg"
+      >
+        {selectedReworkForReceive && (
+          <form onSubmit={handleConfirmReceiveRework} className="space-y-4">
+            {reworkReceiveError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <span>{reworkReceiveError}</span>
+              </div>
+            )}
+
+            {/* Top 4-field metadata grid with visible borders */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <FormField label="Inward Delivery Challan (DC No)" required>
+                <input
+                  type="text"
+                  value={reworkReceiptChallanNo}
+                  onChange={e => setReworkReceiptChallanNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. INW-RWK-402"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Receipt Date" required>
+                <input
+                  type="date"
+                  value={reworkReceiptDate}
+                  onChange={e => setReworkReceiptDate(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Lot #">
+                <input
+                  type="text"
+                  value={reworkLotNo}
+                  onChange={e => setReworkLotNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. LOT-RWK-01"
+                />
+              </FormField>
+
+              <FormField label="Received & Inspected By">
+                <input
+                  type="text"
+                  value={reworkReceivedBy}
+                  onChange={e => setReworkReceivedBy(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. Quality Inspector"
+                />
+              </FormField>
+            </div>
+
+            {/* Rework Yardage Summary Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100/90 p-2.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Sent for Rework</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {fmt(selectedReworkForReceive.rework_quantity, 1)} {selectedReworkForReceive.uom || 'MTR'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Defect Reason</span>
+                <span className="font-semibold text-slate-700 truncate block" title={selectedReworkForReceive.rework_reason}>
+                  {selectedReworkForReceive.rework_reason || 'Defect Correction'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Processing Mill</span>
+                <span className="font-semibold text-slate-700 truncate block">
+                  {selectedReworkForReceive.vendor_name || 'Processing Mill'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-emerald-600 block uppercase font-bold">Inwarding Now</span>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300 inline-block">
+                  {fmt(reworkReceivedQty, 1)} {selectedReworkForReceive.uom || 'MTR'}
+                </span>
+              </div>
+            </div>
+
+            {/* Received Fabric Item Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0 bg-slate-700" />
+                  <span className="font-bold text-xs text-slate-900">
+                    {selectedReworkForReceive.product_name || 'Cotton Fabric'}
+                  </span>
+                  {selectedReworkForReceive.color && (
+                    <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                      Color: {selectedReworkForReceive.color}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-xs text-slate-500 flex items-center gap-2">
+                  <span>
+                    Sent Qty: <strong className="text-slate-800">{fmt(selectedReworkForReceive.rework_quantity, 1)} {selectedReworkForReceive.uom || 'MTR'}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-200/60">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-700">
+                      Received Qty ({selectedReworkForReceive.uom || 'MTR'}) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setReworkReceivedQty(Number(selectedReworkForReceive.rework_quantity))}
+                      className="text-[10px] font-bold text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+                    >
+                      Max ({fmt(selectedReworkForReceive.rework_quantity, 1)})
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={Number(selectedReworkForReceive.rework_quantity)}
+                    value={reworkReceivedQty}
+                    onChange={e => setReworkReceivedQty(Number(e.target.value))}
+                    className="w-full text-xs font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs font-mono"
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-700 block mb-1">
+                    Lot # / Roll Batch #
+                  </label>
+                  <input
+                    type="text"
+                    value={reworkLotNo}
+                    onChange={e => setReworkLotNo(e.target.value)}
+                    className="w-full text-xs font-mono rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                    placeholder="e.g. LOT-RWK-01 / Roll 1"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Mandatory Live Camera Photo Proof */}
+            <LivePhotoCaptureField
+              label="Reworked Fabric Swatch & Roll Physical Photo"
+              required={true}
+              photo={reworkPhotoUrl}
+              onPhotoChange={setReworkPhotoUrl}
+              stageName="Dyeing Fabric Rework Return (Stage 04)"
+              orderNumber={order?.order_number || selectedReworkForReceive.rework_order_no}
+              error={reworkReceiveError && !reworkPhotoUrl ? 'Real-time camera photograph with live GPS coordinates is mandatory before receiving reworked fabric.' : undefined}
+              placeholderText="Tap here to open camera"
+              helperText="Photograph of returned reworked fabric swatches against approved standards must be captured live via camera."
+              buttonText="Take Real-Time Rework Photo"
+            />
+
+            <FormField label="Quality Remarks & Inspection Notes">
+              <textarea
+                rows={2}
+                value={reworkRemarks}
+                onChange={e => setReworkRemarks(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                placeholder="e.g. Corrected shade approved against master swatch, rolls verified and accepted into stock."
+              />
+            </FormField>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setReceiveReworkModalOpen(false)}
+                disabled={submittingReceiveRework}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={submittingReceiveRework}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              >
+                {submittingReceiveRework ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    <span>Inwarding Reworked Fabric...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCheck className="w-4 h-4 mr-1.5" />
+                    <span>Confirm & Inward Reworked Fabric ({fmt(reworkReceivedQty, 1)} {selectedReworkForReceive.uom || 'MTR'})</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: VIEW REWORK RECORD DETAILS */}
+      <Modal
+        isOpen={viewReworkModalOpen}
+        onClose={() => setViewReworkModalOpen(false)}
+        title={selectedReworkForView ? `Rework Order Details - ${selectedReworkForView.rework_order_no}` : 'Rework Details'}
+        size="md"
+      >
+        {selectedReworkForView && (
+          <div className="space-y-4 text-xs">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                <span className="font-bold text-slate-700">Rework Order #:</span>
+                <span className="font-mono font-bold text-brand-700">{selectedReworkForView.rework_order_no}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Outward DC Challan:</span>
+                <span className="font-mono text-slate-800">{selectedReworkForView.dc_challan_no || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Processing Mill / Vendor:</span>
+                <span className="font-semibold text-slate-800">{selectedReworkForView.vendor_name || 'Processing Mill'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Material Name:</span>
+                <span className="font-medium text-slate-800">{selectedReworkForView.product_name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Color Variant:</span>
+                <span className="text-slate-800">{selectedReworkForView.color || 'All Colors'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Rework Quantity Sent:</span>
+                <span className="font-mono font-bold text-amber-700">{selectedReworkForView.rework_quantity} {selectedReworkForView.uom || 'MTR'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Accepted Quantity:</span>
+                <span className="font-mono font-semibold text-emerald-700">{selectedReworkForView.accepted_quantity || 0} {selectedReworkForView.uom || 'MTR'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Current Status:</span>
+                <span className="font-bold text-slate-800">{selectedReworkForView.status}</span>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1">
+              <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                Defect Reason & Instructions
+              </span>
+              <p className="font-semibold text-slate-800">{selectedReworkForView.rework_reason || 'Defect Correction'}</p>
+              {selectedReworkForView.rework_remarks && (
+                <p className="text-slate-600 mt-1">{selectedReworkForView.rework_remarks}</p>
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setViewReworkModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setViewReworkModalOpen(false);
+                  handleOpenTransferModal();
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+              >
+                <ArrowRight className="w-3.5 h-3.5 mr-1" />
+                <span>Transfer to Cutting</span>
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Transfer to Cutting Modal */}
       {transferModalOpen && (
         <Modal
@@ -2909,28 +3742,68 @@ export default function DyeingOrderDetail() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+            {/* Inventory In-Hand Calculation Breakdown Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Production Order</span>
-                <span className="font-mono font-bold text-slate-800">{order?.order_number}</span>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Inward Recv</span>
+                <span className="font-mono font-bold text-slate-800">{fmt(totalFabricReceived, 1)} MTR</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Inward Received</span>
-                <span className="font-mono font-bold text-emerald-700">{fmt(totalFabricReceived, 1)} MTR</span>
+                <span className="text-amber-600 block text-[10px] uppercase font-bold">Rework at Mill</span>
+                <span className="font-mono font-bold text-amber-700">
+                  {fmt(activeReworkOutAtMill, 1)} MTR
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Already Transferred</span>
+                <span className="font-mono font-bold text-slate-600">
+                  {fmt(totalTransferredToCutting, 1)} MTR
+                </span>
+              </div>
+              <div>
+                <span className="text-emerald-700 block text-[10px] uppercase font-bold">Available Now</span>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block">
+                  {fmt(availableInHandForCutting, 1)} MTR
+                </span>
               </div>
             </div>
 
-            <FormField label="Transfer Quantity (MTR) *" required>
-              <input
-                type="number"
-                step="0.01"
-                min="0.1"
-                max={totalFabricReceived || 999999}
-                value={transferQty || ''}
-                onChange={(e) => setTransferQty(Number(e.target.value))}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono font-bold focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                placeholder="Enter meters to handover..."
-              />
+            {availableInHandForCutting <= 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">No fabric currently available to transfer.</span>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    {activeReworkOutAtMill > 0 
+                      ? `${fmt(activeReworkOutAtMill, 1)} MTR is currently at the dyeing mill for rework. Please receive the rework completed fabric before transferring.`
+                      : 'All received dyed fabric has already been transferred to Stage 05 (Cutting).'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <FormField label={`Transfer Quantity (MTR) * (Max: ${fmt(availableInHandForCutting, 1)} MTR)`} required>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={availableInHandForCutting}
+                  value={transferQty || ''}
+                  onChange={(e) => setTransferQty(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg font-mono font-bold bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none shadow-2xs pr-24"
+                  placeholder="Enter meters to handover..."
+                />
+                {availableInHandForCutting > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setTransferQty(availableInHandForCutting)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 text-[10px] font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded transition cursor-pointer"
+                  >
+                    Max ({fmt(availableInHandForCutting, 1)})
+                  </button>
+                )}
+              </div>
             </FormField>
 
             <FormField label="Transferred By / Store Keeper *">
@@ -2938,7 +3811,7 @@ export default function DyeingOrderDetail() {
                 type="text"
                 value={transferredBy}
                 onChange={(e) => setTransferredBy(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none shadow-2xs"
                 placeholder="Name or department..."
               />
             </FormField>
@@ -2948,7 +3821,7 @@ export default function DyeingOrderDetail() {
                 rows={2}
                 value={transferNotes}
                 onChange={(e) => setTransferNotes(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none shadow-2xs"
                 placeholder="Roll numbers, storage rack, shrinkage allowance notes..."
               />
             </FormField>
@@ -2965,7 +3838,7 @@ export default function DyeingOrderDetail() {
               <Button
                 size="sm"
                 onClick={handleConfirmTransfer}
-                disabled={savingTransfer || transferQty <= 0}
+                disabled={savingTransfer || transferQty <= 0 || transferQty > (availableInHandForCutting + 0.05)}
                 className="bg-purple-600 hover:bg-purple-700 text-white font-bold"
               >
                 {savingTransfer ? (
@@ -2993,7 +3866,7 @@ export default function DyeingOrderDetail() {
         order={order}
         itemData={printDocItem}
         receiptList={allDyeingReceipts}
-        supplier={suppliers.find((s: any) => 
+        supplier={suppliers.find((s: any) =>
           s.id === (printDocItem?.supplier_id || printDocItem?.parent_order?.supplier_id) ||
           (s.name || '').toLowerCase() === (printDocItem?.dyeing_mill_name || '').toLowerCase()
         )}

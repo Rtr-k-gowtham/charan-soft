@@ -4,10 +4,11 @@
 // full-page Outward Job Order creation form matching Stage 04 Dyeing Order UI,
 // proper item tracking from Cutting arrival to Outward Dispatch, Inward QC, and Transfer to Stitching.
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionStage, EmbroideryJobOrder, EmbroideryReceipt } from '../../types';
+import { ProductionOrder, ProductionStage, EmbroideryJobOrder, EmbroideryReceipt, ReworkRecord } from '../../types';
 import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
@@ -40,7 +41,6 @@ import {
   Boxes,
   Package,
   X,
-  Upload,
   Clock,
   ArrowDownCircle,
   Scissors,
@@ -48,9 +48,11 @@ import {
   Save,
   FileSpreadsheet,
   AlertCircle,
-  RotateCcw
+  RotateCcw,
+  MoreVertical,
+  Search,
+  CheckCheck
 } from 'lucide-react';
-import StageReworkSection from '../../components/production/StageReworkSection';
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -207,6 +209,61 @@ export default function EmbroideryOrderDetail() {
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
 
+  // Rework Records State
+  const [reworkRecords, setReworkRecords] = useState<ReworkRecord[]>([]);
+
+  // Search & Filter State for Job Orders & Rework Tables
+  const [jobOrderSearch, setJobOrderSearch] = useState('');
+  const [jobOrderStatusFilter, setJobOrderStatusFilter] = useState('ALL');
+  const [reworkSearch, setReworkSearch] = useState('');
+  const [reworkStatusFilter, setReworkStatusFilter] = useState('ALL');
+
+  // Floating Action Menus
+  const [activeJobMenu, setActiveJobMenu] = useState<{
+    top: number;
+    left: number;
+    job: EmbroideryJobOrder;
+  } | null>(null);
+
+  const [activeReworkMenu, setActiveReworkMenu] = useState<{
+    top: number;
+    left: number;
+    record: ReworkRecord;
+  } | null>(null);
+
+  // Modal: Create Rework Order
+  const [reworkModalOpen, setReworkModalOpen] = useState(false);
+  const [selectedJobForRework, setSelectedJobForRework] = useState<EmbroideryJobOrder | null>(null);
+  const [reworkForm, setReworkForm] = useState({
+    rework_quantity: 1,
+    rework_reason: 'Embroidery Thread Breakage',
+    destination_vendor: '',
+    dc_challan_no: '',
+    remarks: '',
+  });
+  const [submittingRework, setSubmittingRework] = useState(false);
+  const [reworkError, setReworkError] = useState('');
+
+  // Modal: Inward Receive Reworked Pieces
+  const [receiveReworkModalOpen, setReceiveReworkModalOpen] = useState(false);
+  const [selectedReworkForReceive, setSelectedReworkForReceive] = useState<ReworkRecord | null>(null);
+  const [reworkReceiptChallanNo, setReworkReceiptChallanNo] = useState('');
+  const [reworkReceiptDate, setReworkReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reworkLotNo, setReworkLotNo] = useState('');
+  const [reworkReceivedBy, setReworkReceivedBy] = useState('Embroidery QC Inspector');
+  const [reworkReceivedQty, setReworkReceivedQty] = useState(0);
+  const [reworkPhotoUrl, setReworkPhotoUrl] = useState<string | null>(null);
+  const [reworkRemarks, setReworkRemarks] = useState('');
+  const [reworkReceiveError, setReworkReceiveError] = useState('');
+  const [submittingReceiveRework, setSubmittingReceiveRework] = useState(false);
+
+  // Modal: View Rework Details
+  const [viewReworkModalOpen, setViewReworkModalOpen] = useState(false);
+  const [selectedReworkForView, setSelectedReworkForView] = useState<ReworkRecord | null>(null);
+
+  // Selected Rework for Transfer
+  const [selectedReworkForTransfer, setSelectedReworkForTransfer] = useState<ReworkRecord | null>(null);
+
   // Image Zoom Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -232,6 +289,7 @@ export default function EmbroideryOrderDetail() {
       setItems(embData.items || []);
       setJobOrders(embData.job_orders || []);
       setReceipts(embData.receipts || []);
+      setReworkRecords(embData.rework_records || []);
 
       const st = (stagesRes as any)?.data || stagesRes;
       setStages(Array.isArray(st) ? st : []);
@@ -690,48 +748,369 @@ export default function EmbroideryOrderDetail() {
     }
   };
 
-  // Stage Transfer to Stitching
-  const handleOpenTransferModal = (itemOrJob: any) => {
-    let it = itemOrJob;
-    let jId: number | undefined = undefined;
-    let maxQty = 0;
+  // Synchronized Available in Hand and Rework Calculations
+  const activeReworkQty = useMemo(() => {
+    return reworkRecords
+      .filter(
+        (r) =>
+          r.status !== 'Accepted After Rework' &&
+          (r.status as string) !== 'Transferred' &&
+          (r.status as string) !== 'Scrapped' &&
+          (r.status as string) !== 'Completed'
+      )
+      .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
+  }, [reworkRecords]);
 
-    if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
-      // Called from Job Order row
-      jId = itemOrJob.id;
-      const jobReady = Number(
-        itemOrJob.ready_to_transfer !== undefined
-          ? itemOrJob.ready_to_transfer
-          : Math.max(0, Number(itemOrJob.total_quantity_accepted || 0) - Number(itemOrJob.transferred_to_stitching_quantity || 0))
-      );
-      const jobItemId = Array.isArray(itemOrJob.items_json) && itemOrJob.items_json[0]?.production_order_item_id;
-      it = (jobItemId && items.find(i => i.id === jobItemId || i.active_embroidery_item_id === jobItemId)) ||
-           items.find(i => Number(i.ready_to_transfer || 0) > 0) ||
-           items[0];
-
-      const itemReady = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
-      maxQty = jobReady > 0 ? jobReady : itemReady;
-    } else {
-      // Called from Product Item row
-      maxQty = Number(it?.ready_to_transfer !== undefined ? it.ready_to_transfer : (it?.accepted_inward || 0));
+  const totalAcceptedEmbroidery = useMemo(() => {
+    let acc = 0;
+    receipts.forEach((r) => {
+      acc += Number(r.total_accepted_qty || 0);
+    });
+    jobOrders.forEach((j) => {
+      acc = Math.max(acc, Number(j.total_quantity_accepted || 0));
+    });
+    if (acc === 0) {
+      items.forEach((it) => {
+        acc += Number(it.accepted_inward || 0);
+      });
     }
+    return acc;
+  }, [receipts, jobOrders, items]);
 
-    if (maxQty <= 0) {
-      showToast('All accepted embroidery pieces have already been transferred to Stitching.');
+  const totalTransferredToStitching = useMemo(() => {
+    let trf = 0;
+    jobOrders.forEach((j) => {
+      trf += Number(j.transferred_to_stitching_quantity || 0);
+    });
+    if (trf === 0) {
+      items.forEach((it) => {
+        trf += Number(it.transferred_to_stitching || 0);
+      });
+    }
+    return trf;
+  }, [jobOrders, items]);
+
+  const availableInHandToTransfer = useMemo(() => {
+    return Math.max(0, totalAcceptedEmbroidery - activeReworkQty - totalTransferredToStitching);
+  }, [totalAcceptedEmbroidery, activeReworkQty, totalTransferredToStitching]);
+
+  // Filtered Job Orders for Table 1
+  const filteredJobOrders = useMemo(() => {
+    return jobOrders.filter((job) => {
+      if (jobOrderSearch.trim()) {
+        const q = jobOrderSearch.toLowerCase();
+        const m1 = (job.job_order_number || '').toLowerCase().includes(q);
+        const m2 = (job.vendor_name || '').toLowerCase().includes(q);
+        const m3 = (job.delivery_challan_no || '').toLowerCase().includes(q);
+        if (!m1 && !m2 && !m3) return false;
+      }
+      const out = Number(job.total_quantity_outstanding || 0);
+      const rec = Number(job.total_quantity_received || 0);
+      if (jobOrderStatusFilter === 'WITH_VENDOR') {
+        return out > 0 && rec === 0;
+      }
+      if (jobOrderStatusFilter === 'PARTIAL') {
+        return rec > 0 && out > 0;
+      }
+      if (jobOrderStatusFilter === 'COMPLETED') {
+        return out <= 0.01;
+      }
+      if (jobOrderStatusFilter === 'TRANSFERRED') {
+        return job.status === 'Transferred to Stitching';
+      }
+      return true;
+    });
+  }, [jobOrders, jobOrderSearch, jobOrderStatusFilter]);
+
+  // Filtered Rework Records for Table 2
+  const filteredReworks = useMemo(() => {
+    return reworkRecords.filter((r) => {
+      if (reworkSearch.trim()) {
+        const q = reworkSearch.toLowerCase();
+        const m1 = (r.rework_order_no || '').toLowerCase().includes(q);
+        const m2 = (r.product_name || r.display_product_name || '').toLowerCase().includes(q);
+        const m3 = (r.vendor_name || '').toLowerCase().includes(q);
+        const m4 = (r.color || '').toLowerCase().includes(q);
+        if (!m1 && !m2 && !m3 && !m4) return false;
+      }
+      if (reworkStatusFilter === 'SENT') {
+        return r.status === 'Sent for Rework' || r.status === 'Pending Rework';
+      }
+      if (reworkStatusFilter === 'RECEIVED') {
+        return r.status === 'Rework Received';
+      }
+      if (reworkStatusFilter === 'COMPLETED') {
+        return (
+          r.status === 'Accepted After Rework' ||
+          (r.status as string) === 'Completed' ||
+          (r.status as string) === 'Transferred'
+        );
+      }
+      return true;
+    });
+  }, [reworkRecords, reworkSearch, reworkStatusFilter]);
+
+  // Menu Toggle Handlers
+  const handleToggleJobMenu = (e: React.MouseEvent, job: EmbroideryJobOrder) => {
+    e.stopPropagation();
+    if (activeJobMenu?.job.id === job.id) {
+      setActiveJobMenu(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 140;
+    const left = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12);
+    const top = rect.bottom + 4;
+    setActiveJobMenu({ top, left, job });
+    setActiveReworkMenu(null);
+  };
+
+  const handleToggleReworkMenu = (e: React.MouseEvent, rec: ReworkRecord) => {
+    e.stopPropagation();
+    if (activeReworkMenu?.record.id === rec.id) {
+      setActiveReworkMenu(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 140;
+    const left = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12);
+    const top = rect.bottom + 4;
+    setActiveReworkMenu({ top, left, record: rec });
+    setActiveJobMenu(null);
+  };
+
+  // Open Rework Modal from Table 1 Job Order
+  const handleOpenReworkModal = (job: EmbroideryJobOrder) => {
+    setSelectedJobForRework(job);
+    setReworkForm({
+      rework_quantity: 1,
+      rework_reason: 'Embroidery Thread Breakage',
+      destination_vendor: job.vendor_name || '',
+      dc_challan_no: `DC-EMB-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+      remarks: '',
+    });
+    setReworkError('');
+    setReworkModalOpen(true);
+  };
+
+  // Create Rework Order Submission
+  const handleCreateRework = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedJobForRework || !order) return;
+    const qty = Number(reworkForm.rework_quantity);
+    const maxQty = Number(selectedJobForRework.total_quantity_sent || 0);
+
+    if (qty <= 0) {
+      setReworkError('Rework quantity must be greater than zero.');
+      return;
+    }
+    if (qty > maxQty) {
+      setReworkError(`Rework quantity cannot exceed job order sent quantity (${maxQty} pcs).`);
       return;
     }
 
-    setTransferItem({ ...it, job_order_id: jId, ready_to_transfer: maxQty });
-    setTransferQuantity(maxQty);
+    setSubmittingRework(true);
+    setReworkError('');
+    try {
+      const firstItem = items[0] || {};
+      const created = await api.createRework({
+        production_order_id: Number(order.id),
+        production_order_item_id: firstItem.active_embroidery_item_id || firstItem.id,
+        stage_id: 6,
+        stage_code: 'EMB',
+        product_id: firstItem.product_id,
+        product_name: firstItem.product_name || 'Embroidery Item',
+        color: firstItem.color || 'Standard',
+        size: firstItem.size || 'M',
+        rework_quantity: qty,
+        uom: 'PCS',
+        defect_reason: reworkForm.rework_reason,
+        rework_reason: reworkForm.rework_reason,
+        rework_remarks: reworkForm.remarks,
+        destination_process: reworkForm.destination_vendor || selectedJobForRework.vendor_name || 'Embroidery Mill',
+        vendor_name: reworkForm.destination_vendor || selectedJobForRework.vendor_name || 'Embroidery Mill',
+        batch_number: selectedJobForRework.job_order_number,
+        reference_id: selectedJobForRework.id || selectedJobForRework.job_order_number,
+      });
+
+      const reworkId = created?.id || (created as any)?.data?.id;
+      if (reworkId) {
+        await api.sendRework({
+          rework_id: reworkId,
+          sent_date: new Date().toISOString().split('T')[0],
+          vendor_name: reworkForm.destination_vendor || selectedJobForRework.vendor_name || 'Embroidery Mill',
+          dc_challan_no: reworkForm.dc_challan_no || `DC-EMB-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+          remarks: reworkForm.remarks,
+        });
+      }
+
+      setReworkModalOpen(false);
+      showToast(`Rework order of ${qty} pcs sent for correction successfully!`);
+      await fetchOrderData();
+    } catch (err: any) {
+      setReworkError(err?.message || 'Failed to dispatch rework order');
+    } finally {
+      setSubmittingRework(false);
+    }
+  };
+
+  // Open Receive Rework Modal
+  const handleOpenReceiveReworkModal = (rec: ReworkRecord) => {
+    setSelectedReworkForReceive(rec);
+    const rQty = Number(rec.rework_quantity || 0);
+    const accQty = Number(rec.accepted_quantity || 0);
+    const isAlreadyReceived =
+      rec.status === 'Accepted After Rework' ||
+      rec.status === 'Rework Received' ||
+      (rec.status as string) === 'Completed' ||
+      (rec.status as string) === 'Transferred' ||
+      (accQty >= rQty && rQty > 0);
+
+    setReworkReceiptChallanNo(rec.dc_challan_no ? `INW-${rec.dc_challan_no}` : `INW-EMB-RWK-${Math.floor(1000 + Math.random() * 9000)}`);
+    setReworkReceiptDate(new Date().toISOString().split('T')[0]);
+    setReworkLotNo(rec.batch_number || `LOT-EMB-${rec.id || 1}`);
+    setReworkReceivedBy('Embroidery QC Inspector');
+    setReworkReceivedQty(rQty);
+    setReworkPhotoUrl(null);
+    setReworkRemarks('');
+    if (isAlreadyReceived) {
+      setReworkReceiveError(`The rework quantity (${fmt(accQty || rQty)} pcs) for #${rec.rework_order_no} has already been received.`);
+    } else {
+      setReworkReceiveError('');
+    }
+    setReceiveReworkModalOpen(true);
+  };
+
+  // Confirm Inward Receipt of Rework
+  const handleConfirmReceiveRework = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedReworkForReceive) return;
+    setReworkReceiveError('');
+
+    const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+    const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+    const isAlreadyReceived =
+      selectedReworkForReceive.status === 'Accepted After Rework' ||
+      selectedReworkForReceive.status === 'Rework Received' ||
+      (selectedReworkForReceive.status as string) === 'Completed' ||
+      (selectedReworkForReceive.status as string) === 'Transferred' ||
+      (accQty >= rQty && rQty > 0);
+
+    if (isAlreadyReceived) {
+      setReworkReceiveError(`The rework quantity (${fmt(accQty || rQty)} pcs) for #${selectedReworkForReceive.rework_order_no} has already been received.`);
+      return;
+    }
+
+    if (reworkReceivedQty <= 0) {
+      setReworkReceiveError('Received quantity must be greater than 0 pcs');
+      return;
+    }
+    if (!reworkPhotoUrl) {
+      setReworkReceiveError('Real-time camera photograph with live GPS coordinates is mandatory before confirming rework receipt.');
+      return;
+    }
+
+    setSubmittingReceiveRework(true);
+    try {
+      await api.receiveRework({
+        rework_id: selectedReworkForReceive.id,
+        received_date: reworkReceiptDate,
+        dc_challan_no: reworkReceiptChallanNo,
+        lot_number: reworkLotNo,
+        received_by: reworkReceivedBy,
+        photo_url: reworkPhotoUrl,
+        remarks: reworkRemarks,
+      });
+      await api.reinspectRework({
+        rework_id: selectedReworkForReceive.id,
+        reinspection_date: reworkReceiptDate,
+        accepted_quantity: Number(reworkReceivedQty || 0),
+        rejected_quantity: 0,
+        inspector_name: reworkReceivedBy || 'Embroidery QC Inspector',
+        reinspection_result: 'Passed Quality Audit',
+        reinspection_notes: reworkRemarks || 'Reworked embroidery pieces received & approved',
+        batch_number: reworkLotNo
+      });
+      setReceiveReworkModalOpen(false);
+      showToast(`Rework #${selectedReworkForReceive.rework_order_no} (${reworkReceivedQty} pcs) inward received & accepted! Pieces are ready for stage transfer.`);
+      await fetchOrderData();
+    } catch (err: any) {
+      console.error('Failed to process embroidery rework receipt:', err);
+      setReworkReceiveError(err?.message || 'Failed to confirm rework receipt');
+    } finally {
+      setSubmittingReceiveRework(false);
+    }
+  };
+
+  // Open Stage Transfer Modal (Synchronized available quantity in hand)
+  const handleOpenTransferModal = (itemOrJob?: any) => {
+    if (availableInHandToTransfer <= 0) {
+      showToast('No accepted embroidery pieces are currently available in hand to transfer to Stitching.');
+      return;
+    }
+
+    let it = itemOrJob;
+    let jId: number | undefined = undefined;
+
+    if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
+      jId = itemOrJob.id;
+      const jobItemId = Array.isArray(itemOrJob.items_json) && itemOrJob.items_json[0]?.production_order_item_id;
+      it = (jobItemId && items.find(i => i.id === jobItemId || i.active_embroidery_item_id === jobItemId)) || items[0];
+    } else if (!itemOrJob) {
+      it = items[0] || null;
+    }
+
+    setSelectedReworkForTransfer(null);
+    setTransferItem({ ...it, job_order_id: jId });
+    setTransferQuantity(availableInHandToTransfer);
     setTransferRemarks('Embroidery completed and QC approved. Transferred to Stage 07: Stitching.');
     setTransferError('');
     setTransferModalOpen(true);
   };
 
+  // Open Stage Transfer Modal from Rework Table
+  const handleOpenTransferReworkModal = (rec: ReworkRecord) => {
+    const isReceived =
+      rec.status === 'Rework Received' ||
+      rec.status === 'Accepted After Rework' ||
+      (rec.status as string) === 'Completed';
+
+    if (!isReceived) {
+      handleOpenReceiveReworkModal(rec);
+      setReworkReceiveError(
+        'Reworked embroidery pieces must be inward received before transferring to the next stage. Please confirm inward receipt below.'
+      );
+      return;
+    }
+
+    if ((rec.status as string) === 'Transferred') {
+      showToast(`Rework #${rec.rework_order_no} has already been transferred to Stitching.`);
+      return;
+    }
+
+    if (availableInHandToTransfer <= 0) {
+      showToast('No accepted embroidery pieces are currently available in hand to transfer to Stitching.');
+      return;
+    }
+
+    setSelectedReworkForTransfer(rec);
+    setTransferItem(items[0] || null);
+    setTransferQuantity(availableInHandToTransfer);
+    setTransferRemarks(`Reworked embroidery #${rec.rework_order_no} accepted and transferred to Stage 07: Stitching.`);
+    setTransferError('');
+    setTransferModalOpen(true);
+  };
+
+  // Confirm Stage Transfer
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!order || transferQuantity <= 0) {
       setTransferError('Please enter a positive transfer quantity.');
+      return;
+    }
+
+    if (transferQuantity > availableInHandToTransfer + 0.001) {
+      setTransferError(`Transfer quantity (${transferQuantity} pcs) exceeds available in hand (${availableInHandToTransfer} pcs).`);
       return;
     }
 
@@ -742,6 +1121,7 @@ export default function EmbroideryOrderDetail() {
         production_order_id: order.id,
         item_id: transferItem?.active_embroidery_item_id || transferItem?.id || items[0]?.active_embroidery_item_id || items[0]?.id || 0,
         job_order_id: transferItem?.job_order_id,
+        rework_id: selectedReworkForTransfer?.id,
         transfer_quantity: Number(transferQuantity),
         destination_stage_id: 7,
         destination_stage_name: 'Stitching — Color-wise Tracking',
@@ -1403,43 +1783,8 @@ export default function EmbroideryOrderDetail() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setActiveTab('job_orders')}
-            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'job_orders'
-                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            Embroidery Job Orders & Inward ({jobOrders.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('rework')}
-            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'rework'
-                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <RotateCcw className="w-4 h-4" />
-            Stage 06 Rework & Vendor Correction
-            {overallTotals.reworkQty > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                {fmt(overallTotals.reworkQty)} pcs
-              </span>
-            )}
-          </button>
-        </div>
-
-        {activeTab === 'job_orders' && (
-          <>
-            {/* Table 1: Product-Wise Embroidery Status & Dispatch */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Table 1: Product-Wise Embroidery Status & Dispatch */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700">
@@ -1611,180 +1956,453 @@ export default function EmbroideryOrderDetail() {
           </div>
         </div>
 
-        {/* Table 2: Recorded Embroidery Job Orders & Inward Receipts */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
-                <Truck className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Recorded Embroidery Job Orders & Inward Receipts
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Every outward challan sent to vendors and completed embroidery inward with proof.
-                </p>
-              </div>
+        {/* TABLE 1: EMBROIDERY JOB ORDERS (MATCHING CUTTING STAGE ERP TABLE VIEW) */}
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Truck className="w-4 h-4 text-brand-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Embroidery Job Orders
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-brand-100 text-brand-800 px-2 py-0.5 rounded-full">
+                {jobOrders.length} {jobOrders.length === 1 ? 'order' : 'orders'}
+              </span>
             </div>
-            <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-              {jobOrders.length} {jobOrders.length === 1 ? 'Job Order' : 'Job Orders'}
-            </span>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={jobOrderSearch}
+                  onChange={(e) => setJobOrderSearch(e.target.value)}
+                  placeholder="Search job #, vendor, DC..."
+                  className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 w-44 sm:w-56"
+                />
+              </div>
+
+              <select
+                value={jobOrderStatusFilter}
+                onChange={(e) => setJobOrderStatusFilter(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="WITH_VENDOR">With Vendor</option>
+                <option value="PARTIAL">Partially Received</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="TRANSFERRED">Transferred to Stitching</option>
+              </select>
+            </div>
           </div>
 
-          {jobOrders.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-xs">
-              No embroidery job orders recorded yet. When cut pieces arrive from Cutting, click "Dispatch Outward" above to create a delivery challan.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
-                    <th className="py-3 px-4">Job Order #</th>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-4">Vendor & Transport</th>
-                    <th className="py-3 px-3">Delivery Challan</th>
-                    <th className="py-3 px-3 text-right">Sent Qty</th>
-                    <th className="py-3 px-3 text-right">Received</th>
-                    <th className="py-3 px-3 text-right">Accepted</th>
-                    <th className="py-3 px-3 text-right">Rejected</th>
-                    <th className="py-3 px-3 text-right">Outstanding</th>
-                    <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Proof Photos</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[130px]">Job Order #</th>
+                    <th className="py-2.5 px-2.5 w-[160px]">Vendor & Transport</th>
+                    <th className="py-2.5 px-2 w-[110px]">Order Date</th>
+                    <th className="py-2.5 px-2.5 w-[120px]">DC Number</th>
+                    <th className="py-2.5 px-2 text-right w-[85px]">Sent Qty</th>
+                    <th className="py-2.5 px-2 text-right w-[110px]">Recv / Acc</th>
+                    <th className="py-2.5 px-2 text-center w-[130px]">Status</th>
+                    <th className="py-2.5 px-2 text-center w-[55px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {jobOrders.map((job) => {
-                    const sent = Number(job.total_quantity_sent || 0);
-                    const rec = Number(job.total_quantity_received || 0);
-                    const acc = Number(job.total_quantity_accepted || 0);
-                    const rej = Number(job.total_quantity_rejected || 0);
-                    const out = Number(job.total_quantity_outstanding || 0);
+                  {filteredJobOrders.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        <Truck className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                        <p className="font-semibold text-xs text-slate-700">No Job Orders Found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Click "Dispatch Outward" above to create an outward job order for embroidery.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredJobOrders.map((job, idx) => {
+                      const sent = Number(job.total_quantity_sent || 0);
+                      const rec = Number(job.total_quantity_received || 0);
+                      const acc = Number(job.total_quantity_accepted || 0);
+                      const out = Number(job.total_quantity_outstanding || 0);
+                      const isTrf = job.status === 'Transferred to Stitching';
 
-                    const jobPhotos = parsePhotos(job.attachments);
-                    const receiptPhotos = receipts
-                      .filter(r => Number(r.job_order_id) === Number(job.id))
-                      .flatMap(r => parsePhotos(r.photo_urls));
-                    const allPhotos = [...jobPhotos, ...receiptPhotos];
+                      return (
+                        <tr key={job.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
 
-                    return (
-                      <tr key={job.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-mono font-bold text-brand-700">
-                          {job.job_order_number}
-                        </td>
-                        <td className="py-3 px-3 text-slate-600 font-mono">
-                          {job.dispatch_date || job.job_order_date}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-bold text-slate-800 block">{job.vendor_name}</span>
-                          {job.transport_courier && (
-                            <span className="text-[10px] text-slate-400 block">{job.transport_courier}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 font-mono text-slate-700">
-                          {job.delivery_challan_no || 'N/A'}
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">{fmt(sent)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-semibold text-indigo-700">{fmt(rec)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700">{fmt(acc)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-red-600 font-semibold">{fmt(rej)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-amber-600">{fmt(out)}</td>
-                        <td className="py-3 px-3 text-center">
-                          {out <= 0.01 ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              Completed
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono font-bold text-xs text-brand-700 block truncate" title={job.job_order_number}>
+                              {job.job_order_number}
                             </span>
-                          ) : rec > 0 ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-                              Partial ({fmt(rec)}/{fmt(sent)})
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={job.vendor_name}>
+                              {job.vendor_name}
                             </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                              With Vendor
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          {allPhotos.length > 0 ? (
-                            <div className="flex items-center justify-center gap-1">
-                              {allPhotos.slice(0, 2).map((url, pIdx) => (
-                                <button
-                                  key={pIdx}
-                                  type="button"
-                                  onClick={() => setPreviewImage(url)}
-                                  className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
-                                >
-                                  <img src={url} alt="Proof" className="w-full h-full object-cover" />
-                                </button>
-                              ))}
-                              {allPhotos.length > 2 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewImage(allPhotos[0])}
-                                  className="w-7 h-7 rounded bg-slate-100 text-slate-600 font-mono text-[10px] font-bold border border-slate-200 flex items-center justify-center"
-                                >
-                                  +{allPhotos.length - 2}
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">None</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition shadow-2xs"
-                              title="Print / Download Embroidery Job Order & Outward Challan"
-                            >
-                              <Printer className="w-3.5 h-3.5 text-purple-600" />
-                              <span>Challan</span>
-                            </button>
-                            {out > 0.01 ? (
-                              <Button
-                                id={`btn-receive-inward-${job.id}`}
-                                size="xs"
-                                variant="primary"
-                                icon={<ArrowDownCircle className="w-3 h-3" />}
-                                onClick={() => handleOpenInwardModal(job)}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-2xs"
-                              >
-                                Receive Inward
-                              </Button>
-                            ) : Number(job.ready_to_transfer !== undefined ? job.ready_to_transfer : Math.max(0, Number(job.total_quantity_accepted || 0) - Number(job.transferred_to_stitching_quantity || 0))) > 0 ? (
-                              <Button
-                                id={`btn-transfer-stitching-${job.id}`}
-                                size="xs"
-                                variant="secondary"
-                                icon={<ArrowRight className="w-3 h-3" />}
-                                onClick={() => handleOpenTransferModal(job)}
-                                className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
-                              >
-                                To Stitching ({fmt(Number(job.ready_to_transfer || 0))})
-                              </Button>
-                            ) : Number(job.total_quantity_accepted || 0) > 0 ? (
-                              <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-200 inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3 text-purple-600" />
-                                Transferred to Stitching
-                              </span>
-                            ) : (
-                              <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                                Completed
+                            {job.transport_courier && (
+                              <span className="text-[10px] text-slate-400 block truncate" title={job.transport_courier}>
+                                {job.transport_courier}
                               </span>
                             )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+
+                          <td className="py-2.5 px-2 align-middle whitespace-nowrap font-mono text-[11px] text-slate-600">
+                            {job.dispatch_date || job.job_order_date || 'N/A'}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono text-xs text-slate-700 block truncate" title={job.delivery_challan_no || 'N/A'}>
+                              {job.delivery_challan_no || 'N/A'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap font-mono font-bold text-xs text-slate-800">
+                            {fmt(sent)} pcs
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap font-mono text-xs">
+                            <span className="text-indigo-700 font-semibold">{fmt(rec)}</span>
+                            <span className="text-slate-300 mx-1">/</span>
+                            <span className="text-emerald-700 font-bold">{fmt(acc)}</span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
+                            {isTrf ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                                Transferred
+                              </span>
+                            ) : out <= 0.01 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Completed
+                              </span>
+                            ) : rec > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                Partial ({fmt(rec)}/{fmt(sent)})
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                With Vendor
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleJobMenu(e, job)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
+                                activeJobMenu?.job.id === job.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Job Order Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
+
+            {/* Mobile Cards for Job Orders */}
+            <div className="md:hidden space-y-3 p-3">
+              {filteredJobOrders.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No job orders recorded.
+                </div>
+              ) : (
+                filteredJobOrders.map((job, idx) => {
+                  const sent = Number(job.total_quantity_sent || 0);
+                  const rec = Number(job.total_quantity_received || 0);
+                  const out = Number(job.total_quantity_outstanding || 0);
+
+                  return (
+                    <div key={`mob_job_${job.id || idx}`} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono text-xs font-bold text-brand-700">{job.job_order_number}</div>
+                          <div className="text-xs text-slate-800 font-semibold mt-0.5">{job.vendor_name}</div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          {job.status || 'Active'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between font-mono">
+                        <span>DC: {job.delivery_challan_no || 'N/A'}</span>
+                        <span className="font-bold text-slate-800">{fmt(rec)} / {fmt(sent)} pcs</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                        {out > 0.01 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInwardModal(job)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs"
+                          >
+                            <ArrowDownCircle className="w-3.5 h-3.5" />
+                            <span>Receive</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferModal(job)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Transfer</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReworkModal(job)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg shadow-2xs"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Rework</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* TABLE 2: EMBROIDERY REWORK & CORRECTION DETAILS TABLE (DOWN NEXT TO JOB ORDERS) */}
+        <div className="space-y-3 pt-6 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-amber-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Embroidery Rework & Correction Details
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                {reworkRecords.length} {reworkRecords.length === 1 ? 'record' : 'records'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={reworkSearch}
+                  onChange={(e) => setReworkSearch(e.target.value)}
+                  placeholder="Search rework #, product, vendor..."
+                  className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 w-44 sm:w-56"
+                />
+              </div>
+
+              <select
+                value={reworkStatusFilter}
+                onChange={(e) => setReworkStatusFilter(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="SENT">Sent for Rework</option>
+                <option value="RECEIVED">Rework Received</option>
+                <option value="COMPLETED">Accepted / Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[130px]">Rework # / DC</th>
+                    <th className="py-2.5 px-2.5 w-[150px]">Mill / Vendor</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Product & Color</th>
+                    <th className="py-2.5 px-2 text-right w-[95px]">Rework Qty</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Defect Reason</th>
+                    <th className="py-2.5 px-2 text-center w-[135px]">Status</th>
+                    <th className="py-2.5 px-2 text-center w-[55px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredReworks.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        <RotateCcw className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                        <p className="font-semibold text-xs text-slate-700">No Rework Quantities Recorded</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          When embroidery has tension, shade, needle, or stitch defects, click "Rework" from the 3-dot action menu on the job order.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredReworks.map((rec, idx) => {
+                      return (
+                        <tr key={rec.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono font-bold text-xs text-brand-700 block truncate" title={rec.rework_order_no}>
+                              {rec.rework_order_no}
+                            </span>
+                            {rec.dc_challan_no && (
+                              <span className="font-mono text-[10px] text-slate-500 block truncate">
+                                DC: {rec.dc_challan_no}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-medium text-slate-800 block text-xs truncate" title={rec.vendor_name || rec.destination_process || 'Embroidery Mill'}>
+                              {rec.vendor_name || rec.destination_process || 'Embroidery Mill'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={rec.product_name || rec.display_product_name}>
+                              {rec.product_name || rec.display_product_name || 'Garment Panel'}
+                            </span>
+                            {(rec.color || rec.size) && (
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {rec.color || 'Standard'} • Size: {rec.size || 'M'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap">
+                            <span className="font-mono font-bold text-amber-700 text-xs">
+                              {fmt(rec.rework_quantity)} {rec.uom || 'pcs'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="text-slate-700 text-xs block truncate" title={rec?.rework_reason || 'Thread / Needle Defect'}>
+                              {rec?.rework_reason || 'Thread / Needle Defect'}
+                            </span>
+                            {rec.rework_remarks && (
+                              <span className="text-[10px] text-slate-400 block truncate" title={rec.rework_remarks}>
+                                {rec.rework_remarks}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                              (rec.status as string) === 'Transferred'
+                                ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                                : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : rec.status === 'Sent for Rework'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : rec.status === 'Rework Received'
+                                ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {rec.status || 'Pending Rework'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleReworkMenu(e, rec)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
+                                activeReworkMenu?.record.id === rec.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Rework Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards for Rework Records */}
+            <div className="md:hidden space-y-3 p-3">
+              {filteredReworks.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No rework records registered.
+                </div>
+              ) : (
+                filteredReworks.map((rec, idx) => {
+                  return (
+                    <div key={`mob_rwk_${rec.id || idx}`} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono text-xs font-bold text-brand-700">{rec.rework_order_no}</div>
+                          <div className="text-xs text-slate-800 font-semibold mt-0.5">{rec.product_name || 'Item'} ({rec.color || 'Standard'})</div>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          {rec.status}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between font-mono">
+                        <span>Reason: {rec?.rework_reason || 'Defect'}</span>
+                        <span className="font-bold text-amber-700">{fmt(rec.rework_quantity)} {rec.uom || 'pcs'}</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReceiveReworkModal(rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Receive</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferReworkModal(rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Transfer</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReworkForView(rec);
+                            setViewReworkModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Table 3: Recorded Embroidery Inward Receipts & Quality Inspection Reports */}
@@ -1919,20 +2537,148 @@ export default function EmbroideryOrderDetail() {
             </div>
           )}
         </div>
-      </>
-    )}
+      </div>
 
-    {activeTab === 'rework' && (
-      <StageReworkSection
-        productionOrderId={Number(order?.id || id)}
-        stageId={6}
-        stageCode="EMB"
-        stageName="Embroidery"
-        uom="PCS"
-        onReload={fetchOrderData}
-      />
-    )}
-  </div>
+      {/* FLOATING ACTION PORTAL: EMBROIDERY JOB ORDERS MENU */}
+      {activeJobMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveJobMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeJobMenu.top}px`,
+                left: `${activeJobMenu.left}px`,
+                width: '140px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* 1. Receive (if outstanding > 0) */}
+                {Number(activeJobMenu.job.total_quantity_outstanding || 0) > 0.01 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const j = activeJobMenu.job;
+                      setActiveJobMenu(null);
+                      handleOpenInwardModal(j);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 font-medium transition text-left cursor-pointer"
+                  >
+                    <ArrowDownCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>Receive</span>
+                  </button>
+                )}
+
+                {/* 2. Transfer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const j = activeJobMenu.job;
+                    setActiveJobMenu(null);
+                    handleOpenTransferModal(j);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-700 hover:bg-purple-50 hover:text-purple-800 font-medium transition text-left cursor-pointer"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span>Transfer</span>
+                </button>
+
+                {/* 3. Rework */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const j = activeJobMenu.job;
+                    setActiveJobMenu(null);
+                    handleOpenReworkModal(j);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-medium transition text-left cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Rework</span>
+                </button>
+
+                {/* 4. View / Print */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const j = activeJobMenu.job;
+                    setActiveJobMenu(null);
+                    handleOpenPrintModal('EMBROIDERY_OUTWARD', j);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>View</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* FLOATING ACTION PORTAL: REWORK TABLE MENU */}
+      {activeReworkMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveReworkMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeReworkMenu.top}px`,
+                left: `${activeReworkMenu.left}px`,
+                width: '140px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* 1. Receive */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenReceiveReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 font-medium transition text-left cursor-pointer"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Receive</span>
+                </button>
+
+                {/* 2. Transfer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenTransferReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 font-medium transition text-left cursor-pointer"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span>Transfer</span>
+                </button>
+
+                {/* 3. View */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    setSelectedReworkForView(r);
+                    setViewReworkModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>View</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* MODAL 1: Receive Inward & QC */}
       <Modal
@@ -2145,12 +2891,15 @@ export default function EmbroideryOrderDetail() {
         </form>
       </Modal>
 
-      {/* MODAL 2: Transfer to Stitching */}
+      {/* MODAL: TRANSFER TO STAGE 07 STITCHING */}
       <Modal
         isOpen={transferModalOpen}
-        onClose={() => setTransferModalOpen(false)}
+        onClose={() => {
+          setTransferModalOpen(false);
+          setSelectedReworkForTransfer(null);
+        }}
         title="Transfer Completed Embroidery to Stage 07: Stitching"
-        size="md"
+        maxWidth="max-w-md"
       >
         <form onSubmit={handleConfirmTransfer} className="space-y-4">
           {transferError && (
@@ -2166,31 +2915,61 @@ export default function EmbroideryOrderDetail() {
               Stage 07: Stitching — Color-wise Tracking
             </span>
             <span className="text-xs text-purple-700 block">
-              Product: <strong>{transferItem?.product_name || 'sample'}</strong> • Color: <strong>{transferItem?.color || '101 C'}</strong>
+              Product: <strong>{transferItem?.product_name || 'sample'}</strong> • Color: <strong>{transferItem?.color || 'Standard'}</strong>
             </span>
           </div>
 
-          <FormField label="Quantity to Transfer" required>
-            <input
-              type="number"
-              min="1"
-              max={Number(transferItem?.ready_to_transfer || 0)}
-              value={transferQuantity}
-              onChange={e => setTransferQuantity(Number(e.target.value))}
-              className="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono font-bold text-purple-900"
-              required
-            />
-            <span className="text-[11px] text-slate-500 mt-1 block">
-              Remaining eligible untransferred: <strong className="text-purple-700 font-bold">{Number(transferItem?.ready_to_transfer || 0)}</strong> pcs
-            </span>
+          <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border border-purple-200 rounded-xl text-xs space-y-1.5 font-mono">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-600 font-sans font-medium">Available in Hand to Transfer:</span>
+              <strong className="text-purple-700 text-sm font-bold">
+                {fmt(availableInHandToTransfer)} pcs
+              </strong>
+            </div>
+            {activeReworkQty > 0 && (
+              <div className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-between font-sans">
+                <span className="flex items-center gap-1 font-medium">
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                  Rework at Embroidery Mill:
+                </span>
+                <span className="font-mono font-bold text-amber-900">
+                  {fmt(activeReworkQty)} pcs away
+                </span>
+              </div>
+            )}
+          </div>
+
+          <FormField label="Quantity to Transfer (Pieces) *" required>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400">Available to transfer</span>
+                <button
+                  type="button"
+                  onClick={() => setTransferQuantity(availableInHandToTransfer)}
+                  className="text-[10px] font-bold text-purple-700 hover:underline cursor-pointer"
+                >
+                  Max ({fmt(availableInHandToTransfer)} pcs)
+                </button>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max={availableInHandToTransfer}
+                value={transferQuantity}
+                onChange={e => setTransferQuantity(Number(e.target.value))}
+                className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                required
+              />
+            </div>
           </FormField>
 
-          <FormField label="Transfer Remarks">
+          <FormField label="Transfer Handover Notes">
             <textarea
               rows={2}
               value={transferRemarks}
               onChange={e => setTransferRemarks(e.target.value)}
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-slate-800"
+              placeholder="Enter transfer notes or bundle codes..."
             />
           </FormField>
 
@@ -2198,7 +2977,11 @@ export default function EmbroideryOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setTransferModalOpen(false)}
+              type="button"
+              onClick={() => {
+                setTransferModalOpen(false);
+                setSelectedReworkForTransfer(null);
+              }}
               disabled={transferring}
             >
               Cancel
@@ -2208,13 +2991,446 @@ export default function EmbroideryOrderDetail() {
               variant="primary"
               size="sm"
               type="submit"
-              disabled={transferring}
+              disabled={transferring || availableInHandToTransfer <= 0}
               className="bg-purple-700 hover:bg-purple-800 text-white font-bold"
             >
               {transferring ? 'Transferring...' : 'Confirm Transfer to Stitching'}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* MODAL: CREATE EMBROIDERY REWORK */}
+      <Modal
+        isOpen={reworkModalOpen}
+        onClose={() => setReworkModalOpen(false)}
+        title={selectedJobForRework ? `Send Pieces for Embroidery Rework — ${selectedJobForRework.job_order_number}` : 'Send for Embroidery Rework'}
+        maxWidth="max-w-lg"
+      >
+        {selectedJobForRework && (
+          <form onSubmit={handleCreateRework} className="space-y-4">
+            {reworkError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <span>{reworkError}</span>
+              </div>
+            )}
+
+            {/* Context Card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-800">{selectedJobForRework.vendor_name || 'Embroidery Vendor'}</span>
+                  <span className="font-mono text-[10px] text-brand-600 block">{selectedJobForRework.delivery_challan_no ? `DC: ${selectedJobForRework.delivery_challan_no}` : ''}</span>
+                </div>
+                <span className="font-mono text-brand-700 font-bold bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                  {selectedJobForRework.job_order_number}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-500 font-mono text-[11px] pt-1 border-t border-slate-200/60">
+                <span>Sent Qty: <strong className="text-slate-900">{fmt(selectedJobForRework.total_quantity_sent)} pcs</strong></span>
+                <span>Recv / Acc: <strong className="text-emerald-700">{fmt(selectedJobForRework.total_quantity_accepted)} pcs</strong></span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Rework Quantity (Pieces) *" required>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">Available from job</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const maxQ = Number(selectedJobForRework.total_quantity_sent || 0);
+                        setReworkForm({ ...reworkForm, rework_quantity: maxQ });
+                      }}
+                      className="text-[10px] font-bold text-brand-600 hover:underline cursor-pointer"
+                    >
+                      Max ({fmt(selectedJobForRework.total_quantity_sent || 0)} pcs)
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max={Number(selectedJobForRework.total_quantity_sent || 0)}
+                    value={reworkForm.rework_quantity}
+                    onChange={(e) => setReworkForm({ ...reworkForm, rework_quantity: Number(e.target.value) })}
+                    className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                    required
+                  />
+                </div>
+              </FormField>
+
+              <FormField label="Internal DC / Challan #" required>
+                <input
+                  type="text"
+                  value={reworkForm.dc_challan_no}
+                  onChange={(e) => setReworkForm({ ...reworkForm, dc_challan_no: e.target.value })}
+                  className="w-full text-xs font-mono rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  placeholder="DC-EMB-RWK-..."
+                  required
+                />
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Defect Reason *" required>
+                <select
+                  value={reworkForm.rework_reason}
+                  onChange={(e) => setReworkForm({ ...reworkForm, rework_reason: e.target.value })}
+                  className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  required
+                >
+                  <option value="Embroidery Thread Breakage">Embroidery Thread Breakage</option>
+                  <option value="Tension Variance / Puckering">Tension Variance / Puckering</option>
+                  <option value="Shade Mismatch / Thread Color Mismatch">Shade Mismatch / Thread Color Mismatch</option>
+                  <option value="Needle Hole / Fabric Cut Defect">Needle Hole / Fabric Cut Defect</option>
+                  <option value="Pattern / Graphic Misalignment">Pattern / Graphic Misalignment</option>
+                  <option value="Stain / Soil During Embroidery">Stain / Soil During Embroidery</option>
+                  <option value="Other Defect">Other Defect</option>
+                </select>
+              </FormField>
+
+              <FormField label="Destination Vendor / Mill">
+                <input
+                  type="text"
+                  value={reworkForm.destination_vendor}
+                  onChange={(e) => setReworkForm({ ...reworkForm, destination_vendor: e.target.value })}
+                  className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  placeholder="e.g. Embroidery Processor Mill"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Quality Remarks & Instructions">
+              <textarea
+                rows={2}
+                value={reworkForm.remarks}
+                onChange={(e) => setReworkForm({ ...reworkForm, remarks: e.target.value })}
+                placeholder="Specify precise rework or re-embroidery instructions..."
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
+              />
+            </FormField>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                onClick={() => setReworkModalOpen(false)}
+                disabled={submittingRework}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                disabled={submittingRework}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                <span>{submittingRework ? 'Sending...' : 'Confirm & Send for Rework'}</span>
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: INWARD RECEIVE REWORKED EMBROIDERY PIECES */}
+      <Modal
+        isOpen={receiveReworkModalOpen}
+        onClose={() => !submittingReceiveRework && setReceiveReworkModalOpen(false)}
+        title={`Inward Receive Reworked Pieces — ${selectedReworkForReceive?.rework_order_no}`}
+        maxWidth="max-w-lg"
+      >
+        {selectedReworkForReceive && (
+          <form onSubmit={handleConfirmReceiveRework} className="space-y-4">
+            {/* Duplicate / already received error banner */}
+            {(() => {
+              const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+              const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+              const isAlreadyReceived =
+                selectedReworkForReceive.status === 'Accepted After Rework' ||
+                selectedReworkForReceive.status === 'Rework Received' ||
+                (selectedReworkForReceive.status as string) === 'Completed' ||
+                (selectedReworkForReceive.status as string) === 'Transferred' ||
+                (accQty >= rQty && rQty > 0);
+
+              if (isAlreadyReceived || reworkReceiveError) {
+                return (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <span>
+                      {reworkReceiveError ||
+                        `The rework quantity (${fmt(accQty || rQty)} pcs) for #${selectedReworkForReceive.rework_order_no} has already been received.`}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Metadata 4-field grid with explicit borders */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Inward Delivery Challan (DC No) *" required>
+                <input
+                  type="text"
+                  value={reworkReceiptChallanNo}
+                  onChange={e => setReworkReceiptChallanNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. INW-EMB-RWK-101"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Receipt Date *" required>
+                <input
+                  type="date"
+                  value={reworkReceiptDate}
+                  onChange={e => setReworkReceiptDate(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Lot # / Batch #">
+                <input
+                  type="text"
+                  value={reworkLotNo}
+                  onChange={e => setReworkLotNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. LOT-EMB-01"
+                />
+              </FormField>
+
+              <FormField label="Received & Inspected By *">
+                <input
+                  type="text"
+                  value={reworkReceivedBy}
+                  onChange={e => setReworkReceivedBy(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. Embroidery QC Inspector"
+                  required
+                />
+              </FormField>
+            </div>
+
+            {/* Summary Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100/90 p-2.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Sent for Rework</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {fmt(selectedReworkForReceive.rework_quantity)} {selectedReworkForReceive.uom || 'pcs'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Defect Reason</span>
+                <span className="font-semibold text-slate-700 truncate block" title={selectedReworkForReceive?.rework_reason}>
+                  {selectedReworkForReceive?.rework_reason || 'Defect Correction'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Processor Mill</span>
+                <span className="font-semibold text-slate-700 truncate block">
+                  {selectedReworkForReceive.vendor_name || selectedReworkForReceive.destination_process || 'Embroidery Mill'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-emerald-600 block uppercase font-bold">Inwarding Now</span>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300 inline-block">
+                  {fmt(reworkReceivedQty)} {selectedReworkForReceive.uom || 'pcs'}
+                </span>
+              </div>
+            </div>
+
+            {/* Received Pieces Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <span className="font-bold text-xs text-slate-900 block">
+                    {selectedReworkForReceive.product_name || selectedReworkForReceive.display_product_name || 'Garment Panel'}
+                  </span>
+                  <span className="font-mono text-[10px] text-brand-700">
+                    Color: {selectedReworkForReceive.color || 'Standard'} • Size: {selectedReworkForReceive.size || 'M'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReworkReceivedQty(Number(selectedReworkForReceive.rework_quantity))}
+                  className="text-[11px] font-bold text-brand-600 hover:underline cursor-pointer"
+                >
+                  Receive Full ({fmt(selectedReworkForReceive.rework_quantity)} pcs)
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60">
+                <FormField label={`Received & Accepted Qty (${selectedReworkForReceive.uom || 'pcs'}) *`} required>
+                  <input
+                    type="number"
+                    min="1"
+                    max={Number(selectedReworkForReceive.rework_quantity)}
+                    value={reworkReceivedQty}
+                    onChange={e => setReworkReceivedQty(Number(e.target.value))}
+                    className="w-full text-xs font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs font-mono"
+                    required
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            {/* Mandatory Live Camera Photo Proof (no upload) */}
+            <LivePhotoCaptureField
+              label="Reworked Pieces Physical Verification Photo"
+              required={true}
+              photo={reworkPhotoUrl}
+              onPhotoChange={setReworkPhotoUrl}
+              stageName="Embroidery Rework Return (Stage 06)"
+              orderNumber={order?.order_number || selectedReworkForReceive.rework_order_no}
+              error={reworkReceiveError && !reworkPhotoUrl ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming rework receipt.' : undefined}
+              placeholderText="Tap here to open camera"
+              helperText="Photograph of corrected pieces must be captured live via camera."
+              buttonText="Take Real-Time Rework Photo"
+            />
+
+            <FormField label="Quality Remarks & Inspection Notes">
+              <textarea
+                rows={2}
+                value={reworkRemarks}
+                onChange={e => setReworkRemarks(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                placeholder="e.g. Corrected pieces inspected, thread density and shade verified and passed."
+              />
+            </FormField>
+
+            {(() => {
+              const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+              const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+              const isAlreadyReceived =
+                selectedReworkForReceive.status === 'Accepted After Rework' ||
+                selectedReworkForReceive.status === 'Rework Received' ||
+                (selectedReworkForReceive.status as string) === 'Completed' ||
+                (selectedReworkForReceive.status as string) === 'Transferred' ||
+                (accQty >= rQty && rQty > 0);
+
+              return (
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setReceiveReworkModalOpen(false)}
+                    disabled={submittingReceiveRework}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={submittingReceiveRework || isAlreadyReceived}
+                    className={
+                      isAlreadyReceived
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed font-bold'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
+                    }
+                  >
+                    {submittingReceiveRework ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        <span>Inwarding Pieces...</span>
+                      </>
+                    ) : isAlreadyReceived ? (
+                      <>
+                        <CheckCheck className="w-4 h-4 mr-1.5" />
+                        <span>Rework Quantity Already Received ({fmt(accQty || rQty)} {selectedReworkForReceive.uom || 'pcs'})</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCheck className="w-4 h-4 mr-1.5" />
+                        <span>Confirm Inward & Pass QC ({fmt(reworkReceivedQty)} pcs)</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })()}
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: VIEW REWORK DETAILS */}
+      <Modal
+        isOpen={viewReworkModalOpen}
+        onClose={() => {
+          setViewReworkModalOpen(false);
+          setSelectedReworkForView(null);
+        }}
+        title={`Rework Record Details — ${selectedReworkForView?.rework_order_no || ''}`}
+        maxWidth="max-w-md"
+      >
+        {selectedReworkForView && (
+          <div className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Rework #</span>
+                <span className="font-mono font-bold text-brand-700">{selectedReworkForView.rework_order_no}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Status</span>
+                <span className="font-bold text-slate-800">{selectedReworkForView.status}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Rework Qty</span>
+                <span className="font-mono font-bold text-amber-700">{fmt(selectedReworkForView.rework_quantity)} {selectedReworkForView.uom || 'pcs'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Accepted Qty</span>
+                <span className="font-mono font-bold text-emerald-700">{fmt(selectedReworkForView.accepted_quantity || 0)} {selectedReworkForView.uom || 'pcs'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border border-slate-200 rounded-xl p-3 bg-white">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Mill / Vendor:</span>
+                <strong className="text-slate-800">{selectedReworkForView.vendor_name || selectedReworkForView.destination_process || 'Embroidery Mill'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Product:</span>
+                <strong className="text-slate-800">{selectedReworkForView.product_name || 'Garment Panel'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Color / Size:</span>
+                <strong className="text-slate-800">{selectedReworkForView.color || 'Standard'} • {selectedReworkForView.size || 'M'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Defect Reason:</span>
+                <strong className="text-amber-800">{selectedReworkForView.rework_reason || 'Defect'}</strong>
+              </div>
+              {selectedReworkForView.dc_challan_no && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Challan / DC:</span>
+                  <strong className="font-mono text-slate-800">{selectedReworkForView.dc_challan_no}</strong>
+                </div>
+              )}
+              {selectedReworkForView.rework_remarks && (
+                <div className="pt-2 border-t border-slate-100 text-slate-600">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Remarks:</span>
+                  <span>{selectedReworkForView.rework_remarks}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setViewReworkModalOpen(false);
+                  setSelectedReworkForView(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Full Resolution Photo Zoom Modal */}

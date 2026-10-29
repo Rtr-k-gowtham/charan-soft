@@ -1,16 +1,19 @@
 // src/pages/production/StitchingOrderDetail.tsx
 // Stage 07: Stitching — Color-wise Tracking, Batch Management, Yield Reconciliation & Output Transfer
 // Redesigned to strict Cheran Soft Goods ERP design system:
-// - Clean table layout matching EmbroideryOrderDetail
+// - Clean table layout matching CuttingOrderDetail & EmbroideryOrderDetail
 // - Ordered products arrive from both Cutting and Embroidery stages
 // - Auto-fetched and read-only Assigned Quantity in batch recording form
-// - Removed Operator/Sewing Team, Machine Ref, Supervisor, and Accepted Qty from the form
+// - Integrated Rework & Alteration table directly below Stitching Batches
+// - 3-Dot floating menus for Batches (Inspect, Transfer, Rework, View) and Rework (Receive, Transfer, View)
+// - Synchronized available in hand quantity calculations across Batches and Rework
 // - Direct transfer to Stage 08 Checking
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
-import { ProductionOrder, ProductionStage, StitchingBatch } from '../../types';
+import { ProductionOrder, ProductionStage, StitchingBatch, ReworkRecord } from '../../types';
 import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
@@ -24,6 +27,7 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Layers,
   Calendar,
   Camera,
@@ -40,9 +44,10 @@ import {
   Sparkles,
   ShieldCheck,
   Clock,
-  RotateCcw
+  RotateCcw,
+  MoreVertical,
+  Search
 } from 'lucide-react';
-import StageReworkSection from '../../components/production/StageReworkSection';
 import StageInspectionModal from '../../components/production/StageInspectionModal';
 
 const fmt = (n: number, decimals = 0) =>
@@ -109,14 +114,25 @@ export default function StitchingOrderDetail() {
   const [order, setOrder] = useState<any | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
+  const [reworkRecords, setReworkRecords] = useState<ReworkRecord[]>([]);
   const [stages, setStages] = useState<ProductionStage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Tabs: 'batches' | 'rework'
-  const [activeTab, setActiveTab] = useState<'batches' | 'rework'>('batches');
   const [filterMode, setFilterMode] = useState<'ALL' | 'STITCHING'>('ALL');
+
+  // Search & Filters for Batches Table 1
+  const [batchSearch, setBatchSearch] = useState('');
+  const [batchStatusFilter, setBatchStatusFilter] = useState('ALL');
+
+  // Search & Filters for Rework Table 2
+  const [reworkSearch, setReworkSearch] = useState('');
+  const [reworkStatusFilter, setReworkStatusFilter] = useState('ALL');
+
+  // 3-Dot Floating Action Menus
+  const [activeBatchMenu, setActiveBatchMenu] = useState<{ top: number; left: number; batch: StitchingBatch } | null>(null);
+  const [activeReworkMenu, setActiveReworkMenu] = useState<{ top: number; left: number; record: ReworkRecord } | null>(null);
 
   // Record Stitching Batch Modal State
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -136,14 +152,48 @@ export default function StitchingOrderDetail() {
   const [showInspectModal, setShowInspectModal] = useState(false);
   const [selectedBatchForInspect, setSelectedBatchForInspect] = useState<any | null>(null);
 
-  // Transfer to Checking Modal
+  // Transfer to Checking Modal State
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<StitchingBatch | null>(null);
   const [transferItem, setTransferItem] = useState<any | null>(null);
-  const [transferBatchId, setTransferBatchId] = useState<number | undefined>(undefined);
   const [transferQuantity, setTransferQuantity] = useState<number>(0);
   const [transferRemarks, setTransferRemarks] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
+  const [selectedReworkForTransfer, setSelectedReworkForTransfer] = useState<ReworkRecord | null>(null);
+
+  // Modal: Create Rework & Alteration
+  const [reworkModalOpen, setReworkModalOpen] = useState(false);
+  const [selectedBatchForRework, setSelectedBatchForRework] = useState<StitchingBatch | null>(null);
+  const [reworkForm, setReworkForm] = useState({
+    rework_quantity: 1,
+    rework_reason: 'Broken / Skipped Stitching',
+    dc_challan_no: '',
+    expected_return_date: new Date().toISOString().split('T')[0],
+    destination_process: 'Alteration & Restitching Line',
+    remarks: ''
+  });
+  const [submittingRework, setSubmittingRework] = useState(false);
+  const [reworkError, setReworkError] = useState('');
+
+  // Modal: Inward Receive Reworked Pieces
+  const [receiveReworkModalOpen, setReceiveReworkModalOpen] = useState(false);
+  const [selectedReworkForReceive, setSelectedReworkForReceive] = useState<ReworkRecord | null>(null);
+  const [reworkReceiptChallanNo, setReworkReceiptChallanNo] = useState('');
+  const [reworkReceiptDate, setReworkReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reworkLotNo, setReworkLotNo] = useState('');
+  const [reworkReceivedBy, setReworkReceivedBy] = useState('Stitching QC Inspector');
+  const [reworkReceivedQty, setReworkReceivedQty] = useState(0);
+  const [reworkPhotoUrl, setReworkPhotoUrl] = useState<string | null>(null);
+  const [reworkRemarks, setReworkRemarks] = useState('');
+  const [reworkReceiveError, setReworkReceiveError] = useState('');
+  const [submittingReceiveRework, setSubmittingReceiveRework] = useState(false);
+
+  // Modal: View Batch & View Rework Details
+  const [viewBatchModalOpen, setViewBatchModalOpen] = useState(false);
+  const [selectedBatchForView, setSelectedBatchForView] = useState<StitchingBatch | null>(null);
+  const [viewReworkModalOpen, setViewReworkModalOpen] = useState(false);
+  const [selectedReworkForView, setSelectedReworkForView] = useState<ReworkRecord | null>(null);
 
   // Image Preview Modal
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -162,6 +212,7 @@ export default function StitchingOrderDetail() {
       setOrder(stData.order || null);
       setItems(stData.items || []);
       setBatches(stData.batches || []);
+      setReworkRecords(stData.rework_records || []);
 
       const st = (stagesRes as any)?.data || stagesRes;
       setStages(Array.isArray(st) ? st : []);
@@ -181,6 +232,16 @@ export default function StitchingOrderDetail() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      setActiveBatchMenu(null);
+      setActiveReworkMenu(null);
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
 
   // Overall Totals for 6-Card KPI Summary
   const overallTotals = useMemo(() => {
@@ -222,6 +283,140 @@ export default function StitchingOrderDetail() {
     };
   }, [items]);
 
+  // Active rework quantity currently away at alteration line (not yet accepted or transferred)
+  const activeReworkQty = useMemo(() => {
+    return reworkRecords
+      .filter(
+        (r) =>
+          r.status !== 'Accepted After Rework' &&
+          (r.status as string) !== 'Transferred' &&
+          (r.status as string) !== 'Scrapped' &&
+          (r.status as string) !== 'Completed'
+      )
+      .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
+  }, [reworkRecords]);
+
+  const getActiveReworkForBatch = (b: StitchingBatch | null) => {
+    if (!b) return 0;
+    return reworkRecords
+      .filter(
+        (r) =>
+          (r.batch_number === b.batch_number || String(r.reference_id) === String(b.id)) &&
+          r.status !== 'Accepted After Rework' &&
+          (r.status as string) !== 'Transferred' &&
+          (r.status as string) !== 'Scrapped' &&
+          (r.status as string) !== 'Completed'
+      )
+      .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
+  };
+
+  const totalAcceptedPieces = useMemo(() => {
+    return batches.reduce((sum, b) => sum + Number(b.accepted_quantity || 0), 0);
+  }, [batches]);
+
+  const totalTransferredPieces = useMemo(() => {
+    return batches.reduce((sum, b) => sum + Number(b.transferred_quantity || 0), 0);
+  }, [batches]);
+
+  const overallAvailableForTransfer = useMemo(() => {
+    return Math.max(0, totalAcceptedPieces - activeReworkQty - totalTransferredPieces);
+  }, [totalAcceptedPieces, activeReworkQty, totalTransferredPieces]);
+
+  const getBatchAvailableForTransfer = (b: StitchingBatch | null) => {
+    if (!b) return overallAvailableForTransfer;
+    const accepted = Number(b.accepted_quantity || 0);
+    const transferred = Number(b.transferred_quantity || 0);
+    const batchActiveRework = getActiveReworkForBatch(b);
+    return Math.max(0, accepted - batchActiveRework - transferred);
+  };
+
+  const getBatchAvailableForRework = (b: StitchingBatch) => {
+    const comp = Number(b.completed_quantity || 0);
+    const transferred = Number(b.transferred_quantity || 0);
+    const batchActiveRework = getActiveReworkForBatch(b);
+    return Math.max(0, comp - transferred - batchActiveRework);
+  };
+
+  // Filtered Batches for Table 1
+  const filteredBatches = useMemo(() => {
+    return batches.filter((b) => {
+      if (batchSearch.trim()) {
+        const q = batchSearch.toLowerCase();
+        const m1 = (b.batch_number || '').toLowerCase().includes(q);
+        const m2 = (b.product_name || '').toLowerCase().includes(q);
+        const m3 = (b.color || '').toLowerCase().includes(q);
+        if (!m1 && !m2 && !m3) return false;
+      }
+      if (batchStatusFilter === 'PENDING_QC') {
+        const uninspected = Math.max(0, Number(b.completed_quantity || 0) - Number(b.accepted_quantity || 0) - Number(b.rework_quantity || 0) - Number(b.rejected_quantity || 0));
+        return uninspected > 0;
+      }
+      if (batchStatusFilter === 'ACCEPTED') {
+        return Number(b.accepted_quantity || 0) > 0 && b.status !== 'Transferred to Checking' && !(b as any).is_transferred;
+      }
+      if (batchStatusFilter === 'TRANSFERRED') {
+        return b.status === 'Transferred to Checking' || (b as any).is_transferred;
+      }
+      return true;
+    });
+  }, [batches, batchSearch, batchStatusFilter]);
+
+  // Filtered Reworks for Table 2
+  const filteredReworks = useMemo(() => {
+    return reworkRecords.filter((r) => {
+      if (reworkSearch.trim()) {
+        const q = reworkSearch.toLowerCase();
+        const m1 = (r.rework_order_no || '').toLowerCase().includes(q);
+        const m2 = (r.product_name || r.display_product_name || '').toLowerCase().includes(q);
+        const m3 = (r.color || '').toLowerCase().includes(q);
+        if (!m1 && !m2 && !m3) return false;
+      }
+      if (reworkStatusFilter === 'SENT') {
+        return r.status === 'Sent for Rework' || r.status === 'Pending Rework';
+      }
+      if (reworkStatusFilter === 'RECEIVED') {
+        return r.status === 'Rework Received';
+      }
+      if (reworkStatusFilter === 'COMPLETED') {
+        return (
+          r.status === 'Accepted After Rework' ||
+          (r.status as string) === 'Completed' ||
+          (r.status as string) === 'Transferred'
+        );
+      }
+      return true;
+    });
+  }, [reworkRecords, reworkSearch, reworkStatusFilter]);
+
+  // Menu Toggle Handlers
+  const handleToggleBatchMenu = (e: React.MouseEvent, batch: StitchingBatch) => {
+    e.stopPropagation();
+    if (activeBatchMenu?.batch.id === batch.id) {
+      setActiveBatchMenu(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 140;
+    const left = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12);
+    const top = rect.bottom + 4;
+    setActiveBatchMenu({ top, left, batch });
+    setActiveReworkMenu(null);
+  };
+
+  const handleToggleReworkMenu = (e: React.MouseEvent, rec: ReworkRecord) => {
+    e.stopPropagation();
+    if (activeReworkMenu?.record.id === rec.id) {
+      setActiveReworkMenu(null);
+      return;
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const menuWidth = 140;
+    const left = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 12);
+    const top = rect.bottom + 4;
+    setActiveReworkMenu({ top, left, record: rec });
+    setActiveBatchMenu(null);
+  };
+
   // Open Record Stitching Batch Modal
   const handleOpenBatchModal = (it: any) => {
     setSelectedItem(it);
@@ -238,22 +433,7 @@ export default function StitchingOrderDetail() {
     setBatchModalOpen(true);
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    try {
-      const newUrls: string[] = [];
-      for (let i = 0; i < files.length; i++) {
-        const url = await processImageFile(files[i]);
-        newUrls.push(url);
-      }
-      setPhotoUrls(prev => [...prev, ...newUrls]);
-    } catch (err: any) {
-      setBatchError('Error processing photo: ' + err.message);
-    }
-  };
-
-  // Submit Stitching Batch (Records completed sewing output; Quality Inspection happens in the next step)
+  // Submit Stitching Batch
   const handleSaveBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!order || !selectedItem) return;
@@ -297,26 +477,236 @@ export default function StitchingOrderDetail() {
     }
   };
 
-  // Open Transfer Modal to Checking (Stage 08)
-  const handleOpenTransferModal = (itOrBatch?: any) => {
-    let it = itOrBatch;
-    let bId: number | undefined = undefined;
-    if (itOrBatch && itOrBatch.batch_number) {
-      // Called with batch
-      it = items.find(i => String(i.color).trim() === String(itOrBatch.color).trim()) || items[0];
-      bId = itOrBatch.id;
-    } else if (itOrBatch) {
-      it = itOrBatch;
-    } else if (!itOrBatch) {
+  // Open Rework Modal from Table 1 Batch
+  const handleOpenReworkModal = (batch: StitchingBatch) => {
+    setSelectedBatchForRework(batch);
+    const avail = getBatchAvailableForRework(batch);
+    setReworkForm({
+      rework_quantity: avail > 0 ? Math.min(avail, 25) : 1,
+      rework_reason: 'Broken / Skipped Stitching',
+      dc_challan_no: `DC-STI-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+      expected_return_date: new Date().toISOString().split('T')[0],
+      destination_process: 'Alteration & Restitching Line',
+      remarks: '',
+    });
+    setReworkError('');
+    setReworkModalOpen(true);
+  };
+
+  // Submit Create Stitching Rework
+  const handleConfirmCreateRework = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBatchForRework || !order) return;
+    const qty = Number(reworkForm.rework_quantity);
+    const maxQty = Number(selectedBatchForRework.completed_quantity || selectedBatchForRework.assigned_quantity || 0);
+
+    if (qty <= 0) {
+      setReworkError('Rework quantity must be greater than zero.');
+      return;
+    }
+    if (qty > maxQty) {
+      setReworkError(`Rework quantity cannot exceed batch output quantity (${maxQty} pcs).`);
+      return;
+    }
+
+    setSubmittingRework(true);
+    setReworkError('');
+    try {
+      const created = await api.createRework({
+        production_order_id: Number(order.id),
+        production_order_item_id: selectedBatchForRework.production_order_item_id,
+        stage_id: 7,
+        stage_code: 'STI',
+        product_id: selectedBatchForRework.product_id,
+        product_name: selectedBatchForRework.product_name || 'Stitched Garment',
+        color: selectedBatchForRework.color || 'Standard',
+        size: selectedBatchForRework.size || 'M',
+        rework_quantity: qty,
+        uom: 'PCS',
+        defect_reason: reworkForm.rework_reason,
+        rework_reason: reworkForm.rework_reason,
+        rework_remarks: reworkForm.remarks,
+        destination_process: reworkForm.destination_process || 'Alteration & Restitching Line',
+        vendor_name: 'In-House Stitching & Alteration Line',
+        batch_number: selectedBatchForRework.batch_number,
+        reference_id: selectedBatchForRework.id,
+      });
+
+      const reworkId = created?.id || (created as any)?.data?.id;
+      if (reworkId) {
+        await api.sendRework({
+          rework_id: reworkId,
+          sent_date: new Date().toISOString().split('T')[0],
+          vendor_name: 'In-House Stitching & Alteration Line',
+          dc_challan_no: reworkForm.dc_challan_no || `DC-STI-RWK-${Math.floor(1000 + Math.random() * 9000)}`,
+          remarks: reworkForm.remarks,
+        });
+      }
+
+      setReworkModalOpen(false);
+      showToast(`Rework of ${qty} pcs sent for alteration successfully!`);
+      await fetchOrderData();
+    } catch (err: any) {
+      console.error('Failed to create stitching rework:', err);
+      setReworkError(err?.message || 'Failed to dispatch rework order');
+    } finally {
+      setSubmittingRework(false);
+    }
+  };
+
+  // Open Receive Rework Modal
+  const handleOpenReceiveReworkModal = (rec: ReworkRecord) => {
+    setSelectedReworkForReceive(rec);
+    const rQty = Number(rec.rework_quantity || 0);
+    const accQty = Number(rec.accepted_quantity || 0);
+    const isAlreadyReceived =
+      rec.status === 'Accepted After Rework' ||
+      rec.status === 'Rework Received' ||
+      (rec.status as string) === 'Completed' ||
+      (rec.status as string) === 'Transferred' ||
+      (accQty >= rQty && rQty > 0);
+
+    setReworkReceiptChallanNo(rec.dc_challan_no ? `INW-${rec.dc_challan_no}` : `INW-STI-RWK-${Math.floor(1000 + Math.random() * 9000)}`);
+    setReworkReceiptDate(new Date().toISOString().split('T')[0]);
+    setReworkLotNo(rec.batch_number || `LOT-STI-RWK-${rec.id || 1}`);
+    setReworkReceivedBy('Stitching QC Inspector');
+    setReworkReceivedQty(rQty);
+    setReworkPhotoUrl(null);
+    setReworkRemarks('');
+    if (isAlreadyReceived) {
+      setReworkReceiveError(`The rework quantity (${fmt(accQty || rQty)} pcs) for #${rec.rework_order_no} has already been received.`);
+    } else {
+      setReworkReceiveError('');
+    }
+    setReceiveReworkModalOpen(true);
+  };
+
+  // Confirm Inward Receipt of Rework
+  const handleConfirmReceiveRework = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedReworkForReceive) return;
+    setReworkReceiveError('');
+
+    const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+    const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+    const isAlreadyReceived =
+      selectedReworkForReceive.status === 'Accepted After Rework' ||
+      selectedReworkForReceive.status === 'Rework Received' ||
+      (selectedReworkForReceive.status as string) === 'Completed' ||
+      (selectedReworkForReceive.status as string) === 'Transferred' ||
+      (accQty >= rQty && rQty > 0);
+
+    if (isAlreadyReceived) {
+      setReworkReceiveError(`The rework quantity (${fmt(accQty || rQty)} pcs) for #${selectedReworkForReceive.rework_order_no} has already been received.`);
+      return;
+    }
+
+    if (reworkReceivedQty <= 0) {
+      setReworkReceiveError('Received quantity must be greater than 0 pcs');
+      return;
+    }
+    if (!reworkPhotoUrl) {
+      setReworkReceiveError('Real-time camera photograph with live GPS coordinates is mandatory before confirming rework receipt.');
+      return;
+    }
+
+    setSubmittingReceiveRework(true);
+    try {
+      await api.receiveRework({
+        rework_id: selectedReworkForReceive.id,
+        received_date: reworkReceiptDate,
+        dc_challan_no: reworkReceiptChallanNo,
+        lot_number: reworkLotNo,
+        received_by: reworkReceivedBy,
+        photo_url: reworkPhotoUrl,
+        remarks: reworkRemarks,
+      });
+      await api.reinspectRework({
+        rework_id: selectedReworkForReceive.id,
+        reinspection_date: reworkReceiptDate,
+        accepted_quantity: Number(reworkReceivedQty || 0),
+        rejected_quantity: 0,
+        inspector_name: reworkReceivedBy || 'Stitching QC Inspector',
+        reinspection_result: 'Passed Quality Audit',
+        reinspection_notes: reworkRemarks || 'Altered stitching pieces received & accepted',
+        batch_number: reworkLotNo
+      });
+      setReceiveReworkModalOpen(false);
+      showToast(`Rework #${selectedReworkForReceive.rework_order_no} (${reworkReceivedQty} pcs) inward received & accepted! Pieces are ready for stage transfer.`);
+      await fetchOrderData();
+    } catch (err: any) {
+      console.error('Failed to process stitching rework receipt:', err);
+      setReworkReceiveError(err?.message || 'Failed to confirm rework receipt');
+    } finally {
+      setSubmittingReceiveRework(false);
+    }
+  };
+
+  // Open Transfer Modal to Stage 08 Checking
+  const handleOpenTransferModal = (batchOrItem?: any) => {
+    let b: StitchingBatch | null = null;
+    let it: any = null;
+
+    if (batchOrItem && batchOrItem.batch_number) {
+      b = batchOrItem;
+      it = items.find(i => String(i.color).trim() === String(b?.color).trim()) || items[0];
+    } else if (batchOrItem) {
+      it = batchOrItem;
+    } else {
       it = items.find(i => Number(i.ready_to_transfer || 0) > 0) || items[0];
     }
+
+    setSelectedBatch(b);
     setTransferItem(it);
-    setTransferBatchId(bId);
-    const maxQty = bId 
-      ? Number(itOrBatch?.accepted_quantity || 0)
-      : Number(it?.ready_to_transfer ?? it?.accepted_quantity ?? overallTotals.readyForChecking ?? 0);
-    setTransferQuantity(maxQty);
-    setTransferRemarks('');
+    setSelectedReworkForTransfer(null);
+
+    const available = b ? getBatchAvailableForTransfer(b) : overallAvailableForTransfer;
+    if (available <= 0) {
+      showToast('No accepted stitching output is currently available in hand to transfer to Checking.');
+      return;
+    }
+
+    setTransferQuantity(available);
+    setTransferRemarks('Stitched garments inspected and passed. Transferred to Stage 08: Checking.');
+    setTransferError('');
+    setTransferModalOpen(true);
+  };
+
+  // Open Stage Transfer Modal from Rework Table
+  const handleOpenTransferReworkModal = (rec: ReworkRecord) => {
+    const isReceived =
+      rec.status === 'Rework Received' ||
+      rec.status === 'Accepted After Rework' ||
+      (rec.status as string) === 'Completed';
+
+    if (!isReceived) {
+      handleOpenReceiveReworkModal(rec);
+      setReworkReceiveError(
+        'Altered stitching pieces must be inward received before transferring to Checking. Please confirm inward receipt below.'
+      );
+      return;
+    }
+
+    if ((rec.status as string) === 'Transferred') {
+      showToast(`Rework #${rec.rework_order_no} has already been transferred to Checking.`);
+      return;
+    }
+
+    const parentBatch = batches.find(
+      (b) => b.batch_number === rec.batch_number || String(b.id) === String(rec.reference_id)
+    );
+
+    const available = parentBatch ? getBatchAvailableForTransfer(parentBatch) : overallAvailableForTransfer;
+    if (available <= 0) {
+      showToast('No accepted stitching output is currently available in hand to transfer to Checking.');
+      return;
+    }
+
+    setSelectedReworkForTransfer(rec);
+    setSelectedBatch(parentBatch || null);
+    setTransferItem(items[0] || null);
+    setTransferQuantity(available);
+    setTransferRemarks(`Reworked stitching #${rec.rework_order_no} accepted and transferred to Stage 08: Checking.`);
     setTransferError('');
     setTransferModalOpen(true);
   };
@@ -329,13 +719,20 @@ export default function StitchingOrderDetail() {
       return;
     }
 
+    const available = selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer;
+    if (transferQuantity > available + 0.001) {
+      setTransferError(`Transfer quantity (${transferQuantity} pcs) exceeds available in hand (${available} pcs).`);
+      return;
+    }
+
     try {
       setTransferring(true);
       setTransferError('');
       await api.transferStitchingOutput({
         production_order_id: Number(order.id),
-        batch_id: transferBatchId,
-        item_id: transferItem?.active_stitching_item_id || transferItem?.id,
+        batch_id: selectedBatch?.id,
+        item_id: selectedBatch?.production_order_item_id || transferItem?.active_stitching_item_id || transferItem?.id || items[0]?.active_stitching_item_id || items[0]?.id || 0,
+        rework_id: selectedReworkForTransfer?.id,
         transfer_quantity: Number(transferQuantity),
         remarks: transferRemarks
       });
@@ -511,43 +908,8 @@ export default function StitchingOrderDetail() {
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200">
-          <button
-            type="button"
-            onClick={() => setActiveTab('batches')}
-            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'batches'
-                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            Stitching Batches & Output ({batches.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('rework')}
-            className={`pb-3 pt-1 px-4 text-xs font-bold flex items-center gap-2 border-b-2 transition ${
-              activeTab === 'rework'
-                ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-lg'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <RotateCcw className="w-4 h-4" />
-            Stage 07 Rework & Alteration
-            {overallTotals.totalRework > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                {fmt(overallTotals.totalRework)} pcs
-              </span>
-            )}
-          </button>
-        </div>
-
-        {activeTab === 'batches' && (
-          <>
-            {/* Table 1: Product-Wise Stitching Status & Action (Table View matching Embroidery) */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Table 1: Product-Wise Stitching Status & Action */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
           <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center text-brand-700">
@@ -724,191 +1086,613 @@ export default function StitchingOrderDetail() {
           </div>
         </div>
 
-        {/* Table 2: Recorded Stitching Batches & Progress */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-          <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-700">
-                <Layers className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                  Recorded Stitching Batches & Quality Output
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Detailed stitching batch logs with assigned pieces, yields, defects, and proof photos.
-                </p>
-              </div>
+        {/* TABLE 1: STITCHING BATCHES (MATCHING CUTTING STAGE ERP TABLE VIEW) */}
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-brand-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Stitching Batches
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-brand-100 text-brand-800 px-2 py-0.5 rounded-full">
+                {batches.length} {batches.length === 1 ? 'batch' : 'batches'}
+              </span>
             </div>
-            <span className="text-xs font-mono font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-              {batches.length} {batches.length === 1 ? 'Batch' : 'Batches'}
-            </span>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={batchSearch}
+                  onChange={(e) => setBatchSearch(e.target.value)}
+                  placeholder="Search batches, product, color..."
+                  className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 w-44 sm:w-56"
+                />
+              </div>
+
+              <select
+                value={batchStatusFilter}
+                onChange={(e) => setBatchStatusFilter(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PENDING_QC">Pending QC</option>
+                <option value="ACCEPTED">Accepted Output</option>
+                <option value="TRANSFERRED">Transferred</option>
+              </select>
+            </div>
           </div>
 
-          {batches.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-xs">
-              No stitching batches recorded yet. When cut or embroidered pieces arrive, click "Record Stitching" above to record a sewing run.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                   <tr>
-                    <th className="py-3 px-4">Batch #</th>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-4">Product Name</th>
-                    <th className="py-3 px-3">Color / Size</th>
-                    <th className="py-3 px-3 text-right">Assigned Qty</th>
-                    <th className="py-3 px-3 text-right">Completed Qty</th>
-                    <th className="py-3 px-3 text-right">Accepted Qty</th>
-                    <th className="py-3 px-3 text-right">Rejected</th>
-                    <th className="py-3 px-3 text-right">Rework</th>
-                    <th className="py-3 px-3 text-center">Status</th>
-                    <th className="py-3 px-3 text-center">Proof Photos</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[130px]">Batch Number</th>
+                    <th className="py-2.5 px-2.5 w-[160px]">Product & SKU</th>
+                    <th className="py-2.5 px-2 text-right w-[85px]">Stitch Qty</th>
+                    <th className="py-2.5 px-2.5 w-[120px]">Color / Size</th>
+                    <th className="py-2.5 px-2 w-[110px]">Stitch Date</th>
+                    <th className="py-2.5 px-2.5 w-[130px]">Target Stage</th>
+                    <th className="py-2.5 px-2 text-center w-[125px]">Status</th>
+                    <th className="py-2.5 px-2 text-center w-[55px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {batches.map((batch) => {
-                    const assigned = Number(batch.assigned_quantity || batch.completed_quantity || 0);
-                    const comp = Number(batch.completed_quantity || 0);
-                    const acc = Number(batch.accepted_quantity || (comp - Number(batch.rejected_quantity || 0) - Number(batch.rework_quantity || 0)));
-                    const rej = Number(batch.rejected_quantity || 0);
-                    const rwk = Number(batch.rework_quantity || 0);
-                    const photos = parsePhotos(batch.photo_urls);
+                  {filteredBatches.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        <Layers className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                        <p className="font-semibold text-xs text-slate-700">No Stitching Batches Found</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          When cut or embroidered pieces arrive, click "Record Stitching" above to record a sewing run.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredBatches.map((batch, idx) => {
+                      const comp = Number(batch.completed_quantity || 0);
+                      const acc = Number(batch.accepted_quantity || (comp - Number(batch.rejected_quantity || 0) - Number(batch.rework_quantity || 0)));
+                      const rej = Number(batch.rejected_quantity || 0);
+                      const rwk = Number(batch.rework_quantity || 0);
+                      const trf = Number(batch.transferred_quantity || 0);
+                      const uninspected = Math.max(0, comp - acc - rej - rwk);
+                      const isTransferred = batch.status === 'Transferred to Checking' || (batch as any).is_transferred || (trf >= acc && acc > 0);
 
-                    return (
-                      <tr key={batch.id} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4 font-mono font-bold text-brand-700">
-                          {batch.batch_number}
-                        </td>
-                        <td className="py-3 px-3 text-slate-600 font-mono">
-                          {batch.completion_date || batch.start_date || 'N/A'}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-bold text-slate-800 block">{batch.product_name || 'Garment Item'}</span>
-                          {batch.remarks && (
-                            <span className="text-[10px] text-slate-400 block truncate max-w-xs">{batch.remarks}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="font-semibold text-slate-800 block">{batch.color || 'Standard'}</span>
-                          <span className="text-[10px] font-mono text-slate-400">Size: {batch.size || 'M'}</span>
-                        </td>
-                        <td className="py-3 px-3 text-right font-mono text-slate-600">{fmt(assigned)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">{fmt(comp)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700">{fmt(acc)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-red-600 font-semibold">{fmt(rej)}</td>
-                        <td className="py-3 px-3 text-right font-mono text-amber-600 font-semibold">{fmt(rwk)}</td>
-                        <td className="py-3 px-3 text-center">
-                          {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 inline-flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-purple-600" />
-                              Transferred to Checking
+                      return (
+                        <tr key={batch.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono font-bold text-xs text-brand-700 block truncate" title={batch.batch_number}>
+                              {batch.batch_number}
                             </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              Completed
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={batch.product_name}>
+                              {batch.product_name || 'Garment Item'}
                             </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          {photos.length > 0 ? (
-                            <div className="flex items-center justify-center gap-1">
-                              {photos.slice(0, 2).map((url, pIdx) => (
-                                <button
-                                  key={pIdx}
-                                  type="button"
-                                  onClick={() => setPreviewImage(url)}
-                                  className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
-                                >
-                                  <img src={url} alt="Proof" className="w-full h-full object-cover" />
-                                </button>
-                              ))}
-                              {photos.length > 2 && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPreviewImage(photos[0])}
-                                  className="w-7 h-7 rounded bg-slate-100 text-slate-600 font-mono text-[10px] font-bold border border-slate-200 flex items-center justify-center"
-                                >
-                                  +{photos.length - 2}
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">None</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {(() => {
-                              const uninspected = Math.max(0, Number(batch.completed_quantity || 0) - Number(batch.accepted_quantity || 0) - Number(batch.rework_quantity || 0) - Number(batch.rejected_quantity || 0));
-                              return (
-                                <>
-                                  {uninspected > 0 && (
-                                    <Button
-                                      size="xs"
-                                      variant="primary"
-                                      icon={<ShieldCheck className="w-3 h-3 text-white" />}
-                                      onClick={() => {
-                                        setSelectedBatchForInspect(batch);
-                                        setShowInspectModal(true);
-                                      }}
-                                      className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
-                                      title="Perform Quality Inspection on Sewn Garments"
-                                    >
-                                      Inspect ({uninspected})
-                                    </Button>
-                                  )}
-                                  {batch.status === 'Transferred to Checking' || (batch as any).is_transferred ? (
-                                    <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1 shadow-2xs">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
-                                      In Checking
-                                    </span>
-                                  ) : Number(batch.accepted_quantity || 0) > 0 ? (
-                                    <Button
-                                      id={`btn-transfer-checking-${batch.id}`}
-                                      size="xs"
-                                      variant="secondary"
-                                      icon={<ArrowRight className="w-3 h-3" />}
-                                      onClick={() => handleOpenTransferModal(batch)}
-                                      className="bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 font-bold text-[11px]"
-                                    >
-                                      To Checking
-                                    </Button>
-                                  ) : uninspected <= 0 ? (
-                                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                      Completed
-                                    </span>
-                                  ) : null}
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                            {batch.remarks && (
+                              <span className="text-[10px] text-slate-400 block truncate" title={batch.remarks}>
+                                {batch.remarks}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap">
+                            <span className="font-mono font-bold text-slate-900 text-xs">
+                              {fmt(comp)} pcs
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-medium text-slate-800 block text-xs truncate" title={batch.color}>
+                              {batch.color || 'Standard'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block">
+                              Size: {batch.size || 'M'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-slate-600 font-mono text-[11px] align-middle whitespace-nowrap">
+                            {batch.completion_date || batch.start_date || 'N/A'}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono text-[11px] text-slate-500 block truncate" title="Next: 08. Checking">
+                              Next: 08. Checking
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
+                            {uninspected > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                Pending QC ({fmt(uninspected)})
+                              </span>
+                            ) : isTransferred ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
+                                Transferred ({fmt(trf || acc)} pcs)
+                              </span>
+                            ) : acc > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Accepted ({fmt(acc)} pcs)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                Completed
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleBatchMenu(e, batch)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
+                                activeBatchMenu?.batch.id === batch.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Batch Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-      </>
-    )}
 
-    {activeTab === 'rework' && (
-      <StageReworkSection
-        productionOrderId={Number(order?.id || id)}
-        stageId={7}
-        stageCode="STI"
-        stageName="Stitching"
-        uom="PCS"
-        onReload={fetchOrderData}
-      />
-    )}
-  </div>
+            {/* Mobile Cards for Stitching Batches */}
+            <div className="md:hidden space-y-3 p-3">
+              {filteredBatches.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No stitching batches recorded.
+                </div>
+              ) : (
+                filteredBatches.map((batch, idx) => {
+                  const comp = Number(batch.completed_quantity || 0);
+                  const acc = Number(batch.accepted_quantity || 0);
+                  const uninspected = Math.max(0, comp - acc - Number(batch.rejected_quantity || 0) - Number(batch.rework_quantity || 0));
+
+                  return (
+                    <div key={`mob_batch_${batch.id || idx}`} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono text-xs font-bold text-brand-700">{batch.batch_number}</div>
+                          <div className="text-xs text-slate-800 font-semibold mt-0.5">{batch.product_name} ({batch.color})</div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                          {batch.status || 'Active'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between font-mono">
+                        <span>Completed: {fmt(comp)} pcs</span>
+                        <span className="font-bold text-emerald-700">Acc: {fmt(acc)} pcs</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                        {uninspected > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBatchForInspect(batch);
+                              setShowInspectModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shadow-2xs"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Inspect ({uninspected})</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferModal(batch)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Transfer</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReworkModal(batch)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg shadow-2xs"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Rework</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedBatchForView(batch);
+                            setViewBatchModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* TABLE 2: STITCHING REWORK & ALTERATION DETAILS TABLE (DOWN NEXT TO STITCHING BATCHES) */}
+        <div className="space-y-3 pt-6 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <RotateCcw className="w-4 h-4 text-amber-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Stitching Rework & Alteration Details
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                {reworkRecords.length} {reworkRecords.length === 1 ? 'record' : 'records'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={reworkSearch}
+                  onChange={(e) => setReworkSearch(e.target.value)}
+                  placeholder="Search rework #, product, line..."
+                  className="pl-8 pr-3 py-1 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 w-44 sm:w-56"
+                />
+              </div>
+
+              <select
+                value={reworkStatusFilter}
+                onChange={(e) => setReworkStatusFilter(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="SENT">Sent for Rework</option>
+                <option value="RECEIVED">Rework Received</option>
+                <option value="COMPLETED">Accepted / Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
+                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                    <th className="py-2.5 px-2.5 w-[130px]">Rework # / DC</th>
+                    <th className="py-2.5 px-2.5 w-[150px]">Process / Line</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Product & Color</th>
+                    <th className="py-2.5 px-2 text-right w-[95px]">Rework Qty</th>
+                    <th className="py-2.5 px-2.5 w-[170px]">Defect Reason</th>
+                    <th className="py-2.5 px-2 text-center w-[135px]">Status</th>
+                    <th className="py-2.5 px-2 text-center w-[55px]">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredReworks.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        <RotateCcw className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                        <p className="font-semibold text-xs text-slate-700">No Rework Quantities Recorded</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          When sewn garments have seam, tension, or stitch defects, click "Rework" from the 3-dot action menu on the stitching batch.
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredReworks.map((rec, idx) => {
+                      return (
+                        <tr key={rec.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-2.5 px-2 text-center font-mono text-slate-400 text-[11px] align-middle">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-mono font-bold text-xs text-brand-700 block truncate" title={rec.rework_order_no}>
+                              {rec.rework_order_no}
+                            </span>
+                            {rec.dc_challan_no && (
+                              <span className="font-mono text-[10px] text-slate-500 block truncate">
+                                DC: {rec.dc_challan_no}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-medium text-slate-800 block text-xs truncate" title={rec.destination_process || rec.vendor_name || 'Alteration Line'}>
+                              {rec.destination_process || rec.vendor_name || 'Alteration Line'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="font-semibold text-slate-800 block text-xs truncate" title={rec.product_name || rec.display_product_name}>
+                              {rec.product_name || rec.display_product_name || 'Garment Item'}
+                            </span>
+                            {(rec.color || rec.size) && (
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {rec.color || 'Standard'} • Size: {rec.size || 'M'}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap">
+                            <span className="font-mono font-bold text-amber-700 text-xs">
+                              {fmt(rec.rework_quantity)} {rec.uom || 'pcs'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2.5 align-middle">
+                            <span className="text-slate-700 text-xs block truncate" title={rec?.rework_reason || 'Stitching Seam Defect'}>
+                              {rec?.rework_reason || 'Stitching Seam Defect'}
+                            </span>
+                            {rec.rework_remarks && (
+                              <span className="text-[10px] text-slate-400 block truncate" title={rec.rework_remarks}>
+                                {rec.rework_remarks}
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                              (rec.status as string) === 'Transferred'
+                                ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                                : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : rec.status === 'Sent for Rework'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : rec.status === 'Rework Received'
+                                ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {rec.status || 'Pending Rework'}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleReworkMenu(e, rec)}
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
+                                activeReworkMenu?.record.id === rec.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                              }`}
+                              title="Rework Options"
+                            >
+                              <MoreVertical className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Cards for Rework Records */}
+            <div className="md:hidden space-y-3 p-3">
+              {filteredReworks.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No rework records registered.
+                </div>
+              ) : (
+                filteredReworks.map((rec, idx) => {
+                  return (
+                    <div key={`mob_rwk_${rec.id || idx}`} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-mono text-xs font-bold text-brand-700">{rec.rework_order_no}</div>
+                          <div className="text-xs text-slate-800 font-semibold mt-0.5">{rec.product_name || 'Item'} ({rec.color || 'Standard'})</div>
+                        </div>
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          {rec.status}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between font-mono">
+                        <span>Reason: {rec?.rework_reason || 'Defect'}</span>
+                        <span className="font-bold text-amber-700">{fmt(rec.rework_quantity)} {rec.uom || 'pcs'}</span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReceiveReworkModal(rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>Receive</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenTransferReworkModal(rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Transfer</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedReworkForView(rec);
+                            setViewReworkModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* FLOATING ACTION PORTAL: STITCHING BATCHES MENU */}
+      {activeBatchMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveBatchMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeBatchMenu.top}px`,
+                left: `${activeBatchMenu.left}px`,
+                width: '140px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* 1. Inspect (if uninspected pieces > 0) */}
+                {(() => {
+                  const b = activeBatchMenu.batch;
+                  const uninspected = Math.max(0, Number(b.completed_quantity || 0) - Number(b.accepted_quantity || 0) - Number(b.rework_quantity || 0) - Number(b.rejected_quantity || 0));
+                  return uninspected > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveBatchMenu(null);
+                        setSelectedBatchForInspect(b);
+                        setShowInspectModal(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-medium transition text-left cursor-pointer"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>Inspect ({fmt(uninspected)})</span>
+                    </button>
+                  ) : null;
+                })()}
+
+                {/* 2. Transfer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeBatchMenu.batch;
+                    setActiveBatchMenu(null);
+                    handleOpenTransferModal(b);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-700 hover:bg-purple-50 hover:text-purple-800 font-medium transition text-left cursor-pointer"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span>Transfer</span>
+                </button>
+
+                {/* 3. Rework */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeBatchMenu.batch;
+                    setActiveBatchMenu(null);
+                    handleOpenReworkModal(b);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-medium transition text-left cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Rework / Alter</span>
+                </button>
+
+                {/* 4. View Details */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeBatchMenu.batch;
+                    setActiveBatchMenu(null);
+                    setSelectedBatchForView(b);
+                    setViewBatchModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>View Details</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* FLOATING ACTION PORTAL: REWORK TABLE MENU */}
+      {activeReworkMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveReworkMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeReworkMenu.top}px`,
+                left: `${activeReworkMenu.left}px`,
+                width: '140px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* 1. Receive */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenReceiveReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 font-medium transition text-left cursor-pointer"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Receive</span>
+                </button>
+
+                {/* 2. Transfer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    handleOpenTransferReworkModal(r);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 font-medium transition text-left cursor-pointer"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span>Transfer</span>
+                </button>
+
+                {/* 3. View */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const r = activeReworkMenu.record;
+                    setActiveReworkMenu(null);
+                    setSelectedReworkForView(r);
+                    setViewReworkModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>View</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* MODAL 1: Record Stitching Batch */}
       <Modal
@@ -1068,12 +1852,15 @@ export default function StitchingOrderDetail() {
         </form>
       </Modal>
 
-      {/* MODAL 2: Transfer to Stage 08 Checking */}
+      {/* MODAL 2: TRANSFER TO STAGE 08 CHECKING */}
       <Modal
         isOpen={transferModalOpen}
-        onClose={() => setTransferModalOpen(false)}
-        title="Transfer Completed Stitching to Stage 08: Checking"
-        size="md"
+        onClose={() => {
+          setTransferModalOpen(false);
+          setSelectedReworkForTransfer(null);
+        }}
+        title={`Transfer Completed Stitching to Stage 08: Checking${selectedBatch ? ` — Batch ${selectedBatch.batch_number}` : ''}`}
+        maxWidth="max-w-md"
       >
         <form onSubmit={handleConfirmTransfer} className="space-y-4">
           {transferError && (
@@ -1089,28 +1876,64 @@ export default function StitchingOrderDetail() {
               Stage 08: Checking / Quality Inspection
             </span>
             <span className="text-xs text-purple-700 block">
-              Product: <strong>{transferItem?.product_name || 'Garment Item'}</strong> • Color: <strong>{transferItem?.color || 'Standard'}</strong>
+              Product: <strong>{selectedBatch?.product_name || transferItem?.product_name || 'Garment Item'}</strong> • Color: <strong>{selectedBatch?.color || transferItem?.color || 'Standard'}</strong>
             </span>
           </div>
 
-          <FormField label="Quantity to Transfer" required>
-            <input
-              type="number"
-              min="1"
-              max={Number(transferItem?.ready_to_transfer || transferItem?.accepted_quantity || overallTotals.readyForChecking || 1000)}
-              value={transferQuantity}
-              onChange={e => setTransferQuantity(Number(e.target.value))}
-              className="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono font-bold text-purple-900"
-              required
-            />
+          <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border border-purple-200 rounded-xl text-xs space-y-1.5 font-mono">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-600 font-sans font-medium">Available in Hand to Transfer:</span>
+              <strong className="text-purple-700 text-sm font-bold">
+                {fmt(selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer)} pcs
+              </strong>
+            </div>
+            {(selectedBatch ? getActiveReworkForBatch(selectedBatch) : activeReworkQty) > 0 && (
+              <div className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-between font-sans">
+                <span className="flex items-center gap-1 font-medium">
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                  Rework at Alteration Line:
+                </span>
+                <span className="font-mono font-bold text-amber-900">
+                  {fmt(selectedBatch ? getActiveReworkForBatch(selectedBatch) : activeReworkQty)} pcs away
+                </span>
+              </div>
+            )}
+          </div>
+
+          <FormField label="Quantity to Transfer (Pieces) *" required>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-slate-400">Available to transfer</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const avail = selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer;
+                    setTransferQuantity(avail);
+                  }}
+                  className="text-[10px] font-bold text-purple-700 hover:underline cursor-pointer"
+                >
+                  Max ({fmt(selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer)} pcs)
+                </button>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max={selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer}
+                value={transferQuantity}
+                onChange={e => setTransferQuantity(Number(e.target.value))}
+                className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                required
+              />
+            </div>
           </FormField>
 
-          <FormField label="Transfer Remarks">
+          <FormField label="Transfer Handover Notes">
             <textarea
               rows={2}
               value={transferRemarks}
               onChange={e => setTransferRemarks(e.target.value)}
               className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-slate-800"
+              placeholder="Enter transfer notes or bundle codes..."
             />
           </FormField>
 
@@ -1118,7 +1941,11 @@ export default function StitchingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setTransferModalOpen(false)}
+              type="button"
+              onClick={() => {
+                setTransferModalOpen(false);
+                setSelectedReworkForTransfer(null);
+              }}
               disabled={transferring}
             >
               Cancel
@@ -1128,13 +1955,518 @@ export default function StitchingOrderDetail() {
               variant="primary"
               size="sm"
               type="submit"
-              disabled={transferring}
+              disabled={transferring || (selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer) <= 0}
               className="bg-purple-700 hover:bg-purple-800 text-white font-bold"
             >
               {transferring ? 'Transferring...' : 'Confirm Transfer to Checking'}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* MODAL: CREATE STITCHING REWORK */}
+      <Modal
+        isOpen={reworkModalOpen}
+        onClose={() => setReworkModalOpen(false)}
+        title={selectedBatchForRework ? `Send Pieces for Alteration & Restitching — ${selectedBatchForRework.batch_number}` : 'Send for Stitching Rework'}
+        maxWidth="max-w-lg"
+      >
+        {selectedBatchForRework && (
+          <form onSubmit={handleConfirmCreateRework} className="space-y-4">
+            {reworkError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <span>{reworkError}</span>
+              </div>
+            )}
+
+            {/* Context Card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-800">{selectedBatchForRework.product_name || 'Garment Item'}</span>
+                  <span className="font-mono text-[10px] text-brand-600 block">Color: {selectedBatchForRework.color} • Size: {selectedBatchForRework.size || 'M'}</span>
+                </div>
+                <span className="font-mono text-brand-700 font-bold bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                  {selectedBatchForRework.batch_number}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-500 font-mono text-[11px] pt-1 border-t border-slate-200/60">
+                <span>Completed Total: <strong className="text-slate-900">{fmt(selectedBatchForRework.completed_quantity)} pcs</strong></span>
+                <span>Available to Alter: <strong className="text-amber-700">{fmt(getBatchAvailableForRework(selectedBatchForRework))} pcs</strong></span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Rework Quantity (Pieces) *" required>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">Available to alter</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const maxQ = getBatchAvailableForRework(selectedBatchForRework);
+                        setReworkForm({ ...reworkForm, rework_quantity: maxQ > 0 ? maxQ : 1 });
+                      }}
+                      className="text-[10px] font-bold text-brand-600 hover:underline cursor-pointer"
+                    >
+                      Max ({fmt(getBatchAvailableForRework(selectedBatchForRework))} pcs)
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max={Number(selectedBatchForRework.completed_quantity || selectedBatchForRework.assigned_quantity || 0)}
+                    value={reworkForm.rework_quantity}
+                    onChange={(e) => setReworkForm({ ...reworkForm, rework_quantity: Number(e.target.value) })}
+                    className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                    required
+                  />
+                </div>
+              </FormField>
+
+              <FormField label="Internal DC / Challan #" required>
+                <input
+                  type="text"
+                  value={reworkForm.dc_challan_no}
+                  onChange={(e) => setReworkForm({ ...reworkForm, dc_challan_no: e.target.value })}
+                  className="w-full text-xs font-mono rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  placeholder="DC-STI-RWK-..."
+                  required
+                />
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Defect Reason *" required>
+                <select
+                  value={reworkForm.rework_reason}
+                  onChange={(e) => setReworkForm({ ...reworkForm, rework_reason: e.target.value })}
+                  className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  required
+                >
+                  <option value="Broken / Skipped Stitching">Broken / Skipped Stitching</option>
+                  <option value="Seam Puckering / Tension Variance">Seam Puckering / Tension Variance</option>
+                  <option value="Open Seam / Missed Seam">Open Seam / Missed Seam</option>
+                  <option value="Incorrect Thread Color / Shade Mismatch">Incorrect Thread Color / Shade Mismatch</option>
+                  <option value="Uneven Hem / Measurement Variance">Uneven Hem / Measurement Variance</option>
+                  <option value="Oil / Needle Stain">Oil / Needle Stain</option>
+                  <option value="Other Stitching Defect">Other Stitching Defect</option>
+                </select>
+              </FormField>
+
+              <FormField label="Destination Process / Alteration Line">
+                <input
+                  type="text"
+                  value={reworkForm.destination_process}
+                  onChange={(e) => setReworkForm({ ...reworkForm, destination_process: e.target.value })}
+                  className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                  placeholder="e.g. Alteration & Restitching Line"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Quality Remarks & Instructions">
+              <textarea
+                rows={2}
+                value={reworkForm.remarks}
+                onChange={(e) => setReworkForm({ ...reworkForm, remarks: e.target.value })}
+                placeholder="Specify precise repair, alteration or re-stitching instructions..."
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
+              />
+            </FormField>
+
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                onClick={() => setReworkModalOpen(false)}
+                disabled={submittingRework}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="submit"
+                disabled={submittingRework}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                <span>{submittingRework ? 'Sending...' : 'Confirm & Send for Alteration'}</span>
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: INWARD RECEIVE REWORKED STITCHING PIECES */}
+      <Modal
+        isOpen={receiveReworkModalOpen}
+        onClose={() => !submittingReceiveRework && setReceiveReworkModalOpen(false)}
+        title={`Inward Receive Altered Pieces — ${selectedReworkForReceive?.rework_order_no}`}
+        maxWidth="max-w-lg"
+      >
+        {selectedReworkForReceive && (
+          <form onSubmit={handleConfirmReceiveRework} className="space-y-4">
+            {/* Duplicate / already received error banner */}
+            {(() => {
+              const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+              const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+              const isAlreadyReceived =
+                selectedReworkForReceive.status === 'Accepted After Rework' ||
+                selectedReworkForReceive.status === 'Rework Received' ||
+                (selectedReworkForReceive.status as string) === 'Completed' ||
+                (selectedReworkForReceive.status as string) === 'Transferred' ||
+                (accQty >= rQty && rQty > 0);
+
+              if (isAlreadyReceived || reworkReceiveError) {
+                return (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                    <span>
+                      {reworkReceiveError ||
+                        `The rework quantity (${fmt(accQty || rQty)} pcs) for #${selectedReworkForReceive.rework_order_no} has already been received.`}
+                    </span>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
+            {/* Metadata 4-field grid with explicit borders */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Inward Delivery Challan (DC No) *" required>
+                <input
+                  type="text"
+                  value={reworkReceiptChallanNo}
+                  onChange={e => setReworkReceiptChallanNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. INW-STI-RWK-101"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Receipt Date *" required>
+                <input
+                  type="date"
+                  value={reworkReceiptDate}
+                  onChange={e => setReworkReceiptDate(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  required
+                />
+              </FormField>
+
+              <FormField label="Lot # / Batch #">
+                <input
+                  type="text"
+                  value={reworkLotNo}
+                  onChange={e => setReworkLotNo(e.target.value)}
+                  className="w-full text-xs font-mono rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. LOT-STI-01"
+                />
+              </FormField>
+
+              <FormField label="Received & Inspected By *">
+                <input
+                  type="text"
+                  value={reworkReceivedBy}
+                  onChange={e => setReworkReceivedBy(e.target.value)}
+                  className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                  placeholder="e.g. Stitching QC Inspector"
+                  required
+                />
+              </FormField>
+            </div>
+
+            {/* Summary Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-100/90 p-2.5 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Sent for Rework</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {fmt(selectedReworkForReceive.rework_quantity)} {selectedReworkForReceive.uom || 'pcs'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Defect Reason</span>
+                <span className="font-semibold text-slate-700 truncate block" title={selectedReworkForReceive?.rework_reason}>
+                  {selectedReworkForReceive?.rework_reason || 'Defect Correction'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-500 block uppercase font-bold">Alteration Line</span>
+                <span className="font-semibold text-slate-700 truncate block">
+                  {selectedReworkForReceive.destination_process || selectedReworkForReceive.vendor_name || 'Stitching Line'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-emerald-600 block uppercase font-bold">Inwarding Now</span>
+                <span className="font-mono font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300 inline-block">
+                  {fmt(reworkReceivedQty)} {selectedReworkForReceive.uom || 'pcs'}
+                </span>
+              </div>
+            </div>
+
+            {/* Received Pieces Card */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <span className="font-bold text-xs text-slate-900 block">
+                    {selectedReworkForReceive.product_name || selectedReworkForReceive.display_product_name || 'Garment Item'}
+                  </span>
+                  <span className="font-mono text-[10px] text-brand-700">
+                    Color: {selectedReworkForReceive.color || 'Standard'} • Size: {selectedReworkForReceive.size || 'M'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReworkReceivedQty(Number(selectedReworkForReceive.rework_quantity))}
+                  className="text-[11px] font-bold text-brand-600 hover:underline cursor-pointer"
+                >
+                  Receive Full ({fmt(selectedReworkForReceive.rework_quantity)} pcs)
+                </button>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60">
+                <FormField label={`Received & Accepted Qty (${selectedReworkForReceive.uom || 'pcs'}) *`} required>
+                  <input
+                    type="number"
+                    min="1"
+                    max={Number(selectedReworkForReceive.rework_quantity)}
+                    value={reworkReceivedQty}
+                    onChange={e => setReworkReceivedQty(Number(e.target.value))}
+                    className="w-full text-xs font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs font-mono"
+                    required
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            {/* Mandatory Live Camera Photo Proof (no upload) */}
+            <LivePhotoCaptureField
+              label="Altered Pieces Physical Verification Photo"
+              required={true}
+              photo={reworkPhotoUrl}
+              onPhotoChange={setReworkPhotoUrl}
+              stageName="Stitching Rework Return (Stage 07)"
+              orderNumber={order?.order_number || selectedReworkForReceive.rework_order_no}
+              error={reworkReceiveError && !reworkPhotoUrl ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming rework receipt.' : undefined}
+              placeholderText="Tap here to open camera"
+              helperText="Photograph of repaired seams & stitching must be captured live via camera."
+              buttonText="Take Real-Time Alteration Photo"
+            />
+
+            <FormField label="Quality Remarks & Inspection Notes">
+              <textarea
+                rows={2}
+                value={reworkRemarks}
+                onChange={e => setReworkRemarks(e.target.value)}
+                className="w-full text-xs rounded-xl border border-slate-300 py-2 px-3 bg-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 shadow-2xs"
+                placeholder="e.g. Altered pieces inspected, seam tension verified, all loose threads removed and accepted."
+              />
+            </FormField>
+
+            {(() => {
+              const rQty = Number(selectedReworkForReceive.rework_quantity || 0);
+              const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
+              const isAlreadyReceived =
+                selectedReworkForReceive.status === 'Accepted After Rework' ||
+                selectedReworkForReceive.status === 'Rework Received' ||
+                (selectedReworkForReceive.status as string) === 'Completed' ||
+                (selectedReworkForReceive.status as string) === 'Transferred' ||
+                (accQty >= rQty && rQty > 0);
+
+              return (
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setReceiveReworkModalOpen(false)}
+                    disabled={submittingReceiveRework}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={submittingReceiveRework || isAlreadyReceived}
+                    className={
+                      isAlreadyReceived
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed font-bold'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
+                    }
+                  >
+                    {submittingReceiveRework ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        <span>Inwarding Pieces...</span>
+                      </>
+                    ) : isAlreadyReceived ? (
+                      <>
+                        <CheckCheck className="w-4 h-4 mr-1.5" />
+                        <span>Rework Quantity Already Received ({fmt(accQty || rQty)} {selectedReworkForReceive.uom || 'pcs'})</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCheck className="w-4 h-4 mr-1.5" />
+                        <span>Confirm Inward & Pass QC ({fmt(reworkReceivedQty)} pcs)</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              );
+            })()}
+          </form>
+        )}
+      </Modal>
+
+      {/* MODAL: VIEW BATCH DETAILS */}
+      <Modal
+        isOpen={viewBatchModalOpen}
+        onClose={() => {
+          setViewBatchModalOpen(false);
+          setSelectedBatchForView(null);
+        }}
+        title={`Stitching Batch Details — ${selectedBatchForView?.batch_number || ''}`}
+        maxWidth="max-w-md"
+      >
+        {selectedBatchForView && (
+          <div className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Batch Number</span>
+                <span className="font-mono font-bold text-brand-700">{selectedBatchForView.batch_number}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Status</span>
+                <span className="font-bold text-slate-800">{selectedBatchForView.status}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Completed Output</span>
+                <span className="font-mono font-bold text-slate-900">{fmt(selectedBatchForView.completed_quantity)} pcs</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Accepted Output</span>
+                <span className="font-mono font-bold text-emerald-700">{fmt(selectedBatchForView.accepted_quantity || 0)} pcs</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border border-slate-200 rounded-xl p-3 bg-white">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Product:</span>
+                <strong className="text-slate-800">{selectedBatchForView.product_name || 'Garment Item'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Color / Size:</span>
+                <strong className="text-slate-800">{selectedBatchForView.color || 'Standard'} • {selectedBatchForView.size || 'M'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Date:</span>
+                <strong className="font-mono text-slate-800">{selectedBatchForView.completion_date || selectedBatchForView.start_date || 'N/A'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Transferred Next:</span>
+                <strong className="font-mono text-purple-700">{fmt(selectedBatchForView.transferred_quantity || 0)} pcs</strong>
+              </div>
+              {selectedBatchForView.remarks && (
+                <div className="pt-2 border-t border-slate-100 text-slate-600">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Remarks:</span>
+                  <span>{selectedBatchForView.remarks}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setViewBatchModalOpen(false);
+                  setSelectedBatchForView(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* MODAL: VIEW REWORK DETAILS */}
+      <Modal
+        isOpen={viewReworkModalOpen}
+        onClose={() => {
+          setViewReworkModalOpen(false);
+          setSelectedReworkForView(null);
+        }}
+        title={`Rework Record Details — ${selectedReworkForView?.rework_order_no || ''}`}
+        maxWidth="max-w-md"
+      >
+        {selectedReworkForView && (
+          <div className="space-y-3 text-xs">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Rework #</span>
+                <span className="font-mono font-bold text-brand-700">{selectedReworkForView.rework_order_no}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Status</span>
+                <span className="font-bold text-slate-800">{selectedReworkForView.status}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Rework Qty</span>
+                <span className="font-mono font-bold text-amber-700">{fmt(selectedReworkForView.rework_quantity)} {selectedReworkForView.uom || 'pcs'}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Accepted Qty</span>
+                <span className="font-mono font-bold text-emerald-700">{fmt(selectedReworkForView.accepted_quantity || 0)} {selectedReworkForView.uom || 'pcs'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 border border-slate-200 rounded-xl p-3 bg-white">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Alteration Line:</span>
+                <strong className="text-slate-800">{selectedReworkForView.destination_process || selectedReworkForView.vendor_name || 'Stitching Line'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Product:</span>
+                <strong className="text-slate-800">{selectedReworkForView.product_name || 'Garment Item'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Color / Size:</span>
+                <strong className="text-slate-800">{selectedReworkForView.color || 'Standard'} • {selectedReworkForView.size || 'M'}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Defect Reason:</span>
+                <strong className="text-amber-800">{selectedReworkForView.rework_reason || 'Defect'}</strong>
+              </div>
+              {selectedReworkForView.dc_challan_no && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Challan / DC:</span>
+                  <strong className="font-mono text-slate-800">{selectedReworkForView.dc_challan_no}</strong>
+                </div>
+              )}
+              {selectedReworkForView.rework_remarks && (
+                <div className="pt-2 border-t border-slate-100 text-slate-600">
+                  <span className="text-[10px] text-slate-400 block font-bold uppercase">Remarks:</span>
+                  <span>{selectedReworkForView.rework_remarks}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setViewReworkModalOpen(false);
+                  setSelectedReworkForView(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Full Resolution Photo Zoom Modal */}

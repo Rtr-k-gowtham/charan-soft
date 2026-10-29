@@ -1,6 +1,7 @@
 // src/components/production/CategoryPOIssuer.tsx
 // Category-Based Product & Raw Material Procurement with Vendor Matching, PO Issuance & In-Stage PO Management
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { OrderMaterialRequirementItem, Supplier, Category, PurchaseOrder, PurchaseOrderItem } from '../../types';
@@ -35,7 +36,9 @@ import {
   Eye,
   Ban,
   RotateCcw,
-  AlertTriangle
+  AlertTriangle,
+  MoreVertical,
+  Package
 } from 'lucide-react';
 
 export interface CategorySupplierGroup {
@@ -104,6 +107,57 @@ export default function CategoryPOIssuer({
 
   const [activeIssuerTab, setActiveIssuerTab] = useState<'GROUPS' | 'UNORDERED'>('GROUPS');
   const [pendingUnorderedCount, setPendingUnorderedCount] = useState<number>(0);
+  const [activeMenu, setActiveMenu] = useState<{
+    groupKey: string;
+    top: number;
+    left: number;
+    group: CategorySupplierGroup;
+  } | null>(null);
+
+  const handleToggleMenu = (e: React.MouseEvent<HTMLButtonElement>, group: CategorySupplierGroup) => {
+    e.stopPropagation();
+    if (activeMenu?.groupKey === group.groupKey) {
+      setActiveMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const menuWidth = 144; // w-36
+      const menuHeight = group.hasOrderedPO ? 160 : 120;
+
+      let top = rect.bottom + 4;
+      if (top + menuHeight > window.innerHeight && rect.top > menuHeight) {
+        top = rect.top - menuHeight - 4;
+      }
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+
+      setActiveMenu({
+        groupKey: group.groupKey,
+        top,
+        left,
+        group,
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!activeMenu) return;
+    const handleClose = () => setActiveMenu(null);
+    window.addEventListener('scroll', handleClose, true);
+    window.addEventListener('resize', handleClose);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveMenu(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('scroll', handleClose, true);
+      window.removeEventListener('resize', handleClose);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeMenu]);
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -386,6 +440,43 @@ export default function CategoryPOIssuer({
     });
   };
 
+  // Action: View PO
+  const handleViewPO = (group: CategorySupplierGroup) => {
+    const targetPO = group.matchingPOs[0] || group.draftPO || group.cancelledPO;
+    if (targetPO) {
+      navigate(`/purchase/orders/${targetPO.id}`, {
+        state: { from: location.pathname || `/production/po/${orderId}` }
+      });
+    } else {
+      handleOpenCreatePOPage(group);
+    }
+  };
+
+  // Action: Edit PO
+  const handleEditPO = (group: CategorySupplierGroup) => {
+    const targetPO = group.matchingPOs[0] || group.draftPO || group.cancelledPO;
+    if (targetPO) {
+      navigate(`/purchase/orders/${targetPO.id}/edit`, {
+        state: { from: location.pathname || `/production/po/${orderId}` }
+      });
+    } else {
+      handleOpenCreatePOPage(group);
+    }
+  };
+
+  // Action: Issue PO
+  const handleIssuePO = (group: CategorySupplierGroup) => {
+    if (group.hasOrderedPO) {
+      setActionSuccess(`PO ${group.matchingPOs[0]?.po_number || ''} is already ordered/issued.`);
+      return;
+    }
+    if (group.hasDraftPO && group.draftPO) {
+      handleMarkPOAsIssued(group.draftPO);
+      return;
+    }
+    handleIssuePOForGroup(group);
+  };
+
   // Create & Issue PO for a group
   const handleIssuePOForGroup = async (group: CategorySupplierGroup) => {
     const effectiveSupId = group.supplierId || (selectedVendors[group.groupKey] ? Number(selectedVendors[group.groupKey]) : null);
@@ -648,109 +739,48 @@ export default function CategoryPOIssuer({
         </div>
       )}
 
-      {/* CATEGORY & SUPPLIER-BASED MATERIAL PROCUREMENT & PO GENERATION (STRUCTURED TABLE VIEW) */}
-      <div className="p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-semibold">
-            <button
-              onClick={() => setActiveIssuerTab('GROUPS')}
-              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${activeIssuerTab === 'GROUPS' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              <span>Category PO Groups</span>
-              <span className="font-mono text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full">
+      {/* CATEGORY & SUPPLIER-BASED MATERIAL PROCUREMENT & PO GENERATION */}
+      <div className="p-4 sm:p-5 space-y-6">
+        {/* TABLE 1: Category PO Groups */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers className="w-4 h-4 text-brand-600" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Category PO Groups
+              </h3>
+              <span className="font-mono text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
                 {categorySupplierGroups.length}
               </span>
-            </button>
-            <button
-              onClick={() => setActiveIssuerTab('UNORDERED')}
-              className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${activeIssuerTab === 'UNORDERED' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              <span>Unordered Materials Tracking</span>
-              {pendingUnorderedCount > 0 ? (
-                <span className="font-mono text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.2 rounded-full animate-pulse">
-                  {pendingUnorderedCount}
-                </span>
-              ) : (
-                <span className="font-mono text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded-full">
-                  0
-                </span>
-              )}
-            </button>
+            </div>
+            {pendingUnorderedCount > 0 && (
+              <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 shadow-2xs">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>{pendingUnorderedCount} material line(s) pending order</span>
+              </span>
+            )}
           </div>
 
-          {pendingUnorderedCount > 0 && activeIssuerTab === 'GROUPS' && (
-            <button
-              onClick={() => setActiveIssuerTab('UNORDERED')}
-              className="text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1.5 transition self-start sm:self-auto shadow-2xs"
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>{pendingUnorderedCount} material line(s) pending order</span>
-              <ChevronRight className="w-3 h-3 text-amber-500 shrink-0" />
-            </button>
-          )}
-        </div>
-
-        {activeIssuerTab === 'UNORDERED' ? (
-          <UnorderedBOMItemsSection
-            productionOrderId={orderId}
-            productionOrderNumber={orderNumber}
-            onOrderMaterial={(item) => {
-              navigate('/purchase/orders?create=true', {
-                state: {
-                  production_order_id: orderId,
-                  production_order_number: orderNumber,
-                  supplier_id: item.supplier_id,
-                  target_delivery_date: targetDeliveryDate,
-                  from: location.pathname,
-                  materials: [{
-                    material_id: item.material_id,
-                    material_code: item.material_code,
-                    item_description: item.material_name,
-                    category: item.category_name,
-                    uom: item.uom,
-                    quantity: item.remaining_unordered_quantity,
-                    rate: item.unit_cost || 0,
-                    size: item.size,
-                    model: item.model,
-                    length: item.length,
-                    thickness: item.thickness,
-                    tax_percent: 5,
-                  }]
-                }
-              });
-            }}
-            onRefreshParent={() => {
-              api.getPurchaseOrders().then((all: any) => {
-                const list = Array.isArray(all) ? all : (all?.data || []);
-                const rel = list.filter((p: any) => {
-                  if (p.production_order_id && String(p.production_order_id) === String(orderId)) return true;
-                  if (p.production_order_number && p.production_order_number === orderNumber) return true;
-                  return false;
-                });
-                setExistingPOs(rel);
-              });
-            }}
-          />
-        ) : categorySupplierGroups.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-200">
-            No raw material requirements found for this order. Please verify BOM master configuration.
-          </div>
-        ) : (
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse table-fixed">
-                <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-2.5 px-2 w-[36px] text-center">#</th>
-                    <th className="py-2.5 px-2.5 w-[115px]">PO Number</th>
-                    <th className="py-2.5 px-2 text-center w-[110px]">PO Status</th>
-                    <th className="py-2.5 px-2.5 w-[150px]">Material Category</th>
-                    <th className="py-2.5 px-2.5 w-[180px]">Supplier</th>
-                    <th className="py-2.5 px-2 text-center w-[75px]">Item Count</th>
-                    <th className="py-2.5 px-3 min-w-[150px]">Required Materials</th>
-                    <th className="py-2.5 px-2.5 text-right w-[180px]">Action</th>
-                  </tr>
-                </thead>
+          {categorySupplierGroups.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-200">
+              No raw material requirements found for this order. Please verify BOM master configuration.
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-2xs">
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse table-fixed">
+                  <thead className="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-2 w-[36px] text-center">#</th>
+                      <th className="py-2.5 px-2.5 w-[115px]">PO Number</th>
+                      <th className="py-2.5 px-2.5 w-[150px]">Material Category</th>
+                      <th className="py-2.5 px-2.5 w-[180px]">Supplier</th>
+                      <th className="py-2.5 px-2 text-center w-[75px]">Item Count</th>
+                      <th className="py-2.5 px-3 min-w-[150px]">Required Materials</th>
+                      <th className="py-2.5 px-2 text-center w-[110px]">PO Status</th>
+                      <th className="py-2.5 px-2 text-center w-[75px]">Action</th>
+                    </tr>
+                  </thead>
                 <tbody className="divide-y divide-slate-100">
                   {categorySupplierGroups.map((group, idx) => {
                     const { matchedSuppliers, allSuppliers, isExactMatch, matchedCount } = getCategorySuppliers(group.categoryName);
@@ -797,7 +827,7 @@ export default function CategoryPOIssuer({
                           {idx + 1}
                         </td>
 
-                        {/* 2. PO Number (Dedicated column with prominent badge & clickable link) */}
+                        {/* 2. PO Number */}
                         <td className="py-2.5 px-2.5 align-middle">
                           {group.matchingPOs.length > 0 ? (
                             <div className="flex flex-col gap-1 items-start">
@@ -818,38 +848,7 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 3. PO Status (Moved to left side space next to PO Number) */}
-                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle w-[110px]">
-                          {isSaving ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
-                            </span>
-                          ) : group.hasOrderedPO ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
-                              title="Purchase Order issued & ordered"
-                            >
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
-                            </span>
-                          ) : group.hasCancelledPO ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200"
-                              title="Purchase Order has been cancelled"
-                            >
-                              <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
-                            </span>
-                          ) : group.hasDraftPO ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              Draft
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                              Not Created
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 4. Material Category (Full readable name with badge) */}
+                        {/* 3. Material Category */}
                         <td className="py-2.5 px-2.5 align-middle">
                           <span
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border ${visual.bg} ${visual.border} ${visual.color} shadow-2xs max-w-full truncate`}
@@ -860,7 +859,7 @@ export default function CategoryPOIssuer({
                           </span>
                         </td>
 
-                        {/* 5. Supplier */}
+                        {/* 4. Supplier */}
                         <td className="py-2.5 px-2.5 align-middle">
                           {group.hasOrderedPO ? (
                             <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 truncate">
@@ -902,14 +901,14 @@ export default function CategoryPOIssuer({
                           )}
                         </td>
 
-                        {/* 6. Item Count */}
+                        {/* 5. Item Count */}
                         <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap">
                           <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-block whitespace-nowrap">
                             {group.itemCount} {group.itemCount === 1 ? 'item' : 'items'}
                           </span>
                         </td>
 
-                        {/* 7. Required Materials / Summary */}
+                        {/* 6. Required Materials / Summary */}
                         <td className="py-2.5 px-3 align-middle">
                           <p
                             className="text-slate-700 text-[11px] font-medium leading-relaxed break-words whitespace-normal"
@@ -919,84 +918,51 @@ export default function CategoryPOIssuer({
                           </p>
                         </td>
 
-                        {/* 8. Action */}
-                        <td className="py-2.5 px-2.5 text-right whitespace-nowrap align-middle w-[180px]">
-                          <div className="flex items-center justify-end gap-1.5 flex-nowrap">
-                            {group.hasOrderedPO ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/purchase/orders/${group.matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="View PO Details"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
-                                  <span>View PO</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenCancelModal(group.matchingPOs[0])}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="Cancel this issued PO"
-                                >
-                                  <Ban className="w-3.5 h-3.5 text-rose-600" />
-                                  <span>Cancel PO</span>
-                                </button>
-                              </>
-                            ) : group.hasCancelledPO && group.cancelledPO ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="View Cancelled PO"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
-                                  <span>View PO</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="Edit Cancelled PO in Detailed Editor"
-                                >
-                                  <Pencil className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Edit PO</span>
-                                </button>
-                              </>
-                            ) : group.hasDraftPO && group.draftPO ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="View Draft PO"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-brand-600" />
-                                  <span>View PO</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition whitespace-nowrap"
-                                  title="Edit Draft PO in Detailed Editor"
-                                >
-                                  <Pencil className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Edit</span>
-                                </button>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenCreatePOPage(group)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-md shadow-2xs transition whitespace-nowrap"
-                                title={`View PO & materials for ${group.categoryName} (${group.supplierName})`}
-                              >
-                                <Eye className="w-3.5 h-3.5 text-brand-600" />
-                                <span>View PO</span>
-                              </button>
-                            )}
-                          </div>
+                        {/* 7. PO Status (Moved next to Required Materials) */}
+                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle w-[110px]">
+                          {isSaving ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <RefreshCw className="w-3 h-3 animate-spin" /> Issuing...
+                            </span>
+                          ) : group.hasOrderedPO ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              title="Purchase Order issued & ordered"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
+                            </span>
+                          ) : group.hasCancelledPO ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200"
+                              title="Purchase Order has been cancelled"
+                            >
+                              <Ban className="w-3.5 h-3.5 text-rose-600" /> Cancelled
+                            </span>
+                          ) : group.hasDraftPO ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                              Draft
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                              Not Created
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 8. Action (3-dot dropdown trigger) */}
+                        <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleMenu(e, group)}
+                            className={`p-1.5 rounded-lg border transition shadow-2xs ${
+                              activeMenu?.groupKey === group.groupKey
+                                ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                            }`}
+                            title="Action Options"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
                         </td>
                       </tr>
                     );
@@ -1157,73 +1123,34 @@ export default function CategoryPOIssuer({
                       </div>
 
                       <div className="flex items-center gap-1.5">
-                        {group.hasOrderedPO ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${group.matchingPOs[0]?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenCancelModal(group.matchingPOs[0])}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-2xs transition"
-                            >
-                              <Ban className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Cancel</span>
-                            </button>
-                          </>
-                        ) : group.hasCancelledPO && group.cancelledPO ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${group.cancelledPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
-                            >
-                              <Pencil className="w-3.5 h-3.5 text-slate-600" />
-                              <span>Edit</span>
-                            </button>
-                          </>
-                        ) : group.hasDraftPO && group.draftPO ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-brand-600" />
-                              <span>View</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/purchase/orders/${group.draftPO?.id}/edit`, { state: { from: location.pathname || `/production/po/${orderId}` } })}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs transition"
-                            >
-                              <Pencil className="w-3.5 h-3.5 text-slate-600" />
-                              <span>Edit</span>
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCreatePOPage(group)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 hover:text-brand-900 border border-brand-200 rounded-lg shadow-2xs transition"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-brand-600" />
-                            <span>View PO</span>
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleEditPO(group)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition"
+                          title="Edit PO"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleIssuePO(group)}
+                          disabled={group.hasOrderedPO || isSaving}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition disabled:opacity-40"
+                          title="Issue PO"
+                        >
+                          <Send className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{group.hasOrderedPO ? 'Issued' : 'Issue PO'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleViewPO(group)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
+                          title="View PO"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-brand-600" />
+                          <span>View PO</span>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1233,6 +1160,153 @@ export default function CategoryPOIssuer({
           </div>
         )}
       </div>
+
+      {/* TABLE 2: Unordered Materials Tracking table comes in down as next table */}
+      <div className="space-y-3 pt-4 border-t border-slate-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 text-amber-600" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              Unordered Materials Tracking
+            </h3>
+            {pendingUnorderedCount > 0 ? (
+              <span className="font-mono text-[10px] bg-amber-500 text-white font-bold px-2 py-0.5 rounded-full animate-pulse">
+                {pendingUnorderedCount} pending
+              </span>
+            ) : (
+              <span className="font-mono text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                0 pending
+              </span>
+            )}
+          </div>
+        </div>
+
+        <UnorderedBOMItemsSection
+          productionOrderId={orderId}
+          productionOrderNumber={orderNumber}
+          hideMetrics={true}
+          hideToolbar={true}
+          onOrderMaterial={(item) => {
+            navigate('/purchase/orders?create=true', {
+              state: {
+                production_order_id: orderId,
+                production_order_number: orderNumber,
+                supplier_id: item.supplier_id,
+                target_delivery_date: targetDeliveryDate,
+                from: location.pathname,
+                materials: [{
+                  material_id: item.material_id,
+                  material_code: item.material_code,
+                  item_description: item.material_name,
+                  category: item.category_name,
+                  uom: item.uom,
+                  quantity: item.remaining_unordered_quantity,
+                  rate: item.unit_cost || 0,
+                  size: item.size,
+                  model: item.model,
+                  length: item.length,
+                  thickness: item.thickness,
+                  tax_percent: 5,
+                }]
+              }
+            });
+          }}
+          onRefreshParent={() => {
+            api.getPurchaseOrders().then((all: any) => {
+              const list = Array.isArray(all) ? all : (all?.data || []);
+              const rel = list.filter((p: any) => {
+                if (p.production_order_id && String(p.production_order_id) === String(orderId)) return true;
+                if (p.production_order_number && p.production_order_number === orderNumber) return true;
+                return false;
+              });
+              setExistingPOs(rel);
+            });
+          }}
+        />
+      </div>
+    </div>
+
+      {/* 3-Dot Floating Action Menu (Portaled directly to body so table row never expands) */}
+      {activeMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeMenu.top}px`,
+                left: `${activeMenu.left}px`,
+                width: '144px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              {/* Edit */}
+              <button
+                type="button"
+                onClick={() => {
+                  const grp = activeMenu.group;
+                  setActiveMenu(null);
+                  handleEditPO(grp);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+              >
+                <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                <span>Edit</span>
+              </button>
+
+              {/* Issue PO */}
+              <button
+                type="button"
+                onClick={() => {
+                  const grp = activeMenu.group;
+                  setActiveMenu(null);
+                  handleIssuePO(grp);
+                }}
+                disabled={activeMenu.group.hasOrderedPO || !!issuingPO[activeMenu.group.groupKey]}
+                className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium transition text-left ${
+                  activeMenu.group.hasOrderedPO
+                    ? 'text-slate-400 bg-slate-50/50 cursor-not-allowed'
+                    : 'text-slate-700 hover:bg-slate-50 hover:text-emerald-700'
+                }`}
+              >
+                <Send className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{activeMenu.group.hasOrderedPO ? 'PO Issued' : 'Issue PO'}</span>
+              </button>
+
+              {/* View PO */}
+              <button
+                type="button"
+                onClick={() => {
+                  const grp = activeMenu.group;
+                  setActiveMenu(null);
+                  handleViewPO(grp);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-brand-700 font-medium transition text-left"
+              >
+                <Eye className="w-3.5 h-3.5 text-brand-600" />
+                <span>View PO</span>
+              </button>
+
+              {activeMenu.group.hasOrderedPO && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const grp = activeMenu.group;
+                      setActiveMenu(null);
+                      handleOpenCancelModal(grp.matchingPOs[0]);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium transition text-left"
+                  >
+                    <Ban className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Cancel PO</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* Cancel PO Confirmation Modal */}
       <Modal
