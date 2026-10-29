@@ -116,6 +116,32 @@ export default function CuttingOrderDetail() {
     record: ReworkRecord;
   } | null>(null);
 
+  const [activeProductMenu, setActiveProductMenu] = useState<{
+    itemId: number;
+    top: number;
+    left: number;
+    item: any;
+  } | null>(null);
+
+  // Bulk Cutting Batch Modal State
+  const [bulkBatchModalOpen, setBulkBatchModalOpen] = useState(false);
+  const [bulkItems, setBulkItems] = useState<Array<{
+    item: any;
+    assigned_quantity: number;
+    actual_cut_quantity: number;
+    remarks: string;
+    error?: string;
+  }>>([]);
+  const [bulkCuttingDate, setBulkCuttingDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkRemarks, setBulkRemarks] = useState('');
+  const [bulkPhotoUrls, setBulkPhotoUrls] = useState<string[]>([]);
+  const [savingBulkBatch, setSavingBulkBatch] = useState(false);
+  const [bulkBatchError, setBulkBatchError] = useState('');
+
+  // Modal: View Product Details
+  const [viewProductModalOpen, setViewProductModalOpen] = useState(false);
+  const [selectedProductForView, setSelectedProductForView] = useState<any>(null);
+
   // Modal: View Batch Details
   const [viewBatchModalOpen, setViewBatchModalOpen] = useState(false);
   const [selectedBatchForView, setSelectedBatchForView] = useState<CuttingBatch | null>(null);
@@ -197,10 +223,11 @@ export default function CuttingOrderDetail() {
 
   // Click outside / scroll / escape listener for floating menus
   useEffect(() => {
-    if (!activeBatchMenu && !activeReworkMenu) return;
+    if (!activeBatchMenu && !activeReworkMenu && !activeProductMenu) return;
     const closeAll = () => {
       setActiveBatchMenu(null);
       setActiveReworkMenu(null);
+      setActiveProductMenu(null);
     };
     window.addEventListener('scroll', closeAll, true);
     window.addEventListener('resize', closeAll);
@@ -213,7 +240,38 @@ export default function CuttingOrderDetail() {
       window.removeEventListener('resize', closeAll);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeBatchMenu, activeReworkMenu]);
+  }, [activeBatchMenu, activeReworkMenu, activeProductMenu]);
+
+  const handleToggleProductMenu = (e: React.MouseEvent<HTMLButtonElement>, item: any) => {
+    e.stopPropagation();
+    if (activeProductMenu?.itemId === item.id) {
+      setActiveProductMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const menuWidth = 148;
+      const menuHeight = 110;
+
+      let top = rect.bottom + 4;
+      if (top + menuHeight > window.innerHeight && rect.top > menuHeight) {
+        top = rect.top - menuHeight - 4;
+      }
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+
+      setActiveProductMenu({
+        itemId: item.id || 0,
+        top,
+        left,
+        item,
+      });
+      setActiveBatchMenu(null);
+      setActiveReworkMenu(null);
+    }
+  };
 
   const handleToggleBatchMenu = (e: React.MouseEvent<HTMLButtonElement>, batch: CuttingBatch) => {
     e.stopPropagation();
@@ -353,6 +411,100 @@ export default function CuttingOrderDetail() {
     }
   };
 
+  const handleOpenBulkBatchModal = () => {
+    const lines = items.map((it) => {
+      const itTotal = Number(it.total_quantity || 0);
+      const itemBatches = getBatchesForItem(it);
+      const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
+      const pending = Math.max(0, itTotal - itCut);
+      return {
+        item: it,
+        assigned_quantity: pending,
+        actual_cut_quantity: pending,
+        remarks: '',
+        error: '',
+      };
+    });
+
+    setBulkItems(lines);
+    setBulkCuttingDate(new Date().toISOString().split('T')[0]);
+    setBulkRemarks('');
+    setBulkPhotoUrls([]);
+    setBulkBatchError('');
+    setBulkBatchModalOpen(true);
+  };
+
+  const handleSaveBulkBatch = async () => {
+    const validLines = bulkItems.filter((b) => Number(b.actual_cut_quantity) > 0);
+    if (validLines.length === 0) {
+      setBulkBatchError('Please specify an actual cut quantity greater than 0 for at least one product line.');
+      return;
+    }
+
+    let hasError = false;
+    const updated = bulkItems.map((b) => {
+      const actual = Number(b.actual_cut_quantity || 0);
+      const assigned = Number(b.assigned_quantity || 0);
+      const itTotal = Number(b.item.total_quantity || 0);
+      const itemBatches = getBatchesForItem(b.item);
+      const itCut = itemBatches.reduce((s, x) => s + Number(x.actual_cut_quantity || 0), 0);
+      const maxPending = Math.max(0, itTotal - itCut);
+
+      if (actual > 0) {
+        if (assigned > 0 && actual > assigned) {
+          hasError = true;
+          return { ...b, error: `Actual cut (${actual}) cannot exceed assigned (${assigned})` };
+        }
+        if (actual > maxPending) {
+          hasError = true;
+          return { ...b, error: `Actual cut (${actual}) cannot exceed remaining eligible balance (${maxPending})` };
+        }
+      }
+      return { ...b, error: '' };
+    });
+
+    setBulkItems(updated);
+    if (hasError) {
+      setBulkBatchError('Please resolve row-level validation errors before saving.');
+      return;
+    }
+
+    if (!bulkPhotoUrls || bulkPhotoUrls.length === 0) {
+      setBulkBatchError('Real-time camera photograph with live GPS coordinates is mandatory before confirming cutting batches.');
+      return;
+    }
+
+    setSavingBulkBatch(true);
+    setBulkBatchError('');
+    try {
+      const payloadBatches = validLines.map((b) => ({
+        production_order_item_id: b.item.id,
+        product_id: b.item.product_id,
+        color: b.item.color,
+        size: b.item.size,
+        assigned_quantity: Number(b.assigned_quantity) > 0 ? Number(b.assigned_quantity) : Number(b.actual_cut_quantity),
+        actual_cut_quantity: Number(b.actual_cut_quantity),
+        remarks: b.remarks || bulkRemarks,
+      }));
+
+      await api.createCuttingBatch({
+        production_order_id: Number(id),
+        cutting_date: bulkCuttingDate,
+        remarks: bulkRemarks,
+        photo_urls: bulkPhotoUrls,
+        batches: payloadBatches,
+      });
+
+      setBulkBatchModalOpen(false);
+      setToastMessage(`${validLines.length} cutting batches recorded successfully! Ready for Quality Inspection.`);
+      loadData();
+    } catch (err: any) {
+      setBulkBatchError(err.message || 'Failed to save bulk cutting batches');
+    } finally {
+      setSavingBulkBatch(false);
+    }
+  };
+
   // Active rework currently away at recutting table (not yet received back)
   const getActiveReworkForBatch = (batch: CuttingBatch) => {
     const bNo = batch.batch_number;
@@ -422,8 +574,7 @@ export default function CuttingOrderDetail() {
       }
     } else if (qty > avail) {
       setTransferError(
-        `Transfer quantity (${qty} pcs) exceeds available pieces in hand (${avail} pcs). ${
-          activeRwk > 0 ? `${activeRwk} pcs are currently sent for rework.` : ''
+        `Transfer quantity (${qty} pcs) exceeds available pieces in hand (${avail} pcs). ${activeRwk > 0 ? `${activeRwk} pcs are currently sent for rework.` : ''
         }`
       );
       return;
@@ -667,10 +818,10 @@ export default function CuttingOrderDetail() {
     const totalOrdered = items.reduce((s, i) => s + Number(i.total_quantity || 0), 0);
     const totalCut = batches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
     const totalRejected = batches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
-    
+
     // Active rework currently sent to recut line (not yet received back)
     const activeRework = batches.reduce((s, b) => s + getActiveReworkForBatch(b), 0);
-    
+
     // Accepted in hand right now = Total Cut - Active Rework (at recut line) - Rejected
     const totalAccepted = Math.max(0, totalCut - activeRework - totalRejected);
     const totalTransferred = batches.reduce((s, b) => s + Number(b.transferred_to_next_stage_quantity || 0), 0);
@@ -932,9 +1083,15 @@ export default function CuttingOrderDetail() {
                 Product-Wise Cutting Status & Batches
               </h3>
             </div>
-            <span className="text-xs font-mono text-slate-500">
-              {items.length} {items.length === 1 ? 'Product Line' : 'Product Lines'}
-            </span>
+            <Button
+              size="xs"
+              variant="primary"
+              icon={<Plus className="w-3.5 h-3.5" />}
+              onClick={handleOpenBulkBatchModal}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] shadow-2xs"
+            >
+              Record Batch
+            </Button>
           </div>
 
           <div className="overflow-x-auto">
@@ -987,22 +1144,31 @@ export default function CuttingOrderDetail() {
                         {itPending > 0 ? `${fmt(itPending)} pcs` : <span className="text-emerald-600">Complete</span>}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {itPending <= 0 ? (
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 inline-flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Completed
-                          </span>
-                        ) : (
-                          <Button
-                            size="xs"
-                            variant="primary"
-                            icon={<Plus className="w-3 h-3" />}
-                            onClick={() => handleOpenBatchModal(it)}
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px]"
+                        <div className="flex items-center justify-end gap-2">
+                          {itPending <= 0 ? (
+                            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200 inline-flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              Completed
+                            </span>
+                          ) : itCut > 0 ? (
+                            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                              {fmt(itCut)}/{fmt(itTotal)} pcs
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              Pending Cut
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleProductMenu(e, it)}
+                            className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
+                            title="Product Actions"
                           >
-                            Record Cut Batch
-                          </Button>
-                        )}
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1202,11 +1368,10 @@ export default function CuttingOrderDetail() {
                             <button
                               type="button"
                               onClick={(e) => handleToggleBatchMenu(e, b)}
-                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
-                                activeBatchMenu?.batchId === b.id
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeBatchMenu?.batchId === b.id
                                   ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
                                   : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-                              }`}
+                                }`}
                               title="Batch Actions"
                             >
                               <MoreVertical className="w-4 h-4" />
@@ -1403,17 +1568,16 @@ export default function CuttingOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                              (rec.status as string) === 'Transferred'
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${(rec.status as string) === 'Transferred'
                                 ? 'bg-purple-50 text-purple-800 border border-purple-200'
                                 : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                : rec.status === 'Sent for Rework'
-                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                : rec.status === 'Rework Received'
-                                ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}>
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : rec.status === 'Sent for Rework'
+                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                    : rec.status === 'Rework Received'
+                                      ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                              }`}>
                               {rec.status || 'Pending Rework'}
                             </span>
                           </td>
@@ -1422,11 +1586,10 @@ export default function CuttingOrderDetail() {
                             <button
                               type="button"
                               onClick={(e) => handleToggleReworkMenu(e, rec)}
-                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
-                                activeReworkMenu?.recordId === rec.id
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeReworkMenu?.recordId === rec.id
                                   ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
                                   : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-                              }`}
+                                }`}
                               title="Rework Options"
                             >
                               <MoreVertical className="w-4 h-4" />
@@ -1562,6 +1725,70 @@ export default function CuttingOrderDetail() {
                 >
                   <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>View</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* FLOATING ACTION PORTAL: PRODUCT ROW 3-DOT MENU */}
+      {activeProductMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveProductMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeProductMenu.top}px`,
+                left: `${activeProductMenu.left}px`,
+                width: '148px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {/* 1. Record Batch */}
+                {(() => {
+                  const it = activeProductMenu.item;
+                  const itTotal = Number(it.total_quantity || 0);
+                  const itemBatches = getBatchesForItem(it);
+                  const itCut = itemBatches.reduce((s: number, b: any) => s + Number(b.actual_cut_quantity || 0), 0);
+                  const pending = Math.max(0, itTotal - itCut);
+                  const isEligible = pending > 0;
+
+                  return (
+                    <button
+                      type="button"
+                      disabled={!isEligible}
+                      onClick={() => {
+                        const item = activeProductMenu.item;
+                        setActiveProductMenu(null);
+                        handleOpenBatchModal(item);
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition text-left ${isEligible
+                          ? 'text-amber-700 hover:bg-amber-50 hover:text-amber-800 cursor-pointer'
+                          : 'text-slate-400 bg-slate-50/50 cursor-not-allowed'
+                        }`}
+                    >
+                      <Scissors className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{isEligible ? 'Record Batch' : 'Completed'}</span>
+                    </button>
+                  );
+                })()}
+
+                {/* 2. View */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const item = activeProductMenu.item;
+                    setActiveProductMenu(null);
+                    setSelectedProductForView(item);
+                    setViewProductModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>View Details</span>
                 </button>
               </div>
             </div>
@@ -2295,13 +2522,12 @@ export default function CuttingOrderDetail() {
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-mono font-bold text-brand-700 text-sm">{selectedReworkForView.rework_order_no}</span>
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                  selectedReworkForView.status === 'Accepted After Rework' || (selectedReworkForView.status as string) === 'Completed'
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${selectedReworkForView.status === 'Accepted After Rework' || (selectedReworkForView.status as string) === 'Completed'
                     ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
                     : selectedReworkForView.status === 'Sent for Rework'
-                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                    : 'bg-amber-50 text-amber-800 border border-amber-200'
-                }`}>
+                      ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                  }`}>
                   {selectedReworkForView.status}
                 </span>
               </div>
@@ -2362,6 +2588,369 @@ export default function CuttingOrderDetail() {
           </div>
         </div>
       )}
+
+      {/* BULK RECORD CUTTING BATCH MODAL */}
+      <Modal
+        isOpen={bulkBatchModalOpen}
+        onClose={() => setBulkBatchModalOpen(false)}
+        title={`Bulk Record Cutting Batches — ${order?.order_number || ''}`}
+        maxWidth="max-w-3xl"
+      >
+        <div className="space-y-4">
+          <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 flex items-start gap-2.5">
+            <Scissors className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-amber-900 leading-relaxed">
+              <p className="font-bold">Stage 05 — Bulk Cutting Batch Entry</p>
+              <p className="text-amber-800/90 text-[11px] mt-0.5">
+                Record completed cut pieces across eligible product lines in one submission. Entered cut quantities remain pending quality inspection until inspected. Untouched or 0-quantity rows will be safely skipped.
+              </p>
+            </div>
+          </div>
+
+          {bulkBatchError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{bulkBatchError}</span>
+            </div>
+          )}
+
+          {/* Common Fields: Cutting Date & Remarks */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 border border-slate-200 rounded-xl">
+            <FormField label="Cutting Date *" required>
+              <input
+                type="date"
+                value={bulkCuttingDate}
+                onChange={(e) => setBulkCuttingDate(e.target.value)}
+                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+              />
+            </FormField>
+            <FormField label="Batch Notes / Lay Remarks">
+              <input
+                type="text"
+                value={bulkRemarks}
+                onChange={(e) => setBulkRemarks(e.target.value)}
+                placeholder="e.g. Marker #1, Table A lay cut"
+                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+              />
+            </FormField>
+          </div>
+
+          {/* Product Lines List */}
+          <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
+              Eligible Product Lines ({bulkItems.length})
+            </div>
+            {bulkItems.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+                No product lines currently eligible for cutting.
+              </div>
+            ) : (
+              bulkItems.map((b, idx) => {
+                const itTotal = Number(b.item.total_quantity || 0);
+                const itemBatches = getBatchesForItem(b.item);
+                const itCut = itemBatches.reduce((s: number, x: any) => s + Number(x.actual_cut_quantity || 0), 0);
+                const maxPending = Math.max(0, itTotal - itCut);
+                const isIncluded = Number(b.actual_cut_quantity) > 0;
+
+                return (
+                  <div
+                    key={b.item.id || idx}
+                    className={`p-3.5 rounded-xl border transition ${isIncluded
+                        ? 'bg-white border-amber-300 shadow-2xs'
+                        : 'bg-slate-50/60 border-slate-200 opacity-75'
+                      }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      {/* Left: Product Details */}
+                      <div className="space-y-1 sm:w-1/2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] flex items-center justify-center font-bold">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-slate-800 text-xs">
+                            {b.item.product_name || 'Product'}
+                          </span>
+                          {b.item.product_code && (
+                            <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded">
+                              {b.item.product_code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-600 flex items-center gap-3 pl-7">
+                          <span>Color: <strong className="text-slate-800">{b.item.color || 'Standard'}</strong></span>
+                          <span>Size: <strong className="text-slate-800">{b.item.size || 'M'}</strong></span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-3 pl-7">
+                          <span>Order: <strong className="font-mono text-slate-700">{fmt(itTotal)} pcs</strong></span>
+                          <span>Eligible: <strong className="font-mono text-amber-700 font-bold">{fmt(maxPending)} pcs</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Right: Quantities */}
+                      <div className="sm:w-1/2 flex items-center gap-2 justify-end">
+                        <div className="w-28">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Assigned
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={maxPending}
+                            value={b.assigned_quantity}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, assigned_quantity: val, error: '' } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono text-right"
+                          />
+                        </div>
+
+                        <div className="w-28">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Actual Cut *
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={b.assigned_quantity || maxPending}
+                            value={b.actual_cut_quantity}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, actual_cut_quantity: val, error: '' } : p))
+                              );
+                            }}
+                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${isIncluded ? 'border-amber-500 text-amber-900 bg-amber-50/40' : 'border-slate-300 text-slate-400'
+                              }`}
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx
+                                    ? { ...p, assigned_quantity: maxPending, actual_cut_quantity: maxPending, error: '' }
+                                    : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-brand-700 hover:underline px-1 py-0.5 font-medium cursor-pointer"
+                            title="Set to full remaining"
+                          >
+                            Full
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx
+                                    ? { ...p, actual_cut_quantity: 0, error: '' }
+                                    : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-slate-400 hover:text-red-600 px-1 py-0.5 font-medium cursor-pointer"
+                            title="Skip this line"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {b.error && (
+                      <div className="mt-2 text-[11px] text-red-600 font-medium pl-7">
+                        ⚠ {b.error}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Cutting Lay & Bundle Photograph Evidence *"
+            required={true}
+            photos={bulkPhotoUrls}
+            onPhotosChange={setBulkPhotoUrls}
+            stageName="Cutting (Stage 05 Bulk)"
+            orderNumber={order?.order_number}
+            error={bulkBatchError && bulkPhotoUrls.length === 0 ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming cutting batches.' : undefined}
+            buttonText="Take Real-Time Cutting Photo"
+          />
+
+          {/* Summary & Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+            <div className="text-xs text-slate-600">
+              <span className="font-bold text-slate-800">
+                {bulkItems.filter((b) => Number(b.actual_cut_quantity) > 0).length} of {bulkItems.length}
+              </span>{' '}
+              product lines selected for batch recording (Total:{' '}
+              <strong className="font-mono text-amber-700">
+                {fmt(bulkItems.reduce((s, b) => s + (Number(b.actual_cut_quantity) || 0), 0))} pcs
+              </strong>
+              )
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBulkBatchModalOpen(false)}
+                disabled={savingBulkBatch}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={savingBulkBatch}
+                onClick={handleSaveBulkBatch}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+              >
+                {savingBulkBatch ? 'Saving Batches...' : 'Save All Batches'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* VIEW PRODUCT LINE DETAILS MODAL */}
+      <Modal
+        isOpen={viewProductModalOpen}
+        onClose={() => {
+          setViewProductModalOpen(false);
+          setSelectedProductForView(null);
+        }}
+        title={`Product Details — ${selectedProductForView?.product_name || 'Product'}`}
+        maxWidth="max-w-2xl"
+      >
+        {selectedProductForView && (() => {
+          const it = selectedProductForView;
+          const itTotal = Number(it.total_quantity || 0);
+          const itemBatches = getBatchesForItem(it);
+          const itCut = itemBatches.reduce((s: number, b: any) => s + Number(b.actual_cut_quantity || 0), 0);
+          const itRej = itemBatches.reduce((s: number, b: any) => s + Number(b.rejected_quantity || 0), 0);
+          const itActiveRwk = itemBatches.reduce((s: number, b: any) => s + getActiveReworkForBatch(b), 0);
+          const itAcc = Math.max(0, itCut - itActiveRwk - itRej);
+          const itTrf = itemBatches.reduce((s: number, b: any) => s + Number(b.transferred_to_next_stage_quantity || 0), 0);
+          const itPending = Math.max(0, itTotal - itCut);
+
+          return (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">{it.product_name}</h4>
+                  {it.product_code && (
+                    <span className="font-mono text-xs text-brand-600 block">{it.product_code}</span>
+                  )}
+                  <div className="text-xs text-slate-600 mt-1">
+                    Color: <strong className="text-slate-800">{it.color || 'Standard'}</strong> • Size: <strong className="text-slate-800">{it.size || 'M'}</strong>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Order Quantity</span>
+                  <span className="text-lg font-black text-slate-900 font-mono">{fmt(itTotal)} pcs</span>
+                </div>
+              </div>
+
+              {/* Mini Stat Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center font-mono text-xs">
+                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-indigo-700 block">Actual Cut</span>
+                  <span className="text-sm font-bold text-indigo-900">{fmt(itCut)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">Accepted Output</span>
+                  <span className="text-sm font-bold text-emerald-900">{fmt(itAcc)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-amber-700 block">Active Rework</span>
+                  <span className="text-sm font-bold text-amber-900">{fmt(itActiveRwk)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-red-700 block">Rejected / Scrap</span>
+                  <span className="text-sm font-bold text-red-900">{fmt(itRej)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-purple-700 block">Transferred Next</span>
+                  <span className="text-sm font-bold text-purple-900">{fmt(itTrf)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Pending Cut</span>
+                  <span className="text-sm font-bold text-slate-800">{fmt(itPending)} pcs</span>
+                </div>
+              </div>
+
+              {/* Batches Table for this product line */}
+              <div className="space-y-2">
+                <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Batches Recorded ({itemBatches.length})
+                </h5>
+                {itemBatches.length === 0 ? (
+                  <p className="text-xs text-slate-400 p-4 bg-slate-50 rounded-lg text-center">
+                    No batches recorded for this product line yet.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                        <tr>
+                          <th className="py-2 px-3">Batch #</th>
+                          <th className="py-2 px-3">Date</th>
+                          <th className="py-2 px-2 text-right">Cut Qty</th>
+                          <th className="py-2 px-2 text-right">Accepted</th>
+                          <th className="py-2 px-2 text-right">Rework</th>
+                          <th className="py-2 px-2 text-right">Rejected</th>
+                          <th className="py-2 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-mono">
+                        {itemBatches.map((b: any) => (
+                          <tr key={b.id}>
+                            <td className="py-2 px-3 font-bold text-brand-700">{b.batch_number}</td>
+                            <td className="py-2 px-3 text-slate-500">{b.cutting_date}</td>
+                            <td className="py-2 px-2 text-right font-bold text-slate-800">{fmt(b.actual_cut_quantity)}</td>
+                            <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{fmt(b.accepted_output_quantity)}</td>
+                            <td className="py-2 px-2 text-right text-amber-700">{fmt(b.rework_quantity)}</td>
+                            <td className="py-2 px-2 text-right text-red-600">{fmt(b.rejected_quantity)}</td>
+                            <td className="py-2 px-3">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                {b.status || 'In Progress'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setViewProductModalOpen(false);
+                    setSelectedProductForView(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* Quality Inspection Modal (Stage 05: Cutting) */}
       {selectedBatchForInspect && (

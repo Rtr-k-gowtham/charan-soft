@@ -2562,12 +2562,119 @@ class ProductionController {
             $this->ensureWorkflowTables($pdo);
 
             $pId = (int)($data['production_order_id'] ?? 0);
+            if ($pId <= 0) {
+                Response::error("Production order ID is required", 422);
+                return;
+            }
+
+            // Support atomic bulk cutting batches
+            if (!empty($data['batches']) && is_array($data['batches'])) {
+                $batchRows = $data['batches'];
+                $validBatches = [];
+                foreach ($batchRows as $bRow) {
+                    $cutQty = (float)($bRow['actual_cut_quantity'] ?? 0);
+                    if ($cutQty > 0) {
+                        $validBatches[] = $bRow;
+                    }
+                }
+
+                if (empty($validBatches)) {
+                    Response::error("Please enter a valid actual cut quantity greater than 0 for at least one product line", 422);
+                    return;
+                }
+
+                $pdo->beginTransaction();
+                $createdBatches = [];
+                $cutDate = $data['cutting_date'] ?? date('Y-m-d');
+                $photoUrls = json_encode($data['photo_urls'] ?? []);
+                $remarks = $data['remarks'] ?? ($data['notes'] ?? '');
+
+                foreach ($validBatches as $vb) {
+                    $itemId = (int)($vb['production_order_item_id'] ?? 0);
+                    $actual = (float)($vb['actual_cut_quantity'] ?? 0);
+                    $assigned = (float)($vb['assigned_quantity'] ?? $actual);
+
+                    if ($itemId > 0) {
+                        $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? AND production_order_id = ?");
+                        $iStmt->execute([$itemId, $pId]);
+                        $item = $iStmt->fetch();
+                    } else {
+                        $item = null;
+                    }
+                    if (!$item) {
+                        $pIdReq = (int)($vb['product_id'] ?? 0);
+                        $colReq = trim((string)($vb['color'] ?? ''));
+                        if ($pIdReq > 0) {
+                            $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? LIMIT 1");
+                            $fStmt->execute([$pId, $pIdReq, $colReq]);
+                            $item = $fStmt->fetch();
+                            if ($item) $itemId = (int)$item['id'];
+                        }
+                    }
+
+                    $batchNo = 'CUT-' . rand(1000, 9999);
+                    $stmt = $pdo->prepare("
+                        INSERT INTO cutting_batches 
+                        (production_order_id, production_order_item_id, batch_number, cutting_date, assigned_quantity, actual_cut_quantity, rejected_quantity, rework_quantity, accepted_output_quantity, pending_quantity, operator, supervisor, machine_line, remarks, photo_urls, status, inspection_status) 
+                        VALUES (?, ?, ?, ?, ?, ?, 0.00, 0.00, 0.00, 0, ?, ?, ?, ?, ?, 'In Progress', 'Pending Inspection')
+                    ");
+                    $stmt->execute([
+                        $pId, 
+                        $itemId, 
+                        $batchNo, 
+                        $cutDate, 
+                        $assigned, 
+                        $actual, 
+                        $data['operator'] ?? null, 
+                        $data['supervisor'] ?? null, 
+                        $data['machine_line'] ?? null, 
+                        $vb['remarks'] ?? $remarks, 
+                        $photoUrls
+                    ]);
+                    $batchId = (int)$pdo->lastInsertId();
+
+                    $lStmt = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 5, 'CUT', 'PROCESSED', ?, ?, ?, ?, 'Cutting Batch', ?, ?)
+                    ");
+                    $lStmt->execute([
+                        $pId, 
+                        $itemId, 
+                        $actual, 
+                        $batchNo, 
+                        $data['operator'] ?? '', 
+                        $data['supervisor'] ?? '', 
+                        $batchNo, 
+                        $vb['remarks'] ?? ($remarks ?: 'Fabric cutting completed, awaiting quality inspection')
+                    ]);
+
+                    $createdBatches[] = [
+                        'id' => $batchId,
+                        'batch_number' => $batchNo,
+                        'production_order_item_id' => $itemId,
+                        'actual_cut_quantity' => $actual,
+                        'assigned_quantity' => $assigned,
+                        'inspection_status' => 'Pending Inspection'
+                    ];
+                }
+
+                $pdo->commit();
+
+                Response::success([
+                    'batches' => $createdBatches,
+                    'count' => count($createdBatches),
+                    'total_actual_cut' => array_reduce($createdBatches, fn($s, $b) => $s + $b['actual_cut_quantity'], 0)
+                ], count($createdBatches) . " cutting batches recorded successfully. Ready for quality inspection.", 201);
+                return;
+            }
+
             $itemId = (int)($data['production_order_item_id'] ?? 0);
             $actual = (float)($data['actual_cut_quantity'] ?? 0);
             $assigned = (float)($data['assigned_quantity'] ?? $actual);
 
-            if ($pId <= 0 || $actual <= 0) {
-                Response::error("Production order and valid cut quantity are required", 422);
+            if ($actual <= 0) {
+                Response::error("Valid cut quantity is required", 422);
                 return;
             }
 
@@ -4063,15 +4170,122 @@ class ProductionController {
             $this->ensureWorkflowTables($pdo);
 
             $pId = (int)($data['production_order_id'] ?? 0);
+            if ($pId <= 0) {
+                Response::error("Production order ID is required", 422);
+                return;
+            }
+
+            // Support atomic bulk stitching batches
+            if (!empty($data['batches']) && is_array($data['batches'])) {
+                $batchRows = $data['batches'];
+                $validBatches = [];
+                foreach ($batchRows as $bRow) {
+                    $comp = (float)($bRow['completed_quantity'] ?? 0);
+                    if ($comp > 0) {
+                        $validBatches[] = $bRow;
+                    }
+                }
+
+                if (empty($validBatches)) {
+                    Response::error("Please enter a valid completed quantity greater than 0 for at least one product line", 422);
+                    return;
+                }
+
+                $pdo->beginTransaction();
+                $createdBatches = [];
+                $operatorTeam = trim($data['operator_team'] ?? 'Stitching Line #1');
+                $prodLine = trim($data['production_line'] ?? 'Direct Drive Machine Line');
+                $supervisor = trim($data['supervisor'] ?? 'Sewing Floor Head');
+                $startDate = !empty($data['start_date']) ? $data['start_date'] : date('Y-m-d');
+                $compDate = !empty($data['completion_date']) ? $data['completion_date'] : date('Y-m-d');
+                $remarks = trim($data['remarks'] ?? '');
+                $photoUrls = json_encode($data['photo_urls'] ?? []);
+
+                foreach ($validBatches as $vb) {
+                    $itemId = (int)($vb['production_order_item_id'] ?? 0);
+                    $comp = (float)($vb['completed_quantity'] ?? 0);
+                    $assigned = (float)($vb['assigned_quantity'] ?? $comp);
+                    $batchNo = 'STI-' . rand(1000, 9999);
+
+                    if ($itemId > 0) {
+                        $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? AND production_order_id = ?");
+                        $iStmt->execute([$itemId, $pId]);
+                        $item = $iStmt->fetch();
+                    } else {
+                        $item = null;
+                    }
+                    if (!$item) {
+                        $pIdReq = (int)($vb['product_id'] ?? 0);
+                        $colReq = trim((string)($vb['color'] ?? ''));
+                        if ($pIdReq > 0) {
+                            $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? LIMIT 1");
+                            $fStmt->execute([$pId, $pIdReq, $colReq]);
+                            $item = $fStmt->fetch();
+                            if ($item) $itemId = (int)$item['id'];
+                        }
+                    }
+
+                    $stmt = $pdo->prepare("INSERT INTO stitching_batches 
+                        (production_order_id, production_order_item_id, batch_number, assigned_quantity, received_quantity, completed_quantity, accepted_quantity, rejected_quantity, rework_quantity, balance_quantity, operator_team, production_line, start_date, completion_date, supervisor, remarks, photo_urls, status, inspection_status) 
+                        VALUES (?, ?, ?, ?, ?, ?, 0.00, 0.00, 0.00, 0, ?, ?, ?, ?, ?, ?, ?, 'In Progress', 'Pending Inspection')");
+                    $stmt->execute([
+                        $pId, 
+                        $itemId, 
+                        $batchNo, 
+                        $assigned > 0 ? $assigned : $comp, 
+                        $assigned > 0 ? $assigned : $comp, 
+                        $comp, 
+                        $operatorTeam, 
+                        $prodLine, 
+                        $startDate, 
+                        $compDate, 
+                        $supervisor, 
+                        $vb['remarks'] ?? $remarks, 
+                        $photoUrls
+                    ]);
+                    $bId = (int)$pdo->lastInsertId();
+
+                    $lStmt = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 7, 'STI', 'PROCESSED', ?, ?, ?, ?, 'Stitching Output', ?, ?)
+                    ");
+                    $lStmt->execute([
+                        $pId, 
+                        $itemId, 
+                        $comp, 
+                        $batchNo, 
+                        $operatorTeam, 
+                        $supervisor, 
+                        (string)$bId, 
+                        $vb['remarks'] ?? ($remarks ?: 'Stitching completed; awaiting quality inspection')
+                    ]);
+
+                    $createdBatches[] = [
+                        'id' => $bId,
+                        'batch_number' => $batchNo,
+                        'production_order_item_id' => $itemId,
+                        'completed_quantity' => $comp,
+                        'assigned_quantity' => $assigned,
+                        'inspection_status' => 'Pending Inspection'
+                    ];
+                }
+
+                $pdo->commit();
+
+                Response::success([
+                    'batches' => $createdBatches,
+                    'count' => count($createdBatches),
+                    'total_completed' => array_reduce($createdBatches, fn($s, $b) => $s + $b['completed_quantity'], 0)
+                ], count($createdBatches) . " stitching batches recorded successfully. Ready for quality inspection.", 201);
+                return;
+            }
+
             $itemId = (int)($data['production_order_item_id'] ?? 0);
             $assigned = (float)($data['assigned_quantity'] ?? 0);
             $comp = (float)($data['completed_quantity'] ?? 0);
             $batchNo = 'STI-' . rand(1000, 9999);
 
-            if ($pId <= 0) {
-                Response::error("Production order ID is required", 422);
-                return;
-            }
             if ($comp <= 0) {
                 Response::error("Completed quantity must be greater than zero", 422);
                 return;

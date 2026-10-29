@@ -133,6 +133,35 @@ export default function StitchingOrderDetail() {
   // 3-Dot Floating Action Menus
   const [activeBatchMenu, setActiveBatchMenu] = useState<{ top: number; left: number; batch: StitchingBatch } | null>(null);
   const [activeReworkMenu, setActiveReworkMenu] = useState<{ top: number; left: number; record: ReworkRecord } | null>(null);
+  const [activeProductMenu, setActiveProductMenu] = useState<{
+    itemId: number;
+    top: number;
+    left: number;
+    item: any;
+  } | null>(null);
+
+  // Bulk Stitching Batch Modal State
+  const [bulkBatchModalOpen, setBulkBatchModalOpen] = useState(false);
+  const [bulkItems, setBulkItems] = useState<Array<{
+    item: any;
+    assigned_quantity: number;
+    completed_quantity: number;
+    remarks: string;
+    error?: string;
+  }>>([]);
+  const [bulkStartDate, setBulkStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkCompletionDate, setBulkCompletionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bulkProductionLine, setBulkProductionLine] = useState('Direct Drive Machine Line');
+  const [bulkOperatorTeam, setBulkOperatorTeam] = useState('Stitching Line #1');
+  const [bulkSupervisor, setBulkSupervisor] = useState('Sewing Floor Head');
+  const [bulkRemarks, setBulkRemarks] = useState('');
+  const [bulkPhotoUrls, setBulkPhotoUrls] = useState<string[]>([]);
+  const [savingBulkBatch, setSavingBulkBatch] = useState(false);
+  const [bulkBatchError, setBulkBatchError] = useState('');
+
+  // Modal: View Product Line Details
+  const [viewProductModalOpen, setViewProductModalOpen] = useState(false);
+  const [selectedProductForView, setSelectedProductForView] = useState<any>(null);
 
   // Record Stitching Batch Modal State
   const [batchModalOpen, setBatchModalOpen] = useState(false);
@@ -233,11 +262,32 @@ export default function StitchingOrderDetail() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Close menus when clicking outside
+  // Close menus on outside click, scroll, resize, or escape key
+  useEffect(() => {
+    if (!activeBatchMenu && !activeReworkMenu && !activeProductMenu) return;
+    const closeAll = () => {
+      setActiveBatchMenu(null);
+      setActiveReworkMenu(null);
+      setActiveProductMenu(null);
+    };
+    window.addEventListener('scroll', closeAll, true);
+    window.addEventListener('resize', closeAll);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('scroll', closeAll, true);
+      window.removeEventListener('resize', closeAll);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeBatchMenu, activeReworkMenu, activeProductMenu]);
+
   useEffect(() => {
     const handleClickOutside = () => {
       setActiveBatchMenu(null);
       setActiveReworkMenu(null);
+      setActiveProductMenu(null);
     };
     window.addEventListener('click', handleClickOutside);
     return () => window.removeEventListener('click', handleClickOutside);
@@ -255,6 +305,7 @@ export default function StitchingOrderDetail() {
     let totalRework = 0;
     let pendingStitching = 0;
     let readyForChecking = 0;
+    let totalTransferred = 0;
 
     items.forEach(it => {
       orderQty += Number(it.order_quantity || it.total_quantity || 0);
@@ -267,7 +318,10 @@ export default function StitchingOrderDetail() {
       totalRework += Number(it.rework_quantity || 0);
       pendingStitching += Number(it.pending_stitching || it.available_to_stitch || 0);
       readyForChecking += Number(it.ready_to_transfer || 0);
+      totalTransferred += Number(it.transferred_to_checking || 0);
     });
+
+    const batchTransferred = batches.reduce((sum, b) => sum + Number(b.transferred_quantity || 0), 0);
 
     return {
       orderQty,
@@ -279,9 +333,10 @@ export default function StitchingOrderDetail() {
       totalRejected,
       totalRework,
       pendingStitching,
-      readyForChecking
+      readyForChecking,
+      totalTransferred: Math.max(totalTransferred, batchTransferred)
     };
-  }, [items]);
+  }, [items, batches]);
 
   // Active rework quantity currently away at alteration line (not yet accepted or transferred)
   const activeReworkQty = useMemo(() => {
@@ -415,6 +470,150 @@ export default function StitchingOrderDetail() {
     const top = rect.bottom + 4;
     setActiveReworkMenu({ top, left, record: rec });
     setActiveBatchMenu(null);
+    setActiveProductMenu(null);
+  };
+
+  const handleToggleProductMenu = (e: React.MouseEvent<HTMLButtonElement>, item: any) => {
+    e.stopPropagation();
+    if (activeProductMenu?.itemId === item.id) {
+      setActiveProductMenu(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const menuWidth = 148;
+      const menuHeight = 110;
+
+      let top = rect.bottom + 4;
+      if (top + menuHeight > window.innerHeight && rect.top > menuHeight) {
+        top = rect.top - menuHeight - 4;
+      }
+
+      let left = rect.right - menuWidth;
+      if (left < 10) left = 10;
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10;
+      }
+
+      setActiveProductMenu({
+        itemId: item.id || 0,
+        top,
+        left,
+        item,
+      });
+      setActiveBatchMenu(null);
+      setActiveReworkMenu(null);
+    }
+  };
+
+  const getBatchesForItem = (it: any) => {
+    if (!it) return [];
+    return batches.filter(
+      (b) =>
+        (b.production_order_item_id && String(b.production_order_item_id) === String(it.id)) ||
+        (b.product_name === it.product_name && (!b.color || b.color === it.color))
+    );
+  };
+
+  const handleOpenBulkBatchModal = () => {
+    const initialList = items.map((it) => {
+      const fromCutQ = Number(it.arrived_from_cutting || 0);
+      const fromEmbQ = Number(it.arrived_from_embroidery || 0);
+      const totalArrQ = Number(it.total_arrived || (fromCutQ + fromEmbQ) || 0);
+      const compQ = Number(it.completed_quantity || 0);
+      const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
+      return {
+        item: it,
+        assigned_quantity: availQ,
+        completed_quantity: availQ,
+        remarks: '',
+        error: '',
+      };
+    });
+    setBulkItems(initialList);
+    setBulkStartDate(new Date().toISOString().split('T')[0]);
+    setBulkCompletionDate(new Date().toISOString().split('T')[0]);
+    setBulkProductionLine('Direct Drive Machine Line');
+    setBulkOperatorTeam('Stitching Line #1');
+    setBulkSupervisor('Sewing Floor Head');
+    setBulkRemarks('');
+    setBulkPhotoUrls([]);
+    setBulkBatchError('');
+    setBulkBatchModalOpen(true);
+  };
+
+  const handleSaveBulkBatch = async () => {
+    const validLines = bulkItems.filter((b) => Number(b.completed_quantity) > 0);
+    if (validLines.length === 0) {
+      setBulkBatchError('Please specify a completed quantity greater than 0 for at least one product line.');
+      return;
+    }
+
+    let hasError = false;
+    const updated = bulkItems.map((b) => {
+      const comp = Number(b.completed_quantity || 0);
+      const assigned = Number(b.assigned_quantity || 0);
+      const fromCutQ = Number(b.item.arrived_from_cutting || 0);
+      const fromEmbQ = Number(b.item.arrived_from_embroidery || 0);
+      const totalArrQ = Number(b.item.total_arrived || (fromCutQ + fromEmbQ) || 0);
+      const prevComp = Number(b.item.completed_quantity || 0);
+      const maxPending = Number(b.item.available_to_stitch || Math.max(0, totalArrQ - prevComp));
+
+      if (comp > 0) {
+        if (assigned > 0 && comp > assigned) {
+          hasError = true;
+          return { ...b, error: `Completed qty (${comp}) cannot exceed assigned (${assigned})` };
+        }
+        if (comp > maxPending) {
+          hasError = true;
+          return { ...b, error: `Completed qty (${comp}) cannot exceed available to stitch (${maxPending})` };
+        }
+      }
+      return { ...b, error: '' };
+    });
+
+    setBulkItems(updated);
+    if (hasError) {
+      setBulkBatchError('Please resolve row-level validation errors before saving.');
+      return;
+    }
+
+    if (!bulkPhotoUrls || bulkPhotoUrls.length === 0) {
+      setBulkBatchError('Real-time camera photograph with live GPS coordinates of stitching line is mandatory.');
+      return;
+    }
+
+    setSavingBulkBatch(true);
+    setBulkBatchError('');
+    try {
+      const payloadBatches = validLines.map((b) => ({
+        production_order_item_id: b.item.active_stitching_item_id || b.item.id,
+        product_id: b.item.product_id,
+        color: b.item.color,
+        size: b.item.size,
+        assigned_quantity: Number(b.assigned_quantity) > 0 ? Number(b.assigned_quantity) : Number(b.completed_quantity),
+        completed_quantity: Number(b.completed_quantity),
+        remarks: b.remarks || bulkRemarks,
+      }));
+
+      await api.createStitchingBatch({
+        production_order_id: Number(order?.id || id),
+        start_date: bulkStartDate,
+        completion_date: bulkCompletionDate,
+        production_line: bulkProductionLine,
+        operator_team: bulkOperatorTeam,
+        supervisor: bulkSupervisor,
+        remarks: bulkRemarks,
+        photo_urls: bulkPhotoUrls,
+        batches: payloadBatches,
+      });
+
+      setBulkBatchModalOpen(false);
+      showToast(`${validLines.length} stitching batches recorded successfully! Ready for Quality Inspection.`);
+      await fetchOrderData();
+    } catch (err: any) {
+      setBulkBatchError(err?.message || 'Failed to save bulk stitching batches');
+    } finally {
+      setSavingBulkBatch(false);
+    }
   };
 
   // Open Record Stitching Batch Modal
@@ -948,6 +1147,16 @@ export default function StitchingOrderDetail() {
               >
                 In Stitching ({items.filter(i => Number(i.total_arrived || i.available_to_stitch || 0) > 0).length})
               </button>
+              <Button
+                id="btn-bulk-record-stitching-batch"
+                variant="primary"
+                size="sm"
+                icon={<Plus className="w-3.5 h-3.5" />}
+                onClick={handleOpenBulkBatchModal}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-2xs"
+              >
+                + Record Batch
+              </Button>
             </div>
           </div>
 
@@ -1037,44 +1246,33 @@ export default function StitchingOrderDetail() {
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {availQ > 0 ? (
-                              <Button
-                                id={`btn-record-stitching-${idx}`}
-                                size="xs"
-                                variant="primary"
-                                icon={<Plus className="w-3 h-3" />}
-                                onClick={() => handleOpenBatchModal(it)}
-                                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px] shadow-2xs"
-                              >
-                                Record Stitching
-                              </Button>
+                              <span className="text-[11px] font-bold text-brand-700 bg-brand-50 px-2.5 py-1 rounded border border-brand-200 inline-flex items-center gap-1 shadow-2xs">
+                                Ready to Stitch ({fmt(availQ)})
+                              </span>
                             ) : compQ > 0 && readyQ > 0 ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  QC Passed
-                                </span>
-                                <Button
-                                  size="xs"
-                                  variant="secondary"
-                                  icon={<ArrowRight className="w-3 h-3" />}
-                                  onClick={() => handleOpenTransferModal(it)}
-                                  className="text-[11px] font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 border-purple-200 shadow-2xs"
-                                >
-                                  To Checking
-                                </Button>
-                              </div>
+                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                QC Passed
+                              </span>
                             ) : compQ > 0 && readyQ <= 0 && (Number(it.transferred_to_checking || 0) > 0 || accQ > 0) ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1.5 shadow-2xs">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
-                                  Transferred to Checking
-                                </span>
-                              </div>
+                              <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded border border-purple-200 inline-flex items-center gap-1.5 shadow-2xs">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                                Transferred
+                              </span>
                             ) : (
                               <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-                                Awaiting Cutting / Embroidery
+                                Awaiting Arrive
                               </span>
                             )}
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleProductMenu(e, it)}
+                              className="w-7 h-7 rounded-lg border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition shadow-2xs cursor-pointer"
+                              title="Actions"
+                            >
+                              <MoreVertical className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1688,6 +1886,90 @@ export default function StitchingOrderDetail() {
                   <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>View</span>
                 </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* FLOATING ACTION PORTAL: PRODUCT ACTIONS MENU */}
+      {activeProductMenu &&
+        createPortal(
+          <div className="fixed inset-0 z-[99999]" onClick={() => setActiveProductMenu(null)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'fixed',
+                top: `${activeProductMenu.top}px`,
+                left: `${activeProductMenu.left}px`,
+                width: '148px',
+              }}
+              className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
+            >
+              <div className="py-0.5">
+                {(() => {
+                  const it = activeProductMenu.item;
+                  const fromCutQ = Number(it.arrived_from_cutting || 0);
+                  const fromEmbQ = Number(it.arrived_from_embroidery || 0);
+                  const totalArrQ = Number(it.total_arrived || (fromCutQ + fromEmbQ) || 0);
+                  const compQ = Number(it.completed_quantity || 0);
+                  const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
+                  const isEligible = availQ > 0;
+                  const accQ = Number(it.accepted_quantity || 0);
+                  const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : accQ);
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!isEligible}
+                        onClick={() => {
+                          const item = activeProductMenu.item;
+                          setActiveProductMenu(null);
+                          handleOpenBatchModal(item);
+                        }}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition text-left ${
+                          isEligible
+                            ? 'text-brand-700 hover:bg-brand-50 hover:text-brand-800 cursor-pointer'
+                            : 'text-slate-300 cursor-not-allowed'
+                        }`}
+                        title={isEligible ? 'Record stitching batch' : 'No arrived panels available to stitch'}
+                      >
+                        <Plus className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                        <span>Record Batch</span>
+                      </button>
+
+                      {readyQ > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const item = activeProductMenu.item;
+                            setActiveProductMenu(null);
+                            handleOpenTransferModal(item);
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-purple-700 hover:bg-purple-50 hover:text-purple-800 font-medium transition text-left cursor-pointer"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          <span>To Checking</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const item = activeProductMenu.item;
+                          setActiveProductMenu(null);
+                          setSelectedProductForView(item);
+                          setViewProductModalOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span>View</span>
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>,
@@ -2522,6 +2804,403 @@ export default function StitchingOrderDetail() {
           }}
         />
       )}
+
+      {/* MODAL: BULK STITCHING BATCH ENTRY */}
+      <Modal
+        isOpen={bulkBatchModalOpen}
+        onClose={() => setBulkBatchModalOpen(false)}
+        title="Record Bulk Stitching Batches — Color-Wise Production"
+        maxWidth="max-w-4xl"
+      >
+        <div className="space-y-4">
+          {bulkBatchError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-xs">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{bulkBatchError}</span>
+            </div>
+          )}
+
+          {/* Common Batch Parameters */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Start Date *
+              </label>
+              <input
+                type="date"
+                value={bulkStartDate}
+                onChange={(e) => setBulkStartDate(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Completion Date *
+              </label>
+              <input
+                type="date"
+                value={bulkCompletionDate}
+                onChange={(e) => setBulkCompletionDate(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Production Line *
+              </label>
+              <input
+                type="text"
+                value={bulkProductionLine}
+                onChange={(e) => setBulkProductionLine(e.target.value)}
+                placeholder="e.g. Direct Drive Machine Line"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Operator Team / Line *
+              </label>
+              <input
+                type="text"
+                value={bulkOperatorTeam}
+                onChange={(e) => setBulkOperatorTeam(e.target.value)}
+                placeholder="e.g. Stitching Line #1"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Supervisor *
+              </label>
+              <input
+                type="text"
+                value={bulkSupervisor}
+                onChange={(e) => setBulkSupervisor(e.target.value)}
+                placeholder="e.g. Sewing Floor Head"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                Batch Remarks / Notes
+              </label>
+              <input
+                type="text"
+                value={bulkRemarks}
+                onChange={(e) => setBulkRemarks(e.target.value)}
+                placeholder="e.g. Seam stitch verification, SPI checked"
+                className="w-full text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Product Lines List */}
+          <div className="space-y-2.5 max-h-[46vh] overflow-y-auto pr-1">
+            {bulkItems.length === 0 ? (
+              <div className="p-6 text-center text-slate-400 text-xs">
+                No product lines available in this production order.
+              </div>
+            ) : (
+              bulkItems.map((b, idx) => {
+                const it = b.item;
+                const orderQ = Number(it.order_quantity || it.total_quantity || 0);
+                const fromCutQ = Number(it.arrived_from_cutting || 0);
+                const fromEmbQ = Number(it.arrived_from_embroidery || 0);
+                const totalArrQ = Number(it.total_arrived || (fromCutQ + fromEmbQ) || 0);
+                const prevComp = Number(it.completed_quantity || 0);
+                const maxAvail = Number(it.available_to_stitch || Math.max(0, totalArrQ - prevComp));
+                const isIncluded = Number(b.completed_quantity) > 0;
+
+                return (
+                  <div
+                    key={it.id || idx}
+                    className={`p-3 rounded-xl border transition ${
+                      isIncluded
+                        ? 'bg-brand-50/20 border-brand-200'
+                        : 'bg-white border-slate-200 opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      {/* Left side: Product details */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-slate-400">#{idx + 1}</span>
+                          <span className="font-bold text-slate-900 text-xs">{it.product_name || 'Product'}</span>
+                          {it.product_code && (
+                            <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                              {it.product_code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-600 mt-1 flex flex-wrap items-center gap-3">
+                          <span>Color: <strong className="text-slate-800">{it.color || 'Standard'}</strong></span>
+                          <span>Size: <strong className="text-slate-800">{it.size || 'M'}</strong></span>
+                          <span>Order: <strong className="font-mono text-slate-800">{fmt(orderQ)} pcs</strong></span>
+                          <span>Arrived: <strong className="font-mono text-indigo-700">{fmt(totalArrQ)} pcs</strong></span>
+                          <span>
+                            Available to Stitch:{' '}
+                            <strong className="font-mono text-brand-700 font-bold bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                              {fmt(maxAvail)} pcs
+                            </strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Right side: Quantity fields */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="w-28">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Assigned
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={maxAvail}
+                            value={b.assigned_quantity}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, assigned_quantity: val, error: '' } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono text-right"
+                          />
+                        </div>
+
+                        <div className="w-28">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Stitched Qty *
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={b.assigned_quantity || maxAvail}
+                            value={b.completed_quantity}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, completed_quantity: val, error: '' } : p))
+                              );
+                            }}
+                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${
+                              isIncluded ? 'border-brand-500 text-brand-900 bg-brand-50/40' : 'border-slate-300 text-slate-400'
+                            }`}
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx
+                                    ? { ...p, assigned_quantity: maxAvail, completed_quantity: maxAvail, error: '' }
+                                    : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-brand-700 hover:underline px-1 py-0.5 font-medium cursor-pointer"
+                            title="Set to full remaining"
+                          >
+                            Full
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx
+                                    ? { ...p, completed_quantity: 0, error: '' }
+                                    : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-slate-400 hover:text-red-600 px-1 py-0.5 font-medium cursor-pointer"
+                            title="Skip this line"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {b.error && (
+                      <div className="mt-2 text-[11px] text-red-600 font-medium pl-7">
+                        ⚠ {b.error}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Mandatory Live Camera Photo Proof */}
+          <LivePhotoCaptureField
+            label="Stitching Floor & Seam Quality Photograph Evidence *"
+            required={true}
+            photos={bulkPhotoUrls}
+            onPhotosChange={setBulkPhotoUrls}
+            stageName="Stitching (Stage 07 Bulk)"
+            orderNumber={order?.order_number}
+            error={bulkBatchError && bulkPhotoUrls.length === 0 ? 'Real-time camera photograph with live GPS coordinates is mandatory before confirming stitching batches.' : undefined}
+            buttonText="Take Real-Time Stitching Photo"
+          />
+
+          {/* Summary & Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+            <div className="text-xs text-slate-600">
+              <span className="font-bold text-slate-800">
+                {bulkItems.filter((b) => Number(b.completed_quantity) > 0).length} of {bulkItems.length}
+              </span>{' '}
+              product lines selected for batch recording (Total:{' '}
+              <strong className="font-mono text-brand-700">
+                {fmt(bulkItems.reduce((s, b) => s + (Number(b.completed_quantity) || 0), 0))} pcs
+              </strong>
+              )
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBulkBatchModalOpen(false)}
+                disabled={savingBulkBatch}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={savingBulkBatch}
+                onClick={handleSaveBulkBatch}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+              >
+                {savingBulkBatch ? 'Saving Batches...' : 'Save All Batches'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* VIEW PRODUCT LINE DETAILS MODAL */}
+      <Modal
+        isOpen={viewProductModalOpen}
+        onClose={() => {
+          setViewProductModalOpen(false);
+          setSelectedProductForView(null);
+        }}
+        title={`Product Details — ${selectedProductForView?.product_name || 'Product'}`}
+        maxWidth="max-w-2xl"
+      >
+        {selectedProductForView && (() => {
+          const it = selectedProductForView;
+          const orderQ = Number(it.order_quantity || it.total_quantity || 0);
+          const fromCutQ = Number(it.arrived_from_cutting || 0);
+          const fromEmbQ = Number(it.arrived_from_embroidery || 0);
+          const totalArrQ = Number(it.total_arrived || (fromCutQ + fromEmbQ) || 0);
+          const itemBatches = getBatchesForItem(it);
+          const compQ = itemBatches.reduce((s: number, b: any) => s + Number(b.completed_quantity || 0), 0);
+          const accQ = itemBatches.reduce((s: number, b: any) => s + Number(b.accepted_quantity || 0), 0);
+          const rejQ = itemBatches.reduce((s: number, b: any) => s + Number(b.rejected_quantity || 0), 0);
+          const activeRwk = itemBatches.reduce((s: number, b: any) => s + getActiveReworkForBatch(b), 0);
+          const trfQ = itemBatches.reduce((s: number, b: any) => s + Number(b.transferred_quantity || 0), 0);
+          const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
+
+          return (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">{it.product_name}</h4>
+                  {it.product_code && (
+                    <span className="font-mono text-xs text-brand-600 block">{it.product_code}</span>
+                  )}
+                  <div className="text-xs text-slate-600 mt-1">
+                    Color: <strong className="text-slate-800">{it.color || 'Standard'}</strong> • Size: <strong className="text-slate-800">{it.size || 'M'}</strong>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Order Quantity</span>
+                  <span className="text-lg font-black text-slate-900 font-mono">{fmt(orderQ)} pcs</span>
+                </div>
+              </div>
+
+              {/* Mini Stat Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center font-mono text-xs">
+                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-indigo-700 block">Arrived in Stitching</span>
+                  <span className="text-sm font-bold text-indigo-900">{fmt(totalArrQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-brand-50 border border-brand-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-brand-700 block">Stitched Completed</span>
+                  <span className="text-sm font-bold text-brand-900">{fmt(compQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">Accepted Output</span>
+                  <span className="text-sm font-bold text-emerald-900">{fmt(accQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-amber-700 block">Active Alteration</span>
+                  <span className="text-sm font-bold text-amber-900">{fmt(activeRwk)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-purple-700 block">Transferred Next</span>
+                  <span className="text-sm font-bold text-purple-900">{fmt(trfQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Available to Stitch</span>
+                  <span className="text-sm font-bold text-slate-800">{fmt(availQ)} pcs</span>
+                </div>
+              </div>
+
+              {/* Recorded Batches */}
+              <div className="space-y-2 pt-2 border-t border-slate-200">
+                <h5 className="font-bold text-slate-800 text-xs">
+                  Recorded Batches ({itemBatches.length})
+                </h5>
+                {itemBatches.length === 0 ? (
+                  <p className="text-slate-400 text-xs italic">No stitching batches recorded yet for this product line.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {itemBatches.map((b: any) => (
+                      <div
+                        key={b.id}
+                        className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-mono font-bold text-brand-700">{b.batch_number}</span>
+                          <span className="text-slate-500 ml-2">
+                            {b.completion_date || b.start_date || 'N/A'} • {b.production_line || 'Line #1'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 font-mono">
+                          <span>Completed: <strong>{fmt(b.completed_quantity)}</strong></span>
+                          <span className="text-emerald-700">Acc: <strong>{fmt(b.accepted_quantity || 0)}</strong></span>
+                          <span className="text-purple-700">Trf: <strong>{fmt(b.transferred_quantity || 0)}</strong></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setViewProductModalOpen(false);
+                    setSelectedProductForView(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 }
