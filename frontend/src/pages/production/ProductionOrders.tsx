@@ -53,6 +53,67 @@ export const getProductionOrderStage = (ord: ProductionOrder): string => {
   return 'Requirement Gathering';
 };
 
+export const getDaysLeftForDelivery = (targetDate?: string, stageName?: string, orderStatus?: string) => {
+  if (!targetDate) return null;
+  const isDone = (stageName || '').toLowerCase() === 'completed' || (orderStatus || '').toLowerCase() === 'completed';
+
+  const dateClean = targetDate.includes('T') ? targetDate.split('T')[0] : targetDate.split(' ')[0];
+  const parts = dateClean.split('-');
+  if (parts.length < 3) return null;
+
+  const target = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (isNaN(target.getTime())) return null;
+
+  const diffTime = target.getTime() - today.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (isDone) {
+    return {
+      days: diffDays,
+      text: 'Completed',
+      badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold',
+    };
+  }
+
+  if (diffDays < 0) {
+    const overdue = Math.abs(diffDays);
+    return {
+      days: diffDays,
+      text: overdue === 1 ? '1 day overdue' : `${overdue} days overdue`,
+      badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 font-bold',
+    };
+  }
+  if (diffDays === 0) {
+    return {
+      days: 0,
+      text: 'Due Today',
+      badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-bold animate-pulse',
+    };
+  }
+  if (diffDays === 1) {
+    return {
+      days: 1,
+      text: '1 day left',
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-semibold',
+    };
+  }
+  if (diffDays <= 3) {
+    return {
+      days: diffDays,
+      text: `${diffDays} days left`,
+      badgeClass: 'bg-amber-50 text-amber-700 border-amber-200 font-medium',
+    };
+  }
+  return {
+    days: diffDays,
+    text: `${diffDays} days left`,
+    badgeClass: 'bg-slate-50 text-slate-700 border-slate-200 font-medium',
+  };
+};
+
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
 export default function ProductionOrders() {
@@ -277,6 +338,7 @@ export default function ProductionOrders() {
 
                   <th className="px-3 py-2.5 min-w-[130px]">Production Progress</th>
                   <th className="px-2.5 py-2.5 whitespace-nowrap">Target Delivery</th>
+                  <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Days Left</th>
                   <th className="px-2 py-2.5 text-center whitespace-nowrap">Priority</th>
                   <th className="px-2 py-2.5 text-center whitespace-nowrap">Production Stage</th>
                   <th className="px-3 py-2.5 text-right whitespace-nowrap">Action</th>
@@ -285,14 +347,14 @@ export default function ProductionOrders() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={11} className="py-12 text-center text-slate-400">
+                    <td colSpan={12} className="py-12 text-center text-slate-400">
                       <RefreshCw className="w-6 h-6 animate-spin text-brand-600 mx-auto mb-2" />
                       <span>Loading production orders...</span>
                     </td>
                   </tr>
                 ) : filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-12 text-center text-slate-400">
+                    <td colSpan={12} className="py-12 text-center text-slate-400">
                       No production orders found matching your criteria.
                     </td>
                   </tr>

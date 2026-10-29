@@ -628,12 +628,12 @@ export default function DispatchOrderDetail() {
     }
 
     if (!truckPhotos || truckPhotos.length === 0) {
-      setDispatchError('Real-time camera photograph with live GPS coordinates of the transport vehicle & registration number plate is mandatory.');
+      setDispatchError('Photograph (real-time camera capture or media upload) of the transport vehicle & registration number plate is mandatory.');
       return;
     }
 
     if (!cartonPhotos || cartonPhotos.length === 0) {
-      setDispatchError('Real-time camera photograph with live GPS coordinates of the loaded cartons & security seal is mandatory.');
+      setDispatchError('Photograph (real-time camera capture or media upload) of the loaded cartons & container security seal is mandatory.');
       return;
     }
 
@@ -1244,6 +1244,7 @@ export default function DispatchOrderDetail() {
               orderNumber={order?.order_number}
               error={dispatchError && truckPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the transport vehicle is mandatory.' : undefined}
               buttonText="Take Real-Time Truck Photo"
+              allowMediaUpload={true}
             />
 
             <LivePhotoCaptureField
@@ -1255,6 +1256,7 @@ export default function DispatchOrderDetail() {
               orderNumber={order?.order_number}
               error={dispatchError && cartonPhotos.length === 0 ? 'Real-time camera photograph with live GPS coordinates of the loaded cartons & seal is mandatory.' : undefined}
               buttonText="Take Real-Time Carton Load Photo"
+              allowMediaUpload={true}
             />
           </div>
 
