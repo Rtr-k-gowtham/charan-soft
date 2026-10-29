@@ -48,7 +48,6 @@ import {
   MoreVertical,
   Search
 } from 'lucide-react';
-import StageInspectionModal from '../../components/production/StageInspectionModal';
 
 const fmt = (n: number, decimals = 0) =>
   new Intl.NumberFormat('en-IN', {
@@ -176,10 +175,6 @@ export default function StitchingOrderDetail() {
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchError, setBatchError] = useState('');
-
-  // Quality Inspection Modal State (Stage 07: Stitching)
-  const [showInspectModal, setShowInspectModal] = useState(false);
-  const [selectedBatchForInspect, setSelectedBatchForInspect] = useState<any | null>(null);
 
   // Transfer to Checking Modal State
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -365,8 +360,8 @@ export default function StitchingOrderDetail() {
       .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
   };
 
-  const totalAcceptedPieces = useMemo(() => {
-    return batches.reduce((sum, b) => sum + Number(b.accepted_quantity || 0), 0);
+  const totalCompletedPieces = useMemo(() => {
+    return batches.reduce((sum, b) => sum + Number(b.completed_quantity || 0), 0);
   }, [batches]);
 
   const totalTransferredPieces = useMemo(() => {
@@ -374,15 +369,15 @@ export default function StitchingOrderDetail() {
   }, [batches]);
 
   const overallAvailableForTransfer = useMemo(() => {
-    return Math.max(0, totalAcceptedPieces - activeReworkQty - totalTransferredPieces);
-  }, [totalAcceptedPieces, activeReworkQty, totalTransferredPieces]);
+    return Math.max(0, totalCompletedPieces - activeReworkQty - totalTransferredPieces);
+  }, [totalCompletedPieces, activeReworkQty, totalTransferredPieces]);
 
   const getBatchAvailableForTransfer = (b: StitchingBatch | null) => {
     if (!b) return overallAvailableForTransfer;
-    const accepted = Number(b.accepted_quantity || 0);
+    const comp = Number(b.completed_quantity || 0);
     const transferred = Number(b.transferred_quantity || 0);
     const batchActiveRework = getActiveReworkForBatch(b);
-    return Math.max(0, accepted - batchActiveRework - transferred);
+    return Math.max(0, comp - batchActiveRework - transferred);
   };
 
   const getBatchAvailableForRework = (b: StitchingBatch) => {
@@ -402,12 +397,10 @@ export default function StitchingOrderDetail() {
         const m3 = (b.color || '').toLowerCase().includes(q);
         if (!m1 && !m2 && !m3) return false;
       }
-      if (batchStatusFilter === 'PENDING_QC') {
-        const uninspected = Math.max(0, Number(b.completed_quantity || 0) - Number(b.accepted_quantity || 0) - Number(b.rework_quantity || 0) - Number(b.rejected_quantity || 0));
-        return uninspected > 0;
-      }
-      if (batchStatusFilter === 'ACCEPTED') {
-        return Number(b.accepted_quantity || 0) > 0 && b.status !== 'Transferred to Checking' && !(b as any).is_transferred;
+      if (batchStatusFilter === 'READY' || batchStatusFilter === 'PENDING_QC' || batchStatusFilter === 'ACCEPTED') {
+        const comp = Number(b.completed_quantity || 0);
+        const trf = Number(b.transferred_quantity || 0);
+        return comp > trf && b.status !== 'Transferred to Checking' && !(b as any).is_transferred;
       }
       if (batchStatusFilter === 'TRANSFERRED') {
         return b.status === 'Transferred to Checking' || (b as any).is_transferred;
@@ -607,7 +600,7 @@ export default function StitchingOrderDetail() {
       });
 
       setBulkBatchModalOpen(false);
-      showToast(`${validLines.length} stitching batches recorded successfully! Ready for Quality Inspection.`);
+      showToast(`${validLines.length} stitching batches recorded successfully! Ready for Checking.`);
       await fetchOrderData();
     } catch (err: any) {
       setBulkBatchError(err?.message || 'Failed to save bulk stitching batches');
@@ -666,7 +659,7 @@ export default function StitchingOrderDetail() {
       });
 
       setBatchModalOpen(false);
-      showToast(`Stitching batch recorded successfully! Ready for Quality Inspection.`);
+      showToast(`Stitching batch recorded successfully! Ready for Checking.`);
       await fetchOrderData();
     } catch (err: any) {
       console.error('Failed to save stitching batch:', err);
@@ -861,12 +854,12 @@ export default function StitchingOrderDetail() {
 
     const available = b ? getBatchAvailableForTransfer(b) : overallAvailableForTransfer;
     if (available <= 0) {
-      showToast('No accepted stitching output is currently available in hand to transfer to Checking.');
+      showToast('No completed stitching output is currently available in hand to transfer to Checking.');
       return;
     }
 
     setTransferQuantity(available);
-    setTransferRemarks('Stitched garments inspected and passed. Transferred to Stage 08: Checking.');
+    setTransferRemarks('Stitched garments completed and ready for Checking (Stage 08 Quality Inspection).');
     setTransferError('');
     setTransferModalOpen(true);
   };
@@ -1013,7 +1006,7 @@ export default function StitchingOrderDetail() {
               size="sm"
               icon={<ArrowRight className="w-3.5 h-3.5" />}
               onClick={() => handleOpenTransferModal()}
-              disabled={overallTotals.readyForChecking <= 0}
+              disabled={overallAvailableForTransfer <= 0}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-200"
             >
               Pass to Checking (Stage 08)
@@ -1196,7 +1189,7 @@ export default function StitchingOrderDetail() {
                     const rejQ = Number(it.rejected_quantity || 0);
                     const rwkQ = Number(it.rework_quantity || 0);
                     const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
-                    const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : accQ);
+                    const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : Math.max(0, compQ - Number(it.transferred_to_checking || 0)));
 
                     return (
                       <tr key={it.id || idx} className="hover:bg-slate-50/70 transition">
@@ -1315,8 +1308,7 @@ export default function StitchingOrderDetail() {
                 className="text-xs border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="PENDING_QC">Pending QC</option>
-                <option value="ACCEPTED">Accepted Output</option>
+                <option value="READY">Ready for Checking</option>
                 <option value="TRANSFERRED">Transferred</option>
               </select>
             </div>
@@ -1356,8 +1348,7 @@ export default function StitchingOrderDetail() {
                       const rej = Number(batch.rejected_quantity || 0);
                       const rwk = Number(batch.rework_quantity || 0);
                       const trf = Number(batch.transferred_quantity || 0);
-                      const uninspected = Math.max(0, comp - acc - rej - rwk);
-                      const isTransferred = batch.status === 'Transferred to Checking' || (batch as any).is_transferred || (trf >= acc && acc > 0);
+                      const isTransferred = batch.status === 'Transferred to Checking' || (batch as any).is_transferred || (trf >= comp && comp > 0);
 
                       return (
                         <tr key={batch.id || idx} className="hover:bg-slate-50/80 transition">
@@ -1408,21 +1399,13 @@ export default function StitchingOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
-                            {uninspected > 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                                Pending QC ({fmt(uninspected)})
-                              </span>
-                            ) : isTransferred ? (
+                            {isTransferred ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200">
-                                Transferred ({fmt(trf || acc)} pcs)
-                              </span>
-                            ) : acc > 0 ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                Accepted ({fmt(acc)} pcs)
+                                Transferred ({fmt(trf || comp)} pcs)
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                Completed
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                Ready for Checking ({fmt(comp)} pcs)
                               </span>
                             )}
                           </td>
@@ -1475,23 +1458,10 @@ export default function StitchingOrderDetail() {
 
                       <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded-lg flex items-center justify-between font-mono">
                         <span>Completed: {fmt(comp)} pcs</span>
-                        <span className="font-bold text-emerald-700">Acc: {fmt(acc)} pcs</span>
+                        <span className="font-bold text-emerald-700">Ready for Checking</span>
                       </div>
 
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
-                        {uninspected > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedBatchForInspect(batch);
-                              setShowInspectModal(true);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shadow-2xs"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5" />
-                            <span>Inspect ({uninspected})</span>
-                          </button>
-                        )}
                         <button
                           type="button"
                           onClick={() => handleOpenTransferModal(batch)}
@@ -1761,27 +1731,7 @@ export default function StitchingOrderDetail() {
               className="bg-white border border-slate-200 rounded-xl shadow-xl py-1 divide-y divide-slate-100 animate-in fade-in zoom-in-95"
             >
               <div className="py-0.5">
-                {/* 1. Inspect (if uninspected pieces > 0) */}
-                {(() => {
-                  const b = activeBatchMenu.batch;
-                  const uninspected = Math.max(0, Number(b.completed_quantity || 0) - Number(b.accepted_quantity || 0) - Number(b.rework_quantity || 0) - Number(b.rejected_quantity || 0));
-                  return uninspected > 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveBatchMenu(null);
-                        setSelectedBatchForInspect(b);
-                        setShowInspectModal(true);
-                      }}
-                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-medium transition text-left cursor-pointer"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span>Inspect ({fmt(uninspected)})</span>
-                    </button>
-                  ) : null;
-                })()}
-
-                {/* 2. Transfer */}
+                {/* 1. Transfer */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1916,7 +1866,7 @@ export default function StitchingOrderDetail() {
                   const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
                   const isEligible = availQ > 0;
                   const accQ = Number(it.accepted_quantity || 0);
-                  const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : accQ);
+                  const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : Math.max(0, compQ - Number(it.transferred_to_checking || 0)));
 
                   return (
                     <>
@@ -2774,36 +2724,6 @@ export default function StitchingOrderDetail() {
         </div>
       )}
 
-      {/* Quality Inspection Modal (Stage 07: Stitching) */}
-      {selectedBatchForInspect && (
-        <StageInspectionModal
-          isOpen={showInspectModal}
-          onClose={() => {
-            setShowInspectModal(false);
-            setSelectedBatchForInspect(null);
-          }}
-          title={`Stitching Quality Inspection — Batch ${selectedBatchForInspect.batch_number}`}
-          productionOrderId={Number(order?.id || id)}
-          stageId={7}
-          stageCode="STI"
-          referenceId={selectedBatchForInspect.batch_number}
-          referenceType="Stitching Batch"
-          batchNumber={selectedBatchForInspect.batch_number}
-          productName={selectedBatchForInspect.product_name || 'Sewn Garments'}
-          color={selectedBatchForInspect.color}
-          size={selectedBatchForInspect.size}
-          productionOrderItemId={selectedBatchForInspect.production_order_item_id}
-          availableQuantity={Math.max(0, Number(selectedBatchForInspect.completed_quantity || 0) - Number(selectedBatchForInspect.accepted_quantity || 0) - Number(selectedBatchForInspect.rework_quantity || 0) - Number(selectedBatchForInspect.rejected_quantity || 0))}
-          uom="PCS"
-          supportsRejection={true}
-          onSuccess={async () => {
-            setShowInspectModal(false);
-            setSelectedBatchForInspect(null);
-            showToast('Stitching quality inspection recorded successfully! Accepted balance credited for transfer to Checking.');
-            await fetchOrderData();
-          }}
-        />
-      )}
 
       {/* MODAL: BULK STITCHING BATCH ENTRY */}
       <Modal

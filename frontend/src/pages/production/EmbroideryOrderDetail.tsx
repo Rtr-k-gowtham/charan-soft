@@ -17,7 +17,6 @@ import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSe
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import { lookupPantone, VERIFIED_PANTONE_LIBRARY } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
-import StageInspectionModal from '../../components/production/StageInspectionModal';
 import {
   ArrowLeft,
   Sparkles,
@@ -174,7 +173,6 @@ export default function EmbroideryOrderDetail() {
     return d.toISOString().split('T')[0];
   });
   const [processType, setProcessType] = useState<string>('Embroidery');
-  const [fabricName, setFabricName] = useState<string>('');
   const [transportDetails, setTransportDetails] = useState<string>('');
   const [dispatchedBy, setDispatchedBy] = useState<string>('');
   const [remarks, setRemarks] = useState<string>('');
@@ -196,10 +194,6 @@ export default function EmbroideryOrderDetail() {
   const [inwardPhotos, setInwardPhotos] = useState<string[]>([]);
   const [savingInward, setSavingInward] = useState(false);
   const [inwardError, setInwardError] = useState('');
-
-  // Quality Inspection Modal State (Stage 06: Embroidery)
-  const [showInspectModal, setShowInspectModal] = useState(false);
-  const [selectedReceiptForInspect, setSelectedReceiptForInspect] = useState<any | null>(null);
 
   // Stage Transfer to Stitching Modal
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -795,20 +789,20 @@ export default function EmbroideryOrderDetail() {
       .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
   }, [reworkRecords]);
 
-  const totalAcceptedEmbroidery = useMemo(() => {
-    let acc = 0;
+  const totalReceivedEmbroidery = useMemo(() => {
+    let rec = 0;
     receipts.forEach((r) => {
-      acc += Number(r.total_accepted_qty || 0);
+      rec += Number(r.total_received_qty || 0);
     });
     jobOrders.forEach((j) => {
-      acc = Math.max(acc, Number(j.total_quantity_accepted || 0));
+      rec = Math.max(rec, Number(j.total_quantity_received || 0));
     });
-    if (acc === 0) {
+    if (rec === 0) {
       items.forEach((it) => {
-        acc += Number(it.accepted_inward || 0);
+        rec += Number(it.received_inward || it.accepted_inward || 0);
       });
     }
-    return acc;
+    return rec;
   }, [receipts, jobOrders, items]);
 
   const totalTransferredToStitching = useMemo(() => {
@@ -825,8 +819,8 @@ export default function EmbroideryOrderDetail() {
   }, [jobOrders, items]);
 
   const availableInHandToTransfer = useMemo(() => {
-    return Math.max(0, totalAcceptedEmbroidery - activeReworkQty - totalTransferredToStitching);
-  }, [totalAcceptedEmbroidery, activeReworkQty, totalTransferredToStitching]);
+    return Math.max(0, totalReceivedEmbroidery - activeReworkQty - totalTransferredToStitching);
+  }, [totalReceivedEmbroidery, activeReworkQty, totalTransferredToStitching]);
 
   // Filtered Job Orders for Table 1
   const filteredJobOrders = useMemo(() => {
@@ -1214,25 +1208,50 @@ export default function EmbroideryOrderDetail() {
   // Open Stage Transfer Modal (Synchronized available quantity in hand)
   const handleOpenTransferModal = (itemOrJob?: any) => {
     if (availableInHandToTransfer <= 0) {
-      showToast('No accepted embroidery pieces are currently available in hand to transfer to Stitching.');
+      showToast('No embroidery pieces are currently available in hand to transfer to Stitching.');
       return;
     }
 
     let it = itemOrJob;
     let jId: number | undefined = undefined;
+    let maxAvailForThis = availableInHandToTransfer;
 
     if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
+      // It's a job order
       jId = itemOrJob.id;
       const jobItemId = Array.isArray(itemOrJob.items_json) && itemOrJob.items_json[0]?.production_order_item_id;
       it = (jobItemId && items.find(i => i.id === jobItemId || i.active_embroidery_item_id === jobItemId)) || items[0];
+      const jobRec = Number(itemOrJob.total_quantity_received || 0);
+      const jobTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
+      const jobAvail = Math.max(0, jobRec - jobTrf);
+      if (jobAvail > 0) {
+        maxAvailForThis = Math.min(availableInHandToTransfer, jobAvail);
+      }
+    } else if (itemOrJob && (itemOrJob.receipt_number || itemOrJob.job_order_id)) {
+      // It's an inward receipt
+      jId = itemOrJob.job_order_id;
+      it = items[0] || null;
+      const rRec = Number(itemOrJob.total_received_qty || 0);
+      const rTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
+      const rAvail = itemOrJob.available_to_transfer !== undefined ? Number(itemOrJob.available_to_transfer) : Math.max(0, rRec - rTrf);
+      if (rAvail > 0) {
+        maxAvailForThis = Math.min(availableInHandToTransfer, rAvail);
+      }
+    } else if (itemOrJob && (itemOrJob.ready_to_transfer !== undefined || itemOrJob.available_to_dispatch !== undefined)) {
+      // It's a product item
+      it = itemOrJob;
+      const itReady = Number(itemOrJob.ready_to_transfer || 0);
+      if (itReady > 0) {
+        maxAvailForThis = Math.min(availableInHandToTransfer, itReady);
+      }
     } else if (!itemOrJob) {
       it = items[0] || null;
     }
 
     setSelectedReworkForTransfer(null);
     setTransferItem({ ...it, job_order_id: jId });
-    setTransferQuantity(availableInHandToTransfer);
-    setTransferRemarks('Embroidery completed and QC approved. Transferred to Stage 07: Stitching.');
+    setTransferQuantity(maxAvailForThis);
+    setTransferRemarks('Embroidery received from vendor and transferred to Stage 07: Stitching.');
     setTransferError('');
     setTransferModalOpen(true);
   };
@@ -1478,15 +1497,6 @@ export default function EmbroideryOrderDetail() {
                 onChange={e => setExpectedDate(e.target.value)}
               />
 
-              <FormField label="Fabric Material (Eligible for Embroidery)" required>
-                <input
-                  type="text"
-                  value={fabricName}
-                  onChange={e => setFabricName(e.target.value)}
-                  className="w-full text-xs rounded-lg border-slate-300 py-2 px-3 font-medium bg-white focus:ring-brand-500 focus:border-brand-500"
-                  placeholder="e.g. Cut Pieces / Garment Fabric"
-                />
-              </FormField>
 
               <FormField label="Outward DC No" required>
                 <div className="relative flex items-center">
@@ -1974,8 +1984,8 @@ export default function EmbroideryOrderDetail() {
                 type="button"
                 onClick={() => setProductFilter('ALL')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${productFilter === 'ALL'
-                    ? 'bg-slate-900 text-white shadow-2xs'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                   }`}
               >
                 All Products ({items.length})
@@ -1984,8 +1994,8 @@ export default function EmbroideryOrderDetail() {
                 type="button"
                 onClick={() => setProductFilter('EMBROIDERY')}
                 className={`px-3 py-1 text-xs font-bold rounded-lg transition ${productFilter === 'EMBROIDERY'
-                    ? 'bg-brand-600 text-white shadow-2xs'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  ? 'bg-brand-600 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                   }`}
               >
                 In Embroidery ({items.filter(i => Number(i.arrived_from_cutting || 0) > 0).length})
@@ -1999,6 +2009,7 @@ export default function EmbroideryOrderDetail() {
               >
                 Record Batch
               </Button>
+
             </div>
           </div>
 
@@ -2264,8 +2275,8 @@ export default function EmbroideryOrderDetail() {
                               type="button"
                               onClick={(e) => handleToggleJobMenu(e, job)}
                               className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeJobMenu?.job.id === job.id
-                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
-                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                                ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
                                 }`}
                               title="Job Order Options"
                             >
@@ -2472,14 +2483,14 @@ export default function EmbroideryOrderDetail() {
 
                           <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
                             <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${(rec.status as string) === 'Transferred'
-                                ? 'bg-purple-50 text-purple-800 border border-purple-200'
-                                : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                  : rec.status === 'Sent for Rework'
-                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                    : rec.status === 'Rework Received'
-                                      ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
-                                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                              ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                              : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : rec.status === 'Sent for Rework'
+                                  ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                  : rec.status === 'Rework Received'
+                                    ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                    : 'bg-amber-50 text-amber-800 border border-amber-200'
                               }`}>
                               {rec.status || 'Pending Rework'}
                             </span>
@@ -2490,8 +2501,8 @@ export default function EmbroideryOrderDetail() {
                               type="button"
                               onClick={(e) => handleToggleReworkMenu(e, rec)}
                               className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeReworkMenu?.record.id === rec.id
-                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
-                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                                ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
                                 }`}
                               title="Rework Options"
                             >
@@ -2568,13 +2579,13 @@ export default function EmbroideryOrderDetail() {
           </div>
         </div>
 
-        {/* Table 3: Recorded Embroidery Inward Receipts & Quality Inspection Reports */}
+        {/* Table 3: Recorded Embroidery Inward Receipts & Stitching Transfers */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden mt-6">
           <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-teal-600" />
               <h3 className="font-bold text-slate-800 text-sm">
-                Recorded Inward Receipts & Quality Inspection Reports
+                Recorded Inward Receipts & Stitching Transfers
               </h3>
             </div>
             <span className="text-xs font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
@@ -2587,7 +2598,7 @@ export default function EmbroideryOrderDetail() {
               <ShieldCheck className="w-8 h-8 mx-auto mb-2 text-slate-300" />
               <p className="font-semibold text-xs text-slate-700">No Inward Receipts Recorded</p>
               <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
-                Once embroidered pieces are received from the vendor, click "Receive Inward" on any active job order above to log received pieces, QC inspection, and photo proof.
+                Once embroidered pieces are received from the vendor, click "Receive Inward" on any active job order above to log received pieces and photo proof. Received pieces can then be transferred directly to Stitching.
               </p>
             </div>
           ) : (
@@ -2600,9 +2611,9 @@ export default function EmbroideryOrderDetail() {
                     <th className="py-3 px-4">Vendor</th>
                     <th className="py-3 px-3 font-mono">Job Order Ref</th>
                     <th className="py-3 px-3 text-right">Received</th>
-                    <th className="py-3 px-3 text-right">Accepted</th>
-                    <th className="py-3 px-3 text-right">Rej / Rework</th>
-                    <th className="py-3 px-3">QC Inspector</th>
+                    <th className="py-3 px-3 text-right">Transferred</th>
+                    <th className="py-3 px-3 text-right">Available to Transfer</th>
+                    <th className="py-3 px-3">Received By</th>
                     <th className="py-3 px-3 text-center">Photo Proof</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
@@ -2610,6 +2621,12 @@ export default function EmbroideryOrderDetail() {
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                   {receipts.map((rec, rIdx) => {
                     const photos = parsePhotos(rec.photo_urls);
+                    const recReceived = Number(rec.total_received_qty || 0);
+                    const recTransferred = Number(rec.transferred_to_stitching_quantity || 0);
+                    const recAvail = rec.available_to_transfer !== undefined
+                      ? Number(rec.available_to_transfer)
+                      : Math.max(0, recReceived - recTransferred);
+
                     return (
                       <tr key={rec.id || rIdx} className="hover:bg-slate-50/70 transition">
                         <td className="py-3 px-4">
@@ -2627,11 +2644,9 @@ export default function EmbroideryOrderDetail() {
                         <td className="py-3 px-3 font-semibold text-slate-600">
                           {rec.job_order_number || `EMB-JOB-${rec.job_order_id}`}
                         </td>
-                        <td className="py-3 px-3 text-right font-bold text-emerald-700">{fmt(rec.total_received_qty)}</td>
-                        <td className="py-3 px-3 text-right font-bold text-green-700">{fmt(rec.total_accepted_qty)}</td>
-                        <td className="py-3 px-3 text-right text-slate-600 font-semibold">
-                          <span className="text-red-600">{fmt(rec.total_rejected_qty)}</span> / <span className="text-amber-600">{fmt(rec.total_rework_qty)}</span>
-                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-slate-800">{fmt(recReceived)}</td>
+                        <td className="py-3 px-3 text-right font-bold text-purple-700">{fmt(recTransferred)}</td>
+                        <td className="py-3 px-3 text-right font-bold text-emerald-700">{fmt(recAvail)}</td>
                         <td className="py-3 px-3 font-sans text-slate-600 text-[10px]">{rec.received_by}</td>
                         <td className="py-3 px-3 text-center">
                           {photos.length > 0 ? (
@@ -2658,34 +2673,28 @@ export default function EmbroideryOrderDetail() {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {(() => {
-                              const uninspected = Math.max(0, Number(rec.total_received_qty || 0) - Number(rec.total_accepted_qty || 0) - Number(rec.total_rework_qty || 0) - Number(rec.total_rejected_qty || 0));
-                              return uninspected > 0 ? (
-                                <Button
-                                  size="xs"
-                                  variant="primary"
-                                  icon={<ShieldCheck className="w-3 h-3 text-white" />}
-                                  onClick={() => {
-                                    setSelectedReceiptForInspect(rec);
-                                    setShowInspectModal(true);
-                                  }}
-                                  className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
-                                  title="Perform Quality Inspection on Inward Pieces"
-                                >
-                                  Inspect ({uninspected})
-                                </Button>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  Inspected
-                                </span>
-                              );
-                            })()}
+                            {recAvail > 0 ? (
+                              <Button
+                                size="xs"
+                                variant="primary"
+                                icon={<ArrowRight className="w-3 h-3 text-white" />}
+                                onClick={() => handleOpenTransferModal(rec)}
+                                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
+                                title="Transfer Received Pieces Directly to Stitching"
+                              >
+                                Transfer to Stitching ({fmt(recAvail)})
+                              </Button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                                Transferred
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
                               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
-                              title="Print / Download Embroidery Inward QC Receipt"
+                              title="Print / Download Embroidery Inward Receipt"
                             >
                               <Printer className="w-3.5 h-3.5 text-teal-600" />
                               <span>Receipt</span>
@@ -2862,8 +2871,8 @@ export default function EmbroideryOrderDetail() {
                   const it = activeProductMenu.item;
                   const availQ = Number(it.available_to_dispatch || 0);
                   const outQ = Number(it.outstanding_quantity || 0);
-                  const accQ = Number(it.accepted_inward || 0);
-                  const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, accQ - Number(it.transferred_to_stitching || 0)));
+                  const recQ = Number(it.received_inward || it.accepted_inward || 0);
+                  const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, recQ - Number(it.transferred_to_stitching || 0)));
 
                   // Matching active job order with pending physical inward
                   const matchingJob = jobOrders.find((j: any) => {
@@ -2873,12 +2882,6 @@ export default function EmbroideryOrderDetail() {
                       (ji.product_id && ji.product_id == it.product_id && (ji.color || '').trim().toLowerCase() === (it.color || '').trim().toLowerCase())
                     );
                     return (hasItem || jobOrders.length === 1) && Number(j.total_quantity_outstanding || 0) > 0.01;
-                  });
-
-                  // Matching receipt with uninspected quantity
-                  const matchingUninspectedReceipt = receipts.find((r: any) => {
-                    const uninspected = Number(r.total_received_qty || 0) - Number(r.total_accepted_qty || 0) - Number(r.total_rework_qty || 0) - Number(r.total_rejected_qty || 0);
-                    return uninspected > 0.01;
                   });
 
                   // Matching rework with defective pieces requiring rework dispatch
@@ -2923,35 +2926,19 @@ export default function EmbroideryOrderDetail() {
                         </button>
                       )}
 
-                      {/* State C: Inspect (Separate quality inspection of received pieces) */}
-                      {matchingUninspectedReceipt && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveProductMenu(null);
-                            setSelectedReceiptForInspect(matchingUninspectedReceipt);
-                            setShowInspectModal(true);
-                          }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50 hover:text-blue-800 font-medium transition text-left cursor-pointer"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span>Inspect Receipt</span>
-                        </button>
-                      )}
-
                       {/* State C: Rework (Vendor rework for defective items) */}
-                      {matchingRework && (
+                      {(matchingRework || recQ > 0) && (
                         <button
                           type="button"
                           onClick={() => {
                             setActiveProductMenu(null);
-                            const job = jobOrders.find((j: any) => j.vendor_name === matchingRework.vendor_name) || jobOrders[0];
+                            const job = jobOrders.find((j: any) => matchingRework && j.vendor_name === matchingRework.vendor_name) || jobOrders[0];
                             if (job) handleOpenReworkModal(job);
                           }}
                           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-800 font-medium transition text-left cursor-pointer"
                         >
                           <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          <span>Rework Details</span>
+                          <span>Rework</span>
                         </button>
                       )}
 
@@ -3883,8 +3870,8 @@ export default function EmbroideryOrderDetail() {
                   <div
                     key={l.item.id || idx}
                     className={`p-3.5 rounded-xl border transition ${isIncluded
-                        ? 'bg-white border-brand-300 shadow-2xs'
-                        : 'bg-slate-50/60 border-slate-200 opacity-75'
+                      ? 'bg-white border-brand-300 shadow-2xs'
+                      : 'bg-slate-50/60 border-slate-200 opacity-75'
                       }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -4179,34 +4166,415 @@ export default function EmbroideryOrderDetail() {
         })()}
       </Modal>
 
-      {/* Quality Inspection Modal (Stage 06: Embroidery) */}
-      {selectedReceiptForInspect && (
-        <StageInspectionModal
-          isOpen={showInspectModal}
-          onClose={() => {
-            setShowInspectModal(false);
-            setSelectedReceiptForInspect(null);
-          }}
-          title={`Embroidery Quality Inspection — Receipt ${selectedReceiptForInspect.receipt_number}`}
-          productionOrderId={Number(order?.id || id)}
-          stageId={6}
-          stageCode="EMB"
-          referenceId={selectedReceiptForInspect.receipt_number}
-          referenceType="Embroidery Receipt"
-          batchNumber={selectedReceiptForInspect.job_order_number || `EMB-JOB-${selectedReceiptForInspect.job_order_id}`}
-          productName="Embroidered Garment Panels"
-          vendorName={selectedReceiptForInspect.vendor_name || 'Embroidery Vendor'}
-          availableQuantity={Math.max(0, Number(selectedReceiptForInspect.total_received_qty || 0) - Number(selectedReceiptForInspect.total_accepted_qty || 0) - Number(selectedReceiptForInspect.total_rework_qty || 0) - Number(selectedReceiptForInspect.total_rejected_qty || 0))}
-          uom="PCS"
-          supportsRejection={true}
-          onSuccess={async () => {
-            setShowInspectModal(false);
-            setSelectedReceiptForInspect(null);
-            showToast('Embroidery inspection recorded successfully! Accepted balance credited for transfer to Stitching.');
-            await fetchOrderData();
-          }}
-        />
-      )}
+      {/* BULK OUTWARD DISPATCH / JOB ORDER MODAL */}
+      <Modal
+        isOpen={bulkDispatchModalOpen}
+        onClose={() => setBulkDispatchModalOpen(false)}
+        title={`Bulk Embroidery Outward Dispatch — ${order?.order_number || ''}`}
+        maxWidth="max-w-3xl"
+      >
+        <div className="space-y-4">
+          <div className="bg-brand-50/70 border border-brand-200/80 rounded-xl p-3 flex items-start gap-2.5">
+            <Truck className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+            <div className="text-xs text-brand-900 leading-relaxed">
+              <p className="font-bold">Stage 06 — Bulk Embroidery Outward Dispatch</p>
+              <p className="text-brand-800/90 text-[11px] mt-0.5">
+                Issue a consolidated Delivery Challan / Job Order to dispatch cut garment panels across eligible product lines to your embroidery vendor. Physical inward receipt, quality inspection, and stitching transfer follow as separate operational steps.
+              </p>
+            </div>
+          </div>
+
+          {bulkDispatchError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{bulkDispatchError}</span>
+            </div>
+          )}
+
+          {/* Common Vendor & Dispatch Information */}
+          <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField label="Embroidery Vendor / Mill *" required>
+                <select
+                  value={bulkVendorName}
+                  onChange={(e) => setBulkVendorName(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                >
+                  {supplierOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label} {opt.sublabel ? `(${opt.sublabel})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Delivery Challan No *" required>
+                <input
+                  type="text"
+                  value={bulkDeliveryChallanNo}
+                  onChange={(e) => setBulkDeliveryChallanNo(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-mono"
+                />
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <FormField label="Dispatch Date *" required>
+                <input
+                  type="date"
+                  value={bulkDispatchDate}
+                  onChange={(e) => setBulkDispatchDate(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                />
+              </FormField>
+
+              <FormField label="Expected Return Date">
+                <input
+                  type="date"
+                  value={bulkExpectedReturnDate}
+                  onChange={(e) => setBulkExpectedReturnDate(e.target.value)}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                />
+              </FormField>
+
+              <FormField label="Transport / Courier">
+                <input
+                  type="text"
+                  value={bulkTransportCourier}
+                  onChange={(e) => setBulkTransportCourier(e.target.value)}
+                  placeholder="e.g. In-house Driver, DTDC"
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Job Work Instructions & Notes">
+              <input
+                type="text"
+                value={bulkNotes}
+                onChange={(e) => setBulkNotes(e.target.value)}
+                placeholder="e.g. Chest embroidery with gold Madeira thread, 2000 stitches"
+                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
+              />
+            </FormField>
+          </div>
+
+          {/* Product Lines List */}
+          <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
+              Eligible Product Lines ({bulkDispatchItems.length})
+            </div>
+            {bulkDispatchItems.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
+                No product lines currently have arrived fabric eligible for embroidery dispatch.
+              </div>
+            ) : (
+              bulkDispatchItems.map((l, idx) => {
+                const avail = Number(l.item.available_to_dispatch || 0);
+                const orderQ = Number(l.item.order_quantity || l.item.total_quantity || 0);
+                const arrivedQ = Number(l.item.arrived_from_cutting || 0);
+                const isIncluded = Number(l.quantity_sent) > 0;
+
+                return (
+                  <div
+                    key={l.item.id || idx}
+                    className={`p-3.5 rounded-xl border transition ${isIncluded
+                      ? 'bg-white border-brand-300 shadow-2xs'
+                      : 'bg-slate-50/60 border-slate-200 opacity-75'
+                      }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      {/* Left: Product Details */}
+                      <div className="space-y-1 sm:w-1/2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] flex items-center justify-center font-bold">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-slate-800 text-xs">
+                            {l.item.product_name || 'Product'}
+                          </span>
+                          {l.item.product_code && (
+                            <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded">
+                              {l.item.product_code}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-600 flex items-center gap-3 pl-7">
+                          <span>Color: <strong className="text-slate-800">{l.item.color || 'Standard'}</strong></span>
+                          <span>Size: <strong className="text-slate-800">{l.item.size || 'M'}</strong></span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-3 pl-7">
+                          <span>Order: <strong className="font-mono text-slate-700">{fmt(orderQ)} pcs</strong></span>
+                          <span>Cut Arrived: <strong className="font-mono text-indigo-700 font-semibold">{fmt(arrivedQ)}</strong></span>
+                          <span>Available: <strong className="font-mono text-brand-700 font-bold">{fmt(avail)} pcs</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Right: Quantities & Rates */}
+                      <div className="sm:w-1/2 flex items-center gap-2 justify-end">
+                        <div className="w-28">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Dispatch Qty *
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={avail}
+                            value={l.quantity_sent}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, quantity_sent: val, error: '' } : p))
+                              );
+                            }}
+                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${isIncluded ? 'border-brand-500 text-brand-900 bg-brand-50/40' : 'border-slate-300 text-slate-400'
+                              }`}
+                          />
+                        </div>
+
+                        <div className="w-20">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Rate (₹)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={l.rate}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value));
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, rate: val } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono text-right"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1 pt-4">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx ? { ...p, quantity_sent: avail, error: '' } : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-brand-700 hover:underline px-1 py-0.5 font-medium cursor-pointer"
+                            title="Set to full available"
+                          >
+                            Full
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) =>
+                                  i === idx ? { ...p, quantity_sent: 0, error: '' } : p
+                                )
+                              );
+                            }}
+                            className="text-[10px] text-slate-400 hover:text-red-600 px-1 py-0.5 font-medium cursor-pointer"
+                            title="Skip this line"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {l.error && (
+                      <div className="mt-2 text-[11px] text-red-600 font-medium pl-7">
+                        ⚠ {l.error}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Summary & Actions */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+            <div className="text-xs text-slate-600">
+              <span className="font-bold text-slate-800">
+                {bulkDispatchItems.filter((l) => Number(l.quantity_sent) > 0).length} of {bulkDispatchItems.length}
+              </span>{' '}
+              product lines selected (Total:{' '}
+              <strong className="font-mono text-brand-700">
+                {fmt(bulkDispatchItems.reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0))} pcs
+              </strong>{' '}
+              to <strong className="text-slate-800">{bulkVendorName}</strong>)
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBulkDispatchModalOpen(false)}
+                disabled={submittingBulkDispatch}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={submittingBulkDispatch}
+                onClick={handleSaveBulkDispatch}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+              >
+                {submittingBulkDispatch ? 'Creating Job Order...' : 'Confirm Outward Dispatch'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* VIEW PRODUCT LINE DETAILS MODAL */}
+      <Modal
+        isOpen={viewProductModalOpen}
+        onClose={() => {
+          setViewProductModalOpen(false);
+          setSelectedProductForView(null);
+        }}
+        title={`Embroidery Product Line — ${selectedProductForView?.product_name || 'Product'}`}
+        maxWidth="max-w-2xl"
+      >
+        {selectedProductForView && (() => {
+          const it = selectedProductForView;
+          const orderQ = Number(it.order_quantity || it.total_quantity || 0);
+          const arrivedQ = Number(it.arrived_from_cutting || 0);
+          const sentQ = Number(it.sent_to_vendor || 0);
+          const accQ = Number(it.accepted_inward || 0);
+          const rejQ = Number(it.rejected_quantity || 0);
+          const rwkQ = Number(it.rework_quantity || 0);
+          const outQ = Number(it.outstanding_quantity || 0);
+          const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, accQ - Number(it.transferred_to_stitching || 0)));
+          const trfQ = Number(it.transferred_to_stitching || Math.max(0, accQ - readyQ));
+
+          const productJobOrders = jobOrders.filter((j: any) => {
+            const jItems = Array.isArray(j.items_json) ? j.items_json : [];
+            return jItems.some((ji: any) =>
+              (ji.production_order_item_id && ji.production_order_item_id == (it.active_embroidery_item_id || it.id)) ||
+              (ji.product_id && ji.product_id == it.product_id && (ji.color || '').trim().toLowerCase() === (it.color || '').trim().toLowerCase())
+            ) || jobOrders.length === 1;
+          });
+
+          return (
+            <div className="space-y-4">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">{it.product_name}</h4>
+                  {it.product_code && (
+                    <span className="font-mono text-xs text-brand-600 block">{it.product_code}</span>
+                  )}
+                  <div className="text-xs text-slate-600 mt-1">
+                    Color: <strong className="text-slate-800">{it.color || 'Standard'}</strong> • Size: <strong className="text-slate-800">{it.size || 'M'}</strong>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Order Quantity</span>
+                  <span className="text-lg font-black text-slate-900 font-mono">{fmt(orderQ)} pcs</span>
+                </div>
+              </div>
+
+              {/* Mini Stat Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono text-xs">
+                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-indigo-700 block">Cut Arrived</span>
+                  <span className="text-sm font-bold text-indigo-900">{fmt(arrivedQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-brand-50 border border-brand-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-brand-700 block">Dispatched</span>
+                  <span className="text-sm font-bold text-brand-900">{fmt(sentQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-amber-700 block">With Vendor</span>
+                  <span className="text-sm font-bold text-amber-900">{fmt(outQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">Accepted Inward</span>
+                  <span className="text-sm font-bold text-emerald-900">{fmt(accQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-red-700 block">Rejection / Defect</span>
+                  <span className="text-sm font-bold text-red-900">{fmt(rejQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-amber-700 block">Rework Required</span>
+                  <span className="text-sm font-bold text-amber-900">{fmt(rwkQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-purple-700 block">Ready to Stitch</span>
+                  <span className="text-sm font-bold text-purple-900">{fmt(readyQ)} pcs</span>
+                </div>
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Transferred Next</span>
+                  <span className="text-sm font-bold text-slate-800">{fmt(trfQ)} pcs</span>
+                </div>
+              </div>
+
+              {/* Related Job Orders */}
+              <div className="space-y-2">
+                <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Associated Job Orders ({productJobOrders.length})
+                </h5>
+                {productJobOrders.length === 0 ? (
+                  <p className="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg text-center">
+                    No job orders dispatched for this product line yet.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left font-mono">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                        <tr>
+                          <th className="py-2 px-3">Job Order #</th>
+                          <th className="py-2 px-3">Vendor</th>
+                          <th className="py-2 px-2 text-right">Sent</th>
+                          <th className="py-2 px-2 text-right">Received</th>
+                          <th className="py-2 px-2 text-right">Outstanding</th>
+                          <th className="py-2 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {productJobOrders.map((j: any) => (
+                          <tr key={j.id}>
+                            <td className="py-2 px-3 font-bold text-brand-700">{j.job_order_number}</td>
+                            <td className="py-2 px-3 text-slate-600">{j.vendor_name}</td>
+                            <td className="py-2 px-2 text-right font-bold text-slate-800">{fmt(j.total_quantity_sent)}</td>
+                            <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{fmt(j.total_quantity_received)}</td>
+                            <td className="py-2 px-2 text-right text-amber-700 font-bold">{fmt(j.total_quantity_outstanding)}</td>
+                            <td className="py-2 px-3">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                {j.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setViewProductModalOpen(false);
+                    setSelectedProductForView(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
 
       {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}
       <JobWorkDocumentModal

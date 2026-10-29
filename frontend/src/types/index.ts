@@ -726,6 +726,8 @@ export interface EmbroideryReceipt {
   total_accepted_qty: number;
   total_rejected_qty: number;
   total_rework_qty: number;
+  transferred_to_stitching_quantity?: number;
+  available_to_transfer?: number;
   remarks?: string;
   photo_urls?: string[];
   items_data?: {
