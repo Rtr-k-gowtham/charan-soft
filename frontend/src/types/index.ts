@@ -916,7 +916,10 @@ export type ReworkStatus =
   | 'Reinspection Pending'
   | 'Accepted After Rework'
   | 'Rejected'
-  | 'Scrapped';
+  | 'Scrapped'
+  | 'IN REWORK'
+  | 'Completed'
+  | string;
 
 export interface ReworkRecord {
   id: number;
@@ -948,6 +951,7 @@ export interface ReworkRecord {
   vendor_id?: number;
   vendor_name?: string;
   dc_challan_no?: string;
+  expected_return_date?: string;
   sent_date?: string;
   received_date?: string;
   reinspection_date?: string;

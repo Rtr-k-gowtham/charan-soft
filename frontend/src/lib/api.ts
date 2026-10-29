@@ -232,6 +232,8 @@ export const api = {
     request<any>(`/production/checking/${orderId}`),
   recordQualityInspection: (data: any) =>
     request<any>('/production/inspect', 'POST', data),
+  recordBulkQualityInspection: (data: any) =>
+    request<any>('/production/checking/bulk-inspect', 'POST', data),
   createQualityInspection: (data: any) =>
     request<any>('/production/inspect', 'POST', data),
   recordStageInspection: (data: any) =>

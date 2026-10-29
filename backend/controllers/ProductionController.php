@@ -841,6 +841,11 @@ class ProductionController {
             $rwk = $rStmt->fetch();
             if (!$rwk) { Response::error("Rework record not found", 404); return; }
 
+            if ($rwk['status'] === 'Sent for Rework' || $rwk['status'] === 'Accepted After Rework' || $rwk['status'] === 'Completed') {
+                Response::error("This rework order ({$rwk['rework_order_no']}) has already been dispatched.", 422);
+                return;
+            }
+
             $pdo->beginTransaction();
 
             $sentDate = !empty($data['sent_date']) ? $data['sent_date'] : date('Y-m-d');
@@ -4703,6 +4708,10 @@ class ProductionController {
 
     public function recordQualityInspection(): void {
         $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        if (!empty($data['inspections']) && is_array($data['inspections'])) {
+            $this->recordBulkQualityInspection();
+            return;
+        }
         try {
             $pdo = Database::getConnection();
             $this->ensureWorkflowTables($pdo);
@@ -5063,6 +5072,217 @@ class ProductionController {
         } catch (Exception $e) { 
             if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
             Response::error($e->getMessage(), 500); 
+        }
+    }
+
+    public function recordBulkQualityInspection(): void {
+        $data = json_decode(file_get_contents('php://input'), true) ?? [];
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureWorkflowTables($pdo);
+
+            $pId = (int)($data['production_order_id'] ?? 0);
+            if ($pId <= 0) {
+                Response::error("Production order ID is required", 422);
+                return;
+            }
+
+            $inspectionsList = $data['inspections'] ?? [];
+            if (!is_array($inspectionsList) || empty($inspectionsList)) {
+                Response::error("No inspection entries provided", 422);
+                return;
+            }
+
+            $validLines = [];
+            foreach ($inspectionsList as $line) {
+                $chk = (float)($line['checked_quantity'] ?? 0);
+                if ($chk > 0) {
+                    $validLines[] = $line;
+                }
+            }
+
+            if (empty($validLines)) {
+                Response::error("Please specify a checked inspection quantity greater than 0 for at least one product line", 422);
+                return;
+            }
+
+            // Common metadata
+            $inspDate = !empty($data['inspection_date']) ? $data['inspection_date'] : date('Y-m-d');
+            $inspector = trim((string)($data['inspector'] ?? 'Lead QC Auditor'));
+            $commonRemarks = trim((string)($data['remarks'] ?? ''));
+            $photoUrls = json_encode($data['photo_urls'] ?? []);
+
+            $qiCols = $pdo->query("SHOW COLUMNS FROM quality_inspections")->fetchAll(PDO::FETCH_COLUMN);
+            $hasQiSize = in_array('size', $qiCols);
+            if (!$hasQiSize) {
+                try {
+                    $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
+                    $hasQiSize = true;
+                } catch (Exception $e) {}
+            }
+
+            $rwkCols = $pdo->query("SHOW COLUMNS FROM rework_records")->fetchAll(PDO::FETCH_COLUMN);
+            $hasRwkSize = in_array('size', $rwkCols);
+            if (!$hasRwkSize) {
+                try {
+                    $pdo->exec("ALTER TABLE `rework_records` ADD COLUMN `size` VARCHAR(50) NULL AFTER `color`");
+                    $hasRwkSize = true;
+                } catch (Exception $e) {}
+            }
+
+            $pdo->beginTransaction();
+            $created = [];
+
+            foreach ($validLines as $line) {
+                $itemId = (int)($line['production_order_item_id'] ?? 0);
+                $checked = (float)($line['checked_quantity'] ?? 0);
+                $rej = max(0.0, (float)($line['rejected_quantity'] ?? 0));
+                $rwk = max(0.0, (float)($line['rework_quantity'] ?? 0));
+                $passed = isset($line['passed_quantity']) && $line['passed_quantity'] !== ''
+                    ? (float)$line['passed_quantity']
+                    : max(0.0, $checked - $rej - $rwk);
+
+                // Line quantity balance validation: Checked = Passed + Rework + Rejected
+                $allocated = round($passed + $rwk + $rej, 2);
+                if (abs($allocated - round($checked, 2)) > 0.01) {
+                    $pdo->rollBack();
+                    $prodName = $line['product_name'] ?? 'Product';
+                    $color = $line['color'] ?? '';
+                    Response::error("Quantity mismatch for {$prodName} ({$color}): Inspected ({$checked}) must equal Passed ({$passed}) + Rework ({$rwk}) + Rejected ({$rej})", 422);
+                    return;
+                }
+
+                // Verify item belongs to production order
+                $item = null;
+                if ($itemId > 0) {
+                    $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? AND production_order_id = ?");
+                    $iStmt->execute([$itemId, $pId]);
+                    $item = $iStmt->fetch();
+                }
+                if (!$item) {
+                    $pIdReq = (int)($line['product_id'] ?? 0);
+                    $colReq = trim((string)($line['color'] ?? ''));
+                    if ($pIdReq > 0) {
+                        $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? LIMIT 1");
+                        $fStmt->execute([$pId, $pIdReq, $colReq]);
+                        $item = $fStmt->fetch();
+                    }
+                }
+                if ($item) {
+                    $itemId = (int)$item['id'];
+                }
+
+                $batchNo = 'CHK-QC-' . rand(1000, 9999);
+                $defectCat = trim((string)($line['defect_category'] ?? (($rej > 0 || $rwk > 0) ? 'Quality Defect' : 'Passed Inspection')));
+                $defectDesc = trim((string)($line['defect_description'] ?? ''));
+                $reworkDest = trim((string)($line['rework_destination'] ?? 'Stitching Correction & Alteration'));
+                $reworkReason = trim((string)($line['rework_reason'] ?? $defectCat));
+                $destStageId = (int)($line['rework_stage_id'] ?? 7);
+                $lineRemarks = trim((string)($line['remarks'] ?? $commonRemarks));
+                $color = !empty($line['color']) ? trim((string)$line['color']) : ($item['color'] ?? null);
+                $size = !empty($line['size']) ? trim((string)$line['size']) : ($item['size'] ?? null);
+
+                if ($hasQiSize) {
+                    $insStmt = $pdo->prepare("
+                        INSERT INTO quality_inspections 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, reference_id, reference_type, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, uom, defect_category, defect_description, color, size, rework_destination, rework_reason, inspector, inspection_date, remarks, photo_urls, status) 
+                        VALUES (?, ?, 8, 'CHK', ?, 'Checking QC', ?, ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inspected')
+                    ");
+                    $insStmt->execute([
+                        $pId, $itemId, (string)$itemId, $batchNo, $checked, $checked, $passed, ($rej + $rwk), $rwk, $rej,
+                        $defectCat, $defectDesc, $color, $size, $reworkDest, $reworkReason, $inspector, $inspDate, $lineRemarks, $photoUrls
+                    ]);
+                } else {
+                    $insStmt = $pdo->prepare("
+                        INSERT INTO quality_inspections 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, reference_id, reference_type, batch_number, submitted_quantity, checked_quantity, passed_quantity, failed_quantity, rework_quantity, rejected_quantity, uom, defect_category, defect_description, color, rework_destination, rework_reason, inspector, inspection_date, remarks, photo_urls, status) 
+                        VALUES (?, ?, 8, 'CHK', ?, 'Checking QC', ?, ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Inspected')
+                    ");
+                    $insStmt->execute([
+                        $pId, $itemId, (string)$itemId, $batchNo, $checked, $checked, $passed, ($rej + $rwk), $rwk, $rej,
+                        $defectCat, $defectDesc, $color, $reworkDest, $reworkReason, $inspector, $inspDate, $lineRemarks, $photoUrls
+                    ]);
+                }
+                $insId = (int)$pdo->lastInsertId();
+
+                // Quantity ledger
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 8, 'CHK', 'INSPECTED', ?, ?, '', ?, 'Checking QC', ?, ?)
+                ");
+                $lStmt->execute([$pId, $itemId, $checked, $batchNo, $inspector, (string)$insId, $lineRemarks]);
+
+                if ($passed > 0) {
+                    $lStmtPass = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 8, 'CHK', 'ACCEPTED', ?, ?, '', ?, 'Checking QC', ?, 'Passed quality inspection')
+                    ");
+                    $lStmtPass->execute([$pId, $itemId, $passed, $batchNo, $inspector, (string)$insId]);
+                }
+
+                if ($rwk > 0) {
+                    $rwkOrderNo = 'RWK-CHK-' . strtoupper(bin2hex(random_bytes(3)));
+                    if ($hasRwkSize) {
+                        $insRwk = $pdo->prepare("
+                            INSERT INTO rework_records 
+                            (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, size, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, status, reference_type, reference_id)
+                            VALUES (?, ?, ?, 8, 'CHK', ?, ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, ?, 'Pending Rework', 'Checking QC', ?)
+                        ");
+                        $insRwk->execute([
+                            $rwkOrderNo, $pId, $itemId, $insId, $color, $size, $batchNo, $rwk, $rwk,
+                            $reworkReason, $defectDesc, $destStageId, $reworkDest, (string)$insId
+                        ]);
+                    } else {
+                        $insRwk = $pdo->prepare("
+                            INSERT INTO rework_records 
+                            (rework_order_no, production_order_id, production_order_item_id, stage_id, stage_code, qc_record_id, color, batch_number, rework_quantity, pending_quantity, uom, rework_reason, rework_remarks, rework_stage_id, destination_process, status, reference_type, reference_id)
+                            VALUES (?, ?, ?, 8, 'CHK', ?, ?, ?, ?, ?, 'PCS', ?, ?, ?, ?, 'Pending Rework', 'Checking QC', ?)
+                        ");
+                        $insRwk->execute([
+                            $rwkOrderNo, $pId, $itemId, $insId, $color, $batchNo, $rwk, $rwk,
+                            $reworkReason, $defectDesc, $destStageId, $reworkDest, (string)$insId
+                        ]);
+                    }
+
+                    $lStmtRwk = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 8, 'CHK', 'REWORK_LOGGED', ?, ?, '', ?, 'Checking QC', ?, ?)
+                    ");
+                    $lStmtRwk->execute([$pId, $itemId, $rwk, $batchNo, $inspector, (string)$insId, "Quality inspection rework identified: {$reworkReason}"]);
+                }
+
+                if ($rej > 0) {
+                    $lStmtRej = $pdo->prepare("
+                        INSERT INTO production_quantity_ledger 
+                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                        VALUES (?, ?, 8, 'CHK', 'REJECTED', ?, ?, '', ?, 'Checking QC', ?, ?)
+                    ");
+                    $lStmtRej->execute([$pId, $itemId, $rej, $batchNo, $inspector, (string)$insId, "Rejected / Scrapped in Quality Inspection"]);
+                }
+
+                $created[] = [
+                    'id' => $insId,
+                    'batch_number' => $batchNo,
+                    'checked' => $checked,
+                    'passed' => $passed,
+                    'rejected' => $rej,
+                    'rework' => $rwk
+                ];
+            }
+
+            $pdo->commit();
+            Response::success([
+                'count' => count($created),
+                'inspections' => $created
+            ], "Bulk quality inspection recorded successfully for " . count($created) . " product lines", 201);
+        } catch (Exception $e) {
+            if (isset($pdo) && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Response::error($e->getMessage(), 500);
         }
     }
 

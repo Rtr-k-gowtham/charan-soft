@@ -2000,16 +2000,6 @@ export default function EmbroideryOrderDetail() {
               >
                 In Embroidery ({items.filter(i => Number(i.arrived_from_cutting || 0) > 0).length})
               </button>
-              <Button
-                size="xs"
-                variant="primary"
-                icon={<Plus className="w-3.5 h-3.5" />}
-                onClick={handleOpenBulkDispatchModal}
-                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-2xs ml-1"
-              >
-                Record Batch
-              </Button>
-
             </div>
           </div>
 
