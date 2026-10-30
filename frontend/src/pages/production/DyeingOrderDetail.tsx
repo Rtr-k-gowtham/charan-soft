@@ -208,7 +208,6 @@ export default function DyeingOrderDetail() {
   const [receivedBy, setReceivedBy] = useState('');
   const [shadeCondition, setShadeCondition] = useState('Approved - Pantone Matched');
   const [receiptRemarks, setReceiptRemarks] = useState('');
-  const [advanceToCutting, setAdvanceToCutting] = useState(true);
   const [savingReceive, setSavingReceive] = useState(false);
   const [receiveError, setReceiveError] = useState('');
 
@@ -515,21 +514,10 @@ export default function DyeingOrderDetail() {
       .reduce((sum, r) => sum + Number(r.rework_quantity || 0), 0);
   }, [reworkRecords]);
 
-  // Total fabric already transferred to Stage 05 (Cutting)
+  // Total fabric already transferred to Stage 05 (Cutting) in meters
   const totalTransferredToCutting = useMemo(() => {
-    const fromStock = Number(fabricStockData?.total_transferred_to_cutting ?? 0);
-    if (fromStock > 0) return fromStock;
-    // Check if order items have already advanced to Stage 05 (Cutting) or beyond
-    const itemsAdvanced = (order?.items || []).filter((it: any) => Number(it.current_stage_id) >= 5);
-    if (itemsAdvanced.length > 0) {
-      const advancedQty = itemsAdvanced.reduce((sum: number, it: any) => sum + Number(it.total_quantity || 0), 0);
-      if (advancedQty > 0) return advancedQty;
-    }
-    if (order && Number(order.current_stage_id) >= 5 && Number(order.total_quantity) > 0) {
-      return Number(order.total_quantity);
-    }
-    return 0;
-  }, [fabricStockData, order]);
+    return Number(fabricStockData?.total_transferred_to_cutting ?? 0);
+  }, [fabricStockData]);
 
   // Total received fabric from dyeing orders
   const totalDyeingReceived = useMemo(() => {
@@ -2941,21 +2929,7 @@ export default function DyeingOrderDetail() {
             buttonText="Take Real-Time Fabric Photo"
           />
 
-          {/* Advance to Cutting Checkbox */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-100 border border-slate-200">
-            <input
-              type="checkbox"
-              id="advanceCutting"
-              checked={advanceToCutting}
-              onChange={e => setAdvanceToCutting(e.target.checked)}
-              className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
-            />
-            <label htmlFor="advanceCutting" className="text-xs font-bold text-slate-800 cursor-pointer">
-              Advance Production Items to Stage 05 (Cutting — Product-wise) once dyed fabric is verified
-            </label>
-          </div>
-
-          <FormField label="Quality Remarks">
+                    <FormField label="Quality Remarks">
             <textarea
               rows={2}
               value={receiptRemarks}

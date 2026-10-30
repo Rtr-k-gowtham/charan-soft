@@ -140,31 +140,6 @@ class DyeingController {
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 ");
             } catch (Exception $e) {}
-
-            // Auto-heal / sync missing TRANSFERRED_TO_CUTTING for orders that already moved to Stage 5 (Cutting) or beyond
-            try {
-                $missingStmt = $pdo->query("
-                    SELECT poi.production_order_id, poi.id as item_id, poi.total_quantity
-                    FROM production_order_items poi
-                    WHERE poi.current_stage_id >= 5
-                      AND poi.production_order_id NOT IN (
-                          SELECT DISTINCT production_order_id 
-                          FROM production_quantity_ledger 
-                          WHERE (stage_id = 4 OR stage_code = 'DYE') 
-                            AND (transaction_type = 'TRANSFERRED_TO_CUTTING' OR transaction_type = 'TRANSFER_OUT')
-                      )
-                ");
-                $missingItems = $missingStmt ? $missingStmt->fetchAll(PDO::FETCH_ASSOC) : [];
-                foreach ($missingItems as $mi) {
-                    $trfQty = (float)($mi['total_quantity'] ?: 50.0);
-                    $ins = $pdo->prepare("
-                        INSERT INTO production_quantity_ledger 
-                        (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks)
-                        VALUES (?, ?, 4, 'DYE', 'TRANSFERRED_TO_CUTTING', ?, 'HANDOVER', 'Dyeing Stores / Inward', 'Dyeing Stores / Inward', 'Dyeing Handover', 'STAGE-04-HANDOVER', 'Dyed fabric transferred to Stage 05 Cutting')
-                    ");
-                    $ins->execute([$mi['production_order_id'], $mi['item_id'], $trfQty]);
-                }
-            } catch (Exception $e) {}
         } catch (Exception $e) {
             // Ignore if tables already exist
         }
@@ -695,8 +670,8 @@ class DyeingController {
             $activeReworkStmt->execute([$poId]);
             $activeReworkOut = (float)$activeReworkStmt->fetchColumn();
 
-            // 5. Gather total dyed fabric already transferred to Stage 05 (Cutting)
-            $lSum = 0.0;
+            // 5. Gather total dyed fabric already transferred to Stage 05 (Cutting) in meters
+            $totalTransferredToCutting = 0.0;
             try {
                 $qStmt = $pdo->prepare("
                     SELECT COALESCE(SUM(quantity), 0)
@@ -704,35 +679,11 @@ class DyeingController {
                     WHERE production_order_id = ? 
                       AND (stage_id = 4 OR stage_code = 'DYE') 
                       AND (transaction_type = 'TRANSFERRED_TO_CUTTING' OR transaction_type = 'TRANSFER_OUT')
+                      AND reference_id != 'STAGE-04-HANDOVER'
                 ");
                 $qStmt->execute([$poId]);
-                $lSum = (float)$qStmt->fetchColumn();
+                $totalTransferredToCutting = (float)$qStmt->fetchColumn();
             } catch (Exception $e) {}
-
-            $pstSum = 0.0;
-            try {
-                $pStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(pst.quantity_moved), 0)
-                    FROM production_stage_transactions pst
-                    JOIN production_order_items poi ON pst.production_order_item_id = poi.id
-                    WHERE poi.production_order_id = ? AND pst.from_stage_id = 4 AND pst.to_stage_id = 5
-                ");
-                $pStmt->execute([$poId]);
-                $pstSum = (float)$pStmt->fetchColumn();
-            } catch (Exception $e) {}
-
-            $advSum = 0.0;
-            try {
-                $aStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(total_quantity), 0)
-                    FROM production_order_items
-                    WHERE production_order_id = ? AND current_stage_id >= 5
-                ");
-                $aStmt->execute([$poId]);
-                $advSum = (float)$aStmt->fetchColumn();
-            } catch (Exception $e) {}
-
-            $totalTransferredToCutting = max($lSum, $pstSum, $advSum);
 
             // 6. Net fabric available in-hand to transfer to Stage 05 Cutting
             $netAvailableForCutting = max(0.0, round($totalFabricReceivedFromDyeing - $activeReworkOut - $totalTransferredToCutting, 2));
@@ -1269,8 +1220,8 @@ class DyeingController {
             $rwkStmt->execute([$pId]);
             $activeRework = (float)$rwkStmt->fetchColumn();
 
-            // Calculate already transferred to cutting
-            $lSum = 0.0;
+            // Calculate already transferred to cutting (in fabric meters, excluding any legacy STAGE-04-HANDOVER fake rows)
+            $alreadyTransferred = 0.0;
             try {
                 $qStmt = $pdo->prepare("
                     SELECT COALESCE(SUM(quantity), 0)
@@ -1278,35 +1229,11 @@ class DyeingController {
                     WHERE production_order_id = ? 
                       AND (stage_id = 4 OR stage_code = 'DYE') 
                       AND (transaction_type = 'TRANSFERRED_TO_CUTTING' OR transaction_type = 'TRANSFER_OUT')
+                      AND reference_id != 'STAGE-04-HANDOVER'
                 ");
                 $qStmt->execute([$pId]);
-                $lSum = (float)$qStmt->fetchColumn();
+                $alreadyTransferred = (float)$qStmt->fetchColumn();
             } catch (Exception $e) {}
-
-            $pstSum = 0.0;
-            try {
-                $pStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(pst.quantity_moved), 0)
-                    FROM production_stage_transactions pst
-                    JOIN production_order_items poi ON pst.production_order_item_id = poi.id
-                    WHERE poi.production_order_id = ? AND pst.from_stage_id = 4 AND pst.to_stage_id = 5
-                ");
-                $pStmt->execute([$pId]);
-                $pstSum = (float)$pStmt->fetchColumn();
-            } catch (Exception $e) {}
-
-            $advSum = 0.0;
-            try {
-                $aStmt = $pdo->prepare("
-                    SELECT COALESCE(SUM(total_quantity), 0)
-                    FROM production_order_items
-                    WHERE production_order_id = ? AND current_stage_id >= 5
-                ");
-                $aStmt->execute([$pId]);
-                $advSum = (float)$aStmt->fetchColumn();
-            } catch (Exception $e) {}
-
-            $alreadyTransferred = max($lSum, $pstSum, $advSum);
 
             $availableInHand = max(0.0, round($totalReceived - $activeRework - $alreadyTransferred, 2));
 
@@ -1315,15 +1242,19 @@ class DyeingController {
                 return;
             }
 
-            // Find first item id for production_order_item_id reference
-            $firstItemId = 0;
-            try {
-                $iStmt = $pdo->prepare("SELECT id FROM production_order_items WHERE production_order_id = ? ORDER BY id ASC LIMIT 1");
-                $iStmt->execute([$pId]);
-                $firstItemId = (int)$iStmt->fetchColumn() ?: 0;
-            } catch (Exception $ie) {}
+            // Fetch production order details
+            $poStmt = $pdo->prepare("SELECT id, order_number, title FROM production_orders WHERE id = ?");
+            $poStmt->execute([$pId]);
+            $prodOrder = $poStmt->fetch(PDO::FETCH_ASSOC);
 
-            // Record in quantity ledger
+            // Fetch order items
+            $itemStmt = $pdo->prepare("SELECT id, total_quantity, current_stage_id FROM production_order_items WHERE production_order_id = ?");
+            $itemStmt->execute([$pId]);
+            $orderItems = $itemStmt->fetchAll(PDO::FETCH_ASSOC);
+            $firstItemId = !empty($orderItems) ? (int)$orderItems[0]['id'] : 0;
+
+            // 1. Record fabric handover in quantity ledger
+            $refId = $receiptId > 0 ? (string)$receiptId : ('DYE-HANDOVER-' . $pId);
             try {
                 $lStmt = $pdo->prepare("
                     INSERT INTO production_quantity_ledger 
@@ -1336,7 +1267,7 @@ class DyeingController {
                     $qty,
                     $transferredBy,
                     $transferredBy,
-                    $receiptId > 0 ? (string)$receiptId : 'STAGE-04-HANDOVER',
+                    $refId,
                     $notes
                 ]);
             } catch (Exception $lex) {
@@ -1351,31 +1282,52 @@ class DyeingController {
                         $qty,
                         $transferredBy,
                         $transferredBy,
-                        $receiptId > 0 ? (string)$receiptId : 'STAGE-04-HANDOVER',
+                        $refId,
                         $notes
                     ]);
                 } catch (Exception $fbEx) {}
             }
 
-            // Record in production_stage_transactions if item id is available
-            if ($firstItemId > 0) {
-                try {
-                    $pstIns = $pdo->prepare("
-                        INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
-                        VALUES (?, 4, 5, ?, ?)
-                    ");
-                    $pstIns->execute([$firstItemId, $qty, $notes]);
-                } catch (Exception $pstEx) {}
-            }
-
-            // Advance current_stage_id on production order items if currently at dyeing (stage 4)
+            // 2. Advance current_stage_id on production order items to Stage 05 (Cutting)
             try {
                 $pdo->prepare("
                     UPDATE production_order_items 
-                    SET current_stage_id = 5 
+                    SET current_stage_id = 5, status = 'In Progress' 
                     WHERE production_order_id = ? AND current_stage_id <= 4
                 ")->execute([$pId]);
             } catch (Exception $uex) {}
+
+            // 3. Record stage transaction moves for each advanced item
+            foreach ($orderItems as $item) {
+                if ((int)$item['current_stage_id'] <= 4) {
+                    try {
+                        $pstIns = $pdo->prepare("
+                            INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
+                            VALUES (?, 4, 5, ?, ?)
+                        ");
+                        $pstIns->execute([
+                            (int)$item['id'],
+                            (float)($item['total_quantity'] ?? 0),
+                            $notes ?: 'Dyed fabric received & transferred to Stage 05 (Cutting)'
+                        ]);
+                    } catch (Exception $pstEx) {}
+                }
+            }
+
+            // 4. Send notification to destination stage (Stage 05 - Cutting)
+            if ($prodOrder) {
+                try {
+                    NotificationService::notifyStageTransition(
+                        $pdo,
+                        $pId,
+                        4,
+                        5,
+                        $prodOrder['order_number'] ?? ('ORD-' . $pId),
+                        $prodOrder['title'] ?? 'Production Order',
+                        "Dyed fabric ({$qty} MTR) transferred to Stage 05 (Cutting)"
+                    );
+                } catch (Throwable $notifEx) {}
+            }
 
             Response::success([
                 'production_order_id' => $pId,

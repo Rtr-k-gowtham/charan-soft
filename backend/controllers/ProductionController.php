@@ -2652,28 +2652,10 @@ class ProductionController {
                     WHERE production_order_id = ? 
                       AND (stage_id = 4 OR stage_code = 'DYE') 
                       AND (transaction_type = 'TRANSFERRED_TO_CUTTING' OR transaction_type = 'TRANSFER_OUT')
+                      AND reference_id != 'STAGE-04-HANDOVER'
                 ");
                 $tStmt->execute([$orderId]);
                 $totalDyedTransferred = (float)$tStmt->fetchColumn();
-                if ($totalDyedTransferred <= 0) {
-                    $pStmt = $pdo->prepare("
-                        SELECT COALESCE(SUM(pst.quantity_moved), 0)
-                        FROM production_stage_transactions pst
-                        JOIN production_order_items poi ON pst.production_order_item_id = poi.id
-                        WHERE poi.production_order_id = ? AND pst.from_stage_id = 4 AND pst.to_stage_id = 5
-                    ");
-                    $pStmt->execute([$orderId]);
-                    $totalDyedTransferred = (float)$pStmt->fetchColumn();
-                }
-                if ($totalDyedTransferred <= 0) {
-                    $aStmt = $pdo->prepare("
-                        SELECT COALESCE(SUM(total_quantity), 0)
-                        FROM production_order_items
-                        WHERE production_order_id = ? AND current_stage_id >= 5
-                    ");
-                    $aStmt->execute([$orderId]);
-                    $totalDyedTransferred = (float)$aStmt->fetchColumn();
-                }
             } catch (Exception $tEx) {}
 
             Response::success([
