@@ -344,6 +344,7 @@ export const api = {
   getUsers: () => request<unknown[]>('/settings/users'),
   createUser: (data: unknown) => request<unknown>('/settings/users', 'POST', data),
   updateUser: (id: number, data: unknown) => request<unknown>(`/settings/users/${id}`, 'PUT', data),
+  deleteUser: (id: number) => request<unknown>(`/settings/users/${id}`, 'DELETE'),
   getRoles: () => request<unknown[]>('/settings/roles'),
   getPermissions: () => request<unknown[]>('/settings/permissions'),
   getStages: () => request<unknown[]>('/settings/stages'),

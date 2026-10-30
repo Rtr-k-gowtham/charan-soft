@@ -87,30 +87,80 @@ class SettingsController {
             return;
         }
 
+        $name = trim($data['name'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $phone = trim($data['phone'] ?? '');
+        $status = $data['status'] ?? 'active';
+
+        if (empty($name) || empty($email)) {
+            Response::error("Name and email are required", 422);
+            return;
+        }
+
         try {
             $pdo = Database::getConnection();
+
+            // Verify user exists and is not deleted
+            $stmt = $pdo->prepare("SELECT id, name, email FROM users WHERE id = ? AND deleted_at IS NULL");
+            $stmt->execute([$id]);
+            $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$existing) {
+                Response::error("User not found or deleted", 404);
+                return;
+            }
+
+            // Check email uniqueness if email changed
+            $check = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ? AND deleted_at IS NULL LIMIT 1");
+            $check->execute([$email, $id]);
+            if ($check->fetch()) {
+                Response::error("Email already in use by another user", 422);
+                return;
+            }
+
             if (!empty($data['password'])) {
                 $pwdHash = password_hash((string)$data['password'], PASSWORD_BCRYPT);
-                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ?, password_hash = ? WHERE id = ?");
-                $stmt->execute([
-                    $data['name'] ?? 'User',
-                    $data['phone'] ?? null,
-                    $roleId,
-                    $data['status'] ?? 'active',
-                    $pwdHash,
-                    $id
-                ]);
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, phone = ?, role_id = ?, status = ?, password_hash = ? WHERE id = ?");
+                $stmt->execute([$name, $email, $phone ?: null, $roleId, $status, $pwdHash, $id]);
             } else {
-                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ? WHERE id = ?");
-                $stmt->execute([
-                    $data['name'] ?? 'User',
-                    $data['phone'] ?? null,
-                    $roleId,
-                    $data['status'] ?? 'active',
-                    $id
-                ]);
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, email = ?, phone = ?, role_id = ?, status = ? WHERE id = ?");
+                $stmt->execute([$name, $email, $phone ?: null, $roleId, $status, $id]);
             }
-            Response::success(['id' => $id, 'role_id' => $roleId], "User updated successfully");
+
+            AuditLogger::log('Users', 'UPDATE', $id, $existing, ['name' => $name, 'email' => $email, 'role_id' => $roleId, 'status' => $status]);
+            Response::success(['id' => $id, 'name' => $name, 'email' => $email, 'role_id' => $roleId, 'status' => $status], "User updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function deleteUser(int $id): void {
+        // Require Admin role
+        $currentUser = Auth::requireRole('Admin');
+
+        // Prevent deleting primary admin (id: 1) or self
+        if ($id === 1 || (int)($currentUser['id'] ?? 0) === $id) {
+            Response::error("Primary administrator or currently logged-in account cannot be deleted.", 400);
+            return;
+        }
+
+        try {
+            $pdo = Database::getConnection();
+
+            // Check if user exists and is active
+            $stmt = $pdo->prepare("SELECT id, name, email, role_id FROM users WHERE id = ? AND deleted_at IS NULL");
+            $stmt->execute([$id]);
+            $target = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$target) {
+                Response::error("User not found or already deleted", 404);
+                return;
+            }
+
+            // Soft-delete user
+            $del = $pdo->prepare("UPDATE users SET deleted_at = NOW(), status = 'inactive' WHERE id = ?");
+            $del->execute([$id]);
+
+            AuditLogger::log('Users', 'DELETE', $id, $target, null);
+            Response::success(['id' => $id], "User '{$target['name']}' deleted successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

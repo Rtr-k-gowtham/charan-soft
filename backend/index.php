@@ -265,7 +265,8 @@ $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new P
         // ---------------- SETTINGS ----------------
         $r0 === 'settings' && $r1 === 'users' && $method === 'GET' => (new SettingsController)->getUsers(),
         $r0 === 'settings' && $r1 === 'users' && $method === 'POST' => (new SettingsController)->createUser(),
-        $r0 === 'settings' && $r1 === 'users' && $id && $method === 'PUT' => (new SettingsController)->updateUser($id),
+        (($r0 === 'settings' && $r1 === 'users' && is_numeric($r2)) || ($r0 === 'users' && is_numeric($r1))) && $method === 'PUT' => (new SettingsController)->updateUser(is_numeric($r2) ? (int)$r2 : (int)$r1),
+        (($r0 === 'settings' && $r1 === 'users' && is_numeric($r2)) || ($r0 === 'users' && is_numeric($r1))) && $method === 'DELETE' => (new SettingsController)->deleteUser(is_numeric($r2) ? (int)$r2 : (int)$r1),
         $r0 === 'settings' && $r1 === 'roles' => (new SettingsController)->getRoles(),
         $r0 === 'settings' && $r1 === 'permissions' => (new SettingsController)->getPermissions(),
         $r0 === 'settings' && $r1 === 'stages' && $method === 'GET' => (new SettingsController)->getStages(),

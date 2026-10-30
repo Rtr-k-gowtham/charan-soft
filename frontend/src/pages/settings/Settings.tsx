@@ -8,9 +8,11 @@ import StatusBadge from '../../components/ui/StatusBadge';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
+import { useAuth } from '../../context/AuthContext';
 import {
   Plus,
   Edit2,
+  Trash2,
   AlertCircle,
   Shield,
   Users as UsersIcon,
@@ -28,6 +30,7 @@ interface UserRecord {
   id: number;
   name: string;
   email: string;
+  phone?: string;
   role_id?: number;
   role_name?: string;
   role?: string;
@@ -36,13 +39,20 @@ interface UserRecord {
 }
 
 export function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<UserRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', role_id: 2, password: '', status: 'active' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', role_id: 2, password: '', status: 'active' });
+
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const loadData = () => {
     setLoading(true);
@@ -58,7 +68,7 @@ export function UsersPage() {
 
   const openCreate = () => {
     setEditUser(null);
-    setForm({ name: '', email: '', role_id: 2, password: '', status: 'active' });
+    setForm({ name: '', email: '', phone: '', role_id: 2, password: '', status: 'active' });
     setError('');
     setModalOpen(true);
   };
@@ -75,6 +85,7 @@ export function UsersPage() {
     setForm({
       name: u.name,
       email: u.email,
+      phone: u.phone || '',
       role_id: resolvedRoleId,
       password: '',
       status: u.status || 'active'
@@ -86,6 +97,10 @@ export function UsersPage() {
   const handleSave = async () => {
     if (!form.name || !form.email) {
       setError('Name and email are required');
+      return;
+    }
+    if (!editUser && !form.password) {
+      setError('Password is required for new user accounts');
       return;
     }
     setSaving(true);
@@ -104,6 +119,28 @@ export function UsersPage() {
     }
   };
 
+  const openDelete = (u: UserRecord) => {
+    setUserToDelete(u);
+    setDeleteError('');
+    setDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!userToDelete) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.deleteUser(userToDelete.id);
+      setDeleteModalOpen(false);
+      setUserToDelete(null);
+      loadData();
+    } catch (e: unknown) {
+      setDeleteError((e as Error).message || 'Failed to delete user');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const cols = [
     {
       key: 'name',
@@ -112,7 +149,9 @@ export function UsersPage() {
       render: (r: UserRecord) => (
         <div>
           <p className="font-semibold text-slate-800">{r.name}</p>
-          <p className="text-[10px] text-slate-400 font-mono">{r.email}</p>
+          <p className="text-[10px] text-slate-400 font-mono">
+            {r.email} {r.phone ? `• ${r.phone}` : ''}
+          </p>
         </div>
       ),
     },
@@ -149,7 +188,8 @@ export function UsersPage() {
           <div className="flex gap-2">
             <button
               onClick={loadData}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-slate-200 rounded-md hover:bg-slate-50 transition-colors"
+              title="Refresh users list"
             >
               <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -165,25 +205,56 @@ export function UsersPage() {
           columns={cols}
           rowKey="id"
           onRowClick={openEdit}
-          actions={(r: UserRecord) => (
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                openEdit(r);
-              }}
-              className="p-1 text-slate-400 hover:text-brand-600 rounded"
-              title="Edit User"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-          )}
+          actions={(r: UserRecord) => {
+            const isSelf = currentUser && (currentUser.id === r.id || currentUser.email === r.email);
+            const isPrimaryAdmin = r.id === 1;
+            const canDelete = !isSelf && !isPrimaryAdmin;
+
+            return (
+              <div className="flex items-center gap-1 justify-end">
+                <button
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation();
+                    openEdit(r);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
+                  title="Edit User"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
+
+                {canDelete ? (
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      openDelete(r);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    title="Delete User"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                ) : (
+                  <span
+                    className="p-1.5 text-slate-300 cursor-not-allowed"
+                    title={isPrimaryAdmin ? "Primary Administrator cannot be deleted" : "Cannot delete active logged-in account"}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 opacity-30" />
+                  </span>
+                )}
+              </div>
+            );
+          }}
         />
       </div>
 
+      {/* Edit / Create User Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editUser ? 'Edit User Account' : 'Create User Account'}
+        title={editUser ? `Edit User: ${editUser.name}` : 'Create User Account'}
         footer={
           <>
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
@@ -194,7 +265,7 @@ export function UsersPage() {
               onClick={handleSave}
               icon={<UsersIcon className="w-3.5 h-3.5" />}
             >
-              {editUser ? 'Update' : 'Create'} User
+              {editUser ? 'Update User' : 'Create User'}
             </Button>
           </>
         }
@@ -212,6 +283,7 @@ export function UsersPage() {
               required
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="e.g. Kannan S"
             />
             <FormField
               label="Email"
@@ -219,19 +291,17 @@ export function UsersPage() {
               required
               value={form.email}
               onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="user@cheransoftgoods.com"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField
-              as="select"
-              label="Operational Role"
-              value={String(form.role_id)}
-              onChange={e => setForm(f => ({ ...f, role_id: Number(e.target.value) }))}
-            >
-              <option value="1">Admin — Full 10 Stages & Administration</option>
-              <option value="2">Role 1 — Stages 01, 02, 03, 09, 10 (Procurement & Packing)</option>
-              <option value="3">Role 2 — Stages 04, 05, 06, 07, 08 (Manufacturing & QC)</option>
-            </FormField>
+              label="Phone Number"
+              type="tel"
+              value={form.phone}
+              onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+              placeholder="+91 98765 43210"
+            />
             <FormField
               as="select"
               label="Status"
@@ -242,15 +312,69 @@ export function UsersPage() {
               <option value="inactive">Inactive</option>
             </FormField>
           </div>
-          {!editUser && (
+          <div>
             <FormField
-              label="Password"
+              as="select"
+              label="Operational Role"
+              value={String(form.role_id)}
+              onChange={e => setForm(f => ({ ...f, role_id: Number(e.target.value) }))}
+            >
+              <option value="1">Admin — Full 10 Stages & Administration</option>
+              <option value="2">Role 1 — Stages 01, 02, 03, 09, 10 (Procurement, Inward & Packing)</option>
+              <option value="3">Role 2 — Stages 04, 05, 06, 07, 08 (Dyeing, Cutting, Stitching, QC)</option>
+            </FormField>
+          </div>
+          <div>
+            <FormField
+              label={editUser ? "Change Password (leave blank to keep current)" : "Password"}
               type="password"
-              required
+              required={!editUser}
               value={form.password}
               onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              placeholder={editUser ? "Enter new password if changing" : "••••••••"}
             />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete User Confirmation Modal */}
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        title="Delete User Account"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleting}
+              onClick={handleDelete}
+              icon={<Trash2 className="w-3.5 h-3.5" />}
+            >
+              Delete User
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {deleteError && (
+            <div className="p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {deleteError}
+            </div>
           )}
+          <p className="text-xs text-slate-700">
+            Are you sure you want to delete user account <strong className="text-slate-900">{userToDelete?.name}</strong> (<span className="font-mono text-slate-600">{userToDelete?.email}</span>)?
+          </p>
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+            <div>
+              <p className="font-semibold mb-0.5">Account Deactivation</p>
+              <p>This user will be soft-deleted, their status set to inactive, and all login sessions immediately revoked.</p>
+            </div>
+          </div>
         </div>
       </Modal>
     </div>
