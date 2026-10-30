@@ -976,35 +976,30 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                       <th className="px-2.5 py-2.5 whitespace-nowrap">Target Delivery</th>
                       {activeCode === 'REQ' && (
                         <>
-                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Total Order Qty</th>
                           <th className="px-2 py-2.5 whitespace-nowrap">Products / Line Items</th>
                           <th className="px-2 py-2.5 text-center whitespace-nowrap">BOM Status</th>
                         </>
                       )}
                       {activeCode === 'PO' && (
                         <>
-                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Stage Quantity</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">POs Issued</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
                         </>
                       )}
                       {activeCode === 'INW' && (
                         <>
-                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Inward Quantity</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Inward Status</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
                         </>
                       )}
                       {activeCode === 'DYE' && (
                         <>
-                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Dyeing Quantity</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Dyeing Status</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
                         </>
                       )}
                       {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
                         <>
-                          <th className="px-2 py-2.5 text-right whitespace-nowrap">Stage Quantity</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Status</th>
                           <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Priority</th>
                         </>
@@ -1106,10 +1101,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {/* REQ specific columns */}
                             {activeCode === 'REQ' && (
                               <>
-                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {fmt(group.total_order_quantity || group.total_stage_quantity)}{' '}
-                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
-                                </td>
                                 <td className="px-2 py-2.5 whitespace-nowrap">
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                                     <Layers className="w-3 h-3 text-slate-400 shrink-0" />
@@ -1128,10 +1119,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {/* PO specific columns */}
                             {activeCode === 'PO' && (
                               <>
-                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {fmt(group.total_stage_quantity)}{' '}
-                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
-                                </td>
                                 <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                   {poCount > 0 ? (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
@@ -1153,10 +1140,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {/* INW specific columns */}
                             {activeCode === 'INW' && (
                               <>
-                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {fmt(group.total_stage_quantity)}{' '}
-                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
-                                </td>
                                 <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                     <PackageOpen className="w-3 h-3 text-emerald-600" />
@@ -1172,10 +1155,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {/* DYE specific columns */}
                             {activeCode === 'DYE' && (
                               <>
-                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  {fmt(group.total_stage_quantity)}{' '}
-                                  <span className="text-[10px] font-normal text-slate-400">pcs</span>
-                                </td>
                                 <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                                     <Droplets className="w-3 h-3 text-blue-600" />
@@ -1191,17 +1170,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                             {/* Generic production stages columns */}
                             {activeCode !== 'REQ' && activeCode !== 'PO' && activeCode !== 'INW' && activeCode !== 'DYE' && (
                               <>
-                                <td className="px-2 py-2.5 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                  <div>
-                                    <span>{fmt(group.total_stage_quantity)}{' '}</span>
-                                    <span className="text-[10px] font-normal text-slate-400">pcs</span>
-                                  </div>
-                                  {group.total_order_quantity > group.total_stage_quantity && (
-                                    <div className="text-[10px] font-normal text-amber-600 font-sans">
-                                      of {fmt(group.total_order_quantity)} ord ({fmt(group.total_order_quantity - group.total_stage_quantity)} awaiting)
-                                    </div>
-                                  )}
-                                </td>
                                 <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
                                   <StatusBadge status={group.status || 'In Progress'} />
                                 </td>
@@ -1437,7 +1405,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    <div className="text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                       <div>
                         <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                           Delivery Date
@@ -1445,15 +1413,6 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                         <div className="flex items-center gap-1 text-slate-700 font-mono text-xs mt-0.5">
                           <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
                           <span>{group.target_delivery_date || '—'}</span>
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Quantity
-                        </span>
-                        <div className="text-slate-900 font-mono font-bold text-xs mt-0.5">
-                          {fmt(activeCode === 'REQ' ? (group.total_order_quantity || group.total_stage_quantity) : group.total_stage_quantity)}{' '}
-                          <span className="text-[10px] font-normal text-slate-500">pcs</span>
                         </div>
                       </div>
 
