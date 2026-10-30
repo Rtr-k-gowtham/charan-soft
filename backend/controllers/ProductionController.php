@@ -169,12 +169,14 @@ class ProductionController {
                            COALESCE(bp.product_name, p.name) as product_name, 
                            COALESCE(bp.product_code, p.code) as product_code, 
                            ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
-                           col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
+                           COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
+                           COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
                     FROM production_order_items poi
                     LEFT JOIN buyer_products bp ON poi.product_id = bp.id
                     LEFT JOIN products p ON poi.product_id = p.id
                     JOIN production_stages ps ON poi.current_stage_id = ps.id
                     LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
+                    LEFT JOIN pantone_colors pcol ON (poi.color = pcol.pantone_name OR poi.color = pcol.pantone_code OR poi.color = pcol.unique_code)
                     WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
                     ORDER BY poi.id ASC
                 ");
@@ -258,7 +260,8 @@ class ProductionController {
                        COALESCE(bp.product_code, p.code) as product_code, 
                        COALESCE(cat.name, po_cat.name, 'General') as category_name,
                        ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
-                       col.pantone_code as color_pantone_code, col.hex_code as color_hex_code
+                       COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
+                       COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
                 FROM production_order_items poi
                 JOIN production_orders po ON poi.production_order_id = po.id
                 LEFT JOIN categories po_cat ON po.category_id = po_cat.id
@@ -267,6 +270,7 @@ class ProductionController {
                 LEFT JOIN categories cat ON p.category_id = cat.id
                 JOIN production_stages ps ON poi.current_stage_id = ps.id
                 LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
+                LEFT JOIN pantone_colors pcol ON (poi.color = pcol.pantone_name OR poi.color = pcol.pantone_code OR poi.color = pcol.unique_code)
                 WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
                 ORDER BY poi.id ASC
             ");

@@ -10,6 +10,7 @@ export interface SelectOption {
   group?: string;
   colorSwatch?: string;
   avatarUri?: string;
+  searchKey?: string;
 }
 
 interface SearchableSelectProps {
@@ -74,10 +75,21 @@ export default function SearchableSelect({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const selectedOption = useMemo(
-    () => options.find((opt) => String(opt.value) === String(value)),
-    [options, value]
-  );
+  const selectedOption = useMemo(() => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const valStr = String(value).trim().toLowerCase();
+    const cleanVal = valStr.replace(/[\s\-_]+/g, '');
+    return options.find((opt) => {
+      const optVal = String(opt.value || '').trim().toLowerCase();
+      const optLabel = String(opt.label || '').trim().toLowerCase();
+      if (optVal === valStr || optLabel === valStr) return true;
+      if (cleanVal.length >= 2) {
+        if (optVal.replace(/[\s\-_]+/g, '') === cleanVal) return true;
+        if (optLabel.replace(/[\s\-_]+/g, '') === cleanVal) return true;
+      }
+      return false;
+    });
+  }, [options, value]);
 
   const updatePosition = useCallback(() => {
     if (containerRef.current) {
@@ -155,14 +167,39 @@ export default function SearchableSelect({
 
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return options;
-    const query = search.toLowerCase();
-    return options.filter(
-      (opt) =>
-        String(opt?.label || '').toLowerCase().includes(query) ||
-        (opt?.sublabel && String(opt.sublabel).toLowerCase().includes(query)) ||
-        (opt?.group && String(opt.group).toLowerCase().includes(query)) ||
-        (opt?.colorSwatch && String(opt.colorSwatch).toLowerCase().includes(query))
-    );
+    const query = search.toLowerCase().trim();
+    const compactQuery = query.replace(/[\s\-_]+/g, '');
+
+    return options.filter((opt) => {
+      if (opt.searchKey) {
+        return opt.searchKey.includes(compactQuery) || opt.searchKey.includes(query);
+      }
+      const label = String(opt?.label || '').toLowerCase();
+      const val = String(opt?.value || '').toLowerCase();
+      const sublabel = String(opt?.sublabel || '').toLowerCase();
+      const swatch = String(opt?.colorSwatch || '').toLowerCase();
+
+      if (
+        label.includes(query) ||
+        val.includes(query) ||
+        sublabel.includes(query) ||
+        swatch.includes(query)
+      ) {
+        return true;
+      }
+
+      if (compactQuery.length >= 2) {
+        if (
+          label.replace(/[\s\-_]+/g, '').includes(compactQuery) ||
+          val.replace(/[\s\-_]+/g, '').includes(compactQuery) ||
+          sublabel.replace(/[\s\-_]+/g, '').includes(compactQuery)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    });
   }, [options, search]);
 
   // Group options if any option has a group
