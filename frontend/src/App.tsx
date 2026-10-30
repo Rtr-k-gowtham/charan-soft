@@ -63,6 +63,7 @@ import Reports from './pages/reports/Reports';
 // Settings
 import { UsersPage, RolesPage, ProductionStagesPage, CompanySettingsPage } from './pages/settings/Settings';
 import POTemplateSettings from './pages/settings/POTemplateSettings';
+import AdminApprovals from './pages/settings/AdminApprovals';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -301,6 +302,7 @@ function AppRoutes() {
               <Route path="/settings/users" element={<AdminRouteGuard><UsersPage /></AdminRouteGuard>} />
               <Route path="/settings/roles" element={<AdminRouteGuard><RolesPage /></AdminRouteGuard>} />
               <Route path="/settings/permissions" element={<AdminRouteGuard><RolesPage /></AdminRouteGuard>} />
+              <Route path="/settings/approvals" element={<AdminRouteGuard><AdminApprovals /></AdminRouteGuard>} />
               <Route path="/settings/stages" element={<AdminRouteGuard><ProductionStagesPage /></AdminRouteGuard>} />
               <Route path="/settings/company" element={<AdminRouteGuard><CompanySettingsPage /></AdminRouteGuard>} />
               <Route path="/settings/po-template" element={<AdminRouteGuard><POTemplateSettings /></AdminRouteGuard>} />

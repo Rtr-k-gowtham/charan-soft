@@ -30,6 +30,8 @@ import {
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
 import StageReworkSection from '../../components/production/StageReworkSection';
 import StageInspectionModal from '../../components/production/StageInspectionModal';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import {
   ArrowLeft,
   MoreVertical,
@@ -150,6 +152,7 @@ export default function DyeingOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Tabs: 'orders' | 'history' | 'rework'
   const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'rework'>('orders');
@@ -2058,11 +2061,23 @@ export default function DyeingOrderDetail() {
               <Plus className="w-3.5 h-3.5 mr-1" />
               <span>Create Dyeing Order</span>
             </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold"
+            >
+              Request Modification
+            </Button>
           </div>
         }
       />
 
       <div className="p-3 sm:p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner orderId={Number(order.id)} stageId={4} />
+
         {/* Order Profile Banner Card */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -3846,6 +3861,30 @@ export default function DyeingOrderDetail() {
         )}
         companySettings={companySettings}
       />
+
+      {/* Stage 04 Dyeing Modification Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id)}
+          orderNumber={order.order_number}
+          orderTitle={order.title}
+          stageId={4}
+          stageName="04. Dyeing"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            notes: order.notes,
+            dyeing_orders: dyeingOrders,
+          }}
+          onSuccess={() => {
+            setSuccessToast('Modification request submitted to Admin for approval!');
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }

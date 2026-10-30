@@ -10,6 +10,8 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSelect';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import { getCategoryVisual } from '../masters/Categories';
 import {
   ArrowLeft,
@@ -68,6 +70,7 @@ export default function RequirementOrderDetail() {
   const [calculating, setCalculating] = useState(false);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Filters & Tabs
   const [activeTab, setActiveTab] = useState<'bom' | 'products' | 'buyer'>('bom');
@@ -554,6 +557,16 @@ export default function RequirementOrderDetail() {
               Generate BOM
             </Button>
 
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Pencil className="w-3.5 h-3.5 text-brand-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold"
+            >
+              Request Modification
+            </Button>
+
             <button
               onClick={() => window.print()}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs print:hidden"
@@ -566,6 +579,9 @@ export default function RequirementOrderDetail() {
       />
 
       <div className="p-3 sm:p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner orderId={Number(order.id)} stageId={1} />
+
         {/* Order Profile Banner Card */}
         <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-2xs">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1457,6 +1473,27 @@ export default function RequirementOrderDetail() {
           />
         </div>
       </Modal>
+
+      {/* Stage Modification Request Modal */}
+      <StageModificationModal
+        isOpen={modModalOpen}
+        onClose={() => setModModalOpen(false)}
+        orderId={Number(order.id)}
+        orderNumber={order.order_number}
+        orderTitle={order.title}
+        stageId={1}
+        stageName="01. Requirement Gathering"
+        currentSnapshot={{
+          order_title: order.title,
+          target_delivery_date: order.target_delivery_date,
+          priority: order.priority,
+          notes: order.notes,
+        }}
+        onSuccess={() => {
+          setSuccessToast('Modification request submitted to Admin for approval!');
+          loadData();
+        }}
+      />
     </div>
   );
 }

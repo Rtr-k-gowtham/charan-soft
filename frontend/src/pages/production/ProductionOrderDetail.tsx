@@ -12,6 +12,8 @@ import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import {
   ArrowLeft,
   Calendar,
@@ -70,6 +72,7 @@ export default function ProductionOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Material Requirements (BOM) State
   const [bomReport, setBomReport] = useState<ProductionOrderBOMReport | null>(null);
@@ -558,6 +561,16 @@ export default function ProductionOrderDetail() {
               Print Requisition
             </Button>
 
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Pencil className="w-3.5 h-3.5 text-brand-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold"
+            >
+              Request Modification
+            </Button>
+
             <button
               onClick={loadData}
               className="p-2 text-slate-500 hover:text-brand-600 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors bg-white shadow-2xs"
@@ -570,6 +583,12 @@ export default function ProductionOrderDetail() {
       />
 
       <div className="p-3 sm:p-5 space-y-4 max-w-7xl mx-auto w-full">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner
+          orderId={Number(order.id)}
+          stageId={Number(order.current_stage_id || 1)}
+        />
+
         {/* Order Summary Header: Left (Buyer & Delivery) / Right (Order ID, Title, Category, Priority, Status) */}
         <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           {/* Left Group: Buyer / Customer & Target Delivery Information */}
@@ -1536,6 +1555,30 @@ export default function ProductionOrderDetail() {
           />
         </div>
       </Modal>
+
+      {/* Stage Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id)}
+          orderNumber={order.order_number}
+          orderTitle={order.title}
+          stageId={Number(order.current_stage_id || 1)}
+          stageName={order.current_stage_name || `Stage ${order.current_stage_id || 1}`}
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            notes: order.notes,
+            items: order.items,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }

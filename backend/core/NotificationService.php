@@ -242,5 +242,118 @@ class NotificationService {
             $stmt->execute([$userId, $notificationId]);
         }
     }
+
+    /**
+     * Notify Admin(s) when a new stage modification request is submitted by Role 1 or Role 2
+     */
+    public static function notifyModificationSubmitted(
+        PDO $pdo,
+        int $requestId,
+        string $requestNumber,
+        int $orderId,
+        int $stageId,
+        string $orderNumber,
+        string $orderTitle,
+        string $stageName,
+        string $requestedByName,
+        int $requestedById
+    ): void {
+        self::ensureTable($pdo);
+        try {
+            // Find all active Admin users
+            $stmt = $pdo->query("
+                SELECT u.id, u.name, u.email
+                FROM users u
+                JOIN roles r ON u.role_id = r.id
+                WHERE u.status = 'active' AND u.deleted_at IS NULL
+                  AND (LOWER(r.name) = 'admin' OR LOWER(r.display_name) = 'system administrator')
+            ");
+            $admins = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $insStmt = $pdo->prepare("
+                INSERT IGNORE INTO notifications 
+                (user_id, event_type, production_order_id, order_number, order_title, source_stage_id, destination_stage_id, source_stage_name, destination_stage_name, title, message, action_url, idempotency_key)
+                VALUES (?, 'MODIFICATION_REQUEST', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            $actionUrl = "/settings/approvals?request_id={$requestId}";
+            $title = "Stage edit submitted for approval: {$orderNumber} ({$stageName})";
+            $msg = "{$requestedByName} submitted modification request {$requestNumber} for {$orderNumber} ({$stageName}). Pending Admin approval.";
+
+            foreach ($admins as $admin) {
+                $idempKey = "MOD_SUBMIT_{$requestId}_ADMIN_{$admin['id']}";
+                $insStmt->execute([
+                    $admin['id'],
+                    $orderId,
+                    $orderNumber,
+                    $orderTitle,
+                    $stageId,
+                    $stageId,
+                    $stageName,
+                    $stageName,
+                    $title,
+                    $msg,
+                    $actionUrl,
+                    $idempKey
+                ]);
+            }
+        } catch (Throwable $e) {
+            error_log("Error notifying admin of modification request: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Notify requesting user when their modification request is Approved or Rejected
+     */
+    public static function notifyModificationDecision(
+        PDO $pdo,
+        int $requestId,
+        string $requestNumber,
+        int $orderId,
+        int $stageId,
+        string $orderNumber,
+        string $orderTitle,
+        string $stageName,
+        int $recipientUserId,
+        string $decision, // 'Approved' | 'Rejected'
+        ?string $remarksOrReason = null
+    ): void {
+        self::ensureTable($pdo);
+        try {
+            $insStmt = $pdo->prepare("
+                INSERT IGNORE INTO notifications 
+                (user_id, event_type, production_order_id, order_number, order_title, source_stage_id, destination_stage_id, source_stage_name, destination_stage_name, title, message, action_url, idempotency_key)
+                VALUES (?, 'MODIFICATION_DECISION', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            $routePrefix = self::STAGE_ROUTES[$stageId] ?? '/tasks';
+            $actionUrl = "{$routePrefix}/{$orderId}";
+
+            $isApproved = strtolower($decision) === 'approved';
+            $title = "Stage edit {$decision}: {$orderNumber} ({$stageName})";
+            $msg = "Your modification request {$requestNumber} for {$orderNumber} ({$stageName}) was {$decision} by Admin.";
+            if (!empty($remarksOrReason)) {
+                $msg .= $isApproved ? " Remarks: {$remarksOrReason}" : " Reason: {$remarksOrReason}";
+            }
+
+            $idempKey = "MOD_DECISION_{$requestId}_USER_{$recipientUserId}_" . strtolower($decision);
+            $insStmt->execute([
+                $recipientUserId,
+                $orderId,
+                $orderNumber,
+                $orderTitle,
+                $stageId,
+                $stageId,
+                $stageName,
+                $stageName,
+                $title,
+                $msg,
+                $actionUrl,
+                $idempKey
+            ]);
+        } catch (Throwable $e) {
+            error_log("Error notifying user of modification decision: " . $e->getMessage());
+        }
+    }
 }
 

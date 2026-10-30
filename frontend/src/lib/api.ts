@@ -366,4 +366,24 @@ export const api = {
   getUnreadNotificationCount: () => request<{ unread_count: number }>('/notifications/unread-count'),
   markNotificationRead: (id?: number, markAll?: boolean) =>
     request<{ success: boolean; unread_count: number }>('/notifications/read', 'POST', { id, all: markAll }),
+
+  // Stage Modification Approvals
+  getApprovals: (params?: { stage_id?: number | string; status?: string; requested_by?: number | string; search?: string; page?: number; per_page?: number }) => {
+    const q = params ? new URLSearchParams(Object.entries(params).filter(([_, v]) => v !== undefined && v !== '' && v !== 'all') as [string, string][]).toString() : '';
+    return request<{ requests: any[]; total: number; page: number; per_page: number; stats: { total_requests: number; pending_approval: number; approved: number; rejected: number } }>(`/approvals${q ? `?${q}` : ''}`);
+  },
+  getApproval: (id: number) => request<any>(`/approvals/${id}`),
+  getPendingApprovalForStage: (orderId: number, stageId: number) =>
+    request<{ has_pending: boolean; request: any | null }>(`/approvals/pending?order_id=${orderId}&stage_id=${stageId}`),
+  createApprovalRequest: (data: {
+    production_order_id: number;
+    stage_id: number;
+    stage_name: string;
+    modification_reason: string;
+    proposed_data: Record<string, any>;
+  }) => request<any>('/approvals/request', 'POST', data),
+  approveModificationRequest: (id: number, data?: { approval_remarks?: string }) =>
+    request<any>(`/approvals/${id}/approve`, 'POST', data || {}),
+  rejectModificationRequest: (id: number, data: { rejection_reason: string }) =>
+    request<any>(`/approvals/${id}/reject`, 'POST', data),
 };

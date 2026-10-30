@@ -325,6 +325,7 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           { label: 'Users', path: '/settings/users' },
           { label: 'Roles', path: '/settings/roles' },
           { label: 'Permissions', path: '/settings/permissions' },
+          { label: 'Stage Approvals', path: '/settings/approvals' },
           { label: 'Production Stages', path: '/settings/stages' },
           { label: 'Company Settings', path: '/settings/company' },
           { label: 'PO Template', path: '/settings/po-template' },

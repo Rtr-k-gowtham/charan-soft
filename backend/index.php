@@ -33,6 +33,7 @@ require_once __DIR__ . '/controllers/DyeingController.php';
 require_once __DIR__ . '/core/Auth.php';
 require_once __DIR__ . '/core/NotificationService.php';
 require_once __DIR__ . '/controllers/NotificationController.php';
+require_once __DIR__ . '/controllers/ApprovalController.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -113,10 +114,18 @@ try {
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && ($action === 'stage' || $r1 === 'stage' || $r2 === 'stage') && $method === 'POST' => (new ProductionController)->moveStage(),
         // Tasks & Notifications
-$r0 === 'notifications' && empty($r1) && $method === 'GET' => (new NotificationController)->index(),
-$r0 === 'notifications' && $r1 === 'unread-count' && $method === 'GET' => (new NotificationController)->unreadCount(),
-$r0 === 'notifications' && $r1 === 'read' && $method === 'POST' => (new NotificationController)->markRead(),
-($r0 === 'tasks' || ($r0 === 'production' && $r1 === 'tasks')) && $method === 'GET' => (new ProductionController)->tasks(),
+        $r0 === 'notifications' && empty($r1) && $method === 'GET' => (new NotificationController)->index(),
+        $r0 === 'notifications' && $r1 === 'unread-count' && $method === 'GET' => (new NotificationController)->unreadCount(),
+        $r0 === 'notifications' && $r1 === 'read' && $method === 'POST' => (new NotificationController)->markRead(),
+        ($r0 === 'tasks' || ($r0 === 'production' && $r1 === 'tasks')) && $method === 'GET' => (new ProductionController)->tasks(),
+        
+        // ---------------- STAGE MODIFICATION APPROVALS ----------------
+        ($r0 === 'approvals' && empty($r1) && $method === 'GET') || ($r0 === 'settings' && $r1 === 'approvals' && empty($r2) && $method === 'GET') => (new ApprovalController)->getApprovals(),
+        $r0 === 'approvals' && $r1 === 'pending' && $method === 'GET' => (new ApprovalController)->getPendingForStage(),
+        $r0 === 'approvals' && $r1 === 'request' && $method === 'POST' => (new ApprovalController)->createRequest(),
+        $r0 === 'approvals' && $id && empty($r2) && $method === 'GET' => (new ApprovalController)->getApproval($id),
+        $r0 === 'approvals' && $id && $r2 === 'approve' && $method === 'POST' => (new ApprovalController)->approve($id),
+        $r0 === 'approvals' && $id && $r2 === 'reject' && $method === 'POST' => (new ApprovalController)->reject($id),
 $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'product-quantities' && $method === 'GET' => (new ProductionController)->orderProductQuantities((int)$r2),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'quantity-ledger' && $method === 'GET' => (new ProductionController)->orderQuantityLedger((int)$r2),

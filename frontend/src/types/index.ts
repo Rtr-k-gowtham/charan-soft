@@ -1021,3 +1021,42 @@ export interface ProductionNotification {
   created_at: string;
   read_at?: string | null;
 }
+
+export interface StageModificationDiffItem {
+  field: string;
+  label: string;
+  original: any;
+  proposed: any;
+  type: 'modified' | 'added' | 'removed';
+}
+
+export interface StageModificationRequest {
+  id: number;
+  request_number: string;
+  production_order_id: number;
+  order_number: string;
+  order_title: string;
+  buyer_name?: string;
+  buyer_code?: string;
+  order_current_stage_name?: string;
+  order_delivery_date?: string;
+  stage_id: number;
+  stage_name: string;
+  requested_by: number;
+  requested_by_name: string;
+  requested_by_role: string;
+  requested_at: string;
+  modification_reason: string;
+  original_data_snapshot: any;
+  proposed_data: any;
+  status: 'Pending Approval' | 'Approved' | 'Rejected';
+  reviewed_by?: number | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  approval_remarks?: string | null;
+  original_record_version?: number;
+  created_at: string;
+  updated_at?: string;
+  changes_diff?: StageModificationDiffItem[];
+}
