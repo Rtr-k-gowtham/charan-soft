@@ -23,11 +23,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const u = JSON.parse(stored);
         if (u) {
-          if (u.id === 1 || u.email === 'admin@cheransoftgoods.com' || u.name === 'K. Senthil Nathan') {
-            u.name = 'Admin';
-            u.username = 'admin';
-            localStorage.setItem('cheran_user', JSON.stringify(u));
-          }
           setUser(u);
         }
       } catch {}
@@ -37,10 +32,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const data = await api.login(email, password) as User;
-    if (data && (data.id === 1 || data.email === 'admin@cheransoftgoods.com' || data.name === 'K. Senthil Nathan')) {
-      data.name = 'Admin';
-      (data as any).username = 'admin';
-    }
     localStorage.setItem('cheran_token', data.token || '');
     localStorage.setItem('cheran_user', JSON.stringify(data));
     setUser(data);

@@ -31,50 +31,7 @@ class Auth {
             return null;
         }
 
-        // 1. Direct mock token shortcuts for demo/testing
-        if (str_starts_with($token, 'jwt_mock_token_admin') || $token === 'admin_token') {
-            self::$cachedUser = [
-                'id' => 1,
-                'name' => 'Admin',
-                'username' => 'admin',
-                'email' => 'admin@cheransoftgoods.com',
-                'role_id' => 1,
-                'role' => 'Admin',
-                'role_name' => 'Admin',
-                'allowed_stages' => self::STAGE_MATRIX['Admin']
-            ];
-            return self::$cachedUser;
-        }
-
-        if (str_starts_with($token, 'jwt_mock_token_role1')) {
-            self::$cachedUser = [
-                'id' => 8,
-                'name' => 'Role 1 User',
-                'username' => 'role1',
-                'email' => 'role1@cheransoftgoods.com',
-                'role_id' => 2,
-                'role' => 'Role 1',
-                'role_name' => 'Role 1',
-                'allowed_stages' => self::STAGE_MATRIX['Role 1']
-            ];
-            return self::$cachedUser;
-        }
-
-        if (str_starts_with($token, 'jwt_mock_token_role2')) {
-            self::$cachedUser = [
-                'id' => 9,
-                'name' => 'Role 2 User',
-                'username' => 'role2',
-                'email' => 'role2@cheransoftgoods.com',
-                'role_id' => 3,
-                'role' => 'Role 2',
-                'role_name' => 'Role 2',
-                'allowed_stages' => self::STAGE_MATRIX['Role 2']
-            ];
-            return self::$cachedUser;
-        }
-
-        // 2. Decode base64 payload
+        // Decode base64 payload and verify with database
         try {
             $json = base64_decode($token, true);
             if ($json) {
@@ -90,11 +47,12 @@ class Auth {
                         LIMIT 1
                     ");
                     $stmt->execute([$userId]);
-                    $user = $stmt->fetch();
+                    $user = $stmt->fetch(PDO::FETCH_ASSOC);
                     if ($user) {
                         $roleName = self::normalizeRoleName((string)$user['role_name']);
                         $user['role'] = $roleName;
                         $user['role_name'] = $roleName;
+                        $user['username'] = $user['name'];
                         $user['allowed_stages'] = self::getAllowedStagesForRole($roleName);
                         self::$cachedUser = $user;
                         return self::$cachedUser;

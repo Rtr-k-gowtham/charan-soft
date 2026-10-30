@@ -2,14 +2,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
-import { User } from '../types';
+import { Eye, EyeOff, Loader2 } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -28,7 +27,7 @@ export default function Login() {
           const u = JSON.parse(stored);
           userRole = u.role || u.role_name || 'Admin';
         }
-      } catch {}
+      } catch { }
 
       if (userRole === 'Role 1' || userRole === 'Role 2') {
         navigate('/tasks');
@@ -40,12 +39,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const setPresetUser = (username: string, pass: string) => {
-    setEmail(username);
-    setPassword(pass);
-    setError('');
   };
 
   return (
@@ -114,7 +107,7 @@ export default function Login() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required
-                placeholder="admin, role1, or role2"
+                placeholder="Enter username or email"
                 className="w-full px-3 py-2 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-200"
               />
             </div>
@@ -151,51 +144,6 @@ export default function Login() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          {/* Quick Demo Sign In Credentials */}
-          <div className="mt-5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-brand-600" />
-              Quick Demo Accounts:
-            </p>
-            <div className="flex flex-col gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPresetUser('admin', 'admin123')}
-                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
-              >
-                <div>
-                  <span className="font-bold text-slate-800">Admin</span>
-                  <span className="text-[10px] text-slate-400 block">Full 10 Stages & Settings</span>
-                </div>
-                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">admin / admin123</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPresetUser('role1', 'password')}
-                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
-              >
-                <div>
-                  <span className="font-bold text-slate-800">Role 1</span>
-                  <span className="text-[10px] text-slate-400 block">Stages 01, 02, 03, 09, 10</span>
-                </div>
-                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">role1 / password</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPresetUser('role2', 'password')}
-                className="w-full p-2 bg-white hover:bg-brand-50/50 border border-slate-200 rounded-lg text-left text-xs transition-colors flex items-center justify-between group"
-              >
-                <div>
-                  <span className="font-bold text-slate-800">Role 2</span>
-                  <span className="text-[10px] text-slate-400 block">Stages 04, 05, 06, 07, 08</span>
-                </div>
-                <span className="font-mono text-[11px] text-brand-700 group-hover:underline">role2 / password</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

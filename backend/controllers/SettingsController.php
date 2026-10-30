@@ -28,10 +28,7 @@ class SettingsController {
             $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($users as &$u) {
                 $u['role_name'] = Auth::normalizeRoleName((string)$u['role_name']);
-                if ($u['id'] == 1 || $u['email'] === 'admin@cheransoftgoods.com') {
-                    $u['name'] = 'Admin';
-                    $u['username'] = 'admin';
-                }
+                $u['username'] = $u['name'];
             }
             Response::success($users);
         } catch (Exception $e) {
@@ -92,14 +89,27 @@ class SettingsController {
 
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ? WHERE id = ?");
-            $stmt->execute([
-                $data['name'] ?? 'User',
-                $data['phone'] ?? null,
-                $roleId,
-                $data['status'] ?? 'active',
-                $id
-            ]);
+            if (!empty($data['password'])) {
+                $pwdHash = password_hash((string)$data['password'], PASSWORD_BCRYPT);
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ?, password_hash = ? WHERE id = ?");
+                $stmt->execute([
+                    $data['name'] ?? 'User',
+                    $data['phone'] ?? null,
+                    $roleId,
+                    $data['status'] ?? 'active',
+                    $pwdHash,
+                    $id
+                ]);
+            } else {
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, phone = ?, role_id = ?, status = ? WHERE id = ?");
+                $stmt->execute([
+                    $data['name'] ?? 'User',
+                    $data['phone'] ?? null,
+                    $roleId,
+                    $data['status'] ?? 'active',
+                    $id
+                ]);
+            }
             Response::success(['id' => $id, 'role_id' => $roleId], "User updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
