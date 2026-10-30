@@ -13,7 +13,8 @@ import {
   Layers,
   Clock,
   ExternalLink,
-  Shield
+  Shield,
+  Menu
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
@@ -24,12 +25,17 @@ interface Props {
   onMobileMenuToggle?: () => void;
 }
 
-export default function Header({ onSidebarToggle }: Props) {
+export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [userOpen, setUserOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
+
+  const userRole = (user?.role || user?.role_name || '').trim();
+  const isAdmin = userRole === 'Admin' || userRole === 'admin' || user?.id === 1;
+  const isRole1 = !isAdmin && (userRole === 'Role 1' || userRole.toLowerCase() === 'role 1' || userRole.toLowerCase() === 'role1');
+  const isRole2 = !isAdmin && (userRole === 'Role 2' || userRole.toLowerCase() === 'role 2' || userRole.toLowerCase() === 'role2');
 
   const [notifications, setNotifications] = useState<ProductionNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -136,6 +142,19 @@ export default function Header({ onSidebarToggle }: Props) {
         >
           <PanelLeft className="w-4 h-4" />
         </button>
+
+        {/* Mobile: Hamburger Menu for Role 1 & Role 2 */}
+        {(isRole1 || isRole2) && (
+          <button
+            type="button"
+            onClick={onMobileMenuToggle}
+            className="flex md:hidden p-1.5 -ml-1 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors active:scale-95"
+            title="Open Menu"
+            aria-label="Open Navigation Drawer"
+          >
+            <Menu className="w-5 h-5 text-slate-700" />
+          </button>
+        )}
 
         {/* Mobile: Logo branding */}
         <div className="flex md:hidden items-center gap-2 min-w-0 pl-1">
