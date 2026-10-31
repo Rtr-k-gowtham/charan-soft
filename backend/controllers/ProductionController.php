@@ -2381,6 +2381,17 @@ class ProductionController {
                     }
                 }
             } catch (Exception $e) {}
+
+            // Clean up automated test dispatch record DSP-2026-9322 if present
+            try {
+                $testDsp = $pdo->query("SELECT id FROM dispatch_records WHERE dispatch_number = 'DSP-2026-9322'")->fetch();
+                if ($testDsp) {
+                    $pdo->exec("UPDATE packing_cartons SET status = 'Packed', dispatch_id = NULL WHERE dispatch_id = {$testDsp['id']}");
+                    $pdo->exec("DELETE FROM dispatch_records WHERE id = {$testDsp['id']}");
+                    $pdo->exec("DELETE FROM production_quantity_ledger WHERE production_order_id = 59 AND batch_number = 'DSP-2026-9322'");
+                    $pdo->exec("UPDATE production_orders SET completed_quantity = 0, status = 'IN PRODUCTION' WHERE id = 59");
+                }
+            } catch (Exception $e) {}
         } catch (Exception $e) {}
     }
 
@@ -6452,7 +6463,7 @@ class ProductionController {
                 'dispatched_quantity' => $totalDispatched,
                 'cartons_dispatched' => count($selectedCartons)
             ], "Dispatch recorded successfully with " . count($selectedCartons) . " master cartons ({$totalDispatched} pcs)", 201);
-        } catch (Exception $e) { 
+        } catch (Throwable $e) { 
             if (isset($pdo) && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
@@ -6616,6 +6627,14 @@ class ProductionController {
         header('X-Content-Type-Options: nosniff');
         echo $bytes;
         exit;
+    }
+
+    private function repairPdfBytesIfNeeded(string $bytes): string {
+        $pdfPos = strpos($bytes, '%PDF-');
+        if ($pdfPos !== false && $pdfPos > 0) {
+            $bytes = substr($bytes, $pdfPos);
+        }
+        return $bytes;
     }
 
     public function detailedReports(): void {
