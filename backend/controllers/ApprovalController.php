@@ -329,26 +329,6 @@ class ApprovalController {
             // 4. Always capture original data snapshot from DB (source of truth)
             $originalSnapshot = self::captureStageSnapshot($pdo, $orderId, $stageId);
 
-            // 5a. Enrich proposed_data with stage-specific records from snapshot as baseline.
-            //     This ensures Admin sees a complete before/after: user-submitted scalar changes
-            //     are applied on top of the full snapshot, so every field is captured.
-            $stageArrayKeys = [
-                'items', 'material_requirements', 'purchase_orders', 'receipts', 'dyeing_orders',
-                'cutting_batches', 'embroidery_jobs', 'stitching_batches',
-                'inspections', 'packing_batches', 'dispatch_records',
-            ];
-            foreach ($stageArrayKeys as $key) {
-                if (isset($originalSnapshot[$key]) && !isset($proposedData[$key])) {
-                    $proposedData[$key] = $originalSnapshot[$key];
-                }
-            }
-            // Fill any missing scalar order fields from snapshot as baseline
-            foreach (['order_title', 'target_delivery_date', 'priority', 'notes'] as $scalar) {
-                if (!isset($proposedData[$scalar]) && isset($originalSnapshot[$scalar])) {
-                    $proposedData[$scalar] = $originalSnapshot[$scalar];
-                }
-            }
-
             // 5. Generate unique request number (e.g. MOD-2026-0001)
             $year = date('Y');
             $countStmt = $pdo->query("SELECT MAX(id) FROM stage_modification_requests");
@@ -771,12 +751,47 @@ class ApprovalController {
      * Diff two arrays of records (each record is an associative array).
      * Records are matched by 'id' when available; otherwise by position.
      * Returns array of diff entries, each with:
-     *   field, label, group_label, record_id, original, proposed, type (modified|added|removed|unchanged)
+     *   field, label, group_label, record_id, record_title, original, proposed, type (modified|added|removed)
      */
     private static function diffRecordArrays(string $key, string $groupLabel, array $origArr, array $propArr): array {
         $fieldLabels = self::getFieldLabels();
-        $skipFields  = ['id', 'production_order_id', 'created_at', 'updated_at', 'deleted_at'];
+        $skipFields  = [
+            'id', 'production_order_id', 'created_at', 'updated_at', 'deleted_at',
+            'current_stage_id', 'completed_quantity', 'rejected_quantity', 'rework_quantity',
+        ];
         $diffs       = [];
+
+        // Helper to format record title for display
+        $getRecordTitle = function(array $rec, string $fallback) use ($key): string {
+            if ($key === 'items') {
+                $name = $rec['product_name'] ?? 'Garment Product';
+                $color = !empty($rec['color']) ? $rec['color'] : (!empty($rec['pantone_color']) ? $rec['pantone_color'] : '');
+                $size = !empty($rec['size']) ? " ({$rec['size']})" : '';
+                return $color ? "{$name} — {$color}{$size}" : "{$name}{$size}";
+            }
+            if ($key === 'dyeing_orders') {
+                $mill = $rec['mill_name'] ?? $rec['supplier_name'] ?? $rec['dyeing_mill_name'] ?? 'Mill';
+                $shade = $rec['shade'] ?? $rec['pantone_color'] ?? '';
+                $dc = !empty($rec['challan_no']) ? " [{$rec['challan_no']}]" : '';
+                return $shade ? "{$mill} ({$shade}){$dc}" : "{$mill}{$dc}";
+            }
+            if ($key === 'cutting_batches' || $key === 'stitching_batches') {
+                $batch = $rec['batch_number'] ?? "Batch";
+                $prod = $rec['product_name'] ?? '';
+                return $prod ? "{$batch} — {$prod}" : "{$batch}";
+            }
+            if ($key === 'purchase_orders') {
+                $poNum = $rec['po_number'] ?? "PO";
+                $supp = $rec['supplier_name'] ?? '';
+                return $supp ? "{$poNum} — {$supp}" : $poNum;
+            }
+            if ($key === 'receipts') {
+                $rcNum = $rec['receipt_no'] ?? $rec['receipt_number'] ?? "GRN";
+                $supp = $rec['supplier_name'] ?? '';
+                return $supp ? "{$rcNum} — {$supp}" : $rcNum;
+            }
+            return $rec['product_name'] ?? $rec['item_name'] ?? $rec['batch_number'] ?? $rec['po_number'] ?? $fallback;
+        };
 
         // Index by id
         $origById = [];
@@ -790,53 +805,59 @@ class ApprovalController {
             if ($id !== null) $propById[(string)$id] = $r;
         }
 
-        // Records removed (in original but not proposed)
-        foreach ($origById as $rid => $origRec) {
-            if (!isset($propById[$rid])) {
-                $label = $fieldLabels[$key] ?? $groupLabel;
+        // 1. Records explicitly marked for deletion in proposed
+        foreach ($propArr as $propRec) {
+            if (!empty($propRec['_deleted']) || !empty($propRec['is_deleted'])) {
+                $rid = (string)($propRec['id'] ?? '');
+                $origRec = $rid !== '' && isset($origById[$rid]) ? $origById[$rid] : null;
+                $title = $origRec ? $getRecordTitle($origRec, "Record #{$rid}") : "Record #{$rid}";
                 $diffs[] = [
-                    'field'       => "{$key}[{$rid}]",
-                    'label'       => $label,
-                    'group_label' => $groupLabel,
-                    'record_id'   => $rid,
-                    'record_type' => 'removed',
-                    'original'    => $origRec,
-                    'proposed'    => null,
-                    'type'        => 'removed',
-                    'sub_diffs'   => [],
+                    'field'        => "{$key}[{$rid}]",
+                    'label'        => $title,
+                    'group_label'  => $groupLabel,
+                    'record_id'    => $rid,
+                    'record_title' => $title,
+                    'record_type'  => 'removed',
+                    'original'     => $origRec,
+                    'proposed'     => null,
+                    'type'         => 'removed',
+                    'sub_diffs'    => [],
                 ];
             }
         }
 
-        // Records added (in proposed but not original)
+        // 2. Records added (in proposed but not in original snapshot)
         foreach ($propById as $rid => $propRec) {
             if (!isset($origById[$rid])) {
+                $title = $getRecordTitle($propRec, "New Record");
                 $diffs[] = [
-                    'field'       => "{$key}[{$rid}]",
-                    'label'       => $groupLabel,
-                    'group_label' => $groupLabel,
-                    'record_id'   => $rid,
-                    'record_type' => 'added',
-                    'original'    => null,
-                    'proposed'    => $propRec,
-                    'type'        => 'added',
-                    'sub_diffs'   => [],
+                    'field'        => "{$key}[{$rid}]",
+                    'label'        => $title,
+                    'group_label'  => $groupLabel,
+                    'record_id'    => $rid,
+                    'record_title' => $title,
+                    'record_type'  => 'added',
+                    'original'     => null,
+                    'proposed'     => $propRec,
+                    'type'         => 'added',
+                    'sub_diffs'    => [],
                 ];
             }
         }
 
-        // Records that exist in both — compare field by field
+        // 3. Records that exist in both — compare only editable fields present in propRec
         foreach ($origById as $rid => $origRec) {
             if (!isset($propById[$rid])) continue;
-            $propRec   = $propById[$rid];
-            $subDiffs  = [];
-            $allFields = array_unique(array_merge(array_keys($origRec), array_keys($propRec)));
-            foreach ($allFields as $f) {
+            $propRec = $propById[$rid];
+            if (!empty($propRec['_deleted']) || !empty($propRec['is_deleted'])) continue;
+
+            $subDiffs = [];
+            foreach ($propRec as $f => $pv) {
                 if (in_array($f, $skipFields, true)) continue;
-                $ov = $origRec[$f] ?? null;
-                $pv = $propRec[$f] ?? null;
+                if (!array_key_exists($f, $origRec)) continue;
+                $ov = $origRec[$f];
                 if (!self::scalarEqual($ov, $pv)) {
-                    $fLabel     = $fieldLabels[$f] ?? ucwords(str_replace('_', ' ', $f));
+                    $fLabel = $fieldLabels[$f] ?? ucwords(str_replace('_', ' ', (string)$f));
                     $subDiffs[] = [
                         'field'    => $f,
                         'label'    => $fLabel,
@@ -847,61 +868,19 @@ class ApprovalController {
                 }
             }
             if (!empty($subDiffs)) {
+                $title = $getRecordTitle($origRec, "Record #{$rid}");
                 $diffs[] = [
-                    'field'       => "{$key}[{$rid}]",
-                    'label'       => $groupLabel,
-                    'group_label' => $groupLabel,
-                    'record_id'   => $rid,
-                    'record_type' => 'modified',
-                    'original'    => $origRec,
-                    'proposed'    => $propRec,
-                    'type'        => 'modified',
-                    'sub_diffs'   => $subDiffs,
+                    'field'        => "{$key}[{$rid}]",
+                    'label'        => $title,
+                    'group_label'  => $groupLabel,
+                    'record_id'    => $rid,
+                    'record_title' => $title,
+                    'record_type'  => 'modified',
+                    'original'     => $origRec,
+                    'proposed'     => $propRec,
+                    'type'         => 'modified',
+                    'sub_diffs'    => $subDiffs,
                 ];
-            }
-        }
-
-        // Fallback: if no ids, compare by position
-        if (empty($origById) && empty($propById)) {
-            $maxLen = max(count($origArr), count($propArr));
-            for ($i = 0; $i < $maxLen; $i++) {
-                $origRec = $origArr[$i] ?? null;
-                $propRec = $propArr[$i] ?? null;
-                if ($origRec === null) {
-                    $diffs[] = [
-                        'field' => "{$key}[{$i}]", 'label' => $groupLabel,
-                        'group_label' => $groupLabel, 'record_id' => $i,
-                        'record_type' => 'added', 'original' => null,
-                        'proposed' => $propRec, 'type' => 'added', 'sub_diffs' => [],
-                    ];
-                } elseif ($propRec === null) {
-                    $diffs[] = [
-                        'field' => "{$key}[{$i}]", 'label' => $groupLabel,
-                        'group_label' => $groupLabel, 'record_id' => $i,
-                        'record_type' => 'removed', 'original' => $origRec,
-                        'proposed' => null, 'type' => 'removed', 'sub_diffs' => [],
-                    ];
-                } elseif (json_encode($origRec) !== json_encode($propRec)) {
-                    $subDiffs = [];
-                    $allFields = array_unique(array_merge(array_keys($origRec), array_keys($propRec)));
-                    $skipF = ['id','production_order_id','created_at','updated_at','deleted_at'];
-                    foreach ($allFields as $f) {
-                        if (in_array($f, $skipF, true)) continue;
-                        $ov = $origRec[$f] ?? null; $pv = $propRec[$f] ?? null;
-                        if (!self::scalarEqual($ov, $pv)) {
-                            $fL = self::getFieldLabels()[$f] ?? ucwords(str_replace('_', ' ', $f));
-                            $subDiffs[] = ['field'=>$f,'label'=>$fL,'original'=>$ov,'proposed'=>$pv,'type'=>'modified'];
-                        }
-                    }
-                    if (!empty($subDiffs)) {
-                        $diffs[] = [
-                            'field' => "{$key}[{$i}]", 'label' => $groupLabel,
-                            'group_label' => $groupLabel, 'record_id' => $i,
-                            'record_type' => 'modified', 'original' => $origRec,
-                            'proposed' => $propRec, 'type' => 'modified', 'sub_diffs' => $subDiffs,
-                        ];
-                    }
-                }
             }
         }
 
@@ -918,31 +897,40 @@ class ApprovalController {
         $arrayKeys   = self::getArrayKeys();
         $scalarSkip  = ['order_id', 'order_number']; // internal IDs not shown
 
-        // 1. Scalar fields
+        // 1. Scalar fields: only compare fields that were actually submitted in proposed
         $scalarFields = ['order_title', 'target_delivery_date', 'priority', 'notes', 'remarks'];
         foreach ($scalarFields as $key) {
             if (in_array($key, $scalarSkip, true)) continue;
+            // If the user did not propose changes to this scalar field, do NOT diff it!
+            if (!array_key_exists($key, $proposed)) continue;
+
             $origVal = $original[$key] ?? null;
             $propVal = $proposed[$key] ?? null;
+
             if (self::scalarEqual($origVal, $propVal)) continue;
+
             $label = $fieldLabels[$key] ?? ucwords(str_replace('_', ' ', $key));
             $diff[] = [
-                'field'       => $key,
-                'label'       => $label,
-                'group_label' => null,
-                'record_id'   => null,
-                'record_type' => 'scalar',
-                'original'    => $origVal ?? '—',
-                'proposed'    => $propVal ?? '—',
-                'type'        => ($origVal === null || $origVal === '') ? 'added' : 'modified',
-                'sub_diffs'   => [],
+                'field'        => $key,
+                'label'        => $label,
+                'group_label'  => null,
+                'record_id'    => null,
+                'record_title' => null,
+                'record_type'  => 'scalar',
+                'original'     => $origVal ?? '—',
+                'proposed'     => $propVal ?? '—',
+                'type'         => ($origVal === null || $origVal === '') ? 'added' : 'modified',
+                'sub_diffs'    => [],
             ];
         }
 
-        // 2. Array / record collections
+        // 2. Array / record collections: only compare arrays that were actually submitted in proposed
         foreach ($arrayKeys as $key => $groupLabel) {
+            if (!isset($proposed[$key]) || !is_array($proposed[$key])) {
+                continue;
+            }
             $origArr = isset($original[$key]) && is_array($original[$key]) ? $original[$key] : [];
-            $propArr = isset($proposed[$key]) && is_array($proposed[$key]) ? $proposed[$key] : [];
+            $propArr = $proposed[$key];
             if (empty($origArr) && empty($propArr)) continue;
             $arrDiffs = self::diffRecordArrays($key, $groupLabel, $origArr, $propArr);
             $diff = array_merge($diff, $arrDiffs);
@@ -957,15 +945,16 @@ class ApprovalController {
             if (self::scalarEqual($origVal, $propVal)) continue;
             $label = $fieldLabels[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
             $diff[] = [
-                'field'       => $key,
-                'label'       => $label,
-                'group_label' => null,
-                'record_id'   => null,
-                'record_type' => 'scalar',
-                'original'    => $origVal ?? '—',
-                'proposed'    => $propVal ?? '—',
-                'type'        => ($origVal === null || $origVal === '') ? 'added' : 'modified',
-                'sub_diffs'   => [],
+                'field'        => $key,
+                'label'        => $label,
+                'group_label'  => null,
+                'record_id'    => null,
+                'record_title' => null,
+                'record_type'  => 'scalar',
+                'original'     => $origVal ?? '—',
+                'proposed'     => $propVal ?? '—',
+                'type'         => ($origVal === null || $origVal === '') ? 'added' : 'modified',
+                'sub_diffs'    => [],
             ];
         }
 

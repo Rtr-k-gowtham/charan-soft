@@ -711,11 +711,18 @@ export default function AdminApprovals() {
                               {groupDiffs.map((rec: any, rIdx: number) => (
                                 <div key={rIdx} className={`${rec.record_type === 'added' ? 'bg-emerald-50/30' : rec.record_type === 'removed' ? 'bg-rose-50/30' : 'bg-amber-50/10'}`}>
                                   {/* Record header */}
-                                  <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-100 bg-white/50">
-                                    <span className="text-[11px] font-bold text-slate-700">
-                                      Record #{rec.record_id ?? rIdx + 1}
-                                    </span>
-                                    {typeBadge(rec.record_type)}
+                                  <div className="px-4 py-2 flex items-center justify-between border-b border-slate-100 bg-white/50">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-bold text-slate-800">
+                                        {rec.record_title || rec.label || `Record #${rec.record_id ?? rIdx + 1}`}
+                                      </span>
+                                      {typeBadge(rec.record_type || rec.type)}
+                                    </div>
+                                    {rec.record_id && (
+                                      <span className="text-[10px] text-slate-400 font-mono">
+                                        ID: {rec.record_id}
+                                      </span>
+                                    )}
                                   </div>
 
                                   {/* Sub-field diffs for modified records */}
