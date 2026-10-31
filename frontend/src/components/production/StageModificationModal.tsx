@@ -251,7 +251,7 @@ export default function StageModificationModal({
         </div>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs max-h-[75vh] overflow-y-auto pr-1">
+      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         {/* Option A Notice Banner */}
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900">
           <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
