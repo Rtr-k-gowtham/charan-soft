@@ -212,6 +212,15 @@ export default function EmbroideryOrderDetail() {
   const [transferRemarks, setTransferRemarks] = useState('');
   const [transferring, setTransferring] = useState(false);
   const [transferError, setTransferError] = useState('');
+  const [transferJobLines, setTransferJobLines] = useState<Array<{
+    item_id: number;
+    product_name: string;
+    product_code?: string;
+    color: string;
+    size?: string;
+    quantity: number;
+    max: number;
+  }>>([]);
 
   // Rework Records State
   const [reworkRecords, setReworkRecords] = useState<ReworkRecord[]>([]);
@@ -1225,12 +1234,27 @@ export default function EmbroideryOrderDetail() {
     let it = itemOrJob;
     let jId: number | undefined = undefined;
     let maxAvailForThis = availableInHandToTransfer;
+    let jobLines: Array<{ item_id: number; product_name: string; product_code?: string; color: string; size?: string; quantity: number; max: number }> = [];
 
     if (itemOrJob && itemOrJob.total_quantity_sent !== undefined) {
-      // It's a job order
+      // It's a job order with multiple possible items
       jId = itemOrJob.id;
-      const jobItemId = Array.isArray(itemOrJob.items_json) && itemOrJob.items_json[0]?.production_order_item_id;
-      it = (jobItemId && items.find(i => i.id === jobItemId || i.active_embroidery_item_id === jobItemId)) || items[0];
+      const jItems = Array.isArray(itemOrJob.items_json) ? itemOrJob.items_json : [];
+      if (jItems.length > 0) {
+        jobLines = jItems.map((ji: any) => {
+          const matchedItem = items.find(i => (ji.production_order_item_id && (i.id === ji.production_order_item_id || i.active_embroidery_item_id === ji.production_order_item_id)) || (i.product_id === ji.product_id && (i.color || '').trim().toLowerCase() === (ji.color || '').trim().toLowerCase()));
+          const q = Number(ji.quantity_sent || ji.received_quantity || 0);
+          return {
+            item_id: Number(ji.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || 0),
+            product_name: ji.product_name || matchedItem?.product_name || 'Product',
+            product_code: ji.product_code || matchedItem?.product_code,
+            color: ji.color || matchedItem?.color || 'Standard',
+            size: ji.size || matchedItem?.size || 'M',
+            quantity: q,
+            max: q
+          };
+        });
+      }
       const jobRec = Number(itemOrJob.total_quantity_received || 0);
       const jobTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
       const jobAvail = Math.max(0, jobRec - jobTrf);
@@ -1240,25 +1264,43 @@ export default function EmbroideryOrderDetail() {
     } else if (itemOrJob && (itemOrJob.receipt_number || itemOrJob.job_order_id)) {
       // It's an inward receipt
       jId = itemOrJob.job_order_id;
-      it = items[0] || null;
+      const rItems = Array.isArray(itemOrJob.items_data) ? itemOrJob.items_data : [];
+      if (rItems.length > 0) {
+        jobLines = rItems.map((ri: any) => {
+          const matchedItem = items.find(i => (ri.production_order_item_id && (i.id === ri.production_order_item_id || i.active_embroidery_item_id === ri.production_order_item_id)) || (i.product_id === ri.product_id && (i.color || '').trim().toLowerCase() === (ri.color || '').trim().toLowerCase()));
+          const q = Number(ri.received_quantity || 0);
+          return {
+            item_id: Number(ri.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || 0),
+            product_name: ri.product_name || matchedItem?.product_name || 'Product',
+            product_code: ri.product_code || matchedItem?.product_code,
+            color: ri.color || matchedItem?.color || 'Standard',
+            size: ri.size || matchedItem?.size || 'M',
+            quantity: q,
+            max: q
+          };
+        });
+      }
       const rRec = Number(itemOrJob.total_received_qty || 0);
       const rTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
       const rAvail = itemOrJob.available_to_transfer !== undefined ? Number(itemOrJob.available_to_transfer) : Math.max(0, rRec - rTrf);
       if (rAvail > 0) {
         maxAvailForThis = Math.min(availableInHandToTransfer, rAvail);
       }
-    } else if (itemOrJob && (itemOrJob.ready_to_transfer !== undefined || itemOrJob.available_to_dispatch !== undefined)) {
-      // It's a product item
+    } else if (itemOrJob && (itemOrJob.ready_to_transfer !== undefined || itemOrJob.available_to_dispatch !== undefined || itemOrJob.product_name !== undefined)) {
+      // It's a specific product line item clicked from the product table!
       it = itemOrJob;
-      const itReady = Number(itemOrJob.ready_to_transfer || 0);
-      if (itReady > 0) {
-        maxAvailForThis = Math.min(availableInHandToTransfer, itReady);
+      const itReady = Number(itemOrJob.ready_to_transfer !== undefined ? itemOrJob.ready_to_transfer : (Number(itemOrJob.received_inward || itemOrJob.accepted_inward || 0) - Number(itemOrJob.transferred_to_stitching || 0)));
+      if (itReady <= 0) {
+        showToast(`No embroidery pieces of ${itemOrJob.product_name || 'this product'} are currently ready to transfer.`);
+        return;
       }
+      maxAvailForThis = itReady;
     } else if (!itemOrJob) {
       it = items[0] || null;
     }
 
     setSelectedReworkForTransfer(null);
+    setTransferJobLines(jobLines);
     setTransferItem({ ...it, job_order_id: jId });
     setTransferQuantity(maxAvailForThis);
     setTransferRemarks('Embroidery received from vendor and transferred to Stage 07: Stitching.');
@@ -1292,6 +1334,7 @@ export default function EmbroideryOrderDetail() {
     }
 
     setSelectedReworkForTransfer(rec);
+    setTransferJobLines([]);
     setTransferItem(items[0] || null);
     setTransferQuantity(availableInHandToTransfer);
     setTransferRemarks(`Reworked embroidery #${rec.rework_order_no} accepted and transferred to Stage 07: Stitching.`);
@@ -1302,13 +1345,51 @@ export default function EmbroideryOrderDetail() {
   // Confirm Stage Transfer
   const handleConfirmTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!order || transferQuantity <= 0) {
+    if (!order) return;
+
+    if (transferJobLines.length > 0) {
+      const totalJobLineQty = transferJobLines.reduce((s, l) => s + (Number(l.quantity) || 0), 0);
+      if (totalJobLineQty <= 0) {
+        setTransferError('Please enter at least one product line with quantity > 0.');
+        return;
+      }
+      try {
+        setTransferring(true);
+        setTransferError('');
+        await api.transferEmbroideryOutput({
+          production_order_id: order.id,
+          job_order_id: transferItem?.job_order_id,
+          items: transferJobLines.map(l => ({
+            item_id: l.item_id,
+            quantity: Number(l.quantity)
+          })),
+          transfer_quantity: totalJobLineQty,
+          destination_stage_id: 7,
+          destination_stage_name: 'Stitching — Color-wise Tracking',
+          remarks: transferRemarks,
+          operator_name: 'M. Ramesh',
+          supervisor_name: 'K. Balan'
+        });
+
+        setTransferModalOpen(false);
+        showToast(`Successfully transferred ${totalJobLineQty} pcs to Stage 07: Stitching!`);
+        await fetchOrderData();
+      } catch (err: any) {
+        setTransferError(err.message || 'Failed to transfer embroidery pieces to Stitching.');
+      } finally {
+        setTransferring(false);
+      }
+      return;
+    }
+
+    if (transferQuantity <= 0) {
       setTransferError('Please enter a positive transfer quantity.');
       return;
     }
 
-    if (transferQuantity > availableInHandToTransfer + 0.001) {
-      setTransferError(`Transfer quantity (${transferQuantity} pcs) exceeds available in hand (${availableInHandToTransfer} pcs).`);
+    const maxLimit = transferItem?.ready_to_transfer || availableInHandToTransfer;
+    if (transferQuantity > maxLimit + 0.001) {
+      setTransferError(`Transfer quantity (${transferQuantity} pcs) exceeds available limit (${maxLimit} pcs).`);
       return;
     }
 
@@ -3249,54 +3330,100 @@ export default function EmbroideryOrderDetail() {
             <span className="text-sm font-bold text-purple-900 block">
               Stage 07: Stitching — Color-wise Tracking
             </span>
-            <span className="text-xs text-purple-700 block">
-              Product: <strong>{transferItem?.product_name || 'sample'}</strong> • Color: <strong>{transferItem?.color || 'Standard'}</strong>
-            </span>
-          </div>
-
-          <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border border-purple-200 rounded-xl text-xs space-y-1.5 font-mono">
-            <div className="flex justify-between items-center">
-              <span className="text-slate-600 font-sans font-medium">Available in Hand to Transfer:</span>
-              <strong className="text-purple-700 text-sm font-bold">
-                {fmt(availableInHandToTransfer)} pcs
-              </strong>
-            </div>
-            {activeReworkQty > 0 && (
-              <div className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-between font-sans">
-                <span className="flex items-center gap-1 font-medium">
-                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                  Rework at Embroidery Mill:
-                </span>
-                <span className="font-mono font-bold text-amber-900">
-                  {fmt(activeReworkQty)} pcs away
-                </span>
-              </div>
+            {transferJobLines.length > 0 ? (
+              <span className="text-xs text-purple-700 block font-medium">
+                Consolidated Transfer • {transferJobLines.length} product lines in Job Order
+              </span>
+            ) : (
+              <span className="text-xs text-purple-700 block">
+                Product: <strong>{transferItem?.product_name || 'Product'}</strong> • Color: <strong>{transferItem?.color || 'Standard'}</strong>
+              </span>
             )}
           </div>
 
-          <FormField label="Quantity to Transfer (Pieces) *" required>
-            <div className="space-y-1">
+          {transferJobLines.length > 0 ? (
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-slate-400">Available to transfer</span>
-                <button
-                  type="button"
-                  onClick={() => setTransferQuantity(availableInHandToTransfer)}
-                  className="text-[10px] font-bold text-purple-700 hover:underline cursor-pointer"
-                >
-                  Max ({fmt(availableInHandToTransfer)} pcs)
-                </button>
+                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+                  Product Breakdown ({transferJobLines.length} items)
+                </span>
+                <span className="text-[11px] font-mono font-bold text-purple-700">
+                  Total: {fmt(transferJobLines.reduce((s, l) => s + (Number(l.quantity) || 0), 0))} pcs
+                </span>
               </div>
-              <input
-                type="number"
-                min="1"
-                max={availableInHandToTransfer}
-                value={transferQuantity}
-                onChange={e => setTransferQuantity(Number(e.target.value))}
-                className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                required
-              />
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {transferJobLines.map((line, idx) => (
+                  <div key={line.item_id || idx} className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-3 shadow-2xs">
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 text-xs block truncate">{line.product_name}</span>
+                      <span className="text-[11px] text-slate-500 font-medium">Color: <strong className="text-slate-700">{line.color}</strong></span>
+                      {line.size && <span className="text-[10px] text-slate-400 block">Size: {line.size}</span>}
+                    </div>
+                    <div className="w-28 shrink-0">
+                      <div className="text-[10px] text-slate-400 text-right mb-0.5">Avail: {line.max} pcs</div>
+                      <input
+                        type="number"
+                        min="0"
+                        max={line.max}
+                        value={line.quantity}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setTransferJobLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: val } : l));
+                        }}
+                        className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1 px-2 text-right text-purple-700 focus:ring-1 focus:ring-purple-500 bg-purple-50/30"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </FormField>
+          ) : (
+            <>
+              <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white border border-purple-200 rounded-xl text-xs space-y-1.5 font-mono">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 font-sans font-medium">Available for this product:</span>
+                  <strong className="text-purple-700 text-sm font-bold">
+                    {fmt(transferQuantity)} pcs
+                  </strong>
+                </div>
+                {activeReworkQty > 0 && (
+                  <div className="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center justify-between font-sans">
+                    <span className="flex items-center gap-1 font-medium">
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                      Rework at Embroidery Mill:
+                    </span>
+                    <span className="font-mono font-bold text-amber-900">
+                      {fmt(activeReworkQty)} pcs away
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <FormField label="Quantity to Transfer (Pieces) *" required>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">Available to transfer</span>
+                    <button
+                      type="button"
+                      onClick={() => setTransferQuantity(transferItem?.ready_to_transfer || availableInHandToTransfer)}
+                      className="text-[10px] font-bold text-purple-700 hover:underline cursor-pointer"
+                    >
+                      Max ({fmt(transferItem?.ready_to_transfer || availableInHandToTransfer)} pcs)
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max={transferItem?.ready_to_transfer || availableInHandToTransfer}
+                    value={transferQuantity}
+                    onChange={e => setTransferQuantity(Number(e.target.value))}
+                    className="w-full text-xs font-mono font-bold rounded-lg border border-slate-300 py-1.5 px-2.5 bg-white text-purple-700 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    required
+                  />
+                </div>
+              </FormField>
+            </>
+          )}
 
           <FormField label="Transfer Handover Notes">
             <textarea

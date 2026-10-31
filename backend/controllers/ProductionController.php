@@ -2353,6 +2353,34 @@ class ProductionController {
             try {
                 $pdo->exec("ALTER TABLE `stitching_batches` ADD COLUMN `inspection_status` VARCHAR(50) DEFAULT 'Pending Inspection' AFTER `accepted_quantity`");
             } catch (Exception $e) {}
+
+            // One-time self-healing data repair for Order 57 (Organic Cotton Bedsheet and Test Product V1)
+            try {
+                $checkItem121 = $pdo->query("SELECT id, total_quantity, current_stage_quantity FROM production_order_items WHERE id = 121 AND production_order_id = 57")->fetch();
+                if ($checkItem121 && (float)$checkItem121['total_quantity'] > 100.01) {
+                    // Restore Item 121 order qty to 100
+                    $pdo->exec("UPDATE production_order_items SET total_quantity = 100.00, current_stage_quantity = 100.00, current_stage_id = 7, status = 'In Progress' WHERE id = 121 AND production_order_id = 57");
+
+                    // Move items 124 and 125 that were also received from embroidery job order to stage 7 with 100 pcs
+                    $pdo->exec("UPDATE production_order_items SET current_stage_id = 7, current_stage_quantity = 100.00, total_quantity = 100.00, status = 'In Progress' WHERE id IN (124, 125) AND production_order_id = 57");
+
+                    // Fix ledger quantities: update 300 to 100 for item 121
+                    $pdo->exec("UPDATE production_quantity_ledger SET quantity = 100.00 WHERE production_order_id = 57 AND production_order_item_id = 121 AND quantity = 300.00 AND transaction_type IN ('TRANSFER_OUT', 'TRANSFER_IN')");
+
+                    // Ensure items 124 and 125 have transfer ledger records
+                    $has124 = $pdo->query("SELECT id FROM production_quantity_ledger WHERE production_order_id = 57 AND production_order_item_id = 124 AND stage_id = 7 AND transaction_type = 'TRANSFER_IN'")->fetchColumn();
+                    if (!$has124) {
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 124, 6, 'EMB', 'TRANSFER_OUT', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Transferred to Stitching — Color-wise Tracking')");
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 124, 7, 'STI', 'TRANSFER_IN', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Received from Embroidery')");
+                    }
+
+                    $has125 = $pdo->query("SELECT id FROM production_quantity_ledger WHERE production_order_id = 57 AND production_order_item_id = 125 AND stage_id = 7 AND transaction_type = 'TRANSFER_IN'")->fetchColumn();
+                    if (!$has125) {
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 125, 6, 'EMB', 'TRANSFER_OUT', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Transferred to Stitching — Color-wise Tracking')");
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 125, 7, 'STI', 'TRANSFER_IN', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Received from Embroidery')");
+                    }
+                }
+            } catch (Exception $e) {}
         } catch (Exception $e) {}
     }
 
@@ -3764,26 +3792,62 @@ class ProductionController {
                 return;
             }
 
-            // 2. Find matching item at Stage 6
-            $item = null;
-            if ($itemId > 0) {
-                $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? FOR UPDATE");
-                $iStmt->execute([$itemId]);
-                $item = $iStmt->fetch();
-            }
-            if (!$item || (int)$item['current_stage_id'] !== 6) {
-                $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND current_stage_id = 6 ORDER BY id ASC LIMIT 1 FOR UPDATE");
-                $fStmt->execute([$pId]);
-                $item = $fStmt->fetch();
-            }
-            if (!$item) {
-                $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? ORDER BY id ASC LIMIT 1 FOR UPDATE");
-                $fStmt->execute([$pId]);
-                $item = $fStmt->fetch();
+            // 2. Build transfer entries (supports individual item transfer or itemized job order transfer)
+            $transferEntries = [];
+            if (!empty($data['items']) && is_array($data['items'])) {
+                foreach ($data['items'] as $itEntry) {
+                    $entryQty = (float)($itEntry['quantity'] ?? $itEntry['transfer_quantity'] ?? 0);
+                    $entryItemId = (int)($itEntry['item_id'] ?? $itEntry['production_order_item_id'] ?? 0);
+                    if ($entryQty > 0 && $entryItemId > 0) {
+                        $transferEntries[] = ['item_id' => $entryItemId, 'quantity' => $entryQty];
+                    }
+                }
+            } else if ($jobId > 0 && ($itemId <= 0 || empty($data['item_id']))) {
+                // If a job order was transferred without specifying item_id, read its items_json
+                $jStmt = $pdo->prepare("SELECT * FROM embroidery_job_orders WHERE id = ?");
+                $jStmt->execute([$jobId]);
+                $jOrder = $jStmt->fetch();
+                if ($jOrder && !empty($jOrder['items_json'])) {
+                    $jItems = json_decode($jOrder['items_json'], true) ?: [];
+                    foreach ($jItems as $ji) {
+                        $jItemQty = (float)($ji['quantity_sent'] ?? 0);
+                        $jItemId = (int)($ji['production_order_item_id'] ?? 0);
+                        if ($jItemQty > 0 && $jItemId > 0) {
+                            $transferEntries[] = ['item_id' => $jItemId, 'quantity' => $jItemQty];
+                        }
+                    }
+                }
             }
 
-            $effectiveDestItemId = 0;
-            if ($item) {
+            if (empty($transferEntries)) {
+                $transferEntries[] = ['item_id' => $itemId, 'quantity' => $qty];
+            }
+
+            $lastEffectiveDestItemId = 0;
+            foreach ($transferEntries as $entry) {
+                $eItemId = $entry['item_id'];
+                $eQty = $entry['quantity'];
+                if ($eQty <= 0) continue;
+
+                $item = null;
+                if ($eItemId > 0) {
+                    $iStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE id = ? FOR UPDATE");
+                    $iStmt->execute([$eItemId]);
+                    $item = $iStmt->fetch();
+                }
+                if (!$item || (int)$item['current_stage_id'] !== 6) {
+                    $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND current_stage_id = 6 ORDER BY id ASC LIMIT 1 FOR UPDATE");
+                    $fStmt->execute([$pId]);
+                    $item = $fStmt->fetch();
+                }
+                if (!$item) {
+                    $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? ORDER BY id ASC LIMIT 1 FOR UPDATE");
+                    $fStmt->execute([$pId]);
+                    $item = $fStmt->fetch();
+                }
+                if (!$item) continue;
+
+                $effectiveDestItemId = 0;
                 // Check if an item already exists in Stage 7 for the same order, product, and color
                 $matchStmt = $pdo->prepare("
                     SELECT id FROM production_order_items 
@@ -3793,48 +3857,40 @@ class ProductionController {
                 $matchStmt->execute([$pId, $item['product_id'], $item['color'], $destStageId]);
                 $existingDestItemId = $matchStmt->fetchColumn();
 
-                if ($existingDestItemId) {
+                if ($existingDestItemId && (int)$existingDestItemId !== (int)$item['id']) {
                     $effectiveDestItemId = (int)$existingDestItemId;
-                    // Add quantity to existing item at Stitching stage
+                    // Add quantity to existing item at Stitching stage - NEVER inflate total_quantity!
                     $pdo->prepare("
                         UPDATE production_order_items 
                         SET current_stage_quantity = current_stage_quantity + ?,
-                            total_quantity = total_quantity + ?,
                             status = 'In Progress'
                         WHERE id = ?
-                    ")->execute([$qty, $qty, $existingDestItemId]);
+                    ")->execute([$eQty, $existingDestItemId]);
 
                     // Deduct from current item at Embroidery stage
-                    $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
-                    $remTotal = max(0.0, (float)$item['total_quantity'] - $qty);
+                    $remQty = max(0.0, (float)$item['current_stage_quantity'] - $eQty);
                     if ($remQty <= 0.001 && (int)$item['current_stage_id'] === 6) {
                         $pdo->prepare("DELETE FROM production_order_items WHERE id = ?")->execute([$item['id']]);
                     } else {
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")->execute([$remQty, $remTotal, $item['id']]);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")->execute([$remQty, $item['id']]);
                     }
                 } else {
                     $curStageQty = (float)($item['current_stage_quantity'] ?? 0);
-                    $totalItemQty = (float)($item['total_quantity'] ?? 0);
-                    $effectiveItemQty = max($curStageQty, $totalItemQty);
-
-                    if (($qty >= $curStageQty - 0.001 && $curStageQty > 0) || ($qty >= $effectiveItemQty - 0.001 && (int)$item['current_stage_id'] === 6)) {
-                        // Entire item advances to destination stage
+                    if (($eQty >= $curStageQty - 0.001 && $curStageQty > 0) || (int)$item['current_stage_id'] === 6) {
+                        // Entire item advances to destination stage! NEVER mutate total_quantity!
                         $pdo->prepare("
                             UPDATE production_order_items 
                             SET current_stage_id = ?,
                                 current_stage_quantity = ?,
-                                total_quantity = GREATEST(total_quantity, ?),
                                 status = 'In Progress'
                             WHERE id = ?
-                        ")->execute([$destStageId, $qty, $qty, $item['id']]);
+                        ")->execute([$destStageId, $eQty, $item['id']]);
                         $effectiveDestItemId = (int)$item['id'];
                     } else {
                         // Split item: reduce current item in embroidery, create new item in stitching
-                        $remStageQty = max(0.0, $curStageQty - $qty);
-                        $remTotalQty = max($remStageQty, (float)$item['total_quantity'] - $qty);
-
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
-                            ->execute([$remStageQty, $remTotalQty, $item['id']]);
+                        $remStageQty = max(0.0, $curStageQty - $eQty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
+                            ->execute([$remStageQty, $item['id']]);
 
                         $insNewItem = $pdo->prepare("
                             INSERT INTO production_order_items 
@@ -3845,13 +3901,36 @@ class ProductionController {
                             $pId,
                             $item['product_id'],
                             $item['color'],
-                            $qty,
+                            $item['total_quantity'],
                             $destStageId,
-                            $qty
+                            $eQty
                         ]);
                         $effectiveDestItemId = (int)$pdo->lastInsertId();
                     }
                 }
+                $lastEffectiveDestItemId = $effectiveDestItemId;
+
+                // Log stage transaction per item
+                $tStmt = $pdo->prepare("
+                    INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
+                    VALUES (?, 6, ?, ?, ?)
+                ");
+                $tStmt->execute([$effectiveDestItemId ?: ($item['id'] ?? 0), $destStageId, $eQty, $remarks]);
+
+                // Log quantity ledger per item (both OUT from Stage 6 and IN to Stage 7)
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, 6, 'EMB', 'TRANSFER_OUT', ?, '', ?, ?, 'Embroidery Transfer', ?, ?)
+                ");
+                $lStmt->execute([$pId, $item['id'] ?? 0, $eQty, $data['operator_name'] ?? '', $data['supervisor_name'] ?? '', (string)$destStageId, "Transferred to {$destName}"]);
+
+                $lStmtIn = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, ?, 'STI', 'TRANSFER_IN', ?, '', ?, ?, 'Embroidery Transfer', ?, ?)
+                ");
+                $lStmtIn->execute([$pId, $effectiveDestItemId ?: ($item['id'] ?? 0), $destStageId, $eQty, $data['operator_name'] ?? '', $data['supervisor_name'] ?? '', (string)$destStageId, "Received from Embroidery"]);
             }
 
             // 3. Update embroidery_job_orders transferred quantity and status
@@ -3884,28 +3963,6 @@ class ProductionController {
             if ($reworkId > 0) {
                 $pdo->prepare("UPDATE rework_records SET status = 'Transferred' WHERE id = ?")->execute([$reworkId]);
             }
-
-            // 4. Log stage transaction
-            $tStmt = $pdo->prepare("
-                INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks)
-                VALUES (?, 6, ?, ?, ?)
-            ");
-            $tStmt->execute([$effectiveDestItemId ?: ($item['id'] ?? 0), $destStageId, $qty, $remarks]);
-
-            // 5. Log quantity ledger (both OUT from Stage 6 and IN to Stage 7)
-            $lStmt = $pdo->prepare("
-                INSERT INTO production_quantity_ledger 
-                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
-                VALUES (?, ?, 6, 'EMB', 'TRANSFER_OUT', ?, '', ?, ?, 'Embroidery Transfer', ?, ?)
-            ");
-            $lStmt->execute([$pId, $item['id'] ?? 0, $qty, $data['operator_name'] ?? '', $data['supervisor_name'] ?? '', (string)$destStageId, "Transferred to {$destName}"]);
-
-            $lStmtIn = $pdo->prepare("
-                INSERT INTO production_quantity_ledger 
-                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
-                VALUES (?, ?, ?, 'STI', 'TRANSFER_IN', ?, '', ?, ?, 'Embroidery Transfer', ?, ?)
-            ");
-            $lStmtIn->execute([$pId, $effectiveDestItemId ?: ($item['id'] ?? 0), $destStageId, $qty, $data['operator_name'] ?? '', $data['supervisor_name'] ?? '', (string)$destStageId, "Received from Embroidery"]);
 
             $pdo->commit();
 
