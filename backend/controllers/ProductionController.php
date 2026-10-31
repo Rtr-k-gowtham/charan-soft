@@ -3506,7 +3506,34 @@ class ProductionController {
                 $job['ready_to_transfer'] = max(0.0, $jRec - $jTrf);
                 $job['total_quantity_available_to_transfer'] = max(0.0, $jRec - $jTrf);
                 if ($job['ready_to_transfer'] <= 0.001 && $jRec > 0) {
-                    $job['status'] = 'Transferred to Stitching';
+                    $job['status'] = ((float)($job['total_quantity_outstanding'] ?? 0) > 0.001) ? 'Partially Transferred' : 'Transferred to Stitching';
+                }
+
+                // Sync received_quantity and quantity_outstanding onto items_json
+                if (isset($job['items_json']) && is_array($job['items_json'])) {
+                    $jId = (int)$job['id'];
+                    $jobRcpts = array_filter($receipts, fn($r) => (int)($r['job_order_id'] ?? 0) === $jId);
+                    $itemCount = count($job['items_json']);
+                    foreach ($job['items_json'] as &$ji) {
+                        $pItemId = (int)($ji['production_order_item_id'] ?? 0);
+                        $itemRec = 0.0;
+                        foreach ($jobRcpts as $r) {
+                            $rItems = is_array($r['items_data'] ?? null) ? $r['items_data'] : [];
+                            foreach ($rItems as $rit) {
+                                $rPItemId = (int)($rit['production_order_item_id'] ?? 0);
+                                if (($pItemId > 0 && $pItemId === $rPItemId) || $itemCount === 1) {
+                                    $itemRec += (float)($rit['received_quantity'] ?? 0);
+                                }
+                            }
+                        }
+                        if ($itemRec == 0.0 && $itemCount === 1) {
+                            $itemRec = $jRec;
+                        }
+                        $sentQty = (float)($ji['quantity_sent'] ?? 0);
+                        $ji['received_quantity'] = $itemRec;
+                        $ji['quantity_outstanding'] = max(0.0, $sentQty - $itemRec);
+                    }
+                    unset($ji);
                 }
             }
             unset($job);
@@ -3653,6 +3680,16 @@ class ProductionController {
             $job = $jStmt->fetch();
             if (!$job) { Response::error("Job order not found", 404); return; }
 
+            // Validate that received quantity does not exceed outstanding balance
+            $maxAllowed = (float)$job['total_quantity_outstanding'];
+            if ($maxAllowed <= 0.0 && (float)$job['total_quantity_received'] == 0) {
+                $maxAllowed = (float)$job['total_quantity_sent'];
+            }
+            if ($recTotal > ($maxAllowed + 0.001)) {
+                Response::error("Received quantity ({$recTotal}) exceeds outstanding quantity ({$maxAllowed})", 422);
+                return;
+            }
+
             // Insert receipt with initial accepted/rework/rejected at 0 pending inspection
             $stmt = $pdo->prepare("INSERT INTO embroidery_receipts 
                 (receipt_number, job_order_id, production_order_id, vendor_name, receipt_date, vendor_challan_no, received_by, total_received_qty, total_accepted_qty, total_rejected_qty, total_rework_qty, remarks, photo_urls, items_data, inspection_status) 
@@ -3678,12 +3715,31 @@ class ProductionController {
             $newOut = max(0.0, $sent - $newRec);
             $newStatus = ($newOut <= 0.01) ? 'Received' : 'Partially Received';
 
+            // Also update items_json on the job order so received_quantity per item is persistently tracked
+            $jItems = is_string($job['items_json']) ? json_decode($job['items_json'], true) : ($job['items_json'] ?? []);
+            if (is_array($jItems) && !empty($jItems)) {
+                $jItemCount = count($jItems);
+                foreach ($items as $recIt) {
+                    $recItemId = (int)($recIt['production_order_item_id'] ?? 0);
+                    $recQty = (float)($recIt['received_quantity'] ?? 0);
+                    foreach ($jItems as &$ji) {
+                        $matchId = (int)($ji['production_order_item_id'] ?? 0);
+                        if (($matchId > 0 && $matchId === $recItemId) || ($jItemCount === 1)) {
+                            $ji['received_quantity'] = (float)($ji['received_quantity'] ?? 0) + $recQty;
+                            $ji['quantity_outstanding'] = max(0.0, (float)($ji['quantity_sent'] ?? 0) - (float)$ji['received_quantity']);
+                        }
+                    }
+                    unset($ji);
+                }
+            }
+
             $upd = $pdo->prepare("UPDATE embroidery_job_orders SET 
                 total_quantity_received = ?, 
                 total_quantity_outstanding = ?,
-                status = ?
+                status = ?,
+                items_json = ?
                 WHERE id = ?");
-            $upd->execute([$newRec, $newOut, $newStatus, $jId]);
+            $upd->execute([$newRec, $newOut, $newStatus, json_encode($jItems), $jId]);
 
             // Log physical inward receipt in quantity ledger
             foreach ($items as $it) {

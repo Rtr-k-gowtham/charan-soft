@@ -678,6 +678,34 @@ export default function EmbroideryOrderDetail() {
     }
   };
 
+  // Helper to get already received and remaining outstanding for an item in a job order
+  const getItemReceivedAndPending = (job: any, ji: any) => {
+    const sent = Number(ji?.quantity_sent || 0);
+    const jItems = Array.isArray(job?.items_json) ? job.items_json : [];
+    const jobReceipts = (receipts || []).filter((r: any) => Number(r.job_order_id) === Number(job?.id));
+
+    let rec = Number(ji?.received_quantity || 0);
+    if (jobReceipts.length > 0) {
+      let rSum = 0;
+      jobReceipts.forEach((r: any) => {
+        const rItems = Array.isArray(r.items_data) ? r.items_data : [];
+        rItems.forEach((rit: any) => {
+          const match = (ji?.production_order_item_id && rit.production_order_item_id && Number(ji.production_order_item_id) === Number(rit.production_order_item_id))
+            || (jItems.length === 1);
+          if (match) {
+            rSum += Number(rit.received_quantity || 0);
+          }
+        });
+      });
+      if (rSum > 0) rec = Math.max(rec, rSum);
+    }
+    if (rec === 0 && jItems.length === 1 && job?.total_quantity_received) {
+      rec = Number(job.total_quantity_received);
+    }
+    const pending = Math.max(0, sent - rec);
+    return { sent, rec, pending };
+  };
+
   // Inward Modal Handlers
   const handleOpenInwardModal = (job: any) => {
     setSelectedJobOrder(job);
@@ -686,9 +714,7 @@ export default function EmbroideryOrderDetail() {
 
     jItems.forEach((ji: any, idx: number) => {
       const key = String(ji.production_order_item_id || idx);
-      const sent = Number(ji.quantity_sent || 0);
-      const rec = Number(ji.received_quantity || 0);
-      const pending = Math.max(0, sent - rec);
+      const { pending } = getItemReceivedAndPending(job, ji);
       initQty[key] = {
         received: pending,
         accepted: 0,
@@ -698,8 +724,8 @@ export default function EmbroideryOrderDetail() {
     });
 
     if (jItems.length === 0) {
-      const out = Number(job.total_quantity_outstanding || job.total_quantity_sent || 0);
-      initQty['0'] = { received: out, accepted: 0, rejected: 0, rework: 0 };
+      const out = Number(job.total_quantity_outstanding ?? (Number(job.total_quantity_sent || 0) - Number(job.total_quantity_received || 0)));
+      initQty['0'] = { received: Math.max(0, out), accepted: 0, rejected: 0, rework: 0 };
     }
 
     setInwardItemQuantities(initQty);
@@ -737,9 +763,17 @@ export default function EmbroideryOrderDetail() {
     const receiptItems: any[] = [];
 
     if (jItems.length > 0) {
-      jItems.forEach((ji: any, idx: number) => {
+      for (let idx = 0; idx < jItems.length; idx++) {
+        const ji = jItems[idx];
         const key = String(ji.production_order_item_id || idx);
         const q = inwardItemQuantities[key] || { received: 0, accepted: 0, rejected: 0, rework: 0 };
+        const { pending } = getItemReceivedAndPending(selectedJobOrder, ji);
+
+        if (q.received > pending) {
+          setInwardError(`Received quantity for ${ji.product_name || 'item'} (${q.received} pcs) cannot exceed outstanding quantity (${pending} pcs).`);
+          return;
+        }
+
         if (q.received > 0) {
           receiptItems.push({
             production_order_item_id: ji.production_order_item_id,
@@ -750,9 +784,14 @@ export default function EmbroideryOrderDetail() {
             received_quantity: Number(q.received)
           });
         }
-      });
+      }
     } else {
       const q = inwardItemQuantities['0'] || { received: 0, accepted: 0, rejected: 0, rework: 0 };
+      const maxOut = Number(selectedJobOrder?.total_quantity_outstanding ?? (Number(selectedJobOrder?.total_quantity_sent || 0) - Number(selectedJobOrder?.total_quantity_received || 0)));
+      if (q.received > maxOut) {
+        setInwardError(`Received quantity (${q.received} pcs) cannot exceed outstanding quantity (${maxOut} pcs).`);
+        return;
+      }
       if (q.received > 0) {
         receiptItems.push({
           production_order_item_id: items[0]?.active_embroidery_item_id || items[0]?.id || 0,
@@ -3177,7 +3216,7 @@ export default function EmbroideryOrderDetail() {
                 selectedJobOrder.items_json.map((ji: any, idx: number) => {
                   const key = String(ji.production_order_item_id || idx);
                   const q = inwardItemQuantities[key] || { received: 0, accepted: 0, rejected: 0, rework: 0 };
-                  const sent = Number(ji.quantity_sent || 0);
+                  const { sent, rec, pending } = getItemReceivedAndPending(selectedJobOrder, ji);
 
                   return (
                     <div key={key} className="p-4 bg-white space-y-3">
@@ -3186,6 +3225,10 @@ export default function EmbroideryOrderDetail() {
                           <span className="font-bold text-slate-900 block text-xs">{ji.product_name || 'Product'}</span>
                           <span className="text-[10px] text-slate-500 font-mono">
                             Color: {ji.color} • Size: {ji.size || 'M'} • Sent in Job Order: <strong>{fmt(sent)} pcs</strong>
+                            {rec > 0 && (
+                              <span> • Already Received: <strong className="text-emerald-600">{fmt(rec)} pcs</strong></span>
+                            )}
+                            {' '}• Outstanding: <strong className="text-amber-600">{fmt(pending)} pcs</strong>
                           </span>
                         </div>
                       </div>
@@ -3201,22 +3244,22 @@ export default function EmbroideryOrderDetail() {
                               onClick={() => {
                                 setInwardItemQuantities(prev => ({
                                   ...prev,
-                                  [key]: { ...q, received: sent }
+                                  [key]: { ...q, received: pending }
                                 }));
                               }}
                               className="text-[10px] font-bold text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
-                              title="Set to total sent quantity"
+                              title="Set to remaining outstanding quantity"
                             >
-                              Fill Max ({fmt(sent)})
+                              Fill Max ({fmt(pending)})
                             </button>
                           </div>
                           <input
                             type="number"
                             min="0"
-                            max={sent}
+                            max={pending}
                             value={q.received}
                             onChange={e => {
-                              const rVal = Math.max(0, Number(e.target.value));
+                              const rVal = e.target.value === '' ? 0 : Number(e.target.value);
                               setInwardItemQuantities(prev => ({
                                 ...prev,
                                 [key]: { ...q, received: rVal }
@@ -3233,13 +3276,29 @@ export default function EmbroideryOrderDetail() {
               ) : (
                 <div className="p-4 bg-white">
                   <div className="bg-slate-50/70 p-3 rounded-lg border border-slate-200 max-w-xs">
-                    <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1">Received Qty (Pieces) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase">Received Qty (Pieces) *</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const maxOut = Number(selectedJobOrder?.total_quantity_outstanding ?? (Number(selectedJobOrder?.total_quantity_sent || 0) - Number(selectedJobOrder?.total_quantity_received || 0)));
+                          setInwardItemQuantities(prev => ({
+                            ...prev,
+                            '0': { ...prev['0'], received: maxOut, accepted: 0, rejected: 0, rework: 0 }
+                          }));
+                        }}
+                        className="text-[10px] font-bold text-brand-600 hover:text-brand-800 hover:underline cursor-pointer"
+                      >
+                        Fill Max ({fmt(Number(selectedJobOrder?.total_quantity_outstanding ?? (Number(selectedJobOrder?.total_quantity_sent || 0) - Number(selectedJobOrder?.total_quantity_received || 0))))})
+                      </button>
+                    </div>
                     <input
                       type="number"
                       min="0"
+                      max={Number(selectedJobOrder?.total_quantity_outstanding ?? (Number(selectedJobOrder?.total_quantity_sent || 0) - Number(selectedJobOrder?.total_quantity_received || 0)))}
                       value={inwardItemQuantities['0']?.received || 0}
                       onChange={e => {
-                        const v = Number(e.target.value);
+                        const v = e.target.value === '' ? 0 : Number(e.target.value);
                         setInwardItemQuantities(prev => ({
                           ...prev,
                           '0': { ...prev['0'], received: v, accepted: 0, rejected: 0, rework: 0 }
