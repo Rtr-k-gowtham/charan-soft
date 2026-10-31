@@ -769,55 +769,219 @@ export default function ProductionOrderDetail() {
                 </span>
               </div>
 
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-2.5 px-3 w-10 text-center">#</th>
-                    <th className="py-2.5 px-3 min-w-[180px]">Material Name & Code</th>
-                    <th className="py-2.5 px-3 w-32">Category</th>
-                    <th className="py-2.5 px-3 w-24">UOM</th>
-                    <th className="py-2.5 px-2 w-20">Size</th>
-                    <th className="py-2.5 px-2 w-24">Model</th>
-                    <th className="py-2.5 px-2 w-20">Length</th>
-                    <th className="py-2.5 px-2 w-24">Thickness</th>
-                    <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
-                    <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
-                    <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
-                    <th className="py-2.5 px-3 w-14 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {editedMaterials.map((m, idx) => {
-                    const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-2.5 px-3 w-10 text-center">#</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">Material Name & Code</th>
+                      <th className="py-2.5 px-3 w-32">Category</th>
+                      <th className="py-2.5 px-3 w-24">UOM</th>
+                      <th className="py-2.5 px-2 w-20">Size</th>
+                      <th className="py-2.5 px-2 w-24">Model</th>
+                      <th className="py-2.5 px-2 w-20">Length</th>
+                      <th className="py-2.5 px-2 w-24">Thickness</th>
+                      <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
+                      <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
+                      <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
+                      <th className="py-2.5 px-3 w-14 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {editedMaterials.map((m, idx) => {
+                      const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
 
-                    return (
-                      <tr key={idx} className="hover:bg-indigo-50/30 transition">
-                        <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
-                          {idx + 1}
-                        </td>
+                      return (
+                        <tr key={idx} className="hover:bg-indigo-50/30 transition">
+                          <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
+                            {idx + 1}
+                          </td>
 
-                        <td className="py-2 px-3">
-                          <input
-                            type="text"
-                            value={m.name}
-                            onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-brand-500"
-                            placeholder="Material Name"
-                          />
-                          <input
-                            type="text"
-                            value={m.material_code || ''}
-                            onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
-                            className="w-full mt-1 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-500"
-                            placeholder="Code (optional)"
-                          />
-                        </td>
+                          <td className="py-2 px-3">
+                            <input
+                              type="text"
+                              value={m.name}
+                              onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              placeholder="Material Name"
+                            />
+                            <input
+                              type="text"
+                              value={m.material_code || ''}
+                              onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
+                              className="w-full mt-1 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-500"
+                              placeholder="Code (optional)"
+                            />
+                          </td>
 
-                        <td className="py-2 px-3">
+                          <td className="py-2 px-3">
+                            <select
+                              value={m.category}
+                              onChange={e => handleUpdateEditedRow(idx, 'category', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800 focus:ring-1 focus:ring-brand-500"
+                            >
+                              <option value="Fabric">Fabric</option>
+                              <option value="Thread">Thread</option>
+                              <option value="Trims">Trims</option>
+                              <option value="Elastic">Elastic</option>
+                              <option value="Button">Button</option>
+                              <option value="Zip">Zip</option>
+                              <option value="Label">Label</option>
+                              <option value="Packaging">Packaging</option>
+                              <option value="General">General</option>
+                            </select>
+                          </td>
+
+                          <td className="py-2 px-3">
+                            <select
+                              value={m.uom}
+                              onChange={e => handleUpdateEditedRow(idx, 'uom', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-semibold text-slate-700"
+                            >
+                              <option value="MTR">MTR (Meters)</option>
+                              <option value="KG">KG (Kilograms)</option>
+                              <option value="PCS">PCS (Pieces)</option>
+                              <option value="CONE">CONE (Cones)</option>
+                              <option value="ROLL">ROLL (Rolls)</option>
+                              <option value="SET">SET (Sets)</option>
+                              <option value="BOX">BOX (Boxes)</option>
+                              <option value="YDS">YDS (Yards)</option>
+                            </select>
+                          </td>
+
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={m.size || ''}
+                              onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              placeholder="Size"
+                            />
+                          </td>
+
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={m.model || ''}
+                              onChange={e => handleUpdateEditedRow(idx, 'model', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              placeholder="Model"
+                            />
+                          </td>
+
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={m.length || ''}
+                              onChange={e => handleUpdateEditedRow(idx, 'length', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              placeholder="Length"
+                            />
+                          </td>
+
+                          <td className="py-2 px-2">
+                            <input
+                              type="text"
+                              value={m.thickness || ''}
+                              onChange={e => handleUpdateEditedRow(idx, 'thickness', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                              placeholder="Thickness"
+                            />
+                          </td>
+
+                          <td className="py-2 px-3 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={m.total_required_qty}
+                              onChange={e => handleUpdateEditedRow(idx, 'total_required_qty', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900 focus:ring-1 focus:ring-brand-500"
+                            />
+                          </td>
+
+                          <td className="py-2 px-3 text-right">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={m.unit_cost}
+                              onChange={e => handleUpdateEditedRow(idx, 'unit_cost', e.target.value)}
+                              className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800 focus:ring-1 focus:ring-brand-500"
+                            />
+                          </td>
+
+                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 text-xs">
+                            {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
+                          </td>
+
+                          <td className="py-2 px-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMaterialRow(idx)}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                              title="Delete row"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Cards for Editing BOM */}
+              <div className="md:hidden space-y-3 p-2">
+                {editedMaterials.map((m, idx) => {
+                  const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
+
+                  return (
+                    <div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-slate-400">#{idx + 1}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-xs text-brand-700">
+                            {rowCost > 0 ? fmtCurrency(rowCost) : '₹0'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMaterialRow(idx)}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition ml-1"
+                            title="Delete line"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Material Name & Code</label>
+                        <input
+                          type="text"
+                          value={m.name}
+                          onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:bg-white focus:ring-1 focus:ring-brand-500"
+                          placeholder="e.g. Cotton Twill Fabric"
+                        />
+                        <input
+                          type="text"
+                          value={m.material_code || ''}
+                          onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
+                          className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg font-mono text-[10px] text-slate-600 focus:bg-white"
+                          placeholder="Code (optional)"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Category</label>
                           <select
                             value={m.category}
                             onChange={e => handleUpdateEditedRow(idx, 'category', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800 focus:ring-1 focus:ring-brand-500"
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-800 mt-0.5"
                           >
                             <option value="Fabric">Fabric</option>
                             <option value="Thread">Thread</option>
@@ -829,13 +993,13 @@ export default function ProductionOrderDetail() {
                             <option value="Packaging">Packaging</option>
                             <option value="General">General</option>
                           </select>
-                        </td>
-
-                        <td className="py-2 px-3">
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">UOM</label>
                           <select
                             value={m.uom}
                             onChange={e => handleUpdateEditedRow(idx, 'uom', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-semibold text-slate-700"
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-semibold text-slate-700 mt-0.5"
                           >
                             <option value="MTR">MTR (Meters)</option>
                             <option value="KG">KG (Kilograms)</option>
@@ -846,89 +1010,37 @@ export default function ProductionOrderDetail() {
                             <option value="BOX">BOX (Boxes)</option>
                             <option value="YDS">YDS (Yards)</option>
                           </select>
-                        </td>
+                        </div>
+                      </div>
 
-                        <td className="py-2 px-2">
-                          <input
-                            type="text"
-                            value={m.size || ''}
-                            onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800 focus:ring-1 focus:ring-brand-500"
-                            placeholder="Size"
-                          />
-                        </td>
-
-                        <td className="py-2 px-2">
-                          <input
-                            type="text"
-                            value={m.model || ''}
-                            onChange={e => handleUpdateEditedRow(idx, 'model', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                            placeholder="Model"
-                          />
-                        </td>
-
-                        <td className="py-2 px-2">
-                          <input
-                            type="text"
-                            value={m.length || ''}
-                            onChange={e => handleUpdateEditedRow(idx, 'length', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                            placeholder="Length"
-                          />
-                        </td>
-
-                        <td className="py-2 px-2">
-                          <input
-                            type="text"
-                            value={m.thickness || ''}
-                            onChange={e => handleUpdateEditedRow(idx, 'thickness', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                            placeholder="Thickness"
-                          />
-                        </td>
-
-                        <td className="py-2 px-3 text-right">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Req. Quantity</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
                             value={m.total_required_qty}
                             onChange={e => handleUpdateEditedRow(idx, 'total_required_qty', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900 focus:ring-1 focus:ring-brand-500"
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 mt-0.5"
                           />
-                        </td>
-
-                        <td className="py-2 px-3 text-right">
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Unit Rate (₹)</label>
                           <input
                             type="number"
                             min="0"
                             step="0.01"
                             value={m.unit_cost}
                             onChange={e => handleUpdateEditedRow(idx, 'unit_cost', e.target.value)}
-                            className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800 focus:ring-1 focus:ring-brand-500"
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 mt-0.5"
                           />
-                        </td>
-
-                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 text-xs">
-                          {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
-                        </td>
-
-                        <td className="py-2 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMaterialRow(idx)}
-                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
-                            title="Delete row"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
               <div className="mt-3 flex items-center justify-between p-2 bg-slate-50 rounded-lg border border-slate-200">
                 <Button

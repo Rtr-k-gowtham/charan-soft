@@ -787,57 +787,238 @@ export default function RequirementOrderDetail() {
             {/* Total BOM Table (Edit or View Mode) */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
               {isEditingBOM ? (
-                <div className="overflow-x-auto p-2">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                      <tr>
-                        <th className="py-2.5 px-3 w-10 text-center">#</th>
-                        <th className="py-2.5 px-3 min-w-[180px]">Material Name & Code</th>
-                        <th className="py-2.5 px-3 w-32">Category</th>
-                        <th className="py-2.5 px-3 w-24">UOM</th>
-                        <th className="py-2.5 px-2 w-20">Size</th>
-                        <th className="py-2.5 px-2 w-24">Model</th>
-                        <th className="py-2.5 px-2 w-20">Length</th>
-                        <th className="py-2.5 px-2 w-24">Thickness</th>
-                        <th className="py-2.5 px-3 min-w-[170px]">Preferred Vendor</th>
-                        <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
-                        <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
-                        <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
-                        <th className="py-2.5 px-3 w-14 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {editedMaterials.map((m, idx) => {
-                        const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
+                <div>
+                  <div className="hidden md:block overflow-x-auto p-2">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3 w-10 text-center">#</th>
+                          <th className="py-2.5 px-3 min-w-[180px]">Material Name & Code</th>
+                          <th className="py-2.5 px-3 w-32">Category</th>
+                          <th className="py-2.5 px-3 w-24">UOM</th>
+                          <th className="py-2.5 px-2 w-20">Size</th>
+                          <th className="py-2.5 px-2 w-24">Model</th>
+                          <th className="py-2.5 px-2 w-20">Length</th>
+                          <th className="py-2.5 px-2 w-24">Thickness</th>
+                          <th className="py-2.5 px-3 min-w-[170px]">Preferred Vendor</th>
+                          <th className="py-2.5 px-3 w-28 text-right">Required Qty</th>
+                          <th className="py-2.5 px-3 w-28 text-right">Unit Rate (₹)</th>
+                          <th className="py-2.5 px-3 w-28 text-right">Total Cost</th>
+                          <th className="py-2.5 px-3 w-14 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {editedMaterials.map((m, idx) => {
+                          const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
 
-                        return (
-                          <tr key={idx} className="hover:bg-indigo-50/30 transition">
-                            <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
-                              {idx + 1}
-                            </td>
+                          return (
+                            <tr key={idx} className="hover:bg-indigo-50/30 transition">
+                              <td className="py-2 px-3 text-center font-mono text-slate-400 text-[11px]">
+                                {idx + 1}
+                              </td>
 
-                            <td className="py-2 px-3">
-                              <input
-                                type="text"
-                                value={m.name}
-                                onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-brand-500"
-                                placeholder="Material Name"
-                              />
+                              <td className="py-2 px-3">
+                                <input
+                                  type="text"
+                                  value={m.name}
+                                  onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                  placeholder="Material Name"
+                                />
+                                <input
+                                  type="text"
+                                  value={m.material_code || ''}
+                                  onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
+                                  className="w-full mt-1 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-500"
+                                  placeholder="Code (optional)"
+                                />
+                              </td>
+
+                              <td className="py-2 px-3">
+                                <select
+                                  value={m.category}
+                                  onChange={e => handleUpdateEditedRow(idx, 'category', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                >
+                                  <option value="Fabric">Fabric</option>
+                                  <option value="Thread">Thread</option>
+                                  <option value="Trims">Trims</option>
+                                  <option value="Elastic">Elastic</option>
+                                  <option value="Button">Button</option>
+                                  <option value="Zip">Zip</option>
+                                  <option value="Label">Label</option>
+                                  <option value="Packaging">Packaging</option>
+                                  <option value="General">General</option>
+                                </select>
+                              </td>
+
+                              <td className="py-2 px-3">
+                                <select
+                                  value={m.uom}
+                                  onChange={e => handleUpdateEditedRow(idx, 'uom', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-semibold text-slate-700"
+                                >
+                                  <option value="MTR">MTR (Meters)</option>
+                                  <option value="KG">KG (Kilograms)</option>
+                                  <option value="PCS">PCS (Pieces)</option>
+                                  <option value="CONE">CONE (Cones)</option>
+                                  <option value="ROLL">ROLL (Rolls)</option>
+                                  <option value="SET">SET (Sets)</option>
+                                  <option value="BOX">BOX (Boxes)</option>
+                                  <option value="YDS">YDS (Yards)</option>
+                                </select>
+                              </td>
+
+                              <td className="py-2 px-2">
+                                <input
+                                  type="text"
+                                  value={m.size || ''}
+                                  onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                  placeholder="Size"
+                                />
+                              </td>
+
+                              <td className="py-2 px-2">
+                                <input
+                                  type="text"
+                                  value={m.model || ''}
+                                  onChange={e => handleUpdateEditedRow(idx, 'model', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                  placeholder="Model"
+                                />
+                              </td>
+
+                              <td className="py-2 px-2">
+                                <input
+                                  type="text"
+                                  value={m.length || ''}
+                                  onChange={e => handleUpdateEditedRow(idx, 'length', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                  placeholder="Length"
+                                />
+                              </td>
+
+                              <td className="py-2 px-2">
+                                <input
+                                  type="text"
+                                  value={m.thickness || ''}
+                                  onChange={e => handleUpdateEditedRow(idx, 'thickness', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                  placeholder="Thickness"
+                                />
+                              </td>
+
+                              <td className="py-2 px-3">
+                                <select
+                                  value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    const curSup = suppliers.find(s => String(s.id) === String(val));
+                                    handleUpdateEditedRow(idx, 'preferred_supplier_id', val ? Number(val) : null);
+                                    handleUpdateEditedRow(idx, 'preferred_supplier_name', curSup ? curSup.name : null);
+                                    handleUpdateEditedRow(idx, 'preferred_supplier_code', curSup ? (curSup.code || null) : null);
+                                  }}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                >
+                                  <option value="">-- Select Vendor --</option>
+                                  {suppliers.map(s => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name} {s.code ? `(${s.code})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              <td className="py-2 px-3 text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={m.total_required_qty}
+                                  onChange={e => handleUpdateEditedRow(idx, 'total_required_qty', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900 focus:ring-1 focus:ring-brand-500"
+                                />
+                              </td>
+
+                              <td className="py-2 px-3 text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={m.unit_cost}
+                                  onChange={e => handleUpdateEditedRow(idx, 'unit_cost', e.target.value)}
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                />
+                              </td>
+
+                              <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 text-xs">
+                                {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
+                              </td>
+
+                              <td className="py-2 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMaterialRow(idx)}
+                                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                  title="Delete row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards for Editing BOM */}
+                  <div className="md:hidden space-y-3 p-3">
+                    {editedMaterials.map((m, idx) => {
+                      const rowCost = (Number(m.total_required_qty) || 0) * (Number(m.unit_cost) || 0);
+
+                      return (
+                        <div key={idx} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 shadow-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                              Item #{idx + 1}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-xs text-slate-800">
+                                {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMaterialRow(idx)}
+                                className="p-1 text-slate-400 hover:text-red-600 rounded"
+                                title="Delete row"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <input
+                              type="text"
+                              value={m.name}
+                              onChange={e => handleUpdateEditedRow(idx, 'name', e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800"
+                              placeholder="Material Name"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
                               <input
                                 type="text"
                                 value={m.material_code || ''}
                                 onChange={e => handleUpdateEditedRow(idx, 'material_code', e.target.value)}
-                                className="w-full mt-1 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded font-mono text-[10px] text-slate-500"
+                                className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-[11px] font-mono text-slate-600"
                                 placeholder="Code (optional)"
                               />
-                            </td>
-
-                            <td className="py-2 px-3">
                               <select
                                 value={m.category}
                                 onChange={e => handleUpdateEditedRow(idx, 'category', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-800"
                               >
                                 <option value="Fabric">Fabric</option>
                                 <option value="Thread">Thread</option>
@@ -849,127 +1030,89 @@ export default function RequirementOrderDetail() {
                                 <option value="Packaging">Packaging</option>
                                 <option value="General">General</option>
                               </select>
-                            </td>
+                            </div>
+                          </div>
 
-                            <td className="py-2 px-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">UOM</span>
                               <select
                                 value={m.uom}
                                 onChange={e => handleUpdateEditedRow(idx, 'uom', e.target.value)}
                                 className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-semibold text-slate-700"
                               >
-                                <option value="MTR">MTR (Meters)</option>
-                                <option value="KG">KG (Kilograms)</option>
-                                <option value="PCS">PCS (Pieces)</option>
-                                <option value="CONE">CONE (Cones)</option>
-                                <option value="ROLL">ROLL (Rolls)</option>
-                                <option value="SET">SET (Sets)</option>
-                                <option value="BOX">BOX (Boxes)</option>
-                                <option value="YDS">YDS (Yards)</option>
+                                <option value="MTR">MTR</option>
+                                <option value="KG">KG</option>
+                                <option value="PCS">PCS</option>
+                                <option value="CONE">CONE</option>
+                                <option value="ROLL">ROLL</option>
+                                <option value="SET">SET</option>
+                                <option value="BOX">BOX</option>
+                                <option value="YDS">YDS</option>
                               </select>
-                            </td>
-
-                            <td className="py-2 px-2">
-                              <input
-                                type="text"
-                                value={m.size || ''}
-                                onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800 focus:ring-1 focus:ring-brand-500"
-                                placeholder="Size"
-                              />
-                            </td>
-
-                            <td className="py-2 px-2">
-                              <input
-                                type="text"
-                                value={m.model || ''}
-                                onChange={e => handleUpdateEditedRow(idx, 'model', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                                placeholder="Model"
-                              />
-                            </td>
-
-                            <td className="py-2 px-2">
-                              <input
-                                type="text"
-                                value={m.length || ''}
-                                onChange={e => handleUpdateEditedRow(idx, 'length', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                                placeholder="Length"
-                              />
-                            </td>
-
-                            <td className="py-2 px-2">
-                              <input
-                                type="text"
-                                value={m.thickness || ''}
-                                onChange={e => handleUpdateEditedRow(idx, 'thickness', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                                placeholder="Thickness"
-                              />
-                            </td>
-
-                            <td className="py-2 px-3">
-                              <select
-                                value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  const curSup = suppliers.find(s => String(s.id) === String(val));
-                                  handleUpdateEditedRow(idx, 'preferred_supplier_id', val ? Number(val) : null);
-                                  handleUpdateEditedRow(idx, 'preferred_supplier_name', curSup ? curSup.name : null);
-                                  handleUpdateEditedRow(idx, 'preferred_supplier_code', curSup ? (curSup.code || null) : null);
-                                }}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-800 focus:ring-1 focus:ring-brand-500"
-                              >
-                                <option value="">-- Select Vendor --</option>
-                                {suppliers.map(s => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name} {s.code ? `(${s.code})` : ''}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-
-                            <td className="py-2 px-3 text-right">
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Req. Qty</span>
                               <input
                                 type="number"
                                 min="0"
                                 step="0.01"
                                 value={m.total_required_qty}
                                 onChange={e => handleUpdateEditedRow(idx, 'total_required_qty', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900 focus:ring-1 focus:ring-brand-500"
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono font-bold text-right text-slate-900"
                               />
-                            </td>
+                            </div>
+                          </div>
 
-                            <td className="py-2 px-3 text-right">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-semibold uppercase mb-1">Preferred Vendor</span>
+                            <select
+                              value={m.preferred_supplier_id ? String(m.preferred_supplier_id) : ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                const curSup = suppliers.find(s => String(s.id) === String(val));
+                                handleUpdateEditedRow(idx, 'preferred_supplier_id', val ? Number(val) : null);
+                                handleUpdateEditedRow(idx, 'preferred_supplier_name', curSup ? curSup.name : null);
+                                handleUpdateEditedRow(idx, 'preferred_supplier_code', curSup ? (curSup.code || null) : null);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800"
+                            >
+                              <option value="">-- Select Vendor --</option>
+                              {suppliers.map(s => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name} {s.code ? `(${s.code})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Unit Rate (₹)</span>
                               <input
                                 type="number"
                                 min="0"
                                 step="0.01"
                                 value={m.unit_cost}
                                 onChange={e => handleUpdateEditedRow(idx, 'unit_cost', e.target.value)}
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800 focus:ring-1 focus:ring-brand-500"
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-right text-slate-800"
                               />
-                            </td>
-
-                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 text-xs">
-                              {rowCost > 0 ? fmtCurrency(rowCost) : '—'}
-                            </td>
-
-                            <td className="py-2 px-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteMaterialRow(idx)}
-                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition"
-                                title="Delete row"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Spec / Size</span>
+                              <input
+                                type="text"
+                                value={m.size || ''}
+                                onChange={e => handleUpdateEditedRow(idx, 'size', e.target.value)}
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-xs font-mono text-slate-800"
+                                placeholder="Size"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1268,39 +1411,65 @@ export default function RequirementOrderDetail() {
 
                           {/* Component list */}
                           {p.components && p.components.length > 0 ? (
-                            <div className="overflow-x-auto mt-2">
-                              <table className="w-full text-left text-xs bg-white rounded-lg border border-slate-200">
-                                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
-                                  <tr>
-                                    <th className="py-2 px-2.5">Component Material</th>
-                                    <th className="py-2 px-2">Category</th>
-                                    <th className="py-2 px-2">Size</th>
-                                    <th className="py-2 px-2">Model</th>
-                                    <th className="py-2 px-2">Length</th>
-                                    <th className="py-2 px-2">Thickness</th>
-                                    <th className="py-2 px-2 text-right">Per Garment</th>
-                                    <th className="py-2 px-2 text-right">Wastage %</th>
-                                    <th className="py-2 px-2 text-right">Total for Line</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {p.components.map((c, idx) => (
-                                    <tr key={idx}>
-                                      <td className="py-2 px-2.5 font-medium text-slate-800">{c.name}</td>
-                                      <td className="py-2 px-2 text-slate-600">{c.category}</td>
-                                      <td className="py-2 px-2 font-mono text-slate-700">{c.size || '—'}</td>
-                                      <td className="py-2 px-2 text-slate-700">{c.model || '—'}</td>
-                                      <td className="py-2 px-2 text-slate-700">{c.length || '—'}</td>
-                                      <td className="py-2 px-2 text-slate-700">{c.thickness || '—'}</td>
-                                      <td className="py-2 px-2 text-right font-mono">{c.quantity_per_product} {c.uom}</td>
-                                      <td className="py-2 px-2 text-right font-mono text-slate-500">{c.wastage_percent}%</td>
-                                      <td className="py-2 px-2 text-right font-mono font-bold text-brand-700">
-                                        {fmt(c.required_quantity, 2)} {c.uom}
-                                      </td>
+                            <div className="mt-2">
+                              {/* Desktop Component Table */}
+                              <div className="hidden md:block overflow-x-auto">
+                                <table className="w-full text-left text-xs bg-white rounded-lg border border-slate-200">
+                                  <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
+                                    <tr>
+                                      <th className="py-2 px-2.5">Component Material</th>
+                                      <th className="py-2 px-2">Category</th>
+                                      <th className="py-2 px-2">Size</th>
+                                      <th className="py-2 px-2">Model</th>
+                                      <th className="py-2 px-2">Length</th>
+                                      <th className="py-2 px-2">Thickness</th>
+                                      <th className="py-2 px-2 text-right">Per Garment</th>
+                                      <th className="py-2 px-2 text-right">Wastage %</th>
+                                      <th className="py-2 px-2 text-right">Total for Line</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {p.components.map((c, idx) => (
+                                      <tr key={idx}>
+                                        <td className="py-2 px-2.5 font-medium text-slate-800">{c.name}</td>
+                                        <td className="py-2 px-2 text-slate-600">{c.category}</td>
+                                        <td className="py-2 px-2 font-mono text-slate-700">{c.size || '—'}</td>
+                                        <td className="py-2 px-2 text-slate-700">{c.model || '—'}</td>
+                                        <td className="py-2 px-2 text-slate-700">{c.length || '—'}</td>
+                                        <td className="py-2 px-2 text-slate-700">{c.thickness || '—'}</td>
+                                        <td className="py-2 px-2 text-right font-mono">{c.quantity_per_product} {c.uom}</td>
+                                        <td className="py-2 px-2 text-right font-mono text-slate-500">{c.wastage_percent}%</td>
+                                        <td className="py-2 px-2 text-right font-mono font-bold text-brand-700">
+                                          {fmt(c.required_quantity, 2)} {c.uom}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {/* Mobile Responsive Cards for Components */}
+                              <div className="md:hidden space-y-2">
+                                {p.components.map((c, idx) => (
+                                  <div key={idx} className="bg-white rounded-lg border border-slate-200 p-2.5 space-y-1.5 shadow-2xs">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <span className="font-semibold text-slate-800 text-xs">{c.name}</span>
+                                      <span className="font-mono font-bold text-brand-700 text-xs shrink-0">
+                                        {fmt(c.required_quantity, 2)} {c.uom}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
+                                      <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-medium">{c.category}</span>
+                                      {c.size && <span>Size: <strong className="text-slate-700">{c.size}</strong></span>}
+                                      {c.model && <span>Model: <strong className="text-slate-700">{c.model}</strong></span>}
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 font-mono">
+                                      <span>Per Garment: {c.quantity_per_product} {c.uom}</span>
+                                      <span>Wastage: {c.wastage_percent}%</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           ) : (
                             <p className="text-xs text-slate-400 italic">No components configured for this product in Buyer Master.</p>

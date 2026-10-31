@@ -1176,7 +1176,8 @@ export default function StitchingOrderDetail() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 <tr>
@@ -1297,6 +1298,105 @@ export default function StitchingOrderDetail() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Responsive Cards for Product Status */}
+          <div className="md:hidden space-y-3 p-3">
+            {filteredItems.map((it, idx) => {
+              const orderQ = Number(it.order_quantity || it.total_quantity || 0);
+              const fromCutQ = Number(it.arrived_from_cutting || 0);
+              const fromEmbQ = Number(it.arrived_from_embroidery || 0);
+              const totalArrQ = Number(it.total_arrived || (fromCutQ + fromEmbQ) || 0);
+              const compQ = Number(it.completed_quantity || 0);
+              const accQ = Number(it.accepted_quantity || 0);
+              const rejQ = Number(it.rejected_quantity || 0);
+              const rwkQ = Number(it.rework_quantity || 0);
+              const availQ = Number(it.available_to_stitch || Math.max(0, totalArrQ - compQ));
+              const readyQ = Number(it.ready_to_transfer !== undefined && it.ready_to_transfer !== null ? it.ready_to_transfer : Math.max(0, compQ - Number(it.transferred_to_checking || 0)));
+
+              return (
+                <div key={it.id || idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-sm leading-snug">{it.product_name}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {it.product_code && (
+                          <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                            {it.product_code}
+                          </span>
+                        )}
+                        <span className="font-medium text-slate-700 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                          {it.color || 'Standard'} • Size: {it.size || 'M'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleProductMenu(e, it)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 shrink-0"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase font-sans">Order Qty</span>
+                      <span className="font-bold text-slate-900">{fmt(orderQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-indigo-700 block uppercase font-sans">Total Arrived</span>
+                      <span className="font-bold text-indigo-700">{fmt(totalArrQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-brand-700 block uppercase font-sans">Completed</span>
+                      <span className="font-bold text-brand-700">{fmt(compQ)}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-emerald-700 block uppercase font-sans">Accepted</span>
+                      <span className="font-bold text-emerald-700">{fmt(accQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-red-600 block uppercase font-sans">Rej / Rwk</span>
+                      <span className="font-bold text-red-600">{fmt(rejQ + rwkQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block uppercase font-sans">Avail to Stitch</span>
+                      <span className="font-bold text-slate-800">{fmt(availQ)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Cut: {fmt(fromCutQ)} • Emb: {fmt(fromEmbQ)}
+                    </span>
+
+                    {availQ > 0 ? (
+                      <span className="text-[11px] font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                        Ready to Stitch ({fmt(availQ)})
+                      </span>
+                    ) : compQ > 0 && readyQ > 0 ? (
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        QC Passed
+                      </span>
+                    ) : compQ > 0 && readyQ <= 0 && (Number(it.transferred_to_checking || 0) > 0 || accQ > 0) ? (
+                      <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                        Transferred
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                        Awaiting Arrive
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

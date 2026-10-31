@@ -1750,7 +1750,8 @@ export default function EmbroideryOrderDetail() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse table-auto">
                 <thead>
                   <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold">
@@ -1933,6 +1934,123 @@ export default function EmbroideryOrderDetail() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Mobile Responsive Cards for Outward Line Rows */}
+            <div className="md:hidden space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+              {lineRows.map((row, idx) => {
+                const rowQty = Number(row.planned_quantity) || 0;
+                const rowRate = Number(row.rate_per_unit) || 0;
+                const taxable = rowQty * rowRate;
+                const taxPct = row.tax_percent !== undefined ? Number(row.tax_percent) : 5;
+                const taxAmount = (taxable * taxPct) / 100;
+                const netAmount = taxable + taxAmount;
+
+                return (
+                  <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 space-y-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={row.hex_code || '#3b82f6'}
+                          onChange={e => handleLineRowChange(idx, 'hex_code', e.target.value)}
+                          className="w-6 h-6 rounded cursor-pointer border border-slate-300 p-0.5 shrink-0"
+                          title="Pick Color Swatch"
+                        />
+                        <span className="font-bold text-slate-800 text-xs">Item #{idx + 1}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLineRow(idx)}
+                        className="p-1 text-slate-400 hover:text-red-500 transition disabled:opacity-30"
+                        disabled={lineRows.length <= 1}
+                        title="Delete Row"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Item Description & Color</label>
+                      <input
+                        type="text"
+                        value={row.color_name}
+                        onChange={e => handleLineRowChange(idx, 'color_name', e.target.value)}
+                        list="pantone-colors-datalist"
+                        placeholder="e.g. Navy Blue / Fabric"
+                        className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 font-semibold text-slate-800 bg-white focus:ring-brand-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Pantone Standard</label>
+                      <input
+                        type="text"
+                        value={row.pantone_code}
+                        onChange={e => handleLineRowChange(idx, 'pantone_code', e.target.value)}
+                        list="pantone-codes-datalist"
+                        placeholder="e.g. 19-4052 TCX"
+                        className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 font-mono text-brand-700 bg-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Qty</label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={row.planned_quantity}
+                          onChange={e => handleLineRowChange(idx, 'planned_quantity', e.target.value)}
+                          placeholder="0"
+                          className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2 font-mono font-bold text-slate-900 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">UOM</label>
+                        <select
+                          value={row.uom || 'PCS'}
+                          onChange={e => handleLineRowChange(idx, 'uom', e.target.value)}
+                          className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-1 font-mono font-semibold text-slate-700 bg-white"
+                        >
+                          <option value="PCS">PCS</option>
+                          <option value="MTR">MTR</option>
+                          <option value="KG">KG</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Rate (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={row.rate_per_unit}
+                          onChange={e => handleLineRowChange(idx, 'rate_per_unit', e.target.value)}
+                          placeholder="0.00"
+                          className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2 text-right font-mono text-slate-800 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-100 font-mono">
+                      <span className="text-slate-500">Taxable: <strong>₹{fmt(taxable, 2)}</strong></span>
+                      <span className="text-brand-700 font-bold">Net: ₹{fmt(netAmount, 2)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="p-3 bg-white rounded-lg border border-slate-200 flex items-center justify-between font-mono text-xs">
+                <div>
+                  <span className="text-[10px] uppercase font-sans text-slate-400 block">Total Qty</span>
+                  <span className="font-bold text-brand-700">{fmt(totalQty)} PCS</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-sans text-slate-400 block">Grand Total</span>
+                  <span className="font-extrabold text-sm text-brand-700">₹{fmt(netGrandTotal, 2)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2154,7 +2272,8 @@ export default function EmbroideryOrderDetail() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 <tr>
@@ -2271,6 +2390,108 @@ export default function EmbroideryOrderDetail() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Responsive Cards for Product Status */}
+          <div className="md:hidden space-y-3 p-3">
+            {filteredItems.map((it, idx) => {
+              const orderQ = Number(it.order_quantity || it.total_quantity || 0);
+              const arrivedQ = Number(it.arrived_from_cutting || 0);
+              const sentQ = Number(it.sent_to_vendor || 0);
+              const accQ = Number(it.accepted_inward || 0);
+              const rejQ = Number(it.rejected_quantity || 0);
+              const outQ = Number(it.outstanding_quantity || 0);
+              const availQ = Number(it.available_to_dispatch || 0);
+              const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, accQ - Number(it.transferred_to_stitching || 0)));
+
+              return (
+                <div key={it.id || idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-sm leading-snug">{it.product_name}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {it.product_code && (
+                          <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                            {it.product_code}
+                          </span>
+                        )}
+                        <span className="font-medium text-slate-700 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                          {it.color || 'Standard'} • Size: {it.size || 'M'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleProductMenu(e, it)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 shrink-0"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase font-sans">Order</span>
+                      <span className="font-bold text-slate-900">{fmt(orderQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-indigo-700 block uppercase font-sans">Cut Arrived</span>
+                      <span className="font-bold text-indigo-700">{fmt(arrivedQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-brand-700 block uppercase font-sans">Sent Out</span>
+                      <span className="font-bold text-brand-700">{fmt(sentQ)}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-emerald-700 block uppercase font-sans">Accepted</span>
+                      <span className="font-bold text-emerald-700">{fmt(accQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-amber-700 block uppercase font-sans">Outstanding</span>
+                      <span className="font-bold text-amber-700">{fmt(outQ)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-red-600 block uppercase font-sans">Rejected</span>
+                      <span className="font-bold text-red-600">{fmt(rejQ)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                    <span className="text-slate-500 font-mono text-[11px]">
+                      Avail: <strong className="text-slate-800">{fmt(availQ)}</strong> pcs
+                    </span>
+
+                    {readyQ > 0 ? (
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        QC Passed ({fmt(readyQ)})
+                      </span>
+                    ) : outQ > 0 ? (
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-600" />
+                        With Vendor ({fmt(outQ)})
+                      </span>
+                    ) : availQ > 0 ? (
+                      <span className="text-[11px] font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                        Ready ({fmt(availQ)})
+                      </span>
+                    ) : accQ > 0 ? (
+                      <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                        Transferred
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                        Awaiting Cutting
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -2743,110 +2964,208 @@ export default function EmbroideryOrderDetail() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="py-3 px-4">Receipt Number</th>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-4">Vendor</th>
-                    <th className="py-3 px-3 font-mono">Job Order Ref</th>
-                    <th className="py-3 px-3 text-right">Received</th>
-                    <th className="py-3 px-3 text-right">Transferred</th>
-                    <th className="py-3 px-3 text-right">Available to Transfer</th>
-                    <th className="py-3 px-3">Received By</th>
-                    <th className="py-3 px-3 text-center">Photo Proof</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
-                  {receipts.map((rec, rIdx) => {
-                    const photos = parsePhotos(rec.photo_urls);
-                    const recReceived = Number(rec.total_received_qty || 0);
-                    const recTransferred = Number(rec.transferred_to_stitching_quantity || 0);
-                    const recAvail = rec.available_to_transfer !== undefined
-                      ? Number(rec.available_to_transfer)
-                      : Math.max(0, recReceived - recTransferred);
+            <div>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Receipt Number</th>
+                      <th className="py-3 px-3">Date</th>
+                      <th className="py-3 px-4">Vendor</th>
+                      <th className="py-3 px-3 font-mono">Job Order Ref</th>
+                      <th className="py-3 px-3 text-right">Received</th>
+                      <th className="py-3 px-3 text-right">Transferred</th>
+                      <th className="py-3 px-3 text-right">Available to Transfer</th>
+                      <th className="py-3 px-3">Received By</th>
+                      <th className="py-3 px-3 text-center">Photo Proof</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
+                    {receipts.map((rec, rIdx) => {
+                      const photos = parsePhotos(rec.photo_urls);
+                      const recReceived = Number(rec.total_received_qty || 0);
+                      const recTransferred = Number(rec.transferred_to_stitching_quantity || 0);
+                      const recAvail = rec.available_to_transfer !== undefined
+                        ? Number(rec.available_to_transfer)
+                        : Math.max(0, recReceived - recTransferred);
 
-                    return (
-                      <tr key={rec.id || rIdx} className="hover:bg-slate-50/70 transition">
-                        <td className="py-3 px-4">
-                          <span className="font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 block w-fit">
-                            {rec.receipt_number}
-                          </span>
-                          {rec.vendor_challan_no && (
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
-                              DC: {rec.vendor_challan_no}
+                      return (
+                        <tr key={rec.id || rIdx} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-4">
+                            <span className="font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 block w-fit">
+                              {rec.receipt_number}
                             </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-slate-700 font-sans">{rec.receipt_date}</td>
-                        <td className="py-3 px-4 font-sans font-medium text-slate-800">{rec.vendor_name}</td>
-                        <td className="py-3 px-3 font-semibold text-slate-600">
-                          {rec.job_order_number || `EMB-JOB-${rec.job_order_id}`}
-                        </td>
-                        <td className="py-3 px-3 text-right font-bold text-slate-800">{fmt(recReceived)}</td>
-                        <td className="py-3 px-3 text-right font-bold text-purple-700">{fmt(recTransferred)}</td>
-                        <td className="py-3 px-3 text-right font-bold text-emerald-700">{fmt(recAvail)}</td>
-                        <td className="py-3 px-3 font-sans text-slate-600 text-[10px]">{rec.received_by}</td>
-                        <td className="py-3 px-3 text-center">
-                          {photos.length > 0 ? (
-                            <div className="flex items-center justify-center gap-1">
-                              {photos.slice(0, 2).map((url, pIdx) => (
-                                <button
-                                  key={pIdx}
-                                  type="button"
-                                  onClick={() => setPreviewImage(url)}
-                                  className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
-                                >
-                                  <img src={url} alt="Proof" className="w-full h-full object-cover" />
-                                </button>
-                              ))}
-                              {photos.length > 2 && (
-                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
-                                  +{photos.length - 2}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-slate-400 font-sans italic">None</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {recAvail > 0 ? (
-                              <Button
-                                size="xs"
-                                variant="primary"
-                                icon={<ArrowRight className="w-3 h-3 text-white" />}
-                                onClick={() => handleOpenTransferModal(rec)}
-                                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
-                                title="Transfer Received Pieces Directly to Stitching"
-                              >
-                                Transfer to Stitching ({fmt(recAvail)})
-                              </Button>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                                <CheckCircle2 className="w-3 h-3 text-purple-600" />
-                                Transferred
+                            {rec.vendor_challan_no && (
+                              <span className="text-[10px] text-slate-400 block mt-0.5">
+                                DC: {rec.vendor_challan_no}
                               </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
-                              title="Print / Download Embroidery Inward Receipt"
-                            >
-                              <Printer className="w-3.5 h-3.5 text-teal-600" />
-                              <span>Receipt</span>
-                            </button>
+                          </td>
+                          <td className="py-3 px-3 text-slate-700 font-sans">{rec.receipt_date}</td>
+                          <td className="py-3 px-4 font-sans font-medium text-slate-800">{rec.vendor_name}</td>
+                          <td className="py-3 px-3 font-semibold text-slate-600">
+                            {rec.job_order_number || `EMB-JOB-${rec.job_order_id}`}
+                          </td>
+                          <td className="py-3 px-3 text-right font-bold text-slate-800">{fmt(recReceived)}</td>
+                          <td className="py-3 px-3 text-right font-bold text-purple-700">{fmt(recTransferred)}</td>
+                          <td className="py-3 px-3 text-right font-bold text-emerald-700">{fmt(recAvail)}</td>
+                          <td className="py-3 px-3 font-sans text-slate-600 text-[10px]">{rec.received_by}</td>
+                          <td className="py-3 px-3 text-center">
+                            {photos.length > 0 ? (
+                              <div className="flex items-center justify-center gap-1">
+                                {photos.slice(0, 2).map((url, pIdx) => (
+                                  <button
+                                    key={pIdx}
+                                    type="button"
+                                    onClick={() => setPreviewImage(url)}
+                                    className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
+                                  >
+                                    <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                                  </button>
+                                ))}
+                                {photos.length > 2 && (
+                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1 py-0.5 rounded">
+                                    +{photos.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-sans italic">None</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              {recAvail > 0 ? (
+                                <Button
+                                  size="xs"
+                                  variant="primary"
+                                  icon={<ArrowRight className="w-3 h-3 text-white" />}
+                                  onClick={() => handleOpenTransferModal(rec)}
+                                  className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-[11px]"
+                                  title="Transfer Received Pieces Directly to Stitching"
+                                >
+                                  Transfer to Stitching ({fmt(recAvail)})
+                                </Button>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                  <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                                  Transferred
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition shadow-2xs"
+                                title="Print / Download Embroidery Inward Receipt"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-teal-600" />
+                                <span>Receipt</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Responsive Cards for Inward Receipts */}
+              <div className="md:hidden space-y-3 p-3">
+                {receipts.map((rec, rIdx) => {
+                  const photos = parsePhotos(rec.photo_urls);
+                  const recReceived = Number(rec.total_received_qty || 0);
+                  const recTransferred = Number(rec.transferred_to_stitching_quantity || 0);
+                  const recAvail = rec.available_to_transfer !== undefined
+                    ? Number(rec.available_to_transfer)
+                    : Math.max(0, recReceived - recTransferred);
+
+                  return (
+                    <div key={rec.id || rIdx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="font-mono font-bold text-xs text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                            {rec.receipt_number}
+                          </span>
+                          <div className="text-xs font-bold text-slate-800 mt-1">{rec.vendor_name}</div>
+                          {rec.vendor_challan_no && (
+                            <span className="text-[10px] text-slate-500 font-mono block">DC: {rec.vendor_challan_no}</span>
+                          )}
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[10px] font-mono text-slate-400 block">{rec.receipt_date}</span>
+                          <span className="text-[10px] font-mono text-slate-600 block mt-0.5">
+                            {rec.job_order_number || `EMB-JOB-${rec.job_order_id}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg text-center font-mono text-xs">
+                        <div>
+                          <span className="text-[9px] text-slate-400 block uppercase font-sans">Received</span>
+                          <span className="font-bold text-slate-800">{fmt(recReceived)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-purple-700 block uppercase font-sans">Transferred</span>
+                          <span className="font-bold text-purple-700">{fmt(recTransferred)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-emerald-700 block uppercase font-sans font-bold">Available</span>
+                          <span className="font-bold text-emerald-700">{fmt(recAvail)}</span>
+                        </div>
+                      </div>
+
+                      {photos.length > 0 && (
+                        <div className="flex items-center gap-1.5 pt-1">
+                          <span className="text-[10px] text-slate-400 font-medium">Photo Proof:</span>
+                          <div className="flex items-center gap-1">
+                            {photos.map((url, pIdx) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => setPreviewImage(url)}
+                                className="w-8 h-8 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
+                              >
+                                <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                              </button>
+                            ))}
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+                        {recAvail > 0 ? (
+                          <Button
+                            size="xs"
+                            variant="primary"
+                            icon={<ArrowRight className="w-3 h-3 text-white" />}
+                            onClick={() => handleOpenTransferModal(rec)}
+                            className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs"
+                          >
+                            Transfer to Stitching ({fmt(recAvail)})
+                          </Button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                            <CheckCircle2 className="w-3 h-3 text-purple-600" />
+                            Transferred
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPrintModal('EMBROIDERY_INWARD', rec)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-teal-600" />
+                          <span>Receipt</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

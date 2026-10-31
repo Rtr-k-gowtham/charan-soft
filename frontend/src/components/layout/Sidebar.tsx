@@ -229,18 +229,14 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
 
     const items: NavItem[] = [];
 
-    // For operational roles (Role 1 and Role 2), prioritize My Tasks
-    if (!isAdmin) {
-      items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
-    } else {
+    if (isAdmin) {
+      // Admin Sidebar (Exact required order: Dashboard, Production Orders, Purchase, Inventory, Production, Masters, Templates, Reports, Settings)
       items.push({ label: 'Dashboard', icon: LayoutDashboard, path: '/' });
-      items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
-    }
+      items.push({ label: 'Production Orders', icon: ClipboardList, path: '/production/orders' });
 
-    // Purchase - allow for Admin and Role 1
-    if (isAdmin || isRole1) {
+      // Purchase
       items.push({
-        label: 'Purchase', icon: ClipboardList,
+        label: 'Purchase', icon: ShoppingCart,
         children: [
           { label: 'Purchase Orders', path: '/purchase/orders' },
           { label: 'Material Receipts', path: '/purchase/receipts' },
@@ -248,10 +244,8 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           { label: 'Purchase Returns', path: '/purchase/returns' },
         ],
       });
-    }
 
-    // Inventory - allow for Admin and Role 1
-    if (isAdmin || isRole1) {
+      // Inventory
       items.push({
         label: 'Inventory', icon: Package,
         children: [
@@ -263,23 +257,20 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           { label: 'Low Stock', path: '/inventory/low-stock' },
         ],
       });
-    }
 
-    // Production menu (contains permitted stages)
-    items.push({
-      label: 'Production', icon: Factory,
-      children: [
-        { label: 'Production Orders', path: '/production/orders' },
-        { label: 'Production Board', path: '/production/board' },
-        {
-          label: 'Production Stages',
-          children: filteredStages,
-        },
-      ],
-    });
+      // Production menu (Production Orders is moved directly below Dashboard, not duplicated here)
+      items.push({
+        label: 'Production', icon: Factory,
+        children: [
+          { label: 'Production Board', path: '/production/board' },
+          {
+            label: 'Production Stages',
+            children: filteredStages,
+          },
+        ],
+      });
 
-    // Masters (Admin only or view)
-    if (isAdmin) {
+      // Masters
       items.push({
         label: 'Masters', icon: Layers,
         children: [
@@ -297,6 +288,7 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
         ],
       });
 
+      // Templates
       items.push({
         label: 'Templates', icon: FileText,
         children: [
@@ -307,6 +299,7 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
         ],
       });
 
+      // Reports
       items.push({
         label: 'Reports', icon: BarChart2,
         children: [
@@ -318,7 +311,7 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
         ],
       });
 
-      // Settings: ONLY for Admin
+      // Settings
       items.push({
         label: 'Settings', icon: Settings,
         children: [
@@ -329,6 +322,48 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           { label: 'Production Stages', path: '/settings/stages' },
           { label: 'Company Settings', path: '/settings/company' },
           { label: 'PO Template', path: '/settings/po-template' },
+        ],
+      });
+    } else {
+      // Role 1 and Role 2 Sidebar (Exact required order: My Tasks, Production Orders, Purchase, Inventory, Production, Production Stages)
+      items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
+      items.push({ label: 'Production Orders', icon: ClipboardList, path: '/production/orders' });
+
+      // Purchase - allow for Role 1
+      if (isRole1) {
+        items.push({
+          label: 'Purchase', icon: ShoppingCart,
+          children: [
+            { label: 'Purchase Orders', path: '/purchase/orders' },
+            { label: 'Material Receipts', path: '/purchase/receipts' },
+            { label: 'Supplier Payments', path: '/purchase/payments' },
+            { label: 'Purchase Returns', path: '/purchase/returns' },
+          ],
+        });
+
+        // Inventory - allow for Role 1
+        items.push({
+          label: 'Inventory', icon: Package,
+          children: [
+            { label: 'Materials', path: '/inventory/materials' },
+            { label: 'Stock', path: '/inventory/stock' },
+            { label: 'Stock Ledger', path: '/inventory/ledger' },
+            { label: 'Material Consumption', path: '/inventory/consumption' },
+            { label: 'Stock Adjustment', path: '/inventory/adjustment' },
+            { label: 'Low Stock', path: '/inventory/low-stock' },
+          ],
+        });
+      }
+
+      // Production menu (contains permitted stages for Role 1 or Role 2)
+      items.push({
+        label: 'Production', icon: Factory,
+        children: [
+          { label: 'Production Board', path: '/production/board' },
+          {
+            label: 'Production Stages',
+            children: filteredStages,
+          },
         ],
       });
     }

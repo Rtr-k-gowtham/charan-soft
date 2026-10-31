@@ -1213,9 +1213,10 @@ export default function InwardOrderDetail() {
             </div>
           )}
 
-          {/* Section C: Material Items Table */}
+          {/* Section C: Material Items Table & Mobile Cards */}
           <div className="rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
@@ -1316,6 +1317,93 @@ export default function InwardOrderDetail() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Responsive Cards for Modal Material Items */}
+            <div className="sm:hidden space-y-3 p-3 bg-slate-50">
+              {modalReceiveItems.map((it, i) => {
+                const ordered = Number(it.quantity || 0);
+                const prevRecv = Number(it.received_quantity || 0);
+                const remaining = Math.max(0, ordered - prevRecv);
+                const desc = it.item_description || it.description || `Item #${i + 1}`;
+                const code = (it as any).material_code || (it as any).item_code;
+                const uom = it.uom || 'units';
+                const itemError = itemErrors[it.id!];
+                const isFullyRecv = remaining <= 0.0001;
+
+                return (
+                  <div key={it.id || i} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5 shadow-2xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-800 text-xs block leading-snug">{desc}</span>
+                        {(code || it.spec) && (
+                          <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                            {[code ? `Code: ${code}` : '', it.spec ? `Spec: ${it.spec}` : ''].filter(Boolean).join(' • ')}
+                          </span>
+                        )}
+                      </div>
+                      <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-600">
+                        {uom}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg text-center font-mono">
+                      <div>
+                        <span className="text-[9px] text-slate-400 block uppercase">Ordered</span>
+                        <span className="font-bold text-xs text-slate-700">{fmt(ordered)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 block uppercase">Recv'd</span>
+                        <span className="font-bold text-xs text-slate-600">{fmt(prevRecv)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-amber-700 block uppercase font-bold">Remaining</span>
+                        <span className="font-bold text-xs text-amber-600">{fmt(remaining)}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-1">
+                      {isFullyRecv ? (
+                        <div className="text-center py-1.5 px-3 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Fully Received
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
+                            Receive Quantity ({uom})
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max={remaining}
+                              step="any"
+                              placeholder="0.00"
+                              value={receiveQuantities[it.id!] ?? ''}
+                              onChange={e => handleQtyChange(it.id!, e.target.value, remaining, desc, uom)}
+                              className={`flex-1 px-3 py-2 text-xs font-mono font-bold rounded-lg border transition-colors ${
+                                itemError ? 'border-red-500 bg-red-50/30 text-red-700' : 'border-slate-300 bg-white text-slate-800'
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleSetMaxQty(it.id!, remaining, desc, uom)}
+                              className="px-3 py-2 text-xs font-bold bg-brand-50 hover:bg-brand-100 text-brand-700 rounded-lg border border-brand-200 shrink-0"
+                            >
+                              Fill Max
+                            </button>
+                          </div>
+                          {itemError && (
+                            <p className="text-[11px] text-red-600 font-medium leading-tight">
+                              {itemError}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

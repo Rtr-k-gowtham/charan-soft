@@ -804,7 +804,8 @@ export default function PackingOrderDetail() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
@@ -945,6 +946,102 @@ export default function PackingOrderDetail() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Responsive Cards for Product Packing Status */}
+        <div className="md:hidden space-y-3 p-3">
+          {filteredItems.map((it, idx) => {
+            const stats = summaryByItem[it.id] || {
+              totalPacked: 0,
+              totalBoxes: 0,
+              totalCartons: 0,
+              unpacked: 0,
+              availableToPack: 0,
+              arrivedFromChecking: 0,
+              orderQty: 0
+            };
+
+            const pSpec = productConfigs[it.product_id] || null;
+            const primaryBox = pSpec?.boxes?.[0] || null;
+
+            return (
+              <div key={it.id || idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-sm leading-snug">{it.product_name}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      {it.product_code && (
+                        <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                          {it.product_code}
+                        </span>
+                      )}
+                      <span className="font-medium text-slate-700 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                        {it.color || 'Standard'} • Size: {it.size || 'M'}
+                      </span>
+                      {primaryBox && (
+                        <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          {primaryBox.items_per_box} pcs/box
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="text-[10px] text-slate-400 block uppercase font-sans">Order Qty</span>
+                    <span className="font-mono font-bold text-slate-900 text-xs">{fmt(stats.orderQty)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                  <div>
+                    <span className="text-[9px] text-blue-700 block uppercase font-sans">From QC</span>
+                    <span className="font-bold text-blue-700">{fmt(stats.arrivedFromChecking)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-amber-700 block uppercase font-sans">Packed</span>
+                    <span className="font-bold text-amber-700">{fmt(stats.totalPacked)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-slate-600 block uppercase font-sans">Boxes</span>
+                    <span className="font-bold text-slate-700">{fmt(stats.totalBoxes)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-emerald-700 block uppercase font-sans font-bold">Cartons</span>
+                    <span className="font-bold text-emerald-700">{fmt(stats.totalCartons)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                  <span className="text-[11px] font-mono text-slate-500">
+                    Avail to Pack: <strong className="text-slate-800">{fmt(stats.availableToPack)}</strong>
+                  </span>
+
+                  {stats.arrivedFromChecking === 0 ? (
+                    <span className="text-slate-400 text-xs italic">
+                      Awaiting Checking
+                    </span>
+                  ) : stats.availableToPack > 0 ? (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleOpenBatchModal(it)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs px-3 py-1 flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Pack Batch</span>
+                    </Button>
+                  ) : stats.totalPacked > 0 ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Fully Packed</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-xs">—</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* TABLE 2: Recorded Packing Batches & Quality Output */}
@@ -968,7 +1065,8 @@ export default function PackingOrderDetail() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Desktop Table View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
@@ -1088,6 +1186,107 @@ export default function PackingOrderDetail() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Responsive Cards for Packing Batches */}
+        <div className="md:hidden space-y-3 p-3">
+          {batches.length === 0 ? (
+            <div className="py-6 text-center text-slate-400 text-xs">
+              No packing batches recorded yet for this order. Click "+ Pack Batch" above to pack garments.
+            </div>
+          ) : (
+            batches.map(b => {
+              const matchingItem = items.find(
+                it => it.id === b.production_order_item_id || it.active_packing_item_id === b.production_order_item_id
+              );
+              const isTransferred = (b.status || '').toLowerCase().includes('dispatch') || (b.status || '').toLowerCase().includes('transferred');
+
+              return (
+                <div key={b.id} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-mono font-bold text-slate-800 text-xs">{b.batch_number}</div>
+                      <div className="font-bold text-slate-900 text-sm mt-0.5">{matchingItem?.product_name || 'Garment Product'}</div>
+                      <div className="text-slate-500 text-xs mt-0.5">
+                        {matchingItem?.color || 'Standard'} • Size: {matchingItem?.size || 'M'}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-mono text-[10px] text-slate-400 block">{b.packing_date}</span>
+                      {isTransferred ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 mt-1">
+                          In Dispatch
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 mt-1">
+                          Packed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-amber-700 block uppercase font-sans font-bold">Packed</span>
+                      <span className="font-black text-amber-600">{fmt(b.packed_quantity)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block uppercase font-sans">Units/Box</span>
+                      <span className="text-slate-700">{b.units_per_box} pcs</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-slate-500 block uppercase font-sans">Boxes</span>
+                      <span className="font-bold text-slate-800">{b.number_of_boxes}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-emerald-700 block uppercase font-sans font-bold">Cartons</span>
+                      <span className="font-black text-emerald-700">{b.number_of_master_cartons}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      {Array.isArray(b.photo_urls) && b.photo_urls.length > 0 ? (
+                        <div className="flex items-center gap-1">
+                          {b.photo_urls.slice(0, 3).map((pUrl, pIdx) => (
+                            <img
+                              key={pIdx}
+                              src={pUrl}
+                              alt="Proof"
+                              onClick={() => setPreviewImage(pUrl)}
+                              className="w-7 h-7 rounded object-cover cursor-pointer border border-slate-200"
+                            />
+                          ))}
+                          {b.photo_urls.length > 3 && (
+                            <span className="text-[10px] text-slate-400">+{b.photo_urls.length - 3}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">No photos</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecordForMod({
+                          type: 'packing_batches',
+                          id: Number(b.id || 0),
+                          identifier: `Packing Batch #${b.batch_number || b.id}`,
+                          data: b,
+                        });
+                        setModModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition shadow-2xs"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-brand-600" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 

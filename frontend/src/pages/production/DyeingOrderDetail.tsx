@@ -1784,7 +1784,8 @@ export default function DyeingOrderDetail() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs text-left border-collapse table-auto">
                 <thead>
                   <tr className="bg-slate-100/90 border-b border-slate-200 text-slate-700 font-bold">
@@ -2000,6 +2001,140 @@ export default function DyeingOrderDetail() {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+
+            {/* Mobile Responsive Cards for Color Items */}
+            <div className="md:hidden space-y-3 p-3 bg-slate-50">
+              {colorRows.map((row, idx) => {
+                const rowQty = Number(row.planned_quantity) || 0;
+                const rowRate = Number(row.rate_per_unit) || 0;
+                const taxable = rowQty * rowRate;
+                const taxPct = row.tax_percent !== undefined ? Number(row.tax_percent) : 5;
+                const taxAmount = (taxable * taxPct) / 100;
+                const netAmount = taxable + taxAmount;
+
+                return (
+                  <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+                        Item #{idx + 1}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-brand-700">
+                          ₹{fmt(netAmount, 2)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveColorRow(idx)}
+                          disabled={colorRows.length <= 1}
+                          className="p-1 text-slate-400 hover:text-red-600 rounded disabled:opacity-30"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase">Color & Pantone</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={row.hex_code || '#3b82f6'}
+                          onChange={e => handleColorRowChange(idx, 'hex_code', e.target.value)}
+                          className="w-8 h-8 rounded border border-slate-300 p-0.5 shrink-0"
+                        />
+                        <input
+                          type="text"
+                          value={row.color_name}
+                          onChange={e => handleColorRowChange(idx, 'color_name', e.target.value)}
+                          placeholder="Color Name"
+                          className="flex-1 text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-800"
+                          required
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        value={row.pantone_code}
+                        onChange={e => handleColorRowChange(idx, 'pantone_code', e.target.value)}
+                        placeholder="Pantone Code (optional)"
+                        className="w-full text-xs rounded-lg border-slate-300 py-1 px-2 font-mono text-slate-600"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Quantity</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={row.planned_quantity}
+                          onChange={e => handleColorRowChange(idx, 'planned_quantity', e.target.value)}
+                          placeholder="0.00"
+                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono font-bold"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">UOM</label>
+                        <select
+                          value={row.uom || uom}
+                          onChange={e => handleColorRowChange(idx, 'uom', e.target.value)}
+                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 font-semibold text-slate-700"
+                        >
+                          <option value="MTR">MTR</option>
+                          <option value="KG">KG</option>
+                          <option value="PCS">PCS</option>
+                          <option value="YDS">YDS</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Rate (₹)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={row.rate_per_unit}
+                          onChange={e => handleColorRowChange(idx, 'rate_per_unit', e.target.value)}
+                          placeholder="0.00"
+                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 text-right font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase">Tax %</label>
+                        <select
+                          value={row.tax_percent !== undefined ? row.tax_percent : 5}
+                          onChange={e => handleColorRowChange(idx, 'tax_percent', Number(e.target.value))}
+                          className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2 font-semibold text-slate-700"
+                        >
+                          <option value="0">0%</option>
+                          <option value="5">5%</option>
+                          <option value="12">12%</option>
+                          <option value="18">18%</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs font-bold text-slate-800 space-y-1">
+                <div className="flex justify-between">
+                  <span>Total Qty:</span>
+                  <span className="font-mono">{fmt(totalQty, 2)} {uom}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Taxable:</span>
+                  <span className="font-mono">₹{fmt(totalTaxable, 2)}</span>
+                </div>
+                <div className="flex justify-between text-brand-700 text-sm pt-1 border-t border-slate-100">
+                  <span>Grand Total:</span>
+                  <span className="font-mono font-extrabold">₹{fmt(netGrandTotal, 2)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2335,7 +2470,8 @@ export default function DyeingOrderDetail() {
                                   </span>
                                 </div>
 
-                                <div className="overflow-x-auto">
+                                {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
                                   <table className="w-full text-left text-xs border border-slate-200 rounded-lg">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
                                       <tr>
@@ -2469,7 +2605,58 @@ export default function DyeingOrderDetail() {
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                    {expandedOrderIds.has(dOrder.id) && dOrder.items && dOrder.items.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-slate-100">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
+                          Color Breakdown ({dOrder.items.length} items)
+                        </span>
+                        <div className="space-y-1.5">
+                          {dOrder.items.map(it => (
+                            <div key={it.id} className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-xs space-y-1">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full border border-slate-300"
+                                    style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                                  />
+                                  <span className="font-semibold text-slate-800">{it.color_name}</span>
+                                </div>
+                                {it.pantone_code && (
+                                  <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                                    {it.pantone_code}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between text-[11px] font-mono">
+                                <span className="text-slate-600">Plan: <strong>{fmt(it.planned_quantity, 1)} {dOrder.uom}</strong></span>
+                                <span className="text-emerald-700 font-semibold">Recv: {fmt(Number(it.received_quantity || 0), 1)} {dOrder.uom}</span>
+                                <span className="text-slate-500">Shrink: {it.shrinkage_loss_percent ? `${fmt(it.shrinkage_loss_percent, 1)}%` : '0%'}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRecordForMod({
+                            type: 'dyeing_orders',
+                            id: dOrder.id,
+                            identifier: `Dyeing Order #${dOrder.dyeing_order_no || dOrder.challan_no || dOrder.id}`,
+                            data: dOrder,
+                          });
+                          setModModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 rounded-lg shadow-2xs transition"
+                        title="Request modification for this dyeing order (Admin approval)"
+                      >
+                        <Edit3 className="w-3 h-3 text-brand-600" />
+                        <span>Edit</span>
+                      </button>
+
                       {!isFullyReceived ? (
                         <>
                           <button
@@ -2494,7 +2681,7 @@ export default function DyeingOrderDetail() {
                             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            <span>View</span>
+                            <span>{expandedOrderIds.has(dOrder.id) ? 'Collapse' : 'Details'}</span>
                           </button>
                         </>
                       ) : (
@@ -2529,7 +2716,7 @@ export default function DyeingOrderDetail() {
                             className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs transition"
                           >
                             <Eye className="w-3 h-3" />
-                            <span>View</span>
+                            <span>{expandedOrderIds.has(dOrder.id) ? 'Collapse' : 'Details'}</span>
                           </button>
                         </>
                       )}
@@ -3113,7 +3300,7 @@ export default function DyeingOrderDetail() {
                           setSelectedRecordForMod({
                             type: 'dyeing_orders',
                             id: dOrder.id,
-                            identifier: `Dyeing Order #${dOrder.order_number || dOrder.challan_no || dOrder.id}`,
+                            identifier: `Dyeing Order #${dOrder.dyeing_order_no || dOrder.challan_no || dOrder.id}`,
                             data: dOrder,
                           });
                           setModModalOpen(true);

@@ -1118,7 +1118,8 @@ export default function CuttingOrderDetail() {
             </Button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 <tr>
@@ -1199,6 +1200,82 @@ export default function CuttingOrderDetail() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Responsive Cards for Product Status */}
+          <div className="md:hidden space-y-3 p-3">
+            {items.map((it, idx) => {
+              const itTotal = Number(it.total_quantity || 0);
+              const itemBatches = getBatchesForItem(it);
+              const itCut = itemBatches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
+              const itRej = itemBatches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
+              const itActiveRwk = itemBatches.reduce((s, b) => s + getActiveReworkForBatch(b), 0);
+              const itAcc = Math.max(0, itCut - itActiveRwk - itRej);
+              const itTrf = itemBatches.reduce((s, b) => s + Number(b.transferred_to_next_stage_quantity || 0), 0);
+              const itPending = Math.max(0, itTotal - itCut);
+
+              return (
+                <div key={it.id || idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-sm leading-snug">{it.product_name}</div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        {it.product_code && (
+                          <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
+                            {it.product_code}
+                          </span>
+                        )}
+                        <span className="font-medium text-slate-700 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                          {it.color || 'Standard'} • Size: {it.size || 'M'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleProductMenu(e, it)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 shrink-0"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg text-center font-mono text-xs">
+                    <div>
+                      <span className="text-[9px] text-slate-400 block uppercase font-sans">Order Qty</span>
+                      <span className="font-bold text-slate-900">{fmt(itTotal)} pcs</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-indigo-700 block uppercase font-sans">Actual Cut</span>
+                      <span className="font-bold text-indigo-700">{fmt(itCut)} pcs</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] text-emerald-700 block uppercase font-sans">Accepted</span>
+                      <span className="font-bold text-emerald-700">{fmt(itAcc)} pcs</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+                      <span>Rej: <strong className="text-red-600">{fmt(itRej)}</strong></span>
+                      <span>•</span>
+                      <span>Trf: <strong className="text-purple-700">{fmt(itTrf)}</strong></span>
+                    </div>
+
+                    {itPending <= 0 ? (
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Complete
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        Pending: {fmt(itPending)} pcs
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -2944,38 +3021,74 @@ export default function CuttingOrderDetail() {
                     No batches recorded for this product line yet.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
-                        <tr>
-                          <th className="py-2 px-3">Batch #</th>
-                          <th className="py-2 px-3">Date</th>
-                          <th className="py-2 px-2 text-right">Cut Qty</th>
-                          <th className="py-2 px-2 text-right">Accepted</th>
-                          <th className="py-2 px-2 text-right">Rework</th>
-                          <th className="py-2 px-2 text-right">Rejected</th>
-                          <th className="py-2 px-3">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-mono">
-                        {itemBatches.map((b: any) => (
-                          <tr key={b.id}>
-                            <td className="py-2 px-3 font-bold text-brand-700">{b.batch_number}</td>
-                            <td className="py-2 px-3 text-slate-500">{b.cutting_date}</td>
-                            <td className="py-2 px-2 text-right font-bold text-slate-800">{fmt(b.actual_cut_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{fmt(b.accepted_output_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-amber-700">{fmt(b.rework_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-red-600">{fmt(b.rejected_quantity)}</td>
-                            <td className="py-2 px-3">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                {b.status || 'In Progress'}
-                              </span>
-                            </td>
+                  <>
+                    <div className="hidden sm:block overflow-x-auto border border-slate-200 rounded-lg">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                          <tr>
+                            <th className="py-2 px-3">Batch #</th>
+                            <th className="py-2 px-3">Date</th>
+                            <th className="py-2 px-2 text-right">Cut Qty</th>
+                            <th className="py-2 px-2 text-right">Accepted</th>
+                            <th className="py-2 px-2 text-right">Rework</th>
+                            <th className="py-2 px-2 text-right">Rejected</th>
+                            <th className="py-2 px-3">Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-mono">
+                          {itemBatches.map((b: any) => (
+                            <tr key={b.id}>
+                              <td className="py-2 px-3 font-bold text-brand-700">{b.batch_number}</td>
+                              <td className="py-2 px-3 text-slate-500">{b.cutting_date}</td>
+                              <td className="py-2 px-2 text-right font-bold text-slate-800">{fmt(b.actual_cut_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{fmt(b.accepted_output_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-amber-700">{fmt(b.rework_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-red-600">{fmt(b.rejected_quantity)}</td>
+                              <td className="py-2 px-3">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                  {b.status || 'In Progress'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="sm:hidden space-y-2">
+                      {itemBatches.map((b: any) => (
+                        <div key={b.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-brand-700">{b.batch_number}</span>
+                            <span className="text-[10px] font-mono text-slate-500">{b.cutting_date}</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1 text-center font-mono text-[11px] bg-white p-2 rounded border border-slate-200">
+                            <div>
+                              <span className="text-[9px] text-slate-400 block font-sans">Cut</span>
+                              <span className="font-bold text-slate-800">{fmt(b.actual_cut_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-emerald-600 block font-sans">Accepted</span>
+                              <span className="font-bold text-emerald-700">{fmt(b.accepted_output_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-amber-600 block font-sans">Rework</span>
+                              <span className="font-bold text-amber-700">{fmt(b.rework_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-red-500 block font-sans">Rejected</span>
+                              <span className="font-bold text-red-600">{fmt(b.rejected_quantity)}</span>
+                            </div>
+                          </div>
+                          <div className="flex justify-end">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 font-medium">
+                              {b.status || 'In Progress'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
 

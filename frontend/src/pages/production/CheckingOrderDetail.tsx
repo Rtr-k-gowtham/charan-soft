@@ -1013,7 +1013,8 @@ export default function CheckingOrderDetail() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
@@ -1150,6 +1151,112 @@ export default function CheckingOrderDetail() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Responsive Cards for Product Status */}
+            <div className="md:hidden space-y-3 p-3">
+              {filteredItems.map((it, idx) => {
+                const arrivedStitching = Number(it.arrived_from_stitching ?? it.total_arrived ?? 0);
+                const inspected = Number(it.checked_quantity || 0);
+                const passed = Number(it.passed_quantity || 0);
+                const rej = Number(it.rejected_quantity || 0);
+                const rwk = Number(it.rework_quantity || 0);
+                const avail = Math.max(0, arrivedStitching - inspected);
+                const transferredToPacking = Number(it.transferred_to_packing || 0);
+                const readyToPack = Math.max(0, passed - transferredToPacking);
+
+                return (
+                  <div key={idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-900 text-sm leading-snug">{it.product_name}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                          {it.product_code && (
+                            <span className="font-mono text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              {it.product_code}
+                            </span>
+                          )}
+                          <span className="font-medium text-slate-700 text-xs bg-slate-100 px-2 py-0.5 rounded">
+                            {it.color || 'Standard'} • Size: {it.size || 'M'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setActiveProductMenu({
+                            itemId: it.id || idx,
+                            top: rect.bottom + 4,
+                            left: Math.max(10, rect.right - 170),
+                            item: it,
+                          });
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 shrink-0"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-lg text-center font-mono text-xs">
+                      <div>
+                        <span className="text-[9px] text-slate-400 block uppercase font-sans">Order Qty</span>
+                        <span className="font-bold text-slate-900">{fmt(it.order_quantity || it.total_quantity || 0)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-blue-700 block uppercase font-sans">From Stitching</span>
+                        <span className="font-bold text-blue-700">{fmt(arrivedStitching)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-indigo-700 block uppercase font-sans">Inspected</span>
+                        <span className="font-bold text-indigo-700">{fmt(inspected)}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                      <div>
+                        <span className="text-[9px] text-emerald-700 block uppercase font-sans">QC Passed</span>
+                        <span className="font-bold text-emerald-700">{fmt(passed)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-red-600 block uppercase font-sans">Rej / Rwk</span>
+                        <span className="font-bold text-red-600">{rej} / {rwk}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase font-sans">Avail Inspect</span>
+                        <span className="font-bold text-slate-800">{fmt(avail)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end text-xs pt-1 border-t border-slate-100">
+                      {avail > 0 ? (
+                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          Ready to Inspect ({fmt(avail)})
+                        </span>
+                      ) : readyToPack > 0 ? (
+                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          Passed ({fmt(readyToPack)})
+                        </span>
+                      ) : (transferredToPacking > 0 || passed > 0) ? (
+                        <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          In Packing
+                        </span>
+                      ) : arrivedStitching === 0 ? (
+                        <span className="text-[11px] text-slate-400 italic">
+                          Awaiting Stitching
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                          Completed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* TABLE 2: Recorded Quality Inspections & Audit Logs */}
@@ -1173,7 +1280,8 @@ export default function CheckingOrderDetail() {
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-600 uppercase tracking-wider">
@@ -1365,6 +1473,160 @@ export default function CheckingOrderDetail() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Responsive Cards for Inspections */}
+            <div className="md:hidden space-y-3 p-3">
+              {inspections.length === 0 ? (
+                <div className="py-6 text-center text-slate-400 text-xs">
+                  No quality inspection entries recorded yet for this order.
+                </div>
+              ) : (
+                inspections.map((insp: any, idx: number) => {
+                  const chk = Number(insp.checked_quantity || insp.submitted_quantity || 0);
+                  const pass = Number(insp.passed_quantity || 0);
+                  const rej = Number(insp.rejected_quantity || 0);
+                  const rwk = Number(insp.rework_quantity || 0);
+                  const rate = chk > 0 ? ((pass / chk) * 100).toFixed(1) : '100.0';
+                  const photos = parsePhotos(insp.photo_urls);
+
+                  const matchingRwk = reworkRecords.find(r =>
+                    (r.qc_record_id && Number(r.qc_record_id) === Number(insp.id)) ||
+                    (r.batch_number && insp.batch_number && r.batch_number === insp.batch_number)
+                  );
+                  const isReworkDispatched = matchingRwk && (
+                    matchingRwk.status === 'Sent for Rework' ||
+                    matchingRwk.status === 'Accepted After Rework' ||
+                    matchingRwk.status === 'Completed' ||
+                    matchingRwk.status === 'IN REWORK'
+                  );
+
+                  return (
+                    <div key={insp.id || idx} className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-3 shadow-2xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="font-mono font-bold text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                            {insp.batch_number || `CHK-${order?.id || 0}-${idx + 1}`}
+                          </span>
+                          <div className="font-bold text-slate-900 text-xs mt-1">{insp.product_name}</div>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {insp.color || 'Standard'} • Size: {insp.size || 'M'}
+                          </span>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[10px] font-mono text-slate-400 block">{insp.inspection_date || 'N/A'}</span>
+                          <span className={`inline-block px-1.5 py-0.5 rounded font-mono font-bold text-[10px] mt-0.5 ${
+                            Number(rate) >= 95 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                            Number(rate) >= 80 ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                            'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}>
+                            {rate}% Pass
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-4 gap-1.5 bg-slate-50 p-2 rounded-lg text-center font-mono text-xs">
+                        <div>
+                          <span className="text-[9px] text-slate-400 block uppercase font-sans">Checked</span>
+                          <span className="font-bold text-slate-800">{fmt(chk)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-emerald-700 block uppercase font-sans">Passed</span>
+                          <span className="font-bold text-emerald-700">{fmt(pass)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-red-600 block uppercase font-sans">Rej</span>
+                          <span className="font-bold text-red-600">{fmt(rej)}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-amber-700 block uppercase font-sans">Rwk</span>
+                          <span className="font-bold text-amber-700">{fmt(rwk)}</span>
+                        </div>
+                      </div>
+
+                      {insp.defect_category && (
+                        <div className="text-[11px] text-slate-600 bg-slate-50/60 p-2 rounded border border-slate-100">
+                          <span className="font-semibold text-slate-700">Defect:</span> {insp.defect_category}
+                          {insp.inspector && <span className="text-slate-400 ml-2 font-sans">• By: {insp.inspector}</span>}
+                        </div>
+                      )}
+
+                      {photos.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-slate-400 font-medium">Photos:</span>
+                          <div className="flex items-center gap-1">
+                            {photos.map((url: string, pIdx: number) => (
+                              <button
+                                key={pIdx}
+                                type="button"
+                                onClick={() => setPreviewImage(url)}
+                                className="w-7 h-7 rounded border border-slate-200 overflow-hidden hover:opacity-80 transition shrink-0"
+                              >
+                                <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5 flex-wrap">
+                        {rwk > 0 && (
+                          isReworkDispatched ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              <RotateCcw className="w-3 h-3 text-amber-600" />
+                              <span>{matchingRwk?.status || 'Sent for Rework'}</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenSendReworkModal(insp)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-xs"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Rework ({fmt(rwk)})</span>
+                            </button>
+                          )
+                        )}
+
+                        {insp.status === 'Transferred to Packing' || (insp as any).is_transferred ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>In Packing</span>
+                          </span>
+                        ) : pass > 0 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOpenTransferModal(insp)}
+                            className="text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50 flex items-center gap-1 py-1 px-2.5 font-bold"
+                          >
+                            <span>To Packing</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </Button>
+                        ) : null}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRecordForMod({
+                              type: 'inspections',
+                              id: insp.id,
+                              identifier: `Inspection #${insp.batch_number || insp.id}`,
+                              data: insp,
+                            });
+                            setModModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200"
+                        >
+                          <Edit3 className="w-3 h-3 text-brand-600" />
+                          <span>Edit</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </>
@@ -2108,40 +2370,75 @@ export default function CheckingOrderDetail() {
                   </span>
                 </div>
                 <div className="max-h-48 overflow-y-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-200 text-[10px] text-slate-500 uppercase">
-                        <th className="py-2 px-3">Batch #</th>
-                        <th className="py-2 px-3">Date</th>
-                        <th className="py-2 px-2 text-right">Checked</th>
-                        <th className="py-2 px-2 text-right text-emerald-700">Passed</th>
-                        <th className="py-2 px-2 text-right text-amber-700">Rework</th>
-                        <th className="py-2 px-2 text-right text-red-700">Rejected</th>
-                        <th className="py-2 px-3">Defect Category</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono">
-                      {itemInspections.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="py-4 text-center text-slate-400 font-sans">
-                            No inspection audit batches recorded yet for this product line.
-                          </td>
+                  <div className="hidden sm:block">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/50 border-b border-slate-200 text-[10px] text-slate-500 uppercase">
+                          <th className="py-2 px-3">Batch #</th>
+                          <th className="py-2 px-3">Date</th>
+                          <th className="py-2 px-2 text-right">Checked</th>
+                          <th className="py-2 px-2 text-right text-emerald-700">Passed</th>
+                          <th className="py-2 px-2 text-right text-amber-700">Rework</th>
+                          <th className="py-2 px-2 text-right text-red-700">Rejected</th>
+                          <th className="py-2 px-3">Defect Category</th>
                         </tr>
-                      ) : (
-                        itemInspections.map((insp, iIdx) => (
-                          <tr key={insp.id || iIdx} className="hover:bg-slate-50">
-                            <td className="py-2 px-3 font-bold text-blue-700">{insp.batch_number}</td>
-                            <td className="py-2 px-3 text-slate-600 font-sans">{insp.inspection_date}</td>
-                            <td className="py-2 px-2 text-right">{fmt(insp.checked_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-emerald-700 font-bold">{fmt(insp.passed_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-amber-700">{fmt(insp.rework_quantity)}</td>
-                            <td className="py-2 px-2 text-right text-red-700">{fmt(insp.rejected_quantity)}</td>
-                            <td className="py-2 px-3 font-sans text-slate-600 truncate max-w-xs">{insp.defect_category || 'Passed'}</td>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-mono">
+                        {itemInspections.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-4 text-center text-slate-400 font-sans">
+                              No inspection audit batches recorded yet for this product line.
+                            </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                        ) : (
+                          itemInspections.map((insp, iIdx) => (
+                            <tr key={insp.id || iIdx} className="hover:bg-slate-50">
+                              <td className="py-2 px-3 font-bold text-blue-700">{insp.batch_number}</td>
+                              <td className="py-2 px-3 text-slate-600 font-sans">{insp.inspection_date}</td>
+                              <td className="py-2 px-2 text-right">{fmt(insp.checked_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-emerald-700 font-bold">{fmt(insp.passed_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-amber-700">{fmt(insp.rework_quantity)}</td>
+                              <td className="py-2 px-2 text-right text-red-700">{fmt(insp.rejected_quantity)}</td>
+                              <td className="py-2 px-3 font-sans text-slate-600 truncate max-w-xs">{insp.defect_category || 'Passed'}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="sm:hidden space-y-2 p-2">
+                    {itemInspections.length === 0 ? (
+                      <p className="text-center text-slate-400 text-xs py-2">No inspection audit batches recorded yet.</p>
+                    ) : (
+                      itemInspections.map((insp, iIdx) => (
+                        <div key={insp.id || iIdx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-blue-700">{insp.batch_number}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">{insp.inspection_date}</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1 text-center font-mono text-[11px] bg-white p-1.5 rounded border border-slate-100">
+                            <div>
+                              <span className="text-[9px] text-slate-400 block font-sans">Chk</span>
+                              <span>{fmt(insp.checked_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-emerald-600 block font-sans font-bold">Pass</span>
+                              <span className="text-emerald-700 font-bold">{fmt(insp.passed_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-amber-600 block font-sans">Rwk</span>
+                              <span className="text-amber-700">{fmt(insp.rework_quantity)}</span>
+                            </div>
+                            <div>
+                              <span className="text-[9px] text-red-600 block font-sans">Rej</span>
+                              <span className="text-red-700">{fmt(insp.rejected_quantity)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -2154,32 +2451,51 @@ export default function CheckingOrderDetail() {
                     </span>
                   </div>
                   <div className="max-h-40 overflow-y-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-amber-50/30 border-b border-amber-200 text-[10px] text-amber-800 uppercase">
-                          <th className="py-2 px-3">Rework #</th>
-                          <th className="py-2 px-3">Destination Stage</th>
-                          <th className="py-2 px-2 text-right">Quantity</th>
-                          <th className="py-2 px-3">DC Challan</th>
-                          <th className="py-2 px-3">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-amber-100 font-mono">
-                        {itemReworks.map((rwkRec, rIdx) => (
-                          <tr key={rwkRec.id || rIdx} className="hover:bg-amber-50/40">
-                            <td className="py-2 px-3 font-bold text-amber-900">{rwkRec.rework_order_no}</td>
-                            <td className="py-2 px-3 font-sans text-slate-700">{rwkRec.target_stage_name || rwkRec.destination_process || 'Stitching'}</td>
-                            <td className="py-2 px-2 text-right font-bold text-amber-800">{fmt(rwkRec.rework_quantity)} pcs</td>
-                            <td className="py-2 px-3 text-slate-600">{rwkRec.dc_challan_no || '—'}</td>
-                            <td className="py-2 px-3 font-sans">
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                {rwkRec.status || 'Pending Rework'}
-                              </span>
-                            </td>
+                    <div className="hidden sm:block">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-amber-50/30 border-b border-amber-200 text-[10px] text-amber-800 uppercase">
+                            <th className="py-2 px-3">Rework #</th>
+                            <th className="py-2 px-3">Destination Stage</th>
+                            <th className="py-2 px-2 text-right">Quantity</th>
+                            <th className="py-2 px-3">DC Challan</th>
+                            <th className="py-2 px-3">Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-amber-100 font-mono">
+                          {itemReworks.map((rwkRec, rIdx) => (
+                            <tr key={rwkRec.id || rIdx} className="hover:bg-amber-50/40">
+                              <td className="py-2 px-3 font-bold text-amber-900">{rwkRec.rework_order_no}</td>
+                              <td className="py-2 px-3 font-sans text-slate-700">{rwkRec.target_stage_name || rwkRec.destination_process || 'Stitching'}</td>
+                              <td className="py-2 px-2 text-right font-bold text-amber-800">{fmt(rwkRec.rework_quantity)} pcs</td>
+                              <td className="py-2 px-3 text-slate-600">{rwkRec.dc_challan_no || '—'}</td>
+                              <td className="py-2 px-3 font-sans">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  {rwkRec.status || 'Pending Rework'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="sm:hidden space-y-2 p-2">
+                      {itemReworks.map((rwkRec, rIdx) => (
+                        <div key={rwkRec.id || rIdx} className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-200 text-xs space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-amber-900">{rwkRec.rework_order_no}</span>
+                            <span className="font-mono font-bold text-amber-800">{fmt(rwkRec.rework_quantity)} pcs</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-600">
+                            <span>To: <strong>{rwkRec.target_stage_name || rwkRec.destination_process || 'Stitching'}</strong></span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              {rwkRec.status || 'Pending Rework'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
