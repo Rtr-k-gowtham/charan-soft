@@ -164,24 +164,43 @@ class ProductionController {
             $orders = $stmt->fetchAll();
 
             foreach ($orders as &$ord) {
-                $iStmt = $pdo->prepare("
-                    SELECT poi.*, 
-                           COALESCE(bp.product_name, p.name) as product_name, 
-                           COALESCE(bp.product_code, p.code) as product_code, 
-                           ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
-                           COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
-                           COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
-                    FROM production_order_items poi
-                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
-                    LEFT JOIN products p ON poi.product_id = p.id
-                    JOIN production_stages ps ON poi.current_stage_id = ps.id
-                    LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
-                    LEFT JOIN pantone_colors pcol ON (poi.color = pcol.pantone_name OR poi.color = pcol.pantone_code OR poi.color = pcol.unique_code)
-                    WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
-                    ORDER BY poi.id ASC
-                ");
-                $iStmt->execute([$ord['id']]);
-                $ord['items'] = $iStmt->fetchAll();
+                try {
+                    $iStmt = $pdo->prepare("
+                        SELECT poi.*, 
+                               COALESCE(bp.product_name, p.name) as product_name, 
+                               COALESCE(bp.product_code, p.code) as product_code, 
+                               ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
+                               COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
+                               COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
+                        FROM production_order_items poi
+                        LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                        LEFT JOIN products p ON poi.product_id = p.id
+                        JOIN production_stages ps ON poi.current_stage_id = ps.id
+                        LEFT JOIN colors col ON (poi.color COLLATE utf8mb4_unicode_ci = col.name COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = col.code COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = col.pantone_code COLLATE utf8mb4_unicode_ci)
+                        LEFT JOIN pantone_colors pcol ON (poi.color COLLATE utf8mb4_unicode_ci = pcol.pantone_name COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = pcol.pantone_code COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = pcol.unique_code COLLATE utf8mb4_unicode_ci)
+                        WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
+                        ORDER BY poi.id ASC
+                    ");
+                    $iStmt->execute([$ord['id']]);
+                    $ord['items'] = $iStmt->fetchAll();
+                } catch (Exception $colEx) {
+                    $iStmt = $pdo->prepare("
+                        SELECT poi.*, 
+                               COALESCE(bp.product_name, p.name) as product_name, 
+                               COALESCE(bp.product_code, p.code) as product_code, 
+                               ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
+                               '' as color_pantone_code,
+                               '#0F2042' as color_hex_code
+                        FROM production_order_items poi
+                        LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                        LEFT JOIN products p ON poi.product_id = p.id
+                        JOIN production_stages ps ON poi.current_stage_id = ps.id
+                        WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
+                        ORDER BY poi.id ASC
+                    ");
+                    $iStmt->execute([$ord['id']]);
+                    $ord['items'] = $iStmt->fetchAll();
+                }
 
                 // Compute unique products count
                 $uSet = [];
@@ -254,28 +273,51 @@ class ProductionController {
                 return;
             }
 
-            $iStmt = $pdo->prepare("
-                SELECT poi.*, 
-                       COALESCE(bp.product_name, p.name) as product_name, 
-                       COALESCE(bp.product_code, p.code) as product_code, 
-                       COALESCE(cat.name, po_cat.name, 'General') as category_name,
-                       ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
-                       COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
-                       COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
-                FROM production_order_items poi
-                JOIN production_orders po ON poi.production_order_id = po.id
-                LEFT JOIN categories po_cat ON po.category_id = po_cat.id
-                LEFT JOIN buyer_products bp ON poi.product_id = bp.id
-                LEFT JOIN products p ON poi.product_id = p.id
-                LEFT JOIN categories cat ON p.category_id = cat.id
-                JOIN production_stages ps ON poi.current_stage_id = ps.id
-                LEFT JOIN colors col ON (poi.color = col.name OR poi.color = col.code OR poi.color = col.pantone_code)
-                LEFT JOIN pantone_colors pcol ON (poi.color = pcol.pantone_name OR poi.color = pcol.pantone_code OR poi.color = pcol.unique_code)
-                WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
-                ORDER BY poi.id ASC
-            ");
-            $iStmt->execute([$id]);
-            $order['items'] = $iStmt->fetchAll();
+            try {
+                $iStmt = $pdo->prepare("
+                    SELECT poi.*, 
+                           COALESCE(bp.product_name, p.name) as product_name, 
+                           COALESCE(bp.product_code, p.code) as product_code, 
+                           COALESCE(cat.name, po_cat.name, 'General') as category_name,
+                           ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
+                           COALESCE(col.pantone_code, pcol.pantone_code, '') as color_pantone_code,
+                           COALESCE(col.hex_code, pcol.hex_code, '#0F2042') as color_hex_code
+                    FROM production_order_items poi
+                    JOIN production_orders po ON poi.production_order_id = po.id
+                    LEFT JOIN categories po_cat ON po.category_id = po_cat.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
+                    LEFT JOIN categories cat ON p.category_id = cat.id
+                    JOIN production_stages ps ON poi.current_stage_id = ps.id
+                    LEFT JOIN colors col ON (poi.color COLLATE utf8mb4_unicode_ci = col.name COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = col.code COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = col.pantone_code COLLATE utf8mb4_unicode_ci)
+                    LEFT JOIN pantone_colors pcol ON (poi.color COLLATE utf8mb4_unicode_ci = pcol.pantone_name COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = pcol.pantone_code COLLATE utf8mb4_unicode_ci OR poi.color COLLATE utf8mb4_unicode_ci = pcol.unique_code COLLATE utf8mb4_unicode_ci)
+                    WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
+                    ORDER BY poi.id ASC
+                ");
+                $iStmt->execute([$id]);
+                $order['items'] = $iStmt->fetchAll();
+            } catch (Exception $colEx) {
+                $iStmt = $pdo->prepare("
+                    SELECT poi.*, 
+                           COALESCE(bp.product_name, p.name) as product_name, 
+                           COALESCE(bp.product_code, p.code) as product_code, 
+                           COALESCE(cat.name, po_cat.name, 'General') as category_name,
+                           ps.name as current_stage_name, ps.code as stage_code, ps.color_badge, ps.sequence_order as stage_sequence,
+                           '' as color_pantone_code,
+                           '#0F2042' as color_hex_code
+                    FROM production_order_items poi
+                    JOIN production_orders po ON poi.production_order_id = po.id
+                    LEFT JOIN categories po_cat ON po.category_id = po_cat.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
+                    LEFT JOIN categories cat ON p.category_id = cat.id
+                    JOIN production_stages ps ON poi.current_stage_id = ps.id
+                    WHERE poi.production_order_id = ? AND (poi.total_quantity > 0 OR poi.current_stage_quantity > 0)
+                    ORDER BY poi.id ASC
+                ");
+                $iStmt->execute([$id]);
+                $order['items'] = $iStmt->fetchAll();
+            }
 
             $items = $order['items'];
             $orderStageName = 'Requirement Gathering';
