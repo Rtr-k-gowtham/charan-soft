@@ -10,6 +10,8 @@ import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import CategoryPOIssuer from '../../components/production/CategoryPOIssuer';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import {
   ArrowLeft,
   ShoppingCart,
@@ -31,7 +33,8 @@ import {
   FileText,
   Send,
   Boxes,
-  ExternalLink
+  ExternalLink,
+  Edit3
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -60,6 +63,7 @@ export default function POOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   useEffect(() => {
     if (location.state?.successMessage) {
@@ -237,6 +241,16 @@ export default function POOrderDetail() {
             </button>
 
             <Button
+              variant="outline"
+              icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+            >
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="inline sm:hidden">Edit</span>
+            </Button>
+
+            <Button
               icon={<ChevronRight className="w-4 h-4 stroke-[2.5]" />}
               onClick={() => setMoveOpen(true)}
               className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs whitespace-nowrap"
@@ -249,6 +263,9 @@ export default function POOrderDetail() {
       />
 
       <div className="p-4 sm:p-5 max-w-7xl mx-auto w-full space-y-4">
+        {/* Pending Approval Banner */}
+        <PendingApprovalBanner orderId={Number(order.id)} stageId={2} />
+
         {/* Project Master Info Banner */}
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-start sm:items-center gap-3.5 min-w-0">
@@ -427,6 +444,30 @@ export default function POOrderDetail() {
           </div>
         </div>
       </Modal>
+
+      {/* Stage 02 PO Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id)}
+          orderNumber={order.order_number}
+          orderTitle={order.title}
+          stageId={2}
+          stageName="02. PO"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            purchase_orders: existingPOs,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setSuccessToast('Modification request submitted to Admin for approval!');
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }

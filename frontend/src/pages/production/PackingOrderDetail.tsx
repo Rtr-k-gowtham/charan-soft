@@ -34,8 +34,11 @@ import {
   Scale,
   FileText,
   Sparkles,
-  Layers
+  Layers,
+  Edit3
 } from 'lucide-react';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
@@ -89,6 +92,7 @@ export default function PackingOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Tab filter: 'ALL' or 'PACKING'
   const [activeTab, setActiveTab] = useState<'ALL' | 'PACKING'>('ALL');
@@ -617,6 +621,16 @@ export default function PackingOrderDetail() {
             </Button>
 
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setModModalOpen(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 h-9"
+            >
+              <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+              <span>Request Modification</span>
+            </Button>
+
+            <Button
               variant="primary"
               size="sm"
               onClick={() => setTransferModalOpen(true)}
@@ -660,6 +674,9 @@ export default function PackingOrderDetail() {
           </div>
         </div>
       </div>
+
+      {/* Pending Modification Banner */}
+      <PendingApprovalBanner orderId={Number(id)} stageId={9} />
 
       {/* KPI METRIC CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
@@ -1497,6 +1514,31 @@ export default function PackingOrderDetail() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Stage 09 Packing Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id || id)}
+          orderNumber={order.order_number || `ORD-${id}`}
+          orderTitle={order.title}
+          stageId={9}
+          stageName="09. Packing"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            packing_batches: batches,
+            items: items,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
+            fetchOrderData();
+          }}
+        />
       )}
     </div>
   );

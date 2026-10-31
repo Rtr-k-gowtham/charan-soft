@@ -14,7 +14,12 @@ import {
   Clock,
   Sparkles,
   ShieldAlert,
-  Edit3
+  Edit3,
+  PackageCheck,
+  Truck,
+  Scissors,
+  CheckCheck,
+  Boxes
 } from 'lucide-react';
 
 interface Props {
@@ -47,9 +52,13 @@ export default function StageModificationModal({
 
   // Stage-specific editable records
   const [items, setItems] = useState<any[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<any[]>([]);
+  const [receipts, setReceipts] = useState<any[]>([]);
   const [dyeingOrders, setDyeingOrders] = useState<any[]>([]);
   const [cuttingBatches, setCuttingBatches] = useState<any[]>([]);
+  const [embroideryJobs, setEmbroideryJobs] = useState<any[]>([]);
   const [stitchingBatches, setStitchingBatches] = useState<any[]>([]);
+  const [inspections, setInspections] = useState<any[]>([]);
   const [packingBatches, setPackingBatches] = useState<any[]>([]);
   const [dispatchRecords, setDispatchRecords] = useState<any[]>([]);
 
@@ -74,6 +83,16 @@ export default function StageModificationModal({
           ? JSON.parse(JSON.stringify(currentSnapshot.items))
           : []
       );
+      setPurchaseOrders(
+        currentSnapshot.purchase_orders && Array.isArray(currentSnapshot.purchase_orders)
+          ? JSON.parse(JSON.stringify(currentSnapshot.purchase_orders))
+          : []
+      );
+      setReceipts(
+        currentSnapshot.receipts && Array.isArray(currentSnapshot.receipts)
+          ? JSON.parse(JSON.stringify(currentSnapshot.receipts))
+          : []
+      );
       setDyeingOrders(
         currentSnapshot.dyeing_orders && Array.isArray(currentSnapshot.dyeing_orders)
           ? JSON.parse(JSON.stringify(currentSnapshot.dyeing_orders))
@@ -84,9 +103,19 @@ export default function StageModificationModal({
           ? JSON.parse(JSON.stringify(currentSnapshot.cutting_batches))
           : []
       );
+      setEmbroideryJobs(
+        currentSnapshot.embroidery_jobs && Array.isArray(currentSnapshot.embroidery_jobs)
+          ? JSON.parse(JSON.stringify(currentSnapshot.embroidery_jobs))
+          : []
+      );
       setStitchingBatches(
         currentSnapshot.stitching_batches && Array.isArray(currentSnapshot.stitching_batches)
           ? JSON.parse(JSON.stringify(currentSnapshot.stitching_batches))
+          : []
+      );
+      setInspections(
+        currentSnapshot.inspections && Array.isArray(currentSnapshot.inspections)
+          ? JSON.parse(JSON.stringify(currentSnapshot.inspections))
           : []
       );
       setPackingBatches(
@@ -126,9 +155,13 @@ export default function StageModificationModal({
     };
 
     if (items.length > 0) proposed.items = items;
+    if (purchaseOrders.length > 0) proposed.purchase_orders = purchaseOrders;
+    if (receipts.length > 0) proposed.receipts = receipts;
     if (dyeingOrders.length > 0) proposed.dyeing_orders = dyeingOrders;
     if (cuttingBatches.length > 0) proposed.cutting_batches = cuttingBatches;
+    if (embroideryJobs.length > 0) proposed.embroidery_jobs = embroideryJobs;
     if (stitchingBatches.length > 0) proposed.stitching_batches = stitchingBatches;
+    if (inspections.length > 0) proposed.inspections = inspections;
     if (packingBatches.length > 0) proposed.packing_batches = packingBatches;
     if (dispatchRecords.length > 0) proposed.dispatch_records = dispatchRecords;
 
@@ -231,7 +264,7 @@ export default function StageModificationModal({
             required
             value={modificationReason}
             onChange={(e) => setModificationReason(e.target.value)}
-            placeholder="Explain why this stage modification is required (e.g. Buyer updated delivery schedule, mill shade revision, defect rectification, yarn inward variance)..."
+            placeholder="Explain why this stage modification is required (e.g. Supplier delivered updated quantity, mill shade revision, defect rectification, challan number change)..."
             className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500/20 bg-white"
           />
         </FormField>
@@ -325,12 +358,183 @@ export default function StageModificationModal({
           </div>
         )}
 
+        {/* Stage-Specific Editable Section: Stage 02 Purchase Orders */}
+        {purchaseOrders.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+              Purchase Orders (Stage 02)
+            </span>
+            <div className="space-y-2">
+              {purchaseOrders.map((po, idx) => (
+                <div key={po.id || idx} className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">
+                      {po.po_number || `PO #${po.id}`} — {po.supplier_name || 'Supplier'}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">
+                      {po.status || 'Active'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Expected Delivery Date</label>
+                      <input
+                        type="date"
+                        value={po.delivery_date ? po.delivery_date.split(' ')[0] : ''}
+                        onChange={(e) => {
+                          const updated = [...purchaseOrders];
+                          updated[idx] = { ...updated[idx], delivery_date: e.target.value };
+                          setPurchaseOrders(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Payment Terms</label>
+                      <input
+                        type="text"
+                        value={po.payment_terms || ''}
+                        onChange={(e) => {
+                          const updated = [...purchaseOrders];
+                          updated[idx] = { ...updated[idx], payment_terms: e.target.value };
+                          setPurchaseOrders(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500"
+                        placeholder="e.g. Net 30 Days"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 block mb-0.5">PO Remarks / Instructions</label>
+                    <input
+                      type="text"
+                      value={po.remarks || ''}
+                      onChange={(e) => {
+                        const updated = [...purchaseOrders];
+                        updated[idx] = { ...updated[idx], remarks: e.target.value };
+                        setPurchaseOrders(updated);
+                      }}
+                      className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500"
+                      placeholder="Remarks..."
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stage-Specific Editable Section: Stage 03 Inward Receipts */}
+        {receipts.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 text-emerald-800">
+                <PackageCheck className="w-4 h-4 text-emerald-600" />
+                Inward Receipts &amp; Received Products (Stage 03)
+              </span>
+              <span className="text-[10px] text-slate-400">Modify Challan No, Vehicle, Received Qty &amp; Remarks</span>
+            </div>
+            <div className="space-y-2.5">
+              {receipts.map((rc, idx) => (
+                <div key={rc.id || idx} className="p-3 bg-white border border-slate-200 rounded-lg space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between text-xs pb-1.5 border-b border-slate-100">
+                    <div>
+                      <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {rc.receipt_no || `GRN #${rc.id}`}
+                      </span>
+                      <span className="ml-2 font-semibold text-slate-700">
+                        {rc.supplier_name || (rc.po_number ? `PO: ${rc.po_number}` : 'Inward Record')}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-medium">
+                      Date: {rc.receipt_date || rc.created_at?.split(' ')[0] || '—'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                        DC / Challan No
+                      </label>
+                      <input
+                        type="text"
+                        value={rc.delivery_challan_no ?? rc.challan_no ?? ''}
+                        onChange={(e) => {
+                          const updated = [...receipts];
+                          updated[idx] = { ...updated[idx], delivery_challan_no: e.target.value };
+                          setReceipts(updated);
+                        }}
+                        placeholder="e.g. DC-1092"
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 font-mono font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                        Vehicle No
+                      </label>
+                      <input
+                        type="text"
+                        value={rc.vehicle_no ?? ''}
+                        onChange={(e) => {
+                          const updated = [...receipts];
+                          updated[idx] = { ...updated[idx], vehicle_no: e.target.value };
+                          setReceipts(updated);
+                        }}
+                        placeholder="e.g. TN 38 BJ 4521"
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                        Received Qty (units/kg)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={rc.quantity_received ?? rc.total_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...receipts];
+                          updated[idx] = {
+                            ...updated[idx],
+                            quantity_received: Number(e.target.value),
+                            total_quantity: Number(e.target.value),
+                          };
+                          setReceipts(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 font-mono font-bold text-slate-900 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                      Inward Notes &amp; Verification Remarks
+                    </label>
+                    <input
+                      type="text"
+                      value={rc.remarks ?? ''}
+                      onChange={(e) => {
+                        const updated = [...receipts];
+                        updated[idx] = { ...updated[idx], remarks: e.target.value };
+                        setReceipts(updated);
+                      }}
+                      placeholder="e.g. Verified 100% yarn boxes, no transport dampness..."
+                      className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Stage-Specific Editable Section: Stage 04 Dyeing Orders */}
         {dyeingOrders.length > 0 && (
           <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                Dyeing Batches &amp; Outward Quantities
+                Dyeing Batches &amp; Outward Quantities (Stage 04)
               </span>
               <span className="text-[10px] text-slate-400">Modify mill outward quantities &amp; return dates</span>
             </div>
@@ -385,7 +589,7 @@ export default function StageModificationModal({
         {cuttingBatches.length > 0 && (
           <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
             <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-              Cutting Batches
+              Cutting Batches (Stage 05)
             </span>
             <div className="space-y-2">
               {cuttingBatches.map((cb, idx) => (
@@ -431,11 +635,93 @@ export default function StageModificationModal({
           </div>
         )}
 
+        {/* Stage-Specific Editable Section: Stage 06 Embroidery Jobs */}
+        {embroideryJobs.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 text-brand-800">
+                <Sparkles className="w-4 h-4 text-brand-600" />
+                Embroidery Job Orders (Stage 06)
+              </span>
+              <span className="text-[10px] text-slate-400">Modify sent quantity, stitch count &amp; remarks</span>
+            </div>
+            <div className="space-y-2">
+              {embroideryJobs.map((ej, idx) => (
+                <div key={ej.id || idx} className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2 shadow-2xs">
+                  <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-100">
+                    <span className="font-bold text-slate-800">
+                      Challan #{ej.challan_number || `JOB-${ej.id}`} — {ej.vendor_name || ej.supplier_name || 'Embroidery Vendor'}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-bold border border-brand-200">
+                      {ej.design_name || ej.status || 'Active'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                        Sent / Outward Quantity (pcs)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={ej.sent_quantity ?? ej.outward_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...embroideryJobs];
+                          updated[idx] = {
+                            ...updated[idx],
+                            sent_quantity: Number(e.target.value),
+                            outward_quantity: Number(e.target.value),
+                          };
+                          setEmbroideryJobs(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                        Stitches Count
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={ej.stitches_count ?? ''}
+                        onChange={(e) => {
+                          const updated = [...embroideryJobs];
+                          updated[idx] = { ...updated[idx], stitches_count: Number(e.target.value) };
+                          setEmbroideryJobs(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                        placeholder="e.g. 8500"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 block mb-0.5">
+                      Remarks / Design Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={ej.remarks ?? ''}
+                      onChange={(e) => {
+                        const updated = [...embroideryJobs];
+                        updated[idx] = { ...updated[idx], remarks: e.target.value };
+                        setEmbroideryJobs(updated);
+                      }}
+                      className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500"
+                      placeholder="Remarks..."
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Stage-Specific Editable Section: Stage 07 Stitching Batches */}
         {stitchingBatches.length > 0 && (
           <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
             <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-              Stitching Batches
+              Stitching Batches (Stage 07)
             </span>
             <div className="space-y-2">
               {stitchingBatches.map((sb, idx) => (
@@ -480,8 +766,170 @@ export default function StageModificationModal({
             </div>
           </div>
         )}
+
+        {/* Stage-Specific Editable Section: Stage 08 Checking / Quality Inspections */}
+        {inspections.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+              Quality Inspections (Stage 08 Checking)
+            </span>
+            <div className="space-y-2">
+              {inspections.map((qi, idx) => (
+                <div key={qi.id || idx} className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">
+                      Inspection #{qi.id} — {qi.product_name || 'Garment'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Passed Qty (pcs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={qi.passed_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...inspections];
+                          updated[idx] = { ...updated[idx], passed_quantity: Number(e.target.value) };
+                          setInspections(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Rework Qty (pcs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={qi.rework_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...inspections];
+                          updated[idx] = { ...updated[idx], rework_quantity: Number(e.target.value) };
+                          setInspections(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Rejected Qty (pcs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={qi.rejected_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...inspections];
+                          updated[idx] = { ...updated[idx], rejected_quantity: Number(e.target.value) };
+                          setInspections(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stage-Specific Editable Section: Stage 09 Packing Batches */}
+        {packingBatches.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+              Packing Batches (Stage 09)
+            </span>
+            <div className="space-y-2">
+              {packingBatches.map((pb, idx) => (
+                <div key={pb.id || idx} className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">
+                      Batch #{pb.batch_number || pb.id} — {pb.product_name || 'Garment'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Packed Quantity (pcs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={pb.packed_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...packingBatches];
+                          updated[idx] = { ...updated[idx], packed_quantity: Number(e.target.value) };
+                          setPackingBatches(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Carton Count</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={pb.carton_count ?? ''}
+                        onChange={(e) => {
+                          const updated = [...packingBatches];
+                          updated[idx] = { ...updated[idx], carton_count: Number(e.target.value) };
+                          setPackingBatches(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Stage-Specific Editable Section: Stage 10 Dispatch Records */}
+        {dispatchRecords.length > 0 && (
+          <div className="p-3 bg-slate-50/70 border border-slate-200 rounded-xl space-y-2">
+            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
+              Dispatch Records (Stage 10)
+            </span>
+            <div className="space-y-2">
+              {dispatchRecords.map((dr, idx) => (
+                <div key={dr.id || idx} className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800">
+                      Dispatch #{dr.dispatch_number || dr.id}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Dispatched Quantity (pcs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={dr.dispatched_quantity ?? ''}
+                        onChange={(e) => {
+                          const updated = [...dispatchRecords];
+                          updated[idx] = { ...updated[idx], dispatched_quantity: Number(e.target.value) };
+                          setDispatchRecords(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-500 block mb-0.5">Vehicle / Courier</label>
+                      <input
+                        type="text"
+                        value={dr.vehicle_no ?? dr.courier_name ?? ''}
+                        onChange={(e) => {
+                          const updated = [...dispatchRecords];
+                          updated[idx] = { ...updated[idx], vehicle_no: e.target.value };
+                          setDispatchRecords(updated);
+                        }}
+                        className="w-full text-xs p-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </form>
     </Modal>
   );
 }
-

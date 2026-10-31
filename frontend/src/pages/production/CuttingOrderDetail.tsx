@@ -14,6 +14,8 @@ import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import StageInspectionModal from '../../components/production/StageInspectionModal';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import {
   ArrowLeft,
   Scissors,
@@ -32,7 +34,8 @@ import {
   Package,
   MoreVertical,
   Search,
-  Check
+  Check,
+  Edit3
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -65,6 +68,7 @@ export default function CuttingOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Search & Filter States
   const [batchSearch, setBatchSearch] = useState('');
@@ -947,11 +951,22 @@ export default function CuttingOrderDetail() {
             >
               <RefreshCw className="w-4 h-4" />
             </button>
+            <Button
+              variant="outline"
+              icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+            >
+              Request Modification
+            </Button>
           </div>
         }
       />
 
       <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner orderId={Number(order.id)} stageId={5} />
+
         {/* Order Info & Buyer Banner */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -2978,6 +2993,31 @@ export default function CuttingOrderDetail() {
             setShowInspectModal(false);
             setSelectedBatchForInspect(null);
             setToastMessage('Quality inspection recorded successfully! Accepted balance credited for stage transfer.');
+            loadData();
+          }}
+        />
+      )}
+
+      {/* Stage 05 Cutting Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id)}
+          orderNumber={order.order_number}
+          orderTitle={order.title}
+          stageId={5}
+          stageName="05. Cutting"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            cutting_batches: batches,
+            items: items,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
             loadData();
           }}
         />

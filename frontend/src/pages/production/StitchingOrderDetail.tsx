@@ -18,6 +18,8 @@ import Button from '../../components/ui/Button';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import Modal from '../../components/ui/Modal';
 import FormField from '../../components/ui/FormField';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import {
   ArrowLeft,
@@ -46,7 +48,8 @@ import {
   Clock,
   RotateCcw,
   MoreVertical,
-  Search
+  Search,
+  Edit3
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -118,6 +121,7 @@ export default function StitchingOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   const [filterMode, setFilterMode] = useState<'ALL' | 'STITCHING'>('ALL');
 
@@ -1001,6 +1005,15 @@ export default function StitchingOrderDetail() {
               Refresh
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              Request Modification
+            </Button>
+            <Button
               id="btn-pass-to-checking"
               variant="primary"
               size="sm"
@@ -1049,6 +1062,8 @@ export default function StitchingOrderDetail() {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-6 mt-6 space-y-6">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner orderId={Number(id)} stageId={7} />
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700 text-xs">
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -3121,6 +3136,31 @@ export default function StitchingOrderDetail() {
           );
         })()}
       </Modal>
+
+      {/* Stage 07 Stitching Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id || id)}
+          orderNumber={order.order_number || `ORD-${id}`}
+          orderTitle={order.title}
+          stageId={7}
+          stageName="07. Stitching"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            stitching_batches: batches,
+            items: items,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
+            fetchOrderData();
+          }}
+        />
+      )}
     </div>
   );
 }

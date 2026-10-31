@@ -17,6 +17,8 @@ import SearchableSelect, { SelectOption } from '../../components/ui/SearchableSe
 import { LivePhotoCaptureField } from '../../components/production/LivePhotoCaptureField';
 import { lookupPantone, VERIFIED_PANTONE_LIBRARY } from '../../lib/pantoneService';
 import JobWorkDocumentModal, { JobWorkDocType } from '../../components/documents/JobWorkDocumentModal';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 import {
   ArrowLeft,
   Sparkles,
@@ -50,7 +52,8 @@ import {
   RotateCcw,
   MoreVertical,
   Search,
-  CheckCheck
+  CheckCheck,
+  Edit3
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -142,6 +145,7 @@ export default function EmbroideryOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // Filter tabs: 'job_orders' | 'rework'
   const [activeTab, setActiveTab] = useState<'job_orders' | 'rework'>('job_orders');
@@ -1872,6 +1876,15 @@ export default function EmbroideryOrderDetail() {
               Refresh
             </Button>
             <Button
+              variant="outline"
+              size="sm"
+              icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
+              onClick={() => setModModalOpen(true)}
+              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
+            >
+              Request Modification
+            </Button>
+            <Button
               id="btn-new-outward-challan"
               variant="primary"
               size="sm"
@@ -1913,6 +1926,8 @@ export default function EmbroideryOrderDetail() {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-6 mt-6 space-y-6">
+        {/* Pending Modification Banner */}
+        <PendingApprovalBanner orderId={Number(id)} stageId={6} />
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700 text-xs">
             <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -4581,6 +4596,31 @@ export default function EmbroideryOrderDetail() {
         )}
         companySettings={companySettings}
       />
+
+      {/* Stage 06 Embroidery Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id || id)}
+          orderNumber={order.order_number || `ORD-${id}`}
+          orderTitle={order.title}
+          stageId={6}
+          stageName="06. Embroidery"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            embroidery_jobs: jobOrders,
+            items: items,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
+            fetchOrderData();
+          }}
+        />
+      )}
     </div>
   );
 }

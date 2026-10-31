@@ -39,8 +39,11 @@ import {
   ChevronUp,
   ExternalLink,
   Download,
-  AlertCircle
+  AlertCircle,
+  Edit3
 } from 'lucide-react';
+import PendingApprovalBanner from '../../components/production/PendingApprovalBanner';
+import StageModificationModal from '../../components/production/StageModificationModal';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
 
@@ -362,6 +365,7 @@ export default function DispatchOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [modModalOpen, setModModalOpen] = useState(false);
 
   // New Dispatch Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
@@ -780,6 +784,16 @@ export default function DispatchOrderDetail() {
             <span>Refresh</span>
           </Button>
 
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setModModalOpen(true)}
+            className="gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+            <span>Request Modification</span>
+          </Button>
+
           {availableCartons.length === 0 && cartons.length > 0 ? (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
               <CheckCheck className="w-4 h-4 text-emerald-600" />
@@ -799,6 +813,9 @@ export default function DispatchOrderDetail() {
           )}
         </div>
       </div>
+
+      {/* Pending Modification Banner */}
+      <PendingApprovalBanner orderId={Number(id)} stageId={10} />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
@@ -1300,6 +1317,31 @@ export default function DispatchOrderDetail() {
             onClose={() => setPreviewPdfDoc(null)}
           />
         </Modal>
+      )}
+
+      {/* Stage 10 Completed / Dispatch Modification Request Modal */}
+      {order && (
+        <StageModificationModal
+          isOpen={modModalOpen}
+          onClose={() => setModModalOpen(false)}
+          orderId={Number(order.id || id)}
+          orderNumber={order.order_number || `ORD-${id}`}
+          orderTitle={order.title}
+          stageId={10}
+          stageName="10. Completed"
+          currentSnapshot={{
+            order_title: order.title,
+            target_delivery_date: order.target_delivery_date,
+            priority: order.priority,
+            dispatch_records: dispatches,
+            items: items,
+            notes: order.notes,
+          }}
+          onSuccess={() => {
+            setToastMessage('Modification request submitted to Admin for approval!');
+            fetchOrderData();
+          }}
+        />
       )}
     </div>
   );

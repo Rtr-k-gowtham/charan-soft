@@ -1021,7 +1021,9 @@ class ApprovalController {
 
             case 3: // Inward
                 $recRows = $pdo->prepare("
-                    SELECT pr.*, po.po_number, s.name as supplier_name
+                    SELECT pr.*, po.po_number, s.name as supplier_name,
+                           (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as quantity_received,
+                           (SELECT COALESCE(SUM(quantity_received), 0) FROM purchase_receipt_items pri WHERE pri.purchase_receipt_id = pr.id) as total_quantity
                     FROM purchase_receipts pr
                     JOIN purchase_orders po ON pr.purchase_order_id = po.id
                     LEFT JOIN suppliers s ON po.supplier_id = s.id
@@ -1203,6 +1205,21 @@ class ApprovalController {
                                 remarks = COALESCE(?, remarks)
                             WHERE id = ?
                         ");
+                        $upRecItem = $pdo->prepare("
+                            UPDATE purchase_receipt_items SET
+                                quantity_received = ?,
+                                accepted_quantity = ?
+                            WHERE purchase_receipt_id = ?
+                        ");
+                        $upPoi = $pdo->prepare("
+                            UPDATE purchase_order_items poi
+                            SET received_quantity = (
+                                SELECT COALESCE(SUM(pri.quantity_received), 0)
+                                FROM purchase_receipt_items pri
+                                WHERE pri.purchase_order_item_id = poi.id
+                            )
+                            WHERE poi.purchase_order_id = (SELECT purchase_order_id FROM purchase_receipts WHERE id = ?)
+                        ");
                         foreach ($proposed['receipts'] as $prRow) {
                             if (!empty($prRow['id'])) {
                                 $upRec->execute([
@@ -1211,6 +1228,11 @@ class ApprovalController {
                                     $prRow['remarks'] ?? null,
                                     (int)$prRow['id']
                                 ]);
+                                $qty = $prRow['quantity_received'] ?? $prRow['total_quantity'] ?? null;
+                                if ($qty !== null && is_numeric($qty)) {
+                                    $upRecItem->execute([(float)$qty, (float)$qty, (int)$prRow['id']]);
+                                    $upPoi->execute([(int)$prRow['id']]);
+                                }
                             }
                         }
                     }
