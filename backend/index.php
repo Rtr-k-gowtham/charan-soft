@@ -305,7 +305,7 @@ function handleDashboard(): void {
     $kpis['completed_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM production_orders WHERE status = 'COMPLETED' AND deleted_at IS NULL")->fetchColumn();
 
     $lowStock = $pdo->query("
-        SELECT m.name, m.uom, m.min_stock_level, COALESCE(sb.current_quantity,0) as current_stock, c.name as category_name
+        SELECT m.id, m.name, m.code, m.uom, m.min_stock_level, COALESCE(sb.current_quantity,0) as current_stock, c.name as category_name
         FROM materials m
         JOIN categories c ON m.category_id = c.id
         LEFT JOIN stock_balances sb ON m.id = sb.material_id
@@ -315,14 +315,14 @@ function handleDashboard(): void {
     ")->fetchAll();
 
     $recentPOs = $pdo->query("
-        SELECT po.po_number, po.status, po.payment_status, po.net_amount, po.balance_amount, po.po_date, s.name as supplier_name
+        SELECT po.id, po.po_number, po.status, po.payment_status, po.net_amount, po.balance_amount, po.po_date, s.name as supplier_name
         FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id
         WHERE po.deleted_at IS NULL
         ORDER BY po.id DESC LIMIT 6
     ")->fetchAll();
 
     $recentProduction = $pdo->query("
-        SELECT po.order_number, po.status, po.total_quantity, po.completed_quantity, po.target_delivery_date, cu.name as customer_name
+        SELECT po.id, po.order_number, po.title, po.status, po.total_quantity, po.completed_quantity, po.target_delivery_date, cu.name as customer_name
         FROM production_orders po
         LEFT JOIN customers cu ON po.customer_id = cu.id
         WHERE po.deleted_at IS NULL

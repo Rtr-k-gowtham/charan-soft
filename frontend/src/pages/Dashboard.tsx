@@ -240,14 +240,14 @@ export default function Dashboard() {
                   No production orders in progress
                 </div>
               ) : (
-                d.recent_production.slice(0, 5).map((ord) => {
+                d.recent_production.slice(0, 5).map((ord, idx) => {
                   const total = ord.total_quantity || 0;
                   const done = ord.completed_quantity || 0;
                   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 
                   return (
                     <Link
-                      key={ord.id}
+                      key={ord.id ?? ord.order_number ?? `prod-${idx}`}
                       to={`/production/orders/${ord.id}`}
                       className="block p-2.5 bg-slate-50/70 hover:bg-slate-100/80 rounded-lg border border-slate-200/70 transition-colors"
                     >
@@ -306,8 +306,8 @@ export default function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    d.recent_production.slice(0, 8).map((ord) => (
-                      <tr key={ord.id} className="hover:bg-slate-50 cursor-pointer">
+                    d.recent_production.slice(0, 8).map((ord, idx) => (
+                      <tr key={ord.id ?? ord.order_number ?? `prod-row-${idx}`} className="hover:bg-slate-50 cursor-pointer">
                         <td className="font-bold text-brand-700 font-mono">
                           <Link to={`/production/orders/${ord.id}`} className="hover:underline">
                             {ord.order_number}
@@ -354,12 +354,12 @@ export default function Dashboard() {
                   All inventory levels are adequate
                 </div>
               ) : (
-                d.low_stock.slice(0, 5).map((item) => {
+                d.low_stock.slice(0, 5).map((item, idx) => {
                   const deficit = Math.max(0, item.min_stock_level - item.current_stock);
 
                   return (
                     <Link
-                      key={item.id}
+                      key={item.id ?? item.name ?? `low-${idx}`}
                       to="/inventory/stock"
                       className="block p-2.5 bg-red-50/40 hover:bg-red-50/80 rounded-lg border border-red-200/60 transition-colors"
                     >
@@ -412,8 +412,8 @@ export default function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    d.low_stock.slice(0, 8).map((item) => (
-                      <tr key={item.id} className="hover:bg-red-50/40">
+                    d.low_stock.slice(0, 8).map((item, idx) => (
+                      <tr key={item.id ?? item.name ?? `low-row-${idx}`} className="hover:bg-red-50/40">
                         <td>
                           <span className="font-semibold text-slate-800">{item.name}</span>
                         </td>
@@ -460,9 +460,9 @@ export default function Dashboard() {
                   No purchase orders recorded yet
                 </div>
               ) : (
-                d.recent_purchase_orders.slice(0, 5).map((po) => (
+                d.recent_purchase_orders.slice(0, 5).map((po, idx) => (
                   <Link
-                    key={po.id}
+                    key={po.id ?? po.po_number ?? `po-${idx}`}
                     to="/purchase/orders"
                     className="block p-2.5 bg-slate-50/70 hover:bg-slate-100/80 rounded-lg border border-slate-200/70 transition-colors"
                   >
@@ -528,8 +528,8 @@ export default function Dashboard() {
                       </td>
                     </tr>
                   ) : (
-                    d.recent_purchase_orders.slice(0, 8).map((po) => (
-                      <tr key={po.id} className="hover:bg-slate-50 cursor-pointer">
+                    d.recent_purchase_orders.slice(0, 8).map((po, idx) => (
+                      <tr key={po.id ?? po.po_number ?? `po-row-${idx}`} className="hover:bg-slate-50 cursor-pointer">
                         <td className="font-bold text-brand-700 font-mono">
                           <Link to="/purchase/orders" className="hover:underline">
                             {po.po_number}

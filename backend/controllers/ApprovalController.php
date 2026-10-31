@@ -117,7 +117,10 @@ class ApprovalController {
                     po.title as order_title,
                     po.status as order_status,
                     po.target_delivery_date,
-                    c.name as customer_name
+                    c.name as customer_name,
+                    c.name as buyer_name,
+                    c.code as customer_code,
+                    c.code as buyer_code
                 FROM stage_modification_requests smr
                 JOIN production_orders po ON smr.production_order_id = po.id
                 LEFT JOIN customers c ON po.customer_id = c.id
@@ -162,10 +165,14 @@ class ApprovalController {
                     po.order_number,
                     po.title as order_title,
                     po.status as order_status,
-                    po.current_stage_id,
+                    (SELECT poi.current_stage_id FROM production_order_items poi WHERE poi.production_order_id = po.id ORDER BY poi.id ASC LIMIT 1) as current_stage_id,
+                    (SELECT ps.name FROM production_order_items poi JOIN production_stages ps ON poi.current_stage_id = ps.id WHERE poi.production_order_id = po.id ORDER BY poi.id ASC LIMIT 1) as order_current_stage_name,
                     po.target_delivery_date,
+                    po.target_delivery_date as order_delivery_date,
                     c.name as customer_name,
-                    c.code as customer_code
+                    c.name as buyer_name,
+                    c.code as customer_code,
+                    c.code as buyer_code
                 FROM stage_modification_requests smr
                 JOIN production_orders po ON smr.production_order_id = po.id
                 LEFT JOIN customers c ON po.customer_id = c.id
@@ -188,8 +195,13 @@ class ApprovalController {
             }
 
             // Parse snapshots
-            $request['original_data'] = json_decode($request['original_data_snapshot'] ?? '{}', true) ?: [];
-            $request['proposed_data'] = json_decode($request['proposed_data'] ?? '{}', true) ?: [];
+            $origSnapshot = json_decode($request['original_data_snapshot'] ?? '{}', true) ?: [];
+            $propSnapshot = json_decode($request['proposed_data'] ?? '{}', true) ?: [];
+
+            $request['original_data_snapshot'] = $origSnapshot;
+            $request['original_data'] = $origSnapshot;
+            $request['proposed_data'] = $propSnapshot;
+            $request['changes_diff'] = self::computeChangesDiff($origSnapshot, $propSnapshot);
 
             Response::success($request);
         } catch (Exception $e) {
@@ -597,6 +609,62 @@ class ApprovalController {
             }
             Response::error("Rejection failed: " . $e->getMessage(), 500);
         }
+    }
+
+    /**
+     * Helper: Compute structured diff between original snapshot and proposed data
+     */
+    public static function computeChangesDiff(array $original, array $proposed): array {
+        $diff = [];
+        $fieldLabels = [
+            'order_title' => 'Order Title',
+            'target_delivery_date' => 'Target Delivery Date',
+            'priority' => 'Order Priority',
+            'notes' => 'Stage / Order Notes',
+            'remarks' => 'Operational Remarks',
+            'items' => 'Product Line Items',
+            'dyeing_orders' => 'Dyeing Batches / Outward',
+            'cutting_batches' => 'Cutting Batches',
+            'embroidery_jobs' => 'Embroidery Outward Jobs',
+            'stitching_batches' => 'Stitching Batches',
+            'inspections' => 'Quality Inspections',
+            'packing_batches' => 'Packing Records',
+            'dispatch_records' => 'Dispatch Records',
+        ];
+
+        foreach ($proposed as $key => $newVal) {
+            $origVal = $original[$key] ?? null;
+
+            // Normalize empty or null comparisons
+            $normOrig = is_string($origVal) ? trim($origVal) : $origVal;
+            $normNew = is_string($newVal) ? trim($newVal) : $newVal;
+
+            if (json_encode($normOrig) === json_encode($normNew)) {
+                continue;
+            }
+
+            $label = $fieldLabels[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
+
+            if ($origVal === null || $origVal === '') {
+                $diff[] = [
+                    'field' => $key,
+                    'label' => $label,
+                    'original' => '—',
+                    'proposed' => $newVal,
+                    'type' => 'added'
+                ];
+            } else {
+                $diff[] = [
+                    'field' => $key,
+                    'label' => $label,
+                    'original' => $origVal,
+                    'proposed' => $newVal,
+                    'type' => 'modified'
+                ];
+            }
+        }
+
+        return $diff;
     }
 
     /**
