@@ -108,6 +108,12 @@ export default function InwardOrderDetail() {
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Inward Receive Modal State
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
@@ -542,7 +548,10 @@ export default function InwardOrderDetail() {
             <Button
               variant="outline"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
             >
               <span className="hidden sm:inline">Request Modification</span>
@@ -1057,6 +1066,27 @@ export default function InwardOrderDetail() {
                           </div>
                         )}
                       </div>
+
+                      {/* Post-Completion Edit Action */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400 font-medium">Historical Inward Record</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRecordForMod({
+                              type: 'receipts',
+                              id: rc.id,
+                              identifier: rc.receipt_no || `GRN #${rc.id}`,
+                              data: rc,
+                            });
+                            setModModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 rounded-lg transition shadow-2xs"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-brand-600" />
+                          <span>Edit / Modify</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1454,12 +1484,16 @@ export default function InwardOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id)}
           orderNumber={order.order_number}
           orderTitle={order.title}
           stageId={3}
           stageName="03. Inward"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

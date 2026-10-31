@@ -122,6 +122,12 @@ export default function StitchingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   const [filterMode, setFilterMode] = useState<'ALL' | 'STITCHING'>('ALL');
 
@@ -1008,7 +1014,10 @@ export default function StitchingOrderDetail() {
               variant="outline"
               size="sm"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
             >
               Request Modification
@@ -1136,22 +1145,20 @@ export default function StitchingOrderDetail() {
               <button
                 type="button"
                 onClick={() => setFilterMode('ALL')}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  filterMode === 'ALL'
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${filterMode === 'ALL'
                     ? 'bg-slate-900 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 All Products ({items.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterMode('STITCHING')}
-                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${
-                  filterMode === 'STITCHING'
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition ${filterMode === 'STITCHING'
                     ? 'bg-brand-600 text-white shadow-2xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 In Stitching ({items.filter(i => Number(i.total_arrived || i.available_to_stitch || 0) > 0).length})
               </button>
@@ -1429,11 +1436,10 @@ export default function StitchingOrderDetail() {
                             <button
                               type="button"
                               onClick={(e) => handleToggleBatchMenu(e, batch)}
-                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
-                                activeBatchMenu?.batch.id === batch.id
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeBatchMenu?.batch.id === batch.id
                                   ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
                                   : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-                              }`}
+                                }`}
                               title="Batch Options"
                             >
                               <MoreVertical className="w-4 h-4" />
@@ -1631,17 +1637,16 @@ export default function StitchingOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2 text-center align-middle whitespace-nowrap overflow-hidden">
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                              (rec.status as string) === 'Transferred'
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold ${(rec.status as string) === 'Transferred'
                                 ? 'bg-purple-50 text-purple-800 border border-purple-200'
                                 : rec.status === 'Accepted After Rework' || (rec.status as string) === 'Completed'
-                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                : rec.status === 'Sent for Rework'
-                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                                : rec.status === 'Rework Received'
-                                ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}>
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : rec.status === 'Sent for Rework'
+                                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                    : rec.status === 'Rework Received'
+                                      ? 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                                      : 'bg-amber-50 text-amber-800 border border-amber-200'
+                              }`}>
                               {rec.status || 'Pending Rework'}
                             </span>
                           </td>
@@ -1650,11 +1655,10 @@ export default function StitchingOrderDetail() {
                             <button
                               type="button"
                               onClick={(e) => handleToggleReworkMenu(e, rec)}
-                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${
-                                activeReworkMenu?.record.id === rec.id
+                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeReworkMenu?.record.id === rec.id
                                   ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
                                   : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-                              }`}
+                                }`}
                               title="Rework Options"
                             >
                               <MoreVertical className="w-4 h-4" />
@@ -1788,6 +1792,26 @@ export default function StitchingOrderDetail() {
                   <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>View Details</span>
                 </button>
+
+                {/* 5. Edit / Modify */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeBatchMenu.batch;
+                    setActiveBatchMenu(null);
+                    setSelectedRecordForMod({
+                      type: 'stitching_batches',
+                      id: Number(b.id || 0),
+                      identifier: `Stitching Batch #${b.batch_number || b.id}`,
+                      data: b,
+                    });
+                    setModModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                  <span>Edit / Modify</span>
+                </button>
               </div>
             </div>
           </div>,
@@ -1893,11 +1917,10 @@ export default function StitchingOrderDetail() {
                           setActiveProductMenu(null);
                           handleOpenBatchModal(item);
                         }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition text-left ${
-                          isEligible
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition text-left ${isEligible
                             ? 'text-brand-700 hover:bg-brand-50 hover:text-brand-800 cursor-pointer'
                             : 'text-slate-300 cursor-not-allowed'
-                        }`}
+                          }`}
                         title={isEligible ? 'Record stitching batch' : 'No arrived panels available to stitch'}
                       >
                         <Plus className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -2849,11 +2872,10 @@ export default function StitchingOrderDetail() {
                 return (
                   <div
                     key={it.id || idx}
-                    className={`p-3 rounded-xl border transition ${
-                      isIncluded
+                    className={`p-3 rounded-xl border transition ${isIncluded
                         ? 'bg-brand-50/20 border-brand-200'
                         : 'bg-white border-slate-200 opacity-70 hover:opacity-100'
-                    }`}
+                      }`}
                   >
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                       {/* Left side: Product details */}
@@ -2917,9 +2939,8 @@ export default function StitchingOrderDetail() {
                                 prev.map((p, i) => (i === idx ? { ...p, completed_quantity: val, error: '' } : p))
                               );
                             }}
-                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${
-                              isIncluded ? 'border-brand-500 text-brand-900 bg-brand-50/40' : 'border-slate-300 text-slate-400'
-                            }`}
+                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${isIncluded ? 'border-brand-500 text-brand-900 bg-brand-50/40' : 'border-slate-300 text-slate-400'
+                              }`}
                           />
                         </div>
 
@@ -3141,12 +3162,16 @@ export default function StitchingOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id || id)}
           orderNumber={order.order_number || `ORD-${id}`}
           orderTitle={order.title}
           stageId={7}
           stageName="07. Stitching"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

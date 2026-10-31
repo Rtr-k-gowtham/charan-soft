@@ -138,6 +138,12 @@ export default function CheckingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Navigation tabs: 'inspections' | 'rework'
   const [activeTab, setActiveTab] = useState<'inspections' | 'rework'>('inspections');
@@ -785,7 +791,10 @@ export default function CheckingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
             >
               <Edit3 className="w-3.5 h-3.5 text-slate-600" />
@@ -1327,6 +1336,25 @@ export default function CheckingOrderDetail() {
                                   <ArrowRight className="w-3 h-3" />
                                 </Button>
                               ) : null}
+
+                              {/* Post-Completion Edit Action */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedRecordForMod({
+                                    type: 'inspections',
+                                    id: insp.id,
+                                    identifier: `Inspection #${insp.batch_number || insp.id}`,
+                                    data: insp,
+                                  });
+                                  setModModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition"
+                                title="Request modification for this inspection record (requires Admin approval)"
+                              >
+                                <Edit3 className="w-3 h-3 text-brand-600" />
+                                <span>Edit</span>
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2367,12 +2395,16 @@ export default function CheckingOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id || id)}
           orderNumber={order.order_number || `ORD-${id}`}
           orderTitle={order.title}
           stageId={8}
           stageName="08. Checking"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

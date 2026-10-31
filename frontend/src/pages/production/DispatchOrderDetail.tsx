@@ -366,6 +366,12 @@ export default function DispatchOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // New Dispatch Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
@@ -787,7 +793,10 @@ export default function DispatchOrderDetail() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setModModalOpen(true)}
+            onClick={() => {
+              setSelectedRecordForMod(null);
+              setModModalOpen(true);
+            }}
             className="gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
           >
             <Edit3 className="w-3.5 h-3.5 text-slate-600" />
@@ -919,13 +928,30 @@ export default function DispatchOrderDetail() {
                     </div>
                   </div>
 
-                  <div className="text-right sm:text-right">
+                  <div className="text-right sm:text-right flex flex-col items-end gap-1.5">
                     <div className="text-base font-black font-mono text-emerald-700">
                       {fmt(disp.total_dispatched_quantity)} Pcs
                     </div>
                     <div className="text-xs text-slate-500 font-mono">
                       {disp.total_master_cartons} Master Cartons ({disp.total_boxes} Boxes)
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRecordForMod({
+                          type: 'dispatch_records',
+                          id: Number(disp.id || 0),
+                          identifier: `Dispatch #${disp.dispatch_number || disp.id}`,
+                          data: disp,
+                        });
+                        setModModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 rounded-lg transition shadow-2xs"
+                      title="Request post-completion modification for this dispatch shipment (requires Admin approval)"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-brand-600" />
+                      <span>Edit Shipment</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1323,12 +1349,16 @@ export default function DispatchOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id || id)}
           orderNumber={order.order_number || `ORD-${id}`}
           orderTitle={order.title}
           stageId={10}
           stageName="10. Completed"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

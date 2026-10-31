@@ -146,6 +146,12 @@ export default function EmbroideryOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Filter tabs: 'job_orders' | 'rework'
   const [activeTab, setActiveTab] = useState<'job_orders' | 'rework'>('job_orders');
@@ -1879,7 +1885,10 @@ export default function EmbroideryOrderDetail() {
               variant="outline"
               size="sm"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
             >
               Request Modification
@@ -2787,6 +2796,26 @@ export default function EmbroideryOrderDetail() {
                 >
                   <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>View</span>
+                </button>
+
+                {/* 5. Edit / Modify */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const j = activeJobMenu.job;
+                    setActiveJobMenu(null);
+                    setSelectedRecordForMod({
+                      type: 'embroidery_jobs',
+                      id: Number(j.id || 0),
+                      identifier: `Embroidery Job #${j.job_order_number || j.id}`,
+                      data: j,
+                    });
+                    setModModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                  <span>Edit / Modify</span>
                 </button>
               </div>
             </div>
@@ -4601,12 +4630,16 @@ export default function EmbroideryOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id || id)}
           orderNumber={order.order_number || `ORD-${id}`}
           orderTitle={order.title}
           stageId={6}
           stageName="06. Embroidery"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

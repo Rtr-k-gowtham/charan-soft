@@ -435,6 +435,11 @@ export default function AdminApprovals() {
                         <Layers className="w-3 h-3 text-slate-500" />
                         {req.stage_name}
                       </span>
+                      {req.record_identifier && (
+                        <span className="block mt-1 font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 w-fit">
+                          {req.record_identifier}
+                        </span>
+                      )}
                     </td>
 
                     {/* Requested By */}
@@ -587,6 +592,18 @@ export default function AdminApprovals() {
                   "{selectedRequest.modification_reason}"
                 </p>
               </div>
+
+              {selectedRequest.record_identifier && (
+                <div className="flex items-center gap-2 p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-950">
+                  <span className="font-bold text-[11px] uppercase tracking-wider text-indigo-800">Historical Record:</span>
+                  <span className="font-mono text-xs font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shadow-2xs">
+                    {selectedRequest.record_identifier}
+                  </span>
+                  {selectedRequest.record_type && (
+                    <span className="text-[10px] text-slate-500 font-medium">({selectedRequest.record_type})</span>
+                  )}
+                </div>
+              )}
 
               {/* Review audit if completed */}
               {selectedRequest.status !== 'Pending Approval' && (

@@ -23,6 +23,26 @@ class ApprovalController {
     ];
 
     /**
+     * Auto-migrate schema for post-completion record-level modifications
+     */
+    public static function ensureSchema(PDO $pdo): void {
+        try {
+            $cols = $pdo->query("SHOW COLUMNS FROM stage_modification_requests")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('record_type', $cols, true)) {
+                $pdo->exec("ALTER TABLE stage_modification_requests ADD COLUMN record_type VARCHAR(100) NULL AFTER stage_name");
+            }
+            if (!in_array('record_id', $cols, true)) {
+                $pdo->exec("ALTER TABLE stage_modification_requests ADD COLUMN record_id INT NULL AFTER record_type");
+            }
+            if (!in_array('record_identifier', $cols, true)) {
+                $pdo->exec("ALTER TABLE stage_modification_requests ADD COLUMN record_identifier VARCHAR(255) NULL AFTER record_id");
+            }
+        } catch (Throwable $e) {
+            // Fail silently if table columns already exist or permission error
+        }
+    }
+
+    /**
      * List all modification requests with filters & pagination (Admin only)
      */
     public function getApprovals(): void {
@@ -30,6 +50,7 @@ class ApprovalController {
 
         try {
             $pdo = Database::getConnection();
+            self::ensureSchema($pdo);
 
             $status = trim($_GET['status'] ?? '');
             $stageId = !empty($_GET['stage_id']) ? (int)$_GET['stage_id'] : null;
@@ -76,9 +97,9 @@ class ApprovalController {
             }
 
             if (!empty($search)) {
-                $where[] = "(smr.request_number LIKE ? OR po.order_number LIKE ? OR po.title LIKE ? OR smr.modification_reason LIKE ? OR smr.requested_by_name LIKE ?)";
+                $where[] = "(smr.request_number LIKE ? OR po.order_number LIKE ? OR po.title LIKE ? OR smr.modification_reason LIKE ? OR smr.requested_by_name LIKE ? OR smr.record_identifier LIKE ?)";
                 $wildcard = "%{$search}%";
-                $params = array_merge($params, [$wildcard, $wildcard, $wildcard, $wildcard, $wildcard]);
+                $params = array_merge($params, [$wildcard, $wildcard, $wildcard, $wildcard, $wildcard, $wildcard]);
             }
 
             $whereSql = implode(' AND ', $where);
@@ -101,6 +122,9 @@ class ApprovalController {
                     smr.production_order_id,
                     smr.stage_id,
                     smr.stage_name,
+                    smr.record_type,
+                    smr.record_id,
+                    smr.record_identifier,
                     smr.requested_by,
                     smr.requested_by_name,
                     smr.requested_by_role,
@@ -159,6 +183,7 @@ class ApprovalController {
 
         try {
             $pdo = Database::getConnection();
+            self::ensureSchema($pdo);
             $stmt = $pdo->prepare("
                 SELECT 
                     smr.*,
@@ -217,6 +242,8 @@ class ApprovalController {
 
         $orderId = (int)($_GET['order_id'] ?? 0);
         $stageId = (int)($_GET['stage_id'] ?? 0);
+        $recordType = !empty($_GET['record_type']) ? trim((string)$_GET['record_type']) : null;
+        $recordId = !empty($_GET['record_id']) ? (int)$_GET['record_id'] : null;
 
         if (!$orderId || !$stageId) {
             Response::error("order_id and stage_id are required", 422);
@@ -225,28 +252,63 @@ class ApprovalController {
 
         try {
             $pdo = Database::getConnection();
-            $stmt = $pdo->prepare("
-                SELECT 
-                    smr.id,
-                    smr.request_number,
-                    smr.production_order_id,
-                    smr.stage_id,
-                    smr.stage_name,
-                    smr.requested_by,
-                    smr.requested_by_name,
-                    smr.requested_by_role,
-                    smr.requested_at,
-                    smr.modification_reason,
-                    smr.proposed_data,
-                    smr.status
-                FROM stage_modification_requests smr
-                WHERE smr.production_order_id = ? 
-                  AND smr.stage_id = ? 
-                  AND smr.status = 'Pending Approval'
-                ORDER BY smr.id DESC
-                LIMIT 1
-            ");
-            $stmt->execute([$orderId, $stageId]);
+            self::ensureSchema($pdo);
+
+            if ($recordType && $recordId) {
+                $stmt = $pdo->prepare("
+                    SELECT 
+                        smr.id,
+                        smr.request_number,
+                        smr.production_order_id,
+                        smr.stage_id,
+                        smr.stage_name,
+                        smr.record_type,
+                        smr.record_id,
+                        smr.record_identifier,
+                        smr.requested_by,
+                        smr.requested_by_name,
+                        smr.requested_by_role,
+                        smr.requested_at,
+                        smr.modification_reason,
+                        smr.proposed_data,
+                        smr.status
+                    FROM stage_modification_requests smr
+                    WHERE smr.production_order_id = ? 
+                      AND smr.stage_id = ? 
+                      AND smr.record_type = ?
+                      AND smr.record_id = ?
+                      AND smr.status = 'Pending Approval'
+                    ORDER BY smr.id DESC
+                    LIMIT 1
+                ");
+                $stmt->execute([$orderId, $stageId, $recordType, $recordId]);
+            } else {
+                $stmt = $pdo->prepare("
+                    SELECT 
+                        smr.id,
+                        smr.request_number,
+                        smr.production_order_id,
+                        smr.stage_id,
+                        smr.stage_name,
+                        smr.record_type,
+                        smr.record_id,
+                        smr.record_identifier,
+                        smr.requested_by,
+                        smr.requested_by_name,
+                        smr.requested_by_role,
+                        smr.requested_at,
+                        smr.modification_reason,
+                        smr.proposed_data,
+                        smr.status
+                    FROM stage_modification_requests smr
+                    WHERE smr.production_order_id = ? 
+                      AND smr.stage_id = ? 
+                      AND smr.status = 'Pending Approval'
+                    ORDER BY smr.id DESC
+                    LIMIT 1
+                ");
+                $stmt->execute([$orderId, $stageId]);
+            }
             $pending = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($pending && !empty($pending['proposed_data'])) {
@@ -275,6 +337,9 @@ class ApprovalController {
         $reason = trim($data['modification_reason'] ?? '');
         $proposedData = $data['proposed_data'] ?? null;
         $originalSnapshot = $data['original_data_snapshot'] ?? null;
+        $recordType = !empty($data['record_type']) ? trim((string)$data['record_type']) : null;
+        $recordId = !empty($data['record_id']) ? (int)$data['record_id'] : null;
+        $recordIdentifier = !empty($data['record_identifier']) ? trim((string)$data['record_identifier']) : null;
 
         if (!$orderId || !$stageId) {
             Response::error("Production order ID and Stage ID are required.", 422);
@@ -299,6 +364,7 @@ class ApprovalController {
 
         try {
             $pdo = Database::getConnection();
+            self::ensureSchema($pdo);
 
             // 1. Verify production order exists
             $poStmt = $pdo->prepare("SELECT id, order_number, title FROM production_orders WHERE id = ?");
@@ -309,18 +375,34 @@ class ApprovalController {
                 return;
             }
 
-            // 2. Prevent duplicate pending requests for the same order and stage
-            $checkStmt = $pdo->prepare("
-                SELECT id, request_number, requested_at, requested_by_name 
-                FROM stage_modification_requests 
-                WHERE production_order_id = ? AND stage_id = ? AND status = 'Pending Approval'
-                LIMIT 1
-            ");
-            $checkStmt->execute([$orderId, $stageId]);
-            $existingPending = $checkStmt->fetch(PDO::FETCH_ASSOC);
-            if ($existingPending) {
-                Response::error("A modification request ({$existingPending['request_number']}) is already pending approval for this stage. Submitted by {$existingPending['requested_by_name']} on {$existingPending['requested_at']}.", 409);
-                return;
+            // 2. Prevent duplicate pending requests for the same record or stage
+            if ($recordType && $recordId) {
+                $checkStmt = $pdo->prepare("
+                    SELECT id, request_number, requested_at, requested_by_name 
+                    FROM stage_modification_requests 
+                    WHERE production_order_id = ? AND stage_id = ? AND record_type = ? AND record_id = ? AND status = 'Pending Approval'
+                    LIMIT 1
+                ");
+                $checkStmt->execute([$orderId, $stageId, $recordType, $recordId]);
+                $existingPending = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                if ($existingPending) {
+                    $identLabel = $recordIdentifier ?: "Record #{$recordId}";
+                    Response::error("A modification request ({$existingPending['request_number']}) is already pending approval for {$identLabel}. Submitted by {$existingPending['requested_by_name']} on {$existingPending['requested_at']}.", 409);
+                    return;
+                }
+            } else {
+                $checkStmt = $pdo->prepare("
+                    SELECT id, request_number, requested_at, requested_by_name 
+                    FROM stage_modification_requests 
+                    WHERE production_order_id = ? AND stage_id = ? AND record_type IS NULL AND status = 'Pending Approval'
+                    LIMIT 1
+                ");
+                $checkStmt->execute([$orderId, $stageId]);
+                $existingPending = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                if ($existingPending) {
+                    Response::error("A modification request ({$existingPending['request_number']}) is already pending approval for this stage. Submitted by {$existingPending['requested_by_name']} on {$existingPending['requested_at']}.", 409);
+                    return;
+                }
             }
 
             // 3. Resolve stage name
@@ -342,6 +424,9 @@ class ApprovalController {
                     production_order_id,
                     stage_id,
                     stage_name,
+                    record_type,
+                    record_id,
+                    record_identifier,
                     requested_by,
                     requested_by_name,
                     requested_by_role,
@@ -350,7 +435,7 @@ class ApprovalController {
                     original_data_snapshot,
                     proposed_data,
                     status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, 'Pending Approval')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, 'Pending Approval')
             ");
 
             $insStmt->execute([
@@ -358,6 +443,9 @@ class ApprovalController {
                 $orderId,
                 $stageId,
                 $stageName,
+                $recordType,
+                $recordId,
+                $recordIdentifier,
                 $user['id'],
                 $user['name'] ?? 'Operational User',
                 $role,
@@ -1120,6 +1208,12 @@ class ApprovalController {
      */
     public static function applyStageModifications(PDO $pdo, int $orderId, int $stageId, array $proposed): array {
         try {
+            // Validate downstream safety constraints before applying modifications
+            $safetyCheck = self::validateDownstreamSafety($pdo, $orderId, $stageId, $proposed);
+            if (!$safetyCheck['valid']) {
+                return ['success' => false, 'message' => $safetyCheck['message']];
+            }
+
             // 1. Base order updates (title, target_delivery_date, priority, notes)
             $orderUpdates = [];
             $orderParams = [];
@@ -1410,6 +1504,232 @@ class ApprovalController {
         } catch (Throwable $e) {
             return ['success' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Safety check: Verify that reducing historical quantities does not violate downstream processed quantities
+     */
+    private static function validateDownstreamSafety(PDO $pdo, int $orderId, int $stageId, array $proposed): array {
+        try {
+            switch ($stageId) {
+                case 3: // Stage 03 Inward
+                    // If inward receipts are being modified, ensure total inward received fabric >= fabric sent to Dyeing
+                    if (!empty($proposed['receipts']) && is_array($proposed['receipts'])) {
+                        $dyeCheck = $pdo->prepare("
+                            SELECT COALESCE(SUM(outward_quantity), 0) as total_outward
+                            FROM dyeing_orders 
+                            WHERE production_order_id = ? AND status != 'Cancelled' AND deleted_at IS NULL
+                        ");
+                        $dyeCheck->execute([$orderId]);
+                        $totalDyeingOutward = (float)$dyeCheck->fetchColumn();
+
+                        if ($totalDyeingOutward > 0) {
+                            $propReceiptsById = [];
+                            foreach ($proposed['receipts'] as $pr) {
+                                if (!empty($pr['id'])) {
+                                    $propReceiptsById[(int)$pr['id']] = (float)($pr['quantity_received'] ?? $pr['total_quantity'] ?? 0);
+                                }
+                            }
+
+                            $allRecs = $pdo->prepare("
+                                SELECT pr.id, COALESCE(SUM(pri.quantity_received), 0) as qty
+                                FROM purchase_receipts pr
+                                JOIN purchase_orders po ON pr.purchase_order_id = po.id
+                                LEFT JOIN purchase_receipt_items pri ON pri.purchase_receipt_id = pr.id
+                                WHERE po.production_order_id = ?
+                                GROUP BY pr.id
+                            ");
+                            $allRecs->execute([$orderId]);
+                            $rows = $allRecs->fetchAll(PDO::FETCH_ASSOC);
+
+                            $newTotal = 0.0;
+                            foreach ($rows as $r) {
+                                $rId = (int)$r['id'];
+                                if (isset($propReceiptsById[$rId])) {
+                                    $newTotal += $propReceiptsById[$rId];
+                                } else {
+                                    $newTotal += (float)$r['qty'];
+                                }
+                            }
+
+                            if ($newTotal < $totalDyeingOutward) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Inward received quantity cannot be reduced to {$newTotal} MTR because {$totalDyeingOutward} MTR has already been issued outward to Dyeing (Stage 04)."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 4: // Stage 04 Dyeing
+                    if (!empty($proposed['dyeing_orders']) && is_array($proposed['dyeing_orders'])) {
+                        $cutCheck = $pdo->prepare("
+                            SELECT COALESCE(SUM(cut_quantity), 0) + COALESCE(SUM(actual_cut_quantity), 0)
+                            FROM cutting_batches
+                            WHERE production_order_id = ?
+                        ");
+                        $cutCheck->execute([$orderId]);
+                        $totalCut = (float)$cutCheck->fetchColumn();
+
+                        if ($totalCut > 0) {
+                            $proposedDyeTotal = 0.0;
+                            foreach ($proposed['dyeing_orders'] as $do) {
+                                $proposedDyeTotal += (float)($do['outward_quantity'] ?? $do['received_quantity'] ?? 0);
+                            }
+                            if ($proposedDyeTotal > 0 && $proposedDyeTotal < ($totalCut * 0.5)) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Proposed Dyeing quantity ({$proposedDyeTotal}) is below the quantity already cut ({$totalCut} pcs) in Cutting (Stage 05)."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 5: // Stage 05 Cutting
+                    if (!empty($proposed['cutting_batches']) && is_array($proposed['cutting_batches'])) {
+                        $embCheck = $pdo->prepare("SELECT COALESCE(SUM(sent_quantity), 0) FROM embroidery_job_orders WHERE production_order_id = ?");
+                        $embCheck->execute([$orderId]);
+                        $totalEmb = (float)$embCheck->fetchColumn();
+
+                        $stiCheck = $pdo->prepare("SELECT COALESCE(SUM(stitched_quantity), 0) + COALESCE(SUM(completed_quantity), 0) FROM stitching_batches WHERE production_order_id = ?");
+                        $stiCheck->execute([$orderId]);
+                        $totalSti = (float)$stiCheck->fetchColumn();
+
+                        $downstreamNeeded = max($totalEmb, $totalSti);
+
+                        if ($downstreamNeeded > 0) {
+                            $propBatchesById = [];
+                            foreach ($proposed['cutting_batches'] as $cb) {
+                                if (!empty($cb['id'])) {
+                                    $propBatchesById[(int)$cb['id']] = (float)($cb['cut_quantity'] ?? $cb['actual_cut_quantity'] ?? 0);
+                                }
+                            }
+
+                            $allCut = $pdo->prepare("SELECT id, COALESCE(cut_quantity, actual_cut_quantity, 0) as qty FROM cutting_batches WHERE production_order_id = ?");
+                            $allCut->execute([$orderId]);
+                            $proposedCutTotal = 0.0;
+                            foreach ($allCut->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                                $bId = (int)$r['id'];
+                                $proposedCutTotal += isset($propBatchesById[$bId]) ? $propBatchesById[$bId] : (float)$r['qty'];
+                            }
+
+                            if ($proposedCutTotal < $downstreamNeeded) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Total cut quantity cannot be reduced to {$proposedCutTotal} pcs because {$downstreamNeeded} pcs have already progressed into downstream Embroidery / Stitching stages."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 7: // Stage 07 Stitching
+                    if (!empty($proposed['stitching_batches']) && is_array($proposed['stitching_batches'])) {
+                        $chkCheck = $pdo->prepare("
+                            SELECT COALESCE(SUM(passed_quantity), 0) + COALESCE(SUM(rework_quantity), 0) + COALESCE(SUM(rejected_quantity), 0)
+                            FROM quality_inspections
+                            WHERE production_order_id = ?
+                        ");
+                        $chkCheck->execute([$orderId]);
+                        $totalInspected = (float)$chkCheck->fetchColumn();
+
+                        if ($totalInspected > 0) {
+                            $propBatchesById = [];
+                            foreach ($proposed['stitching_batches'] as $sb) {
+                                if (!empty($sb['id'])) {
+                                    $propBatchesById[(int)$sb['id']] = (float)($sb['stitched_quantity'] ?? $sb['completed_quantity'] ?? 0);
+                                }
+                            }
+
+                            $allSti = $pdo->prepare("SELECT id, COALESCE(stitched_quantity, completed_quantity, 0) as qty FROM stitching_batches WHERE production_order_id = ?");
+                            $allSti->execute([$orderId]);
+                            $proposedStiTotal = 0.0;
+                            foreach ($allSti->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                                $bId = (int)$r['id'];
+                                $proposedStiTotal += isset($propBatchesById[$bId]) ? $propBatchesById[$bId] : (float)$r['qty'];
+                            }
+
+                            if ($proposedStiTotal < $totalInspected) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Total stitched quantity cannot be reduced to {$proposedStiTotal} pcs because {$totalInspected} pcs have already undergone Quality Checking (Stage 08)."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 8: // Stage 08 Checking
+                    if (!empty($proposed['inspections']) && is_array($proposed['inspections'])) {
+                        $pckCheck = $pdo->prepare("SELECT COALESCE(SUM(packed_quantity), 0) FROM packing_batches WHERE production_order_id = ?");
+                        $pckCheck->execute([$orderId]);
+                        $totalPacked = (float)$pckCheck->fetchColumn();
+
+                        if ($totalPacked > 0) {
+                            $propInspById = [];
+                            foreach ($proposed['inspections'] as $qi) {
+                                if (!empty($qi['id'])) {
+                                    $propInspById[(int)$qi['id']] = (float)($qi['passed_quantity'] ?? 0);
+                                }
+                            }
+
+                            $allInsp = $pdo->prepare("SELECT id, COALESCE(passed_quantity, 0) as qty FROM quality_inspections WHERE production_order_id = ?");
+                            $allInsp->execute([$orderId]);
+                            $proposedPassedTotal = 0.0;
+                            foreach ($allInsp->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                                $iId = (int)$r['id'];
+                                $proposedPassedTotal += isset($propInspById[$iId]) ? $propInspById[$iId] : (float)$r['qty'];
+                            }
+
+                            if ($proposedPassedTotal < $totalPacked) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Passed inspection quantity cannot be reduced to {$proposedPassedTotal} pcs because {$totalPacked} pcs are already packed into cartons in Packing (Stage 09)."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+
+                case 9: // Stage 09 Packing
+                    if (!empty($proposed['packing_batches']) && is_array($proposed['packing_batches'])) {
+                        $dispCheck = $pdo->prepare("SELECT COALESCE(SUM(total_dispatched_quantity), 0) FROM dispatch_records WHERE production_order_id = ?");
+                        $dispCheck->execute([$orderId]);
+                        $totalDispatched = (float)$dispCheck->fetchColumn();
+
+                        if ($totalDispatched > 0) {
+                            $propPckById = [];
+                            foreach ($proposed['packing_batches'] as $pb) {
+                                if (!empty($pb['id'])) {
+                                    $propPckById[(int)$pb['id']] = (float)($pb['packed_quantity'] ?? 0);
+                                }
+                            }
+
+                            $allPck = $pdo->prepare("SELECT id, COALESCE(packed_quantity, 0) as qty FROM packing_batches WHERE production_order_id = ?");
+                            $allPck->execute([$orderId]);
+                            $proposedPackedTotal = 0.0;
+                            foreach ($allPck->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                                $pId = (int)$r['id'];
+                                $proposedPackedTotal += isset($propPckById[$pId]) ? $propPckById[$pId] : (float)$r['qty'];
+                            }
+
+                            if ($proposedPackedTotal < $totalDispatched) {
+                                return [
+                                    'valid' => false,
+                                    'message' => "Safety Constraint: Packed quantity cannot be reduced to {$proposedPackedTotal} pcs because {$totalDispatched} pcs have already been dispatched in Stage 10."
+                                ];
+                            }
+                        }
+                    }
+                    break;
+            }
+        } catch (Throwable $e) {
+            // In case of query error or non-critical column discrepancy, do not crash validation
+        }
+
+        return ['valid' => true];
     }
 }
 

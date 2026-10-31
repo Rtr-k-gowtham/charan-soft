@@ -64,6 +64,12 @@ export default function POOrderDetail() {
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   useEffect(() => {
     if (location.state?.successMessage) {
@@ -243,7 +249,10 @@ export default function POOrderDetail() {
             <Button
               variant="outline"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
             >
               <span className="hidden sm:inline">Request Modification</span>
@@ -389,6 +398,15 @@ export default function POOrderDetail() {
             setSuccessToast(`Purchase Order ${poNum} created successfully!`);
             loadData();
           }}
+          onRequestRecordModification={(po) => {
+            setSelectedRecordForMod({
+              type: 'purchase_orders',
+              id: po.id,
+              identifier: `PO #${po.po_number || po.id}`,
+              data: po,
+            });
+            setModModalOpen(true);
+          }}
         />
       </div>
 
@@ -449,12 +467,16 @@ export default function POOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id)}
           orderNumber={order.order_number}
           orderTitle={order.title}
           stageId={2}
           stageName="02. PO"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

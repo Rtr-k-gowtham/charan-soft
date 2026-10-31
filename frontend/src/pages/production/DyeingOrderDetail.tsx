@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   Package,
   Layers,
+  Edit3,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -153,6 +154,12 @@ export default function DyeingOrderDetail() {
   const [error, setError] = useState('');
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Tabs: 'orders' | 'history' | 'rework'
   const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'rework'>('orders');
@@ -2065,7 +2072,10 @@ export default function DyeingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold"
             >
               Request Modification
@@ -3094,6 +3104,25 @@ export default function DyeingOrderDetail() {
                         <Eye className="w-3.5 h-3.5 text-brand-600" />
                         <span>View</span>
                       </button>
+
+                      {/* Edit / Modify */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDyeingMenu(null);
+                          setSelectedRecordForMod({
+                            type: 'dyeing_orders',
+                            id: dOrder.id,
+                            identifier: `Dyeing Order #${dOrder.order_number || dOrder.challan_no || dOrder.id}`,
+                            data: dOrder,
+                          });
+                          setModModalOpen(true);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-brand-600" />
+                        <span>Edit / Modify</span>
+                      </button>
                     </div>
                   );
                 }
@@ -3151,6 +3180,25 @@ export default function DyeingOrderDetail() {
                     >
                       <Eye className="w-3.5 h-3.5 text-brand-600" />
                       <span>View</span>
+                    </button>
+
+                    {/* Edit / Modify */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDyeingMenu(null);
+                        setSelectedRecordForMod({
+                          type: 'dyeing_orders',
+                          id: dOrder.id,
+                          identifier: `Dyeing Order #${dOrder.order_number || dOrder.challan_no || dOrder.id}`,
+                          data: dOrder,
+                        });
+                        setModModalOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-brand-600" />
+                      <span>Edit / Modify</span>
                     </button>
                   </div>
                 );
@@ -3866,12 +3914,16 @@ export default function DyeingOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id)}
           orderNumber={order.order_number}
           orderTitle={order.title}
           stageId={4}
           stageName="04. Dyeing"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

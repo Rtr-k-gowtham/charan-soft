@@ -31,6 +31,12 @@ interface Props {
   stageId: number;
   stageName: string;
   currentSnapshot?: Record<string, any>;
+  targetRecord?: {
+    type: string;
+    id: number | string;
+    identifier?: string;
+    data?: any;
+  } | null;
   onSuccess?: () => void;
 }
 
@@ -43,6 +49,7 @@ export default function StageModificationModal({
   stageId,
   stageName,
   currentSnapshot = {},
+  targetRecord,
   onSuccess,
 }: Props) {
   // Common editable fields
@@ -129,10 +136,36 @@ export default function StageModificationModal({
           : []
       );
 
+      // Merge targetRecord if provided and not yet present
+      if (targetRecord?.data) {
+        const tType = targetRecord.type;
+        const tId = targetRecord.id;
+        const tData = targetRecord.data;
+        if (tType === 'receipts') {
+          setReceipts(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'dyeing_orders') {
+          setDyeingOrders(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'cutting_batches') {
+          setCuttingBatches(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'embroidery_jobs') {
+          setEmbroideryJobs(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'stitching_batches') {
+          setStitchingBatches(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'inspections') {
+          setInspections(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'packing_batches') {
+          setPackingBatches(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'dispatch_records') {
+          setDispatchRecords(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        } else if (tType === 'purchase_orders') {
+          setPurchaseOrders(prev => prev.some(r => r.id === tId) ? prev : [...prev, JSON.parse(JSON.stringify(tData))]);
+        }
+      }
+
       setModificationReason('');
       setError('');
     }
-  }, [isOpen, currentSnapshot]);
+  }, [isOpen, currentSnapshot, targetRecord]);
 
   if (!isOpen) return null;
 
@@ -172,6 +205,9 @@ export default function StageModificationModal({
         stage_name: stageName,
         modification_reason: modificationReason.trim(),
         proposed_data: proposed,
+        record_type: targetRecord?.type,
+        record_id: targetRecord?.id ? Number(targetRecord.id) : undefined,
+        record_identifier: targetRecord?.identifier || (targetRecord?.id ? `Record #${targetRecord.id}` : undefined),
       });
 
       setSuccess(true);
@@ -191,8 +227,8 @@ export default function StageModificationModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Request Stage Modification"
-      subtitle={`${stageName} for Order ${orderNumber}`}
+      title={targetRecord ? `Request Modification: ${targetRecord.identifier || 'Historical Record'}` : "Request Stage Modification"}
+      subtitle={targetRecord ? `${targetRecord.identifier || 'Record'} — ${stageName} (${orderNumber})` : `${stageName} for Order ${orderNumber}`}
       size="2xl"
       footer={
         <div className="flex items-center justify-between w-full">
@@ -226,6 +262,20 @@ export default function StageModificationModal({
             </p>
           </div>
         </div>
+
+        {targetRecord && (
+          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-indigo-900">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-600 text-white shadow-2xs">
+                Historical Record Edit
+              </span>
+              <div>
+                <span className="font-bold text-xs text-indigo-950 block">{targetRecord.identifier || `Record #${targetRecord.id}`}</span>
+                <span className="text-[10px] text-indigo-600">Editing this completed transaction requires explicit Admin approval before live data updates.</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-2 text-rose-800">

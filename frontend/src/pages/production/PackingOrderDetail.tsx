@@ -93,6 +93,12 @@ export default function PackingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Tab filter: 'ALL' or 'PACKING'
   const [activeTab, setActiveTab] = useState<'ALL' | 'PACKING'>('ALL');
@@ -623,7 +629,10 @@ export default function PackingOrderDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 h-9"
             >
               <Edit3 className="w-3.5 h-3.5 text-slate-600" />
@@ -972,13 +981,14 @@ export default function PackingOrderDetail() {
                 <th className="py-3 px-3 text-right">Cartons</th>
                 <th className="py-3 px-3 text-center">Status</th>
                 <th className="py-3 px-3 text-center">Proof Photos</th>
-                <th className="py-3 px-4 text-center">Cartons</th>
+                <th className="py-3 px-3 text-center">Cartons</th>
+                <th className="py-3 px-3 text-center min-w-[90px]">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-xs text-slate-700">
               {batches.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-8 text-center text-slate-400">
+                  <td colSpan={12} className="py-8 text-center text-slate-400">
                     No packing batches recorded yet for this order. Click "+ Pack Batch" above to pack garments.
                   </td>
                 </tr>
@@ -1047,10 +1057,29 @@ export default function PackingOrderDetail() {
                           <span className="text-slate-400 text-[11px]">None</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-3 px-3 text-center">
                         <span className="text-xs font-mono font-bold text-slate-600">
                           {b.number_of_master_cartons} Cartons
                         </span>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRecordForMod({
+                              type: 'packing_batches',
+                              id: Number(b.id || 0),
+                              identifier: `Packing Batch #${b.batch_number || b.id}`,
+                              data: b,
+                            });
+                            setModModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold text-slate-700 hover:text-brand-700 bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition shadow-2xs"
+                          title="Request modification for this packing batch (requires Admin approval)"
+                        >
+                          <Edit3 className="w-3 h-3 text-brand-600" />
+                          <span>Edit</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1520,12 +1549,16 @@ export default function PackingOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id || id)}
           orderNumber={order.order_number || `ORD-${id}`}
           orderTitle={order.title}
           stageId={9}
           stageName="09. Packing"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

@@ -69,6 +69,12 @@ export default function CuttingOrderDetail() {
   const [error, setError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [modModalOpen, setModModalOpen] = useState(false);
+  const [selectedRecordForMod, setSelectedRecordForMod] = useState<{
+    type: string;
+    id: number;
+    identifier?: string;
+    data?: any;
+  } | null>(null);
 
   // Search & Filter States
   const [batchSearch, setBatchSearch] = useState('');
@@ -954,7 +960,10 @@ export default function CuttingOrderDetail() {
             <Button
               variant="outline"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
-              onClick={() => setModModalOpen(true)}
+              onClick={() => {
+                setSelectedRecordForMod(null);
+                setModModalOpen(true);
+              }}
               className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
             >
               Request Modification
@@ -1740,6 +1749,26 @@ export default function CuttingOrderDetail() {
                 >
                   <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span>View</span>
+                </button>
+
+                {/* 4. Edit / Modify */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeBatchMenu.batch;
+                    setActiveBatchMenu(null);
+                    setSelectedRecordForMod({
+                      type: 'cutting_batches',
+                      id: Number(b.id || 0),
+                      identifier: `Cutting Batch #${b.batch_number || b.id}`,
+                      data: b,
+                    });
+                    setModModalOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                  <span>Edit / Modify</span>
                 </button>
               </div>
             </div>
@@ -3002,12 +3031,16 @@ export default function CuttingOrderDetail() {
       {order && (
         <StageModificationModal
           isOpen={modModalOpen}
-          onClose={() => setModModalOpen(false)}
+          onClose={() => {
+            setModModalOpen(false);
+            setSelectedRecordForMod(null);
+          }}
           orderId={Number(order.id)}
           orderNumber={order.order_number}
           orderTitle={order.title}
           stageId={5}
           stageName="05. Cutting"
+          targetRecord={selectedRecordForMod}
           currentSnapshot={{
             order_title: order.title,
             target_delivery_date: order.target_delivery_date,

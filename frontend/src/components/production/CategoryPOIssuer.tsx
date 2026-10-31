@@ -67,6 +67,7 @@ interface Props {
   targetDeliveryDate?: string;
   materials: OrderMaterialRequirementItem[];
   onPOCreated?: (poNumber: string) => void;
+  onRequestRecordModification?: (po: PurchaseOrder) => void;
 }
 
 const fmt = (n: number, decimals = 0) =>
@@ -89,6 +90,7 @@ export default function CategoryPOIssuer({
   targetDeliveryDate,
   materials,
   onPOCreated,
+  onRequestRecordModification,
 }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -456,6 +458,10 @@ export default function CategoryPOIssuer({
   const handleEditPO = (group: CategorySupplierGroup) => {
     const targetPO = group.matchingPOs[0] || group.draftPO || group.cancelledPO;
     if (targetPO) {
+      if ((targetPO.status || '').toLowerCase() !== 'draft' && onRequestRecordModification) {
+        onRequestRecordModification(targetPO);
+        return;
+      }
       navigate(`/purchase/orders/${targetPO.id}/edit`, {
         state: { from: location.pathname || `/production/po/${orderId}` }
       });

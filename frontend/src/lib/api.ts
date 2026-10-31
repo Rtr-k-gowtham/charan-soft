@@ -373,14 +373,21 @@ export const api = {
     return request<{ requests: any[]; total: number; page: number; per_page: number; stats: { total_requests: number; pending_approval: number; approved: number; rejected: number } }>(`/approvals${q ? `?${q}` : ''}`);
   },
   getApproval: (id: number) => request<any>(`/approvals/${id}`),
-  getPendingApprovalForStage: (orderId: number, stageId: number) =>
-    request<{ has_pending: boolean; request: any | null }>(`/approvals/pending?order_id=${orderId}&stage_id=${stageId}`),
+  getPendingApprovalForStage: (orderId: number, stageId: number, recordType?: string, recordId?: number) => {
+    let url = `/approvals/pending?order_id=${orderId}&stage_id=${stageId}`;
+    if (recordType) url += `&record_type=${encodeURIComponent(recordType)}`;
+    if (recordId) url += `&record_id=${recordId}`;
+    return request<{ has_pending: boolean; request: any | null }>(url);
+  },
   createApprovalRequest: (data: {
     production_order_id: number;
     stage_id: number;
     stage_name: string;
     modification_reason: string;
     proposed_data: Record<string, any>;
+    record_type?: string;
+    record_id?: number;
+    record_identifier?: string;
   }) => request<any>('/approvals/request', 'POST', data),
   approveModificationRequest: (id: number, data?: { approval_remarks?: string }) =>
     request<any>(`/approvals/${id}/approve`, 'POST', data || {}),

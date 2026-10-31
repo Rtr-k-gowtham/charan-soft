@@ -1036,6 +1036,9 @@ export interface StageModificationRequest {
   production_order_id: number;
   order_number: string;
   order_title: string;
+  record_type?: string | null;
+  record_id?: number | null;
+  record_identifier?: string | null;
   buyer_name?: string;
   buyer_code?: string;
   order_current_stage_name?: string;
