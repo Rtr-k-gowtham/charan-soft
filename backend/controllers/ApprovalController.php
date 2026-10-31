@@ -326,9 +326,27 @@ class ApprovalController {
             // 3. Resolve stage name
             $stageName = self::STAGE_NAMES[$stageId] ?? "Stage {$stageId}";
 
-            // 4. Capture original data snapshot if not provided
-            if (empty($originalSnapshot)) {
-                $originalSnapshot = self::captureStageSnapshot($pdo, $orderId, $stageId);
+            // 4. Always capture original data snapshot from DB (source of truth)
+            $originalSnapshot = self::captureStageSnapshot($pdo, $orderId, $stageId);
+
+            // 5a. Enrich proposed_data with stage-specific records from snapshot as baseline.
+            //     This ensures Admin sees a complete before/after: user-submitted scalar changes
+            //     are applied on top of the full snapshot, so every field is captured.
+            $stageArrayKeys = [
+                'items', 'material_requirements', 'purchase_orders', 'receipts', 'dyeing_orders',
+                'cutting_batches', 'embroidery_jobs', 'stitching_batches',
+                'inspections', 'packing_batches', 'dispatch_records',
+            ];
+            foreach ($stageArrayKeys as $key) {
+                if (isset($originalSnapshot[$key]) && !isset($proposedData[$key])) {
+                    $proposedData[$key] = $originalSnapshot[$key];
+                }
+            }
+            // Fill any missing scalar order fields from snapshot as baseline
+            foreach (['order_title', 'target_delivery_date', 'priority', 'notes'] as $scalar) {
+                if (!isset($proposedData[$scalar]) && isset($originalSnapshot[$scalar])) {
+                    $proposedData[$scalar] = $originalSnapshot[$scalar];
+                }
             }
 
             // 5. Generate unique request number (e.g. MOD-2026-0001)
@@ -443,6 +461,23 @@ class ApprovalController {
             $orderId = (int)$request['production_order_id'];
             $stageId = (int)$request['stage_id'];
             $proposedData = json_decode($request['proposed_data'] ?? '{}', true) ?: [];
+            $forceApprove = !empty($body['force_approve']);
+
+            // Conflict detection: verify if live stage data was modified after request submission
+            if (!$forceApprove) {
+                $origSnapshot = json_decode($request['original_data_snapshot'] ?? '{}', true) ?: [];
+                $currentLive = self::captureStageSnapshot($pdo, $orderId, $stageId);
+                $liveDiff = self::computeChangesDiff($origSnapshot, $currentLive);
+                if (!empty($liveDiff)) {
+                    $pdo->rollBack();
+                    Response::error(
+                        "Conflict detected: The active stage records were modified by another action after this request was submitted on {$request['requested_at']}. You can force approve to overwrite.",
+                        409,
+                        ['conflict' => true, 'live_diff' => $liveDiff]
+                    );
+                    return;
+                }
+            }
 
             // 1. Apply proposed modifications to live active tables
             $applyResult = self::applyStageModifications($pdo, $orderId, $stageId, $proposedData);
@@ -612,56 +647,326 @@ class ApprovalController {
     }
 
     /**
-     * Helper: Compute structured diff between original snapshot and proposed data
+     * Human-readable field labels for all 10 stages
+     */
+    private static function getFieldLabels(): array {
+        return [
+            // Order-level
+            'order_title'           => 'Order Title',
+            'target_delivery_date'  => 'Target Delivery Date',
+            'priority'              => 'Order Priority',
+            'notes'                 => 'Stage Notes / Remarks',
+            'remarks'               => 'Operational Remarks',
+            // Stage 01 items & materials
+            'product_name'          => 'Product Name',
+            'product_sku'           => 'Product SKU / Code',
+            'quantity'              => 'Quantity (pcs)',
+            'size'                  => 'Size',
+            'pantone_color'         => 'Pantone Color',
+            'pantone_code'          => 'Pantone Code',
+            'color_name'            => 'Color Name',
+            'color_hex'             => 'Color Hex',
+            'unit'                  => 'Unit',
+            'notes_items'           => 'Item Notes',
+            'material_name'         => 'Material Name',
+            'required_quantity'     => 'Required Quantity',
+            'total_required_qty'    => 'Required Quantity',
+            'current_stock'         => 'Current Stock',
+            'shortage_qty'          => 'Shortage Quantity',
+            'default_supplier_name' => 'Assigned Supplier',
+            // Stage 02 PO
+            'supplier_name'         => 'Supplier / Vendor',
+            'po_number'             => 'PO Number',
+            'po_date'               => 'PO Date',
+            'delivery_date'         => 'Delivery Date',
+            'total_amount'          => 'Total Amount',
+            'payment_terms'         => 'Payment Terms',
+            'status'                => 'Status',
+            // Stage 03 Inward
+            'receipt_number'        => 'Receipt Number',
+            'received_date'         => 'Received Date',
+            'received_qty'          => 'Received Quantity',
+            'material_name'         => 'Material Name',
+            'batch_number'          => 'Batch Number',
+            // Stage 04 Dyeing
+            'mill_name'             => 'Dyeing Mill',
+            'outward_quantity'      => 'Outward Quantity (MTR)',
+            'outward_date'          => 'Outward Date',
+            'expected_return_date'  => 'Expected Return Date',
+            'received_quantity'     => 'Received Quantity',
+            'shade'                 => 'Shade / Color',
+            // Stage 05 Cutting
+            'cut_quantity'          => 'Cut Quantity (pcs)',
+            'waste_quantity'        => 'Waste Quantity (pcs)',
+            'cut_date'              => 'Cut Date',
+            // Stage 06 Embroidery
+            'vendor_name'           => 'Embroidery Vendor',
+            'design_name'           => 'Design Name',
+            'sent_quantity'         => 'Sent Quantity (pcs)',
+            'received_back_qty'     => 'Received Back Qty (pcs)',
+            // Stage 07 Stitching
+            'stitched_quantity'     => 'Stitched Quantity (pcs)',
+            'defect_quantity'       => 'Defect Quantity (pcs)',
+            // Stage 08 Checking
+            'passed_quantity'       => 'Passed Quantity (pcs)',
+            'rework_quantity'       => 'Rework Quantity (pcs)',
+            'rejected_quantity'     => 'Rejected Quantity (pcs)',
+            // Stage 09 Packing
+            'packed_quantity'       => 'Packed Quantity (pcs)',
+            'carton_count'          => 'Carton Count',
+            'gross_weight'          => 'Gross Weight (kg)',
+            'net_weight'            => 'Net Weight (kg)',
+            // Stage 10 Dispatch
+            'vehicle_plate_number'  => 'Vehicle Plate Number',
+            'driver_name'           => 'Driver Name',
+            'eway_bill_number'      => 'E-Way Bill Number',
+            'container_seal_number' => 'Container / Seal Number',
+            'dispatch_date'         => 'Dispatch Date',
+        ];
+    }
+
+    /**
+     * Keys that contain arrays of sub-records (not scalar values)
+     */
+    private static function getArrayKeys(): array {
+        return [
+            'items'                 => 'Product Line Items',
+            'material_requirements' => 'Material Requirements (BOM)',
+            'purchase_orders'       => 'Purchase Orders (Stage 02)',
+            'receipts'              => 'Inward Receipts (Stage 03)',
+            'dyeing_orders'         => 'Dyeing Orders (Stage 04)',
+            'cutting_batches'       => 'Cutting Batches (Stage 05)',
+            'embroidery_jobs'       => 'Embroidery Jobs (Stage 06)',
+            'stitching_batches'     => 'Stitching Batches (Stage 07)',
+            'inspections'           => 'Quality Inspections (Stage 08)',
+            'packing_batches'       => 'Packing Batches (Stage 09)',
+            'dispatch_records'      => 'Dispatch Records (Stage 10)',
+        ];
+    }
+
+    /**
+     * Normalize a value for comparison (trim strings, cast numerics)
+     */
+    private static function normalizeVal(mixed $v): mixed {
+        if (is_string($v)) {
+            $v = trim($v);
+            if (is_numeric($v)) {
+                return $v + 0; // numeric string → number
+            }
+            return $v;
+        }
+        return $v;
+    }
+
+    /**
+     * Compare two scalar values, return true if effectively equal
+     */
+    private static function scalarEqual(mixed $a, mixed $b): bool {
+        $a = self::normalizeVal($a);
+        $b = self::normalizeVal($b);
+        return json_encode($a) === json_encode($b);
+    }
+
+    /**
+     * Diff two arrays of records (each record is an associative array).
+     * Records are matched by 'id' when available; otherwise by position.
+     * Returns array of diff entries, each with:
+     *   field, label, group_label, record_id, original, proposed, type (modified|added|removed|unchanged)
+     */
+    private static function diffRecordArrays(string $key, string $groupLabel, array $origArr, array $propArr): array {
+        $fieldLabels = self::getFieldLabels();
+        $skipFields  = ['id', 'production_order_id', 'created_at', 'updated_at', 'deleted_at'];
+        $diffs       = [];
+
+        // Index by id
+        $origById = [];
+        $propById = [];
+        foreach ($origArr as $r) {
+            $id = $r['id'] ?? null;
+            if ($id !== null) $origById[(string)$id] = $r;
+        }
+        foreach ($propArr as $r) {
+            $id = $r['id'] ?? null;
+            if ($id !== null) $propById[(string)$id] = $r;
+        }
+
+        // Records removed (in original but not proposed)
+        foreach ($origById as $rid => $origRec) {
+            if (!isset($propById[$rid])) {
+                $label = $fieldLabels[$key] ?? $groupLabel;
+                $diffs[] = [
+                    'field'       => "{$key}[{$rid}]",
+                    'label'       => $label,
+                    'group_label' => $groupLabel,
+                    'record_id'   => $rid,
+                    'record_type' => 'removed',
+                    'original'    => $origRec,
+                    'proposed'    => null,
+                    'type'        => 'removed',
+                    'sub_diffs'   => [],
+                ];
+            }
+        }
+
+        // Records added (in proposed but not original)
+        foreach ($propById as $rid => $propRec) {
+            if (!isset($origById[$rid])) {
+                $diffs[] = [
+                    'field'       => "{$key}[{$rid}]",
+                    'label'       => $groupLabel,
+                    'group_label' => $groupLabel,
+                    'record_id'   => $rid,
+                    'record_type' => 'added',
+                    'original'    => null,
+                    'proposed'    => $propRec,
+                    'type'        => 'added',
+                    'sub_diffs'   => [],
+                ];
+            }
+        }
+
+        // Records that exist in both — compare field by field
+        foreach ($origById as $rid => $origRec) {
+            if (!isset($propById[$rid])) continue;
+            $propRec   = $propById[$rid];
+            $subDiffs  = [];
+            $allFields = array_unique(array_merge(array_keys($origRec), array_keys($propRec)));
+            foreach ($allFields as $f) {
+                if (in_array($f, $skipFields, true)) continue;
+                $ov = $origRec[$f] ?? null;
+                $pv = $propRec[$f] ?? null;
+                if (!self::scalarEqual($ov, $pv)) {
+                    $fLabel     = $fieldLabels[$f] ?? ucwords(str_replace('_', ' ', $f));
+                    $subDiffs[] = [
+                        'field'    => $f,
+                        'label'    => $fLabel,
+                        'original' => $ov,
+                        'proposed' => $pv,
+                        'type'     => 'modified',
+                    ];
+                }
+            }
+            if (!empty($subDiffs)) {
+                $diffs[] = [
+                    'field'       => "{$key}[{$rid}]",
+                    'label'       => $groupLabel,
+                    'group_label' => $groupLabel,
+                    'record_id'   => $rid,
+                    'record_type' => 'modified',
+                    'original'    => $origRec,
+                    'proposed'    => $propRec,
+                    'type'        => 'modified',
+                    'sub_diffs'   => $subDiffs,
+                ];
+            }
+        }
+
+        // Fallback: if no ids, compare by position
+        if (empty($origById) && empty($propById)) {
+            $maxLen = max(count($origArr), count($propArr));
+            for ($i = 0; $i < $maxLen; $i++) {
+                $origRec = $origArr[$i] ?? null;
+                $propRec = $propArr[$i] ?? null;
+                if ($origRec === null) {
+                    $diffs[] = [
+                        'field' => "{$key}[{$i}]", 'label' => $groupLabel,
+                        'group_label' => $groupLabel, 'record_id' => $i,
+                        'record_type' => 'added', 'original' => null,
+                        'proposed' => $propRec, 'type' => 'added', 'sub_diffs' => [],
+                    ];
+                } elseif ($propRec === null) {
+                    $diffs[] = [
+                        'field' => "{$key}[{$i}]", 'label' => $groupLabel,
+                        'group_label' => $groupLabel, 'record_id' => $i,
+                        'record_type' => 'removed', 'original' => $origRec,
+                        'proposed' => null, 'type' => 'removed', 'sub_diffs' => [],
+                    ];
+                } elseif (json_encode($origRec) !== json_encode($propRec)) {
+                    $subDiffs = [];
+                    $allFields = array_unique(array_merge(array_keys($origRec), array_keys($propRec)));
+                    $skipF = ['id','production_order_id','created_at','updated_at','deleted_at'];
+                    foreach ($allFields as $f) {
+                        if (in_array($f, $skipF, true)) continue;
+                        $ov = $origRec[$f] ?? null; $pv = $propRec[$f] ?? null;
+                        if (!self::scalarEqual($ov, $pv)) {
+                            $fL = self::getFieldLabels()[$f] ?? ucwords(str_replace('_', ' ', $f));
+                            $subDiffs[] = ['field'=>$f,'label'=>$fL,'original'=>$ov,'proposed'=>$pv,'type'=>'modified'];
+                        }
+                    }
+                    if (!empty($subDiffs)) {
+                        $diffs[] = [
+                            'field' => "{$key}[{$i}]", 'label' => $groupLabel,
+                            'group_label' => $groupLabel, 'record_id' => $i,
+                            'record_type' => 'modified', 'original' => $origRec,
+                            'proposed' => $propRec, 'type' => 'modified', 'sub_diffs' => $subDiffs,
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $diffs;
+    }
+
+    /**
+     * Helper: Compute structured diff between original snapshot and proposed data.
+     * Handles both scalar fields and nested arrays of records.
      */
     public static function computeChangesDiff(array $original, array $proposed): array {
-        $diff = [];
-        $fieldLabels = [
-            'order_title' => 'Order Title',
-            'target_delivery_date' => 'Target Delivery Date',
-            'priority' => 'Order Priority',
-            'notes' => 'Stage / Order Notes',
-            'remarks' => 'Operational Remarks',
-            'items' => 'Product Line Items',
-            'dyeing_orders' => 'Dyeing Batches / Outward',
-            'cutting_batches' => 'Cutting Batches',
-            'embroidery_jobs' => 'Embroidery Outward Jobs',
-            'stitching_batches' => 'Stitching Batches',
-            'inspections' => 'Quality Inspections',
-            'packing_batches' => 'Packing Records',
-            'dispatch_records' => 'Dispatch Records',
-        ];
+        $diff        = [];
+        $fieldLabels = self::getFieldLabels();
+        $arrayKeys   = self::getArrayKeys();
+        $scalarSkip  = ['order_id', 'order_number']; // internal IDs not shown
 
-        foreach ($proposed as $key => $newVal) {
+        // 1. Scalar fields
+        $scalarFields = ['order_title', 'target_delivery_date', 'priority', 'notes', 'remarks'];
+        foreach ($scalarFields as $key) {
+            if (in_array($key, $scalarSkip, true)) continue;
             $origVal = $original[$key] ?? null;
+            $propVal = $proposed[$key] ?? null;
+            if (self::scalarEqual($origVal, $propVal)) continue;
+            $label = $fieldLabels[$key] ?? ucwords(str_replace('_', ' ', $key));
+            $diff[] = [
+                'field'       => $key,
+                'label'       => $label,
+                'group_label' => null,
+                'record_id'   => null,
+                'record_type' => 'scalar',
+                'original'    => $origVal ?? '—',
+                'proposed'    => $propVal ?? '—',
+                'type'        => ($origVal === null || $origVal === '') ? 'added' : 'modified',
+                'sub_diffs'   => [],
+            ];
+        }
 
-            // Normalize empty or null comparisons
-            $normOrig = is_string($origVal) ? trim($origVal) : $origVal;
-            $normNew = is_string($newVal) ? trim($newVal) : $newVal;
+        // 2. Array / record collections
+        foreach ($arrayKeys as $key => $groupLabel) {
+            $origArr = isset($original[$key]) && is_array($original[$key]) ? $original[$key] : [];
+            $propArr = isset($proposed[$key]) && is_array($proposed[$key]) ? $proposed[$key] : [];
+            if (empty($origArr) && empty($propArr)) continue;
+            $arrDiffs = self::diffRecordArrays($key, $groupLabel, $origArr, $propArr);
+            $diff = array_merge($diff, $arrDiffs);
+        }
 
-            if (json_encode($normOrig) === json_encode($normNew)) {
-                continue;
-            }
-
+        // 3. Any other scalar keys in proposed not already handled
+        $handledScalars = array_merge($scalarFields, $scalarSkip, array_keys($arrayKeys));
+        foreach ($proposed as $key => $propVal) {
+            if (in_array($key, $handledScalars, true)) continue;
+            if (is_array($propVal)) continue; // arrays handled above
+            $origVal = $original[$key] ?? null;
+            if (self::scalarEqual($origVal, $propVal)) continue;
             $label = $fieldLabels[$key] ?? ucwords(str_replace('_', ' ', (string)$key));
-
-            if ($origVal === null || $origVal === '') {
-                $diff[] = [
-                    'field' => $key,
-                    'label' => $label,
-                    'original' => '—',
-                    'proposed' => $newVal,
-                    'type' => 'added'
-                ];
-            } else {
-                $diff[] = [
-                    'field' => $key,
-                    'label' => $label,
-                    'original' => $origVal,
-                    'proposed' => $newVal,
-                    'type' => 'modified'
-                ];
-            }
+            $diff[] = [
+                'field'       => $key,
+                'label'       => $label,
+                'group_label' => null,
+                'record_id'   => null,
+                'record_type' => 'scalar',
+                'original'    => $origVal ?? '—',
+                'proposed'    => $propVal ?? '—',
+                'type'        => ($origVal === null || $origVal === '') ? 'added' : 'modified',
+                'sub_diffs'   => [],
+            ];
         }
 
         return $diff;
@@ -705,23 +1010,42 @@ class ApprovalController {
 
         switch ($stageId) {
             case 1: // Requirement Gathering
+                if (!empty($order['generated_bom'])) {
+                    $bomDecoded = json_decode($order['generated_bom'], true);
+                    if (!empty($bomDecoded['total_materials']) && is_array($bomDecoded['total_materials'])) {
+                        $snapshot['material_requirements'] = $bomDecoded['total_materials'];
+                    }
+                }
                 break;
 
             case 2: // PO
-                $poRows = $pdo->prepare("SELECT * FROM purchase_orders WHERE production_order_id = ? ORDER BY id ASC");
+                $poRows = $pdo->prepare("
+                    SELECT po.*, s.name as supplier_name, s.code as supplier_code
+                    FROM purchase_orders po
+                    LEFT JOIN suppliers s ON po.supplier_id = s.id
+                    WHERE po.production_order_id = ? AND po.deleted_at IS NULL
+                    ORDER BY po.id ASC
+                ");
                 $poRows->execute([$orderId]);
                 $snapshot['purchase_orders'] = $poRows->fetchAll(PDO::FETCH_ASSOC);
                 break;
 
             case 3: // Inward
-                $recRows = $pdo->prepare("SELECT * FROM purchase_receipts WHERE production_order_id = ? ORDER BY id ASC");
+                $recRows = $pdo->prepare("
+                    SELECT pr.*, po.po_number, s.name as supplier_name
+                    FROM purchase_receipts pr
+                    JOIN purchase_orders po ON pr.purchase_order_id = po.id
+                    LEFT JOIN suppliers s ON po.supplier_id = s.id
+                    WHERE po.production_order_id = ?
+                    ORDER BY pr.id ASC
+                ");
                 $recRows->execute([$orderId]);
                 $snapshot['receipts'] = $recRows->fetchAll(PDO::FETCH_ASSOC);
                 break;
 
             case 4: // Dyeing
                 $dyeRows = $pdo->prepare("
-                    SELECT d.*, s.name as supplier_name
+                    SELECT d.*, s.name as mill_name, s.name as supplier_name
                     FROM dyeing_orders d
                     LEFT JOIN suppliers s ON d.supplier_id = s.id
                     WHERE d.production_order_id = ? AND d.deleted_at IS NULL
@@ -732,7 +1056,17 @@ class ApprovalController {
                 break;
 
             case 5: // Cutting
-                $cutRows = $pdo->prepare("SELECT * FROM cutting_batches WHERE production_order_id = ? ORDER BY id ASC");
+                $cutRows = $pdo->prepare("
+                    SELECT cb.*, 
+                           COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                           poi.color
+                    FROM cutting_batches cb
+                    LEFT JOIN production_order_items poi ON cb.production_order_item_id = poi.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
+                    WHERE cb.production_order_id = ?
+                    ORDER BY cb.id ASC
+                ");
                 $cutRows->execute([$orderId]);
                 $snapshot['cutting_batches'] = $cutRows->fetchAll(PDO::FETCH_ASSOC);
                 break;
@@ -744,13 +1078,32 @@ class ApprovalController {
                 break;
 
             case 7: // Stitching
-                $stiRows = $pdo->prepare("SELECT * FROM stitching_batches WHERE production_order_id = ? ORDER BY id ASC");
+                $stiRows = $pdo->prepare("
+                    SELECT sb.*, 
+                           COALESCE(bp.product_name, p.name, 'Garment Product') as product_name,
+                           poi.color
+                    FROM stitching_batches sb
+                    LEFT JOIN production_order_items poi ON sb.production_order_item_id = poi.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
+                    WHERE sb.production_order_id = ?
+                    ORDER BY sb.id ASC
+                ");
                 $stiRows->execute([$orderId]);
                 $snapshot['stitching_batches'] = $stiRows->fetchAll(PDO::FETCH_ASSOC);
                 break;
 
             case 8: // Checking
-                $chkRows = $pdo->prepare("SELECT * FROM quality_inspections WHERE production_order_id = ? ORDER BY id ASC");
+                $chkRows = $pdo->prepare("
+                    SELECT qi.*, 
+                           COALESCE(bp.product_name, p.name, 'Garment Product') as product_name
+                    FROM quality_inspections qi
+                    LEFT JOIN production_order_items poi ON qi.production_order_item_id = poi.id
+                    LEFT JOIN buyer_products bp ON poi.product_id = bp.id
+                    LEFT JOIN products p ON poi.product_id = p.id
+                    WHERE qi.production_order_id = ?
+                    ORDER BY qi.id ASC
+                ");
                 $chkRows->execute([$orderId]);
                 $snapshot['inspections'] = $chkRows->fetchAll(PDO::FETCH_ASSOC);
                 break;
@@ -817,6 +1170,63 @@ class ApprovalController {
 
             // 3. Stage-specific updates
             switch ($stageId) {
+                case 1: // Requirement Gathering
+                    if (!empty($proposed['material_requirements']) && is_array($proposed['material_requirements'])) {
+                        $bomStmt = $pdo->prepare("SELECT generated_bom FROM production_orders WHERE id = ?");
+                        $bomStmt->execute([$orderId]);
+                        $rawBom = $bomStmt->fetchColumn();
+                        $bomData = $rawBom ? json_decode($rawBom, true) : [];
+                        $bomData['total_materials'] = $proposed['material_requirements'];
+                        $upBom = $pdo->prepare("UPDATE production_orders SET generated_bom = ? WHERE id = ?");
+                        $upBom->execute([json_encode($bomData), $orderId]);
+                    }
+                    break;
+
+                case 2: // PO
+                    if (!empty($proposed['purchase_orders']) && is_array($proposed['purchase_orders'])) {
+                        $upPo = $pdo->prepare("
+                            UPDATE purchase_orders SET 
+                                delivery_date = COALESCE(?, delivery_date),
+                                payment_terms = COALESCE(?, payment_terms),
+                                remarks = COALESCE(?, remarks)
+                            WHERE id = ? AND production_order_id = ?
+                        ");
+                        foreach ($proposed['purchase_orders'] as $poRow) {
+                            if (!empty($poRow['id'])) {
+                                $upPo->execute([
+                                    $poRow['delivery_date'] ?? null,
+                                    $poRow['payment_terms'] ?? null,
+                                    $poRow['remarks'] ?? null,
+                                    (int)$poRow['id'],
+                                    $orderId
+                                ]);
+                            }
+                        }
+                    }
+                    break;
+
+                case 3: // Inward
+                    if (!empty($proposed['receipts']) && is_array($proposed['receipts'])) {
+                        $upRec = $pdo->prepare("
+                            UPDATE purchase_receipts SET 
+                                delivery_challan_no = COALESCE(?, delivery_challan_no),
+                                vehicle_no = COALESCE(?, vehicle_no),
+                                remarks = COALESCE(?, remarks)
+                            WHERE id = ?
+                        ");
+                        foreach ($proposed['receipts'] as $prRow) {
+                            if (!empty($prRow['id'])) {
+                                $upRec->execute([
+                                    $prRow['delivery_challan_no'] ?? null,
+                                    $prRow['vehicle_no'] ?? null,
+                                    $prRow['remarks'] ?? null,
+                                    (int)$prRow['id']
+                                ]);
+                            }
+                        }
+                    }
+                    break;
+
                 case 4: // Dyeing
                     if (!empty($proposed['dyeing_orders']) && is_array($proposed['dyeing_orders'])) {
                         $upDye = $pdo->prepare("

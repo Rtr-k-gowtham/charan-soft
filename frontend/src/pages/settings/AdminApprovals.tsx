@@ -72,6 +72,7 @@ export default function AdminApprovals() {
   const [actionRemarks, setActionRemarks] = useState('');
   const [submittingAction, setSubmittingAction] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [hasConflict, setHasConflict] = useState(false);
 
   const fetchApprovals = async () => {
     setLoading(true);
@@ -139,7 +140,7 @@ export default function AdminApprovals() {
     }
   };
 
-  const handleConfirmAction = async () => {
+  const handleConfirmAction = async (forceApprove = false) => {
     if (!selectedRequest || !actionType) return;
 
     if (actionType === 'reject' && !actionRemarks.trim()) {
@@ -153,6 +154,7 @@ export default function AdminApprovals() {
       if (actionType === 'approve') {
         await api.approveModificationRequest(selectedRequest.id, {
           approval_remarks: actionRemarks.trim(),
+          ...(forceApprove ? { force_approve: true } as any : {}),
         });
         setSuccessMsg(`Request ${selectedRequest.request_number} has been approved and active data updated!`);
       } else {
@@ -164,9 +166,13 @@ export default function AdminApprovals() {
 
       setActionType(null);
       setSelectedRequest(null);
+      setHasConflict(false);
       fetchApprovals();
       setTimeout(() => setSuccessMsg(''), 5000);
     } catch (err: any) {
+      if (err.message && err.message.toLowerCase().includes('conflict')) {
+        setHasConflict(true);
+      }
       setActionError(err.message || `Failed to ${actionType} request`);
     } finally {
       setSubmittingAction(false);
@@ -617,73 +623,166 @@ export default function AdminApprovals() {
 
             {/* Side-by-Side Comparison Section */}
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4 text-brand-600" />
-                  Side-by-Side Comparison: Current Approved Data vs Proposed Changes
+                  Before &amp; After Comparison — Field-by-Field
                 </h3>
+                {selectedRequest.changes_diff && selectedRequest.changes_diff.length > 0 && (
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">Changed</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">Added</span>
+                    <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold">Removed</span>
+                  </div>
+                )}
               </div>
 
               {selectedRequest.changes_diff && selectedRequest.changes_diff.length > 0 ? (
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 border-b border-slate-200 font-semibold text-slate-600">
-                        <th className="py-2.5 px-3 w-1/4">Field / Entity</th>
-                        <th className="py-2.5 px-3 w-3/8 bg-slate-50">Currently Approved Value</th>
-                        <th className="py-2.5 px-3 w-3/8 bg-brand-50/40 text-brand-900">Proposed New Value</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {selectedRequest.changes_diff.map((diff, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="py-2.5 px-3 font-semibold text-slate-700">
-                            {diff.label}
-                            {diff.type === 'modified' && (
-                              <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-normal">
-                                Changed
-                              </span>
-                            )}
-                            {diff.type === 'added' && (
-                              <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-normal">
-                                Added
-                              </span>
-                            )}
-                            {diff.type === 'removed' && (
-                              <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 font-normal">
-                                Removed
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 bg-slate-50/40 text-slate-600 font-mono">
-                            {typeof diff.original === 'object' && diff.original !== null
-                              ? JSON.stringify(diff.original, null, 1)
-                              : String(diff.original ?? '—')}
-                          </td>
-                          <td className="py-2.5 px-3 bg-brand-50/20 text-brand-900 font-mono font-semibold">
-                            {typeof diff.proposed === 'object' && diff.proposed !== null
-                              ? JSON.stringify(diff.proposed, null, 1)
-                              : String(diff.proposed ?? '—')}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                  {(() => {
+                    // Group diffs: scalars first, then record groups
+                    const scalars = selectedRequest.changes_diff!.filter((d: any) => !d.group_label || d.record_type === 'scalar');
+                    const records = selectedRequest.changes_diff!.filter((d: any) => d.group_label && d.record_type !== 'scalar');
+
+                    // Group records by group_label
+                    const groups: Record<string, any[]> = {};
+                    records.forEach((d: any) => {
+                      const g = d.group_label || 'Other Records';
+                      if (!groups[g]) groups[g] = [];
+                      groups[g].push(d);
+                    });
+
+                    const renderVal = (v: any) => {
+                      if (v === null || v === undefined || v === '') return <span className="text-slate-400 italic">—</span>;
+                      if (typeof v === 'object') return <pre className="text-[10px] whitespace-pre-wrap font-mono text-slate-600">{JSON.stringify(v, null, 1)}</pre>;
+                      return <span>{String(v)}</span>;
+                    };
+
+                    const typeBadge = (type: string) => {
+                      if (type === 'modified') return <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">Changed</span>;
+                      if (type === 'added')    return <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">Added</span>;
+                      if (type === 'removed')  return <span className="ml-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-semibold">Removed</span>;
+                      return null;
+                    };
+
+                    return (
+                      <>
+                        {/* Scalar field changes */}
+                        {scalars.length > 0 && (
+                          <div className="border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="bg-slate-100 px-4 py-2 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
+                              Order-Level Changes
+                            </div>
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+                                  <th className="py-2 px-4 w-1/3">Field</th>
+                                  <th className="py-2 px-4 w-1/3 bg-slate-50/80">Before (Original)</th>
+                                  <th className="py-2 px-4 w-1/3 bg-brand-50/40 text-brand-800">After (Proposed)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {scalars.map((diff: any, idx: number) => (
+                                  <tr key={idx} className={`${diff.type === 'added' ? 'bg-emerald-50/30' : diff.type === 'removed' ? 'bg-rose-50/30' : 'bg-amber-50/20'}`}>
+                                    <td className="py-2.5 px-4 font-semibold text-slate-700">
+                                      {diff.label}{typeBadge(diff.type)}
+                                    </td>
+                                    <td className="py-2.5 px-4 bg-slate-50/60 text-slate-600 font-mono text-[11px]">
+                                      {renderVal(diff.original)}
+                                    </td>
+                                    <td className="py-2.5 px-4 bg-brand-50/20 text-brand-900 font-mono font-semibold text-[11px]">
+                                      {renderVal(diff.proposed)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* Record group changes */}
+                        {Object.entries(groups).map(([groupName, groupDiffs]) => (
+                          <div key={groupName} className="border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="bg-slate-100 px-4 py-2 flex items-center justify-between border-b border-slate-200">
+                              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">{groupName}</span>
+                              <span className="text-[10px] text-slate-400">{groupDiffs.length} record{groupDiffs.length !== 1 ? 's' : ''} changed</span>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {groupDiffs.map((rec: any, rIdx: number) => (
+                                <div key={rIdx} className={`${rec.record_type === 'added' ? 'bg-emerald-50/30' : rec.record_type === 'removed' ? 'bg-rose-50/30' : 'bg-amber-50/10'}`}>
+                                  {/* Record header */}
+                                  <div className="px-4 py-2 flex items-center gap-2 border-b border-slate-100 bg-white/50">
+                                    <span className="text-[11px] font-bold text-slate-700">
+                                      Record #{rec.record_id ?? rIdx + 1}
+                                    </span>
+                                    {typeBadge(rec.record_type)}
+                                  </div>
+
+                                  {/* Sub-field diffs for modified records */}
+                                  {rec.sub_diffs && rec.sub_diffs.length > 0 ? (
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold text-[11px]">
+                                          <th className="py-1.5 px-4 w-1/3">Field</th>
+                                          <th className="py-1.5 px-4 w-1/3 bg-slate-50/80">Before</th>
+                                          <th className="py-1.5 px-4 w-1/3 bg-brand-50/40 text-brand-800">After</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-50">
+                                        {rec.sub_diffs.map((sd: any, sIdx: number) => (
+                                          <tr key={sIdx} className="hover:bg-slate-50/40">
+                                            <td className="py-2 px-4 font-semibold text-slate-600">{sd.label}</td>
+                                            <td className="py-2 px-4 bg-slate-50/50 text-slate-600 font-mono text-[11px]">{renderVal(sd.original)}</td>
+                                            <td className="py-2 px-4 bg-brand-50/20 text-brand-900 font-mono font-semibold text-[11px]">{renderVal(sd.proposed)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  ) : (
+                                    /* Added or removed: show full record summary */
+                                    <div className="grid grid-cols-2 gap-3 px-4 py-3 text-[11px]">
+                                      <div>
+                                        <span className="block text-slate-500 font-semibold mb-1">Before (Original)</span>
+                                        {rec.original
+                                          ? <pre className="whitespace-pre-wrap font-mono text-slate-600 bg-slate-50 p-2 rounded border border-slate-200">{JSON.stringify(rec.original, null, 2)}</pre>
+                                          : <span className="text-slate-400 italic">— Not present</span>}
+                                      </div>
+                                      <div>
+                                        <span className="block text-brand-800 font-semibold mb-1">After (Proposed)</span>
+                                        {rec.proposed
+                                          ? <pre className="whitespace-pre-wrap font-mono text-brand-900 bg-brand-50/20 p-2 rounded border border-brand-200">{JSON.stringify(rec.proposed, null, 2)}</pre>
+                                          : <span className="text-rose-500 italic">— Removed</span>}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </div>
               ) : (
                 /* Fallback raw JSON snapshot comparison if no structured diff generated */
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
-                    <span className="font-semibold text-slate-700 block mb-2 text-xs">Original Active Snapshot</span>
-                    <pre className="text-[11px] font-mono bg-white p-2.5 rounded border border-slate-200 max-h-60 overflow-y-auto text-slate-600">
-                      {JSON.stringify(selectedRequest.original_data_snapshot, null, 2)}
-                    </pre>
-                  </div>
-                  <div className="border border-brand-200 rounded-xl p-3 bg-brand-50/20">
-                    <span className="font-semibold text-brand-900 block mb-2 text-xs">Proposed Modifications</span>
-                    <pre className="text-[11px] font-mono bg-white p-2.5 rounded border border-brand-200 max-h-60 overflow-y-auto text-brand-900 font-medium">
-                      {JSON.stringify(selectedRequest.proposed_data, null, 2)}
-                    </pre>
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-500 italic px-1">
+                    No field-level differences detected. Showing full snapshot comparison below.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50">
+                      <span className="font-semibold text-slate-700 block mb-2 text-xs">Original Active Snapshot</span>
+                      <pre className="text-[11px] font-mono bg-white p-2.5 rounded border border-slate-200 max-h-60 overflow-y-auto text-slate-600">
+                        {JSON.stringify(selectedRequest.original_data_snapshot, null, 2)}
+                      </pre>
+                    </div>
+                    <div className="border border-brand-200 rounded-xl p-3 bg-brand-50/20">
+                      <span className="font-semibold text-brand-900 block mb-2 text-xs">Proposed Modifications</span>
+                      <pre className="text-[11px] font-mono bg-white p-2.5 rounded border border-brand-200 max-h-60 overflow-y-auto text-brand-900 font-medium">
+                        {JSON.stringify(selectedRequest.proposed_data, null, 2)}
+                      </pre>
+                    </div>
                   </div>
                 </div>
               )}
@@ -745,14 +844,25 @@ export default function AdminApprovals() {
                     onClick={() => {
                       setActionType(null);
                       setActionError('');
+                      setHasConflict(false);
                     }}
                     disabled={submittingAction}
                   >
                     Cancel
                   </Button>
+                  {hasConflict && actionType === 'approve' && (
+                    <Button
+                      variant="danger"
+                      onClick={() => handleConfirmAction(true)}
+                      disabled={submittingAction}
+                      icon={<AlertTriangle className="w-4 h-4" />}
+                    >
+                      {submittingAction ? 'Processing...' : 'Force Approve & Overwrite'}
+                    </Button>
+                  )}
                   <Button
                     variant={actionType === 'approve' ? 'primary' : 'danger'}
-                    onClick={handleConfirmAction}
+                    onClick={() => handleConfirmAction(false)}
                     disabled={submittingAction}
                     icon={<Check className="w-4 h-4" />}
                   >
