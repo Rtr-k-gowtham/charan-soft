@@ -3481,7 +3481,7 @@ class ProductionController {
                     if (!$m && count($groupedItems) === 1) $m = true;
                     if ($m) $transferredToStitching += (float)$tRow['quantity'];
                 }
-                $transferredToStitching = min($accepted, $transferredToStitching);
+                $transferredToStitching = min($received, $transferredToStitching);
 
                 $gIt['sent_to_vendor'] = $sent;
                 $gIt['received_inward'] = $received;
@@ -3538,20 +3538,27 @@ class ProductionController {
             }
             unset($job);
 
-            // Update each receipt with transferred and available_to_transfer
-            foreach ($receipts as &$rcpt) {
+            // Allocate each job order's transferred quantity across its receipts in FIFO order (oldest receipt first)
+            $jobTransPool = [];
+            foreach ($jobs as $j) {
+                $jobTransPool[(int)$j['id']] = (float)($j['transferred_to_stitching_quantity'] ?? 0);
+            }
+
+            // Chronological order (oldest to newest by id)
+            $receiptOrder = array_keys($receipts);
+            usort($receiptOrder, fn($a, $b) => ((int)($receipts[$a]['id'] ?? 0)) <=> ((int)($receipts[$b]['id'] ?? 0)));
+
+            foreach ($receiptOrder as $idx) {
+                $rcpt = &$receipts[$idx];
                 $jId = (int)($rcpt['job_order_id'] ?? 0);
-                $matchedJob = null;
-                foreach ($jobs as $j) {
-                    if ((int)$j['id'] === $jId) {
-                        $matchedJob = $j;
-                        break;
-                    }
-                }
+                $pool = $jobTransPool[$jId] ?? 0.0;
                 $rRec = (float)($rcpt['total_received_qty'] ?? 0);
-                $jTrf = $matchedJob ? (float)($matchedJob['transferred_to_stitching_quantity'] ?? 0) : 0.0;
-                $rcpt['transferred_to_stitching_quantity'] = min($rRec, $jTrf);
-                $rcpt['available_to_transfer'] = max(0.0, $rRec - $rcpt['transferred_to_stitching_quantity']);
+
+                $allocTrf = min($rRec, $pool);
+                $rcpt['transferred_to_stitching_quantity'] = $allocTrf;
+                $rcpt['available_to_transfer'] = max(0.0, $rRec - $allocTrf);
+
+                $jobTransPool[$jId] = max(0.0, $pool - $allocTrf);
             }
             unset($rcpt);
 
