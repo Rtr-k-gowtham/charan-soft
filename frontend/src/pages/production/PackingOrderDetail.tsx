@@ -282,7 +282,8 @@ export default function PackingOrderDetail() {
     });
 
     const completionRate = arrivedQty > 0 ? Math.round((packedQty / arrivedQty) * 100) : 0;
-    return { orderQty, arrivedQty, packedQty, totalBoxes, totalCartons, unpackedQty, availableToPackQty, completionRate };
+    const finalOrderQty = Number(order?.total_quantity || 0) > 0 ? Number(order?.total_quantity) : orderQty;
+    return { orderQty: finalOrderQty, arrivedQty, packedQty, totalBoxes, totalCartons, unpackedQty, availableToPackQty, completionRate };
   }, [items, summaryByItem]);
 
   // Filter items

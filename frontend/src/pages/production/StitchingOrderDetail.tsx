@@ -327,9 +327,10 @@ export default function StitchingOrderDetail() {
     });
 
     const batchTransferred = batches.reduce((sum, b) => sum + Number(b.transferred_quantity || 0), 0);
+    const finalOrderQty = Number(order?.total_quantity || 0) > 0 ? Number(order?.total_quantity) : orderQty;
 
     return {
-      orderQty,
+      orderQty: finalOrderQty,
       arrivedFromCutting,
       arrivedFromEmbroidery,
       totalArrived,

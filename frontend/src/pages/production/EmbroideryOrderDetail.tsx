@@ -420,8 +420,10 @@ export default function EmbroideryOrderDetail() {
       transferredQty += Number(it.transferred_to_stitching || Math.max(0, Number(it.accepted_inward || 0) - Number(it.ready_to_transfer || 0)));
     });
 
+    const finalOrderQty = Number(order?.total_quantity || 0) > 0 ? Number(order?.total_quantity) : orderQty;
+
     return {
-      orderQty,
+      orderQty: finalOrderQty,
       arrivedQty,
       sentQty,
       acceptedQty,

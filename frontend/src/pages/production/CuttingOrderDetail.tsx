@@ -825,7 +825,7 @@ export default function CuttingOrderDetail() {
 
   // Yield summary
   const yieldSummary = useMemo(() => {
-    const totalOrdered = items.reduce((s, i) => s + Number(i.total_quantity || 0), 0);
+    const totalOrdered = Number(order?.total_quantity || 0) > 0 ? Number(order?.total_quantity) : items.reduce((s, i) => s + Number(i.total_quantity || 0), 0);
     const totalCut = batches.reduce((s, b) => s + Number(b.actual_cut_quantity || 0), 0);
     const totalRejected = batches.reduce((s, b) => s + Number(b.rejected_quantity || 0), 0);
 

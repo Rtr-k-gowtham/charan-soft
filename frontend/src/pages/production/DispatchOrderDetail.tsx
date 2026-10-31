@@ -483,13 +483,12 @@ export default function DispatchOrderDetail() {
     }
 
     const orderIdNum = Number(id);
-    let orderedQty = 0;
+    let itemsQty = 0;
     items.forEach(it => {
-      orderedQty += Number(it.total_quantity || it.order_quantity || it.quantity || 0);
+      itemsQty += Number(it.total_quantity || it.order_quantity || it.quantity || 0);
     });
-    if (orderedQty === 0 && order) {
-      orderedQty = Number(order.total_quantity || 0);
-    }
+    const masterOrderQty = Number(order.total_quantity || 0);
+    const orderedQty = masterOrderQty > 0 ? masterOrderQty : itemsQty;
 
     // Defensive order scoping
     const orderDispatches = dispatches.filter(d => Number(d.production_order_id) === orderIdNum);
@@ -526,6 +525,27 @@ export default function DispatchOrderDetail() {
       hasValidEwayProof
     };
   }, [order, items, dispatches, cartons, id]);
+
+  // Authoritative Unique Products Count
+  const productCount = useMemo(() => {
+    let count = items.length;
+    const bomRaw = (order as any)?.generated_bom;
+    if (bomRaw) {
+      try {
+        const bomData = typeof bomRaw === 'string' ? JSON.parse(bomRaw) : bomRaw;
+        if (bomData?.products && Array.isArray(bomData.products) && bomData.products.length > 0) {
+          count = Math.max(count, bomData.products.length);
+        } else if (bomData?.summary?.total_products_count) {
+          count = Math.max(count, Number(bomData.summary.total_products_count));
+        }
+      } catch (e) {}
+    }
+    if (cartons.length > 0) {
+      const distinctCartonProducts = new Set(cartons.map(c => `${c.product_name || c.production_order_item_id}_${c.color || ''}`)).size;
+      count = Math.max(count, distinctCartonProducts);
+    }
+    return Math.max(1, count);
+  }, [items, order, cartons]);
 
   // Open Dispatch Modal
   const handleOpenDispatchModal = () => {
@@ -831,7 +851,7 @@ export default function DispatchOrderDetail() {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Ordered</div>
           <div className="text-xl sm:text-2xl font-black text-slate-800">{fmt(metrics.orderedQty)}</div>
-          <div className="text-[10px] text-slate-400 mt-1">{items.length} Products</div>
+          <div className="text-[10px] text-slate-400 mt-1">{productCount} Products</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">

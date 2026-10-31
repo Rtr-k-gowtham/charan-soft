@@ -328,8 +328,10 @@ export default function CheckingOrderDetail() {
     const rejectRate = totalChecked > 0 ? ((totalRejected / totalChecked) * 100).toFixed(1) : '0.0';
     const reworkRate = totalChecked > 0 ? ((totalRework / totalChecked) * 100).toFixed(1) : '0.0';
 
+    const finalOrderQty = Number(order?.total_quantity || 0) > 0 ? Number(order?.total_quantity) : orderQty;
+
     return {
-      orderQty,
+      orderQty: finalOrderQty,
       arrivedFromStitching,
       totalChecked,
       totalPassed,
