@@ -743,33 +743,33 @@ export default function CheckingOrderDetail() {
       )}
 
       {/* HEADER BAR */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-5 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-4">
             <Button
               variant="outline"
               size="sm"
               onClick={handleBack}
-              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-300"
+              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 border-slate-300 shrink-0 px-2 sm:px-3 py-1 sm:py-1.5"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Back</span>
             </Button>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl font-bold text-slate-900 font-mono tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+                <h1 className="text-base sm:text-xl font-bold text-slate-900 font-mono tracking-tight">
                   {order?.order_number || 'Loading Order...'}
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                <span className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <ShieldCheck className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-blue-600" />
                   Stage 08: Checking / Quality Inspection
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
                   {order?.status || 'IN PRODUCTION'}
                 </span>
               </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
-                <span>{(order as any)?.order_title || (order as any)?.title || 'Production Order'}</span>
+              <div className="flex items-center gap-2 sm:gap-3 mt-1 text-[11px] sm:text-xs text-slate-500 flex-wrap">
+                <span className="truncate">{(order as any)?.order_title || (order as any)?.title || 'Production Order'}</span>
                 <span>•</span>
                 <span className="font-semibold text-slate-700">
                   {overallTotals.arrivedFromStitching} pcs arrived from Stitching
@@ -778,16 +778,16 @@ export default function CheckingOrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end md:self-center flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-3 justify-end flex-wrap w-full md:w-auto">
             <Button
               variant="outline"
               size="sm"
               onClick={fetchOrderData}
               disabled={loading}
-              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300 px-2 sm:px-3 py-1 sm:py-1.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
 
             <Button
@@ -797,10 +797,11 @@ export default function CheckingOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
+              className="flex items-center gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300 px-2.5 sm:px-3 py-1 sm:py-1.5"
             >
               <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-              <span>Request Modification</span>
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
 
             <Button
@@ -809,9 +810,10 @@ export default function CheckingOrderDetail() {
               size="sm"
               onClick={() => handleOpenTransferModal()}
               disabled={overallTotals.readyForPacking <= 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed px-2.5 sm:px-3.5 py-1 sm:py-1.5"
             >
-              <span>Pass to Packing (Stage 09)</span>
+              <span className="hidden sm:inline">Pass to Packing (Stage 09)</span>
+              <span className="sm:hidden">To Packing</span>
               <ArrowRight className="w-4 h-4" />
             </Button>
           </div>

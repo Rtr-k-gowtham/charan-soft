@@ -946,38 +946,40 @@ export default function CuttingOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={handleBack}>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <Button variant="secondary" size="sm" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={handleBack} className="text-xs px-2.5 sm:px-3 py-1 sm:py-1.5">
               Back
             </Button>
             <button
               onClick={loadData}
-              className="p-2 text-slate-500 hover:text-brand-600 rounded-lg border border-slate-200 hover:bg-slate-50 transition bg-white shadow-2xs"
+              className="p-1.5 sm:p-2 text-slate-500 hover:text-brand-600 rounded-lg border border-slate-200 hover:bg-slate-50 transition bg-white shadow-2xs"
               title="Refresh Cutting Data"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
             <Button
               variant="outline"
+              size="sm"
               icon={<Edit3 className="w-3.5 h-3.5 text-slate-600" />}
               onClick={() => {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 px-2.5 sm:px-3 py-1 sm:py-1.5"
             >
-              Request Modification
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
           </div>
         }
       />
 
-      <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6 max-w-7xl mx-auto w-full">
         {/* Pending Modification Banner */}
         <PendingApprovalBanner orderId={Number(order.id)} stageId={5} />
 
         {/* Order Info & Buyer Banner */}
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-3">
             <BuyerAvatar buyer={order} size="md" shape="circle" className="shrink-0" />
             <div>

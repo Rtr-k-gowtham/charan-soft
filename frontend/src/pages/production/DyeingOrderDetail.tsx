@@ -1509,91 +1509,96 @@ export default function DyeingOrderDetail() {
     return (
       <div className="flex flex-col h-full bg-slate-50/70 overflow-y-auto">
         {/* Sticky Top Bar matching Image 2 */}
-        <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreatePage(false);
-                if (searchParams.get('create')) {
-                  const next = new URLSearchParams(searchParams);
-                  next.delete('create');
-                  setSearchParams(next);
-                }
-              }}
-              className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Orders</span>
-            </button>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 leading-tight">Create Dyeing Order</h1>
-              <p className="text-xs text-slate-500">Full-page order creation with searchable dropdowns & material catalog</p>
+        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 sticky top-0 z-30 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreatePage(false);
+                  if (searchParams.get('create')) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('create');
+                    setSearchParams(next);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Back to Orders</span>
+                <span className="sm:hidden">Back</span>
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight truncate">Create Dyeing Order</h1>
+                <p className="text-[11px] text-slate-500 hidden sm:block truncate">Full-page order creation with searchable dropdowns & material catalog</p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreatePage(false);
-                if (searchParams.get('create')) {
-                  const next = new URLSearchParams(searchParams);
-                  next.delete('create');
-                  setSearchParams(next);
+            <div className="flex items-center gap-1.5 sm:gap-2 justify-end flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreatePage(false);
+                  if (searchParams.get('create')) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('create');
+                    setSearchParams(next);
+                  }
+                }}
+                className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
+                disabled={creating}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCreateDyeingOrder('Draft')}
+                disabled={creating || !hasEligibleAllocation || hasAnyOverAllocation}
+                title={
+                  !hasEligibleAllocation
+                    ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
+                    : hasAnyOverAllocation
+                      ? "One or more colors exceed eligible remaining quantity."
+                      : undefined
                 }
-              }}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-              disabled={creating}
-            >
-              Cancel
-            </button>
+                className="flex items-center gap-1 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Save as Draft</span>
+                <span className="sm:hidden">Draft</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleCreateDyeingOrder('Draft')}
-              disabled={creating || !hasEligibleAllocation || hasAnyOverAllocation}
-              title={
-                !hasEligibleAllocation
-                  ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
-                  : hasAnyOverAllocation
-                    ? "One or more colors exceed eligible remaining quantity."
-                    : undefined
-              }
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save as Draft</span>
-            </button>
-
-            <Button
-              type="button"
-              loading={creating}
-              disabled={!hasEligibleAllocation || hasAnyOverAllocation}
-              title={
-                !hasEligibleAllocation
-                  ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
-                  : hasAnyOverAllocation
-                    ? "One or more colors exceed eligible remaining quantity."
-                    : undefined
-              }
-              onClick={() => handleCreateDyeingOrder('Sent to Dyeing')}
-              icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>+ Create Dyeing Order</span>
-            </Button>
+              <Button
+                type="button"
+                loading={creating}
+                disabled={!hasEligibleAllocation || hasAnyOverAllocation}
+                title={
+                  !hasEligibleAllocation
+                    ? "A dyeing order already exists for this material and Pantone color under this production order. The quantity has already been processed."
+                    : hasAnyOverAllocation
+                      ? "One or more colors exceed eligible remaining quantity."
+                      : undefined
+                }
+                onClick={() => handleCreateDyeingOrder('Sent to Dyeing')}
+                icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-3 sm:px-4 py-1.5 sm:py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="hidden sm:inline">+ Create Dyeing Order</span>
+                <span className="sm:hidden">Create Order</span>
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* Full Page Body matching Image 2 */}
-        <div className="max-w-7xl w-full mx-auto p-6 space-y-6">
+        <div className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
           {!hasEligibleAllocation && (
-            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-3 shadow-xs">
+            <div className="p-3.5 sm:p-4 bg-amber-50 border-2 border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2.5 sm:gap-3 shadow-xs">
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div className="space-y-1.5 flex-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-bold text-sm text-amber-900 flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h4 className="font-bold text-sm text-amber-900 flex items-center gap-2 flex-wrap">
                     <span>⚠️ Dyeing Order Duplicate Prevention</span>
                     <span className="px-2 py-0.5 text-[10px] uppercase font-extrabold bg-amber-200 text-amber-900 rounded">Quantity Processed</span>
                   </h4>
@@ -1603,7 +1608,7 @@ export default function DyeingOrderDetail() {
                       setShowCreatePage(false);
                       setActiveTab('orders');
                     }}
-                    className="text-xs font-bold text-brand-700 hover:text-brand-900 underline"
+                    className="text-xs font-bold text-brand-700 hover:text-brand-900 underline text-left sm:text-right"
                   >
                     View Existing Orders &rarr;
                   </button>
@@ -2162,10 +2167,10 @@ export default function DyeingOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <button
               onClick={handleBack}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs shrink-0"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
@@ -2173,7 +2178,7 @@ export default function DyeingOrderDetail() {
 
             <button
               onClick={() => navigate(`/production/inward/${order.id}`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <Package className="w-3.5 h-3.5 text-slate-500" />
               <span>Stage 03 Inward</span>
@@ -2181,16 +2186,17 @@ export default function DyeingOrderDetail() {
 
             <button
               onClick={() => navigate(`/production/cutting/${order?.id || id}`)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition shadow-2xs"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition shadow-2xs shrink-0"
               title="Proceed to Stage 05 Cutting for this order"
             >
               <ArrowRight className="w-3.5 h-3.5 text-brand-600" />
-              <span>Next: Stage 05 Cutting</span>
+              <span className="hidden sm:inline">Next: Stage 05 Cutting</span>
+              <span className="sm:hidden">To Cutting</span>
             </button>
 
             <button
               onClick={loadData}
-              className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="p-1.5 text-slate-600 hover:text-slate-900 border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition shadow-2xs shrink-0"
               title="Refresh Data"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -2198,10 +2204,11 @@ export default function DyeingOrderDetail() {
 
             <Button
               onClick={handleOpenCreateModal}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-3 py-1.5"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-2.5 sm:px-3 py-1.5 shrink-0"
             >
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              <span>Create Dyeing Order</span>
+              <Plus className="w-3.5 h-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Create Dyeing Order</span>
+              <span className="sm:hidden">+ Order</span>
             </Button>
 
             <Button
@@ -2211,9 +2218,10 @@ export default function DyeingOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="text-xs font-semibold"
+              className="text-xs font-semibold px-2.5 sm:px-3 py-1.5 shrink-0"
             >
-              Request Modification
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
           </div>
         }

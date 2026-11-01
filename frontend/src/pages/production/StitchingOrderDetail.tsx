@@ -969,47 +969,44 @@ export default function StitchingOrderDetail() {
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-2xs">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="bg-white border-b border-slate-200 px-3.5 sm:px-6 py-3 sm:py-4 shadow-2xs">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3">
             <Button
               variant="ghost"
               size="sm"
               icon={<ArrowLeft className="w-4 h-4 text-slate-600" />}
               onClick={handleBack}
-              className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
+              className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 shrink-0 px-2 sm:px-3 py-1 sm:py-1.5"
             >
               Back
             </Button>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-base font-black text-slate-900 tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="font-mono text-sm sm:text-base font-black text-slate-900 tracking-tight">
                   {order?.order_number || `ORD-${id}`}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1.5 shadow-2xs">
-                  <Activity className="w-3.5 h-3.5 text-brand-600" />
+                <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1 sm:gap-1.5 shadow-2xs">
+                  <Activity className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-brand-600" />
                   Stage 07: Stitching — Color-wise Tracking
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                   {order?.priority || 'NORMAL'}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {order?.title || 'Production Order Workflow'} • Garments arriving from Cutting & Embroidery stages, color-wise stitching runs, and Checking transfers.
-              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
             <Button
               variant="outline"
               size="sm"
               icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
               onClick={fetchOrderData}
               disabled={loading}
-              className="text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 px-2 sm:px-3 py-1 sm:py-1.5"
             >
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Button
               variant="outline"
@@ -1019,9 +1016,10 @@ export default function StitchingOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50 px-2.5 sm:px-3 py-1 sm:py-1.5"
             >
-              Request Modification
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
             <Button
               id="btn-pass-to-checking"
@@ -1030,16 +1028,17 @@ export default function StitchingOrderDetail() {
               icon={<ArrowRight className="w-3.5 h-3.5" />}
               onClick={() => handleOpenTransferModal()}
               disabled={overallAvailableForTransfer <= 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-200"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-200 px-2.5 sm:px-3.5 py-1 sm:py-1.5"
             >
-              Pass to Checking (Stage 08)
+              <span className="hidden sm:inline">Pass to Checking (Stage 08)</span>
+              <span className="sm:hidden">To Checking</span>
             </Button>
           </div>
         </div>
 
         {/* Order Details Bar */}
         {order && (
-          <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-6 text-xs text-slate-600">
+          <div className="max-w-7xl mx-auto mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-100 flex flex-wrap items-center gap-3 sm:gap-6 text-xs text-slate-600">
             <div className="flex items-center gap-2">
               <BuyerAvatar buyer={order} size="sm" shape="circle" className="shrink-0" />
               <span className="font-bold text-slate-800">{order.customer_name || 'Buyer'}</span>

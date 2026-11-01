@@ -296,7 +296,7 @@ export default function InwardOrderDetail() {
 
   const handleQtyChange = (itemId: number, valStr: string, remaining: number, desc: string, uom: string) => {
     setReceiveQuantities(f => ({ ...f, [itemId]: valStr }));
-    
+
     if (valStr === '' || valStr === undefined) {
       setItemErrors(errs => {
         const copy = { ...errs };
@@ -477,7 +477,7 @@ export default function InwardOrderDetail() {
   const pendingUnits = Math.max(0, totalOrderedUnits - totalReceivedUnits);
   const progressPercent = totalOrderedUnits > 0 ? Math.min(100, Math.round((totalReceivedUnits / totalOrderedUnits) * 100)) : 0;
 
-  const fabricPOItems = allPOItems.filter(it => 
+  const fabricPOItems = allPOItems.filter(it =>
     (it.category_name || '').toUpperCase().includes('FABRIC') ||
     (it.item_description || '').toUpperCase().includes('FABRIC') ||
     (it.item_description || '').toUpperCase().includes('MAT-FAB')
@@ -690,36 +690,7 @@ export default function InwardOrderDetail() {
         </div>
 
         {/* STAGE 04 FABRIC DYEING PIPELINE SHORTCUT */}
-        {totalFabricInwarded > 0 && (
-          <div className="bg-brand-50/70 border border-brand-200 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-                <Droplets className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-brand-700 bg-brand-100 px-2 py-0.5 rounded">
-                    Next Stage: 04. Dyeing
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">
-                    {fmt(totalFabricInwarded)} MTR Fabric Inwarded
-                  </span>
-                </div>
-                <p className="text-xs text-slate-600 mt-0.5">
-                  Only fabric materials are sent to dyeing. Create a Dyeing Order to split your {fmt(totalFabricInwarded)} MTR fabric by color & Pantone code (e.g. Green 20, Red 20, Orange 20, White 20, Black 20).
-                </p>
-              </div>
-            </div>
 
-            <Button
-              onClick={() => navigate(`/production/dyeing/${order.id}`)}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-2xs shrink-0 self-end sm:self-auto"
-            >
-              <Droplets className="w-3.5 h-3.5 mr-1.5" />
-              <span>Create Dyeing Order & Track Outward</span>
-            </Button>
-          </div>
-        )}
 
         {/* SECTION 1: INWARD MATERIAL MANAGEMENT & PO ITEMS RECEIVING */}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -1289,11 +1260,10 @@ export default function InwardOrderDetail() {
                                   placeholder="0.00"
                                   value={receiveQuantities[it.id!] ?? ''}
                                   onChange={e => handleQtyChange(it.id!, e.target.value, remaining, desc, uom)}
-                                  className={`w-28 px-2.5 py-1.5 text-xs text-right font-mono font-semibold rounded border transition-colors focus:outline-none ${
-                                    itemError
-                                      ? 'border-red-500 bg-red-50/30 text-red-700 focus:border-red-600'
-                                      : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500'
-                                  }`}
+                                  className={`w-28 px-2.5 py-1.5 text-xs text-right font-mono font-semibold rounded border transition-colors focus:outline-none ${itemError
+                                    ? 'border-red-500 bg-red-50/30 text-red-700 focus:border-red-600'
+                                    : 'border-slate-300 bg-white text-slate-800 focus:border-brand-500'
+                                    }`}
                                 />
                                 <button
                                   type="button"
@@ -1381,9 +1351,8 @@ export default function InwardOrderDetail() {
                               placeholder="0.00"
                               value={receiveQuantities[it.id!] ?? ''}
                               onChange={e => handleQtyChange(it.id!, e.target.value, remaining, desc, uom)}
-                              className={`flex-1 px-3 py-2 text-xs font-mono font-bold rounded-lg border transition-colors ${
-                                itemError ? 'border-red-500 bg-red-50/30 text-red-700' : 'border-slate-300 bg-white text-slate-800'
-                              }`}
+                              className={`flex-1 px-3 py-2 text-xs font-mono font-bold rounded-lg border transition-colors ${itemError ? 'border-red-500 bg-red-50/30 text-red-700' : 'border-slate-300 bg-white text-slate-800'
+                                }`}
                             />
                             <button
                               type="button"

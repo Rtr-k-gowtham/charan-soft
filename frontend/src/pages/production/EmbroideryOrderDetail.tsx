@@ -1494,70 +1494,75 @@ export default function EmbroideryOrderDetail() {
     return (
       <div className="flex flex-col h-full bg-slate-50/70 overflow-y-auto">
         {/* Sticky Top Bar matching Image 2 */}
-        <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreatePage(false);
-                if (searchParams.get('create')) {
-                  const next = new URLSearchParams(searchParams);
-                  next.delete('create');
-                  setSearchParams(next);
-                }
-              }}
-              className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Back to Orders</span>
-            </button>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 leading-tight">Create Embroidery Job Order</h1>
-              <p className="text-xs text-slate-500">Full-page order creation with searchable dropdowns & material catalog</p>
+        <div className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 sticky top-0 z-30 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreatePage(false);
+                  if (searchParams.get('create')) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('create');
+                    setSearchParams(next);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs shrink-0"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Back to Orders</span>
+                <span className="sm:hidden">Back</span>
+              </button>
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-base font-bold text-slate-900 leading-tight truncate">Create Embroidery Job Order</h1>
+                <p className="text-[11px] text-slate-500 hidden sm:block truncate">Full-page order creation with searchable dropdowns & material catalog</p>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setShowCreatePage(false);
-                if (searchParams.get('create')) {
-                  const next = new URLSearchParams(searchParams);
-                  next.delete('create');
-                  setSearchParams(next);
-                }
-              }}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
-              disabled={creating}
-            >
-              Cancel
-            </button>
+            <div className="flex items-center gap-1.5 sm:gap-2 justify-end flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreatePage(false);
+                  if (searchParams.get('create')) {
+                    const next = new URLSearchParams(searchParams);
+                    next.delete('create');
+                    setSearchParams(next);
+                  }
+                }}
+                className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition"
+                disabled={creating}
+              >
+                Cancel
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleCreateEmbroideryJobOrder('Draft')}
-              disabled={creating}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save as Draft</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleCreateEmbroideryJobOrder('Draft')}
+                disabled={creating}
+                className="flex items-center gap-1 px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Save as Draft</span>
+                <span className="sm:hidden">Draft</span>
+              </button>
 
-            <Button
-              type="button"
-              loading={creating}
-              onClick={() => handleCreateEmbroideryJobOrder('Sent to Vendor')}
-              icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-4 py-2"
-            >
-              <span>+ Create Embroidery Job Order</span>
-            </Button>
+              <Button
+                type="button"
+                loading={creating}
+                onClick={() => handleCreateEmbroideryJobOrder('Sent to Vendor')}
+                icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-xs px-3 sm:px-4 py-1.5 sm:py-2"
+              >
+                <span className="hidden sm:inline">+ Create Job Order</span>
+                <span className="sm:hidden">Create Order</span>
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Full Page Body matching Image 2 */}
-        <div className="max-w-7xl w-full mx-auto p-6 space-y-6">
+        {/* Full Page Body */}
+        <div className="max-w-7xl w-full mx-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
           {createError && (
             <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 shadow-2xs">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -2084,47 +2089,47 @@ export default function EmbroideryOrderDetail() {
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-2xs">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+      <div className="bg-white border-b border-slate-200 px-3.5 sm:px-6 py-3 sm:py-4 shadow-2xs">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3">
             <Button
               variant="ghost"
               size="sm"
               icon={<ArrowLeft className="w-4 h-4 text-slate-600" />}
               onClick={handleBack}
-              className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50"
+              className="text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 shrink-0 px-2 sm:px-3 py-1 sm:py-1.5"
             >
               Back
             </Button>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-base font-black text-slate-900 tracking-tight">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="font-mono text-sm sm:text-base font-black text-slate-900 tracking-tight">
                   {order?.order_number || `ORD-${id}`}
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1.5 shadow-2xs">
-                  <Sparkles className="w-3 h-3 text-brand-600" />
+                <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1 sm:gap-1.5 shadow-2xs">
+                  <Sparkles className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-brand-600" />
                   Stage 06: Embroidery — Outward / Inward
                 </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                   {order?.priority || 'NORMAL'}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5 hidden sm:block truncate">
                 {order?.title || 'Production Order Workflow'} • Dedicated vendor outward challans, inward QC receipts, and next stage transfers.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
             <Button
               variant="outline"
               size="sm"
               icon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />}
               onClick={fetchOrderData}
               disabled={loading}
-              className="text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 px-2 sm:px-3 py-1 sm:py-1.5"
             >
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             <Button
               variant="outline"
@@ -2134,9 +2139,10 @@ export default function EmbroideryOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50"
+              className="text-xs font-semibold border-slate-200 text-slate-700 hover:bg-slate-50 px-2.5 sm:px-3 py-1 sm:py-1.5"
             >
-              Request Modification
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
             <Button
               id="btn-new-outward-challan"
@@ -2145,16 +2151,17 @@ export default function EmbroideryOrderDetail() {
               icon={<Send className="w-3.5 h-3.5" />}
               onClick={() => handleOpenCreatePage()}
               disabled={overallTotals.arrivedQty <= 0}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-sm shadow-brand-200"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-sm shadow-brand-200 px-2.5 sm:px-3.5 py-1 sm:py-1.5"
             >
-              + New Outward Challan
+              <span className="hidden sm:inline">+ New Outward Challan</span>
+              <span className="sm:hidden">+ Outward</span>
             </Button>
           </div>
         </div>
 
         {/* Order Details Bar */}
         {order && (
-          <div className="max-w-7xl mx-auto mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-6 text-xs text-slate-600">
+          <div className="max-w-7xl mx-auto mt-3 sm:mt-4 pt-2.5 sm:pt-3 border-t border-slate-100 flex flex-wrap items-center gap-3 sm:gap-6 text-xs text-slate-600">
             <div className="flex items-center gap-2">
               <BuyerAvatar buyer={order} size="sm" shape="circle" className="shrink-0" />
               <span className="font-bold text-slate-800">{order.customer_name || 'Buyer'}</span>
