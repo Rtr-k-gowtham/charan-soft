@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import { TaskItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
+import { formatStageDisplayName } from '../../utils/stageUtils';
 import Button from '../../components/ui/Button';
 import {
   ClipboardCheck,
@@ -55,7 +56,7 @@ export default function MyTasks() {
       if (!map.has(t.stage_id)) {
         map.set(t.stage_id, {
           id: t.stage_id,
-          name: t.stage_name,
+          name: formatStageDisplayName(t.stage_name),
           sequence: t.stage_sequence,
         });
       }
@@ -256,7 +257,7 @@ export default function MyTasks() {
                             border: `1px solid ${task.color_badge}30`,
                           }}
                         >
-                          Stage {seqStr}: {task.stage_name}
+                          Stage {seqStr}: {formatStageDisplayName(task.stage_name)}
                         </span>
                       </div>
 

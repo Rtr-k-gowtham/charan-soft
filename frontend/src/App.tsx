@@ -163,7 +163,7 @@ function AppRoutes() {
               <Route path="/production/orders" element={<ProductionOrders />} />
               <Route path="/production/orders/:id" element={<ProductionOrderDetail />} />
               <Route path="/production/orders/create" element={<CreateProductionOrder />} />
-              <Route path="/production/board" element={<ProductionBoard />} />
+              <Route path="/production/board" element={<Navigate to="/production/orders" replace />} />
 
               {/* Stage 01: Requirement Gathering */}
               <Route path="/production/requirement" element={
@@ -208,7 +208,7 @@ function AppRoutes() {
               {/* Stage 05: Cutting */}
               <Route path="/production/cutting" element={
                 <StageRouteGuard stageId={5}>
-                  <ProductionStageView stageName="Cutting — Product-wise" stageCode="CUT" breadcrumb={['05. Cutting — Product-wise']} />
+                  <ProductionStageView stageName="Cutting" stageCode="CUT" breadcrumb={['05. Cutting']} />
                 </StageRouteGuard>
               } />
               <Route path="/production/cutting/:id" element={
@@ -218,7 +218,7 @@ function AppRoutes() {
               {/* Stage 06: Embroidery */}
               <Route path="/production/embroidery" element={
                 <StageRouteGuard stageId={6}>
-                  <ProductionStageView stageName="Embroidery — Outward / Inward" stageCode="EMB" breadcrumb={['06. Embroidery — Outward / Inward']} />
+                  <ProductionStageView stageName="Embroidery" stageCode="EMB" breadcrumb={['06. Embroidery']} />
                 </StageRouteGuard>
               } />
               <Route path="/production/embroidery/:id" element={
@@ -228,7 +228,7 @@ function AppRoutes() {
               {/* Stage 07: Stitching */}
               <Route path="/production/stitching" element={
                 <StageRouteGuard stageId={7}>
-                  <ProductionStageView stageName="Stitching — Color-wise Tracking" stageCode="STI" breadcrumb={['07. Stitching — Color-wise Tracking']} />
+                  <ProductionStageView stageName="Stitching" stageCode="STI" breadcrumb={['07. Stitching']} />
                 </StageRouteGuard>
               } />
               <Route path="/production/stitching/:id" element={

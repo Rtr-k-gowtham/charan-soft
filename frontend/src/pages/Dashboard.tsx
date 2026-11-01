@@ -9,7 +9,7 @@ import PageHeader from '../components/ui/PageHeader';
 import {
   ShoppingCart, Package, Factory, AlertTriangle,
   CheckCircle2, CreditCard, TrendingUp, RefreshCw,
-  Plus, Boxes, ChevronRight, User, Calendar, ExternalLink
+  Plus, Boxes, ChevronRight, User, Calendar, ExternalLink, ClipboardList
 } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -144,11 +144,11 @@ export default function Dashboard() {
 
           <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
             <Link
-              to="/production/board"
+              to="/production/orders"
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg border border-white/20 transition-colors shadow-2xs backdrop-blur-xs"
             >
-              <Boxes className="w-3.5 h-3.5" />
-              <span>Production Board</span>
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span>Production Orders</span>
             </Link>
             <Link
               to="/inventory/stock"

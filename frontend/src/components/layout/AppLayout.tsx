@@ -189,15 +189,17 @@ export default function AppLayout({ children }: Props) {
             </NavLink>
 
             <NavLink
-              to="/production/board"
+              to="/production/requirement"
               className={({ isActive }) =>
                 `flex flex-col items-center justify-center py-1.5 px-0.5 w-full min-w-0 transition-colors ${
-                  isActive ? 'text-brand-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+                  (location.pathname.startsWith('/production/') && location.pathname !== '/production/orders')
+                    ? 'text-brand-600 font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`
               }
             >
               <Factory className="w-5 h-5 mb-0.5 shrink-0" />
-              <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Board</span>
+              <span className="text-[10px] leading-tight tracking-tight truncate w-full text-center">Stages</span>
             </NavLink>
 
             <NavLink

@@ -6,6 +6,7 @@ import { useStageBackNavigation } from '../../utils/navigation';
 import { api } from '../../lib/api';
 import { ProductionOrder, ProductionOrderItem, ProductionStage, ProductionOrderBOMReport, OrderMaterialRequirementItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
+import { formatStageDisplayName } from '../../utils/stageUtils';
 import StatusBadge from '../../components/ui/StatusBadge';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
@@ -1524,7 +1525,7 @@ export default function ProductionOrderDetail() {
             <div>
               <span className="text-slate-500">Current Stage: </span>
               <strong className="text-slate-800">
-                {selectedItem?.current_stage_name || 'Requirement Gathering'}
+                {formatStageDisplayName(selectedItem?.current_stage_name || 'Requirement Gathering')}
               </strong>
             </div>
             <div>
@@ -1545,7 +1546,7 @@ export default function ProductionOrderDetail() {
             <option value="">— Select destination stage —</option>
             {stages.map((st) => (
               <option key={st.id} value={st.id}>
-                Stage {st.sequence_order}: {st.name}
+                Stage {st.sequence_order}: {formatStageDisplayName(st.name)}
               </option>
             ))}
           </FormField>

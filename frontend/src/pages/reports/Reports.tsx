@@ -70,16 +70,16 @@ export function resolveStageMetrics(r: any) {
   const s04 = r.stage_04_dyeing?.display ?? '—';
   const s04Tip = r.stage_04_dyeing?.tooltip ?? (s04 !== '—' ? `${s04} fabric dyeing receipt` : 'Dyeing not applicable or not started');
 
-  // 05. Cutting — Product-wise
+  // 05. Cutting
   const cutQty = Number(r.cut_quantity || 0);
   const s05 = r.stage_05_cutting?.display ?? `${fmt(cutQty)} / ${fmt(totalQty)} pcs`;
   const s05Tip = r.stage_05_cutting?.tooltip ?? `Cut: ${fmt(cutQty)} pcs, Target: ${fmt(totalQty)} pcs`;
 
-  // 06. Embroidery — Outward / Inward
+  // 06. Embroidery
   const s06 = r.stage_06_embroidery?.display ?? '—';
   const s06Tip = r.stage_06_embroidery?.tooltip ?? (s06 !== '—' ? `${s06} embroidery outward/inward` : 'Embroidery not applicable or not started');
 
-  // 07. Stitching — Color-wise Tracking
+  // 07. Stitching
   const stitchedQty = Number(r.stitched_quantity || 0);
   const s07 = r.stage_07_stitching?.display ?? `${fmt(stitchedQty)} / ${fmt(totalQty)} pcs`;
   const s07Tip = r.stage_07_stitching?.tooltip ?? `Stitched: ${fmt(stitchedQty)} pcs, Target: ${fmt(totalQty)} pcs`;
@@ -177,9 +177,9 @@ export default function Reports() {
       '02. Purchase Order (PO)',
       '03. Inward',
       '04. Dyeing',
-      '05. Cutting — Product-wise',
-      '06. Embroidery — Outward / Inward',
-      '07. Stitching — Color-wise Tracking',
+      '05. Cutting',
+      '06. Embroidery',
+      '07. Stitching',
       '08. Checking',
       '09. Packing',
       '10. Completed',
@@ -447,9 +447,9 @@ export default function Reports() {
                           <th className="py-3 px-3 text-center min-w-[110px]" title="5. 02. Purchase Order (PO)">02. PO</th>
                           <th className="py-3 px-3 text-center min-w-[120px]" title="6. 03. Inward">03. Inward</th>
                           <th className="py-3 px-3 text-center min-w-[170px]" title="7. 04. Dyeing">04. Dyeing</th>
-                          <th className="py-3 px-3 text-center min-w-[140px]" title="8. 05. Cutting — Product-wise">05. Cutting</th>
-                          <th className="py-3 px-3 text-center min-w-[170px]" title="9. 06. Embroidery — Outward / Inward">06. Embroidery</th>
-                          <th className="py-3 px-3 text-center min-w-[140px]" title="10. 07. Stitching — Color-wise Tracking">07. Stitching</th>
+                          <th className="py-3 px-3 text-center min-w-[140px]" title="8. 05. Cutting">05. Cutting</th>
+                          <th className="py-3 px-3 text-center min-w-[170px]" title="9. 06. Embroidery">06. Embroidery</th>
+                          <th className="py-3 px-3 text-center min-w-[140px]" title="10. 07. Stitching">07. Stitching</th>
                           <th className="py-3 px-3 text-center min-w-[150px]" title="11. 08. Checking">08. Checking</th>
                           <th className="py-3 px-3 text-center min-w-[130px]" title="12. 09. Packing">09. Packing</th>
                           <th className="py-3 px-3 text-center min-w-[130px]" title="13. 10. Completed">10. Completed</th>
@@ -503,17 +503,17 @@ export default function Reports() {
                                 {m.s04}
                               </td>
 
-                              {/* 8. 05. Cutting — Product-wise */}
+                              {/* 8. 05. Cutting */}
                               <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s05Tip}>
                                 {m.s05}
                               </td>
 
-                              {/* 9. 06. Embroidery — Outward / Inward */}
+                              {/* 9. 06. Embroidery */}
                               <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s06Tip}>
                                 {m.s06}
                               </td>
 
-                              {/* 10. 07. Stitching — Color-wise Tracking */}
+                              {/* 10. 07. Stitching */}
                               <td className="py-2.5 px-3 text-center font-mono font-semibold text-slate-700 whitespace-nowrap" title={m.s07Tip}>
                                 {m.s07}
                               </td>

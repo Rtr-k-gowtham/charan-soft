@@ -1411,7 +1411,7 @@ export default function EmbroideryOrderDetail() {
           })),
           transfer_quantity: totalJobLineQty,
           destination_stage_id: 7,
-          destination_stage_name: 'Stitching — Color-wise Tracking',
+          destination_stage_name: 'Stitching',
           remarks: transferRemarks,
           operator_name: 'M. Ramesh',
           supervisor_name: 'K. Balan'
@@ -1449,7 +1449,7 @@ export default function EmbroideryOrderDetail() {
         rework_id: selectedReworkForTransfer?.id,
         transfer_quantity: Number(transferQuantity),
         destination_stage_id: 7,
-        destination_stage_name: 'Stitching — Color-wise Tracking',
+        destination_stage_name: 'Stitching',
         remarks: transferRemarks,
         operator_name: 'M. Ramesh',
         supervisor_name: 'K. Balan'
@@ -2108,7 +2108,7 @@ export default function EmbroideryOrderDetail() {
                 </span>
                 <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1 sm:gap-1.5 shadow-2xs">
                   <Sparkles className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-brand-600" />
-                  Stage 06: Embroidery — Outward / Inward
+                  Stage 06: Embroidery
                 </span>
                 <span className="px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                   {order?.priority || 'NORMAL'}
@@ -3720,7 +3720,7 @@ export default function EmbroideryOrderDetail() {
           <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl space-y-1">
             <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider block">Target Stage</span>
             <span className="text-sm font-bold text-purple-900 block">
-              Stage 07: Stitching — Color-wise Tracking
+              Stage 07: Stitching
             </span>
             {transferJobLines.length > 0 ? (
               <span className="text-xs text-purple-700 block font-medium">

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { StageModificationRequest, StageModificationDiffItem } from '../../types';
 import PageHeader from '../../components/ui/PageHeader';
+import { formatStageDisplayName } from '../../utils/stageUtils';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
@@ -35,9 +36,9 @@ const STAGES = [
   { id: 2, name: '02. PO (Purchase Order)', role: 'Role 1' },
   { id: 3, name: '03. Inward', role: 'Role 1' },
   { id: 4, name: '04. Dyeing', role: 'Role 2' },
-  { id: 5, name: '05. Cutting — Product-wise', role: 'Role 2' },
-  { id: 6, name: '06. Embroidery — Out/In', role: 'Role 2' },
-  { id: 7, name: '07. Stitching — Color-wise', role: 'Role 2' },
+  { id: 5, name: '05. Cutting', role: 'Role 2' },
+  { id: 6, name: '06. Embroidery', role: 'Role 2' },
+  { id: 7, name: '07. Stitching', role: 'Role 2' },
   { id: 8, name: '08. Checking', role: 'Role 2' },
   { id: 9, name: '09. Packing', role: 'Role 1' },
   { id: 10, name: '10. Completed', role: 'Role 1' },
@@ -433,7 +434,7 @@ export default function AdminApprovals() {
                     <td className="py-3.5 px-4">
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
                         <Layers className="w-3 h-3 text-slate-500" />
-                        {req.stage_name}
+                        {formatStageDisplayName(req.stage_name)}
                       </span>
                       {req.record_identifier && (
                         <span className="block mt-1 font-mono text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 w-fit">
@@ -498,7 +499,7 @@ export default function AdminApprovals() {
             setActionType(null);
           }}
           title={`Stage Modification Request: ${selectedRequest.request_number}`}
-          subtitle={`${selectedRequest.stage_name} for Order ${selectedRequest.order_number}`}
+          subtitle={`${formatStageDisplayName(selectedRequest.stage_name)} for Order ${selectedRequest.order_number}`}
           size="4xl"
           footer={
             <div className="flex items-center justify-between w-full">

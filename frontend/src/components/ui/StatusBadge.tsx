@@ -1,6 +1,7 @@
 // src/components/ui/StatusBadge.tsx
 import React from 'react';
 import { StatusType } from '../../types';
+import { formatStageDisplayName } from '../../utils/stageUtils';
 
 interface Props {
   status: StatusType | string;
@@ -36,6 +37,7 @@ const statusMap: Record<string, string> = {
   'Cutting — Product-wise': 'bg-amber-50 text-amber-700 border-amber-200',
   'Cutting': 'bg-amber-50 text-amber-700 border-amber-200',
   'Embroidery — Outward / Inward': 'bg-pink-50 text-pink-700 border-pink-200',
+  'Embroidery — Out/In': 'bg-pink-50 text-pink-700 border-pink-200',
   'Embroidery': 'bg-pink-50 text-pink-700 border-pink-200',
   'Stitching — Color-wise Tracking': 'bg-blue-50 text-blue-700 border-blue-200',
   'Stitching — Color-wise': 'bg-blue-50 text-blue-700 border-blue-200',
@@ -65,12 +67,13 @@ const statusMap: Record<string, string> = {
 };
 
 export default function StatusBadge({ status, size = 'xs' }: Props) {
-  const cls = statusMap[status] || 'bg-slate-100 text-slate-600 border-slate-200';
+  const displayStatus = formatStageDisplayName(status);
+  const cls = statusMap[displayStatus] || statusMap[status] || 'bg-slate-100 text-slate-600 border-slate-200';
   return (
     <span className={`inline-flex items-center border font-semibold uppercase tracking-wide rounded
       ${size === 'xs' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-xs'}
       ${cls}`}>
-      {status}
+      {displayStatus}
     </span>
   );
 }

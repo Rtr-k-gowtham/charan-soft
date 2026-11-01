@@ -52,8 +52,8 @@ function NavNode({
   const hasActiveChild = item.children ? item.children.some(c => hasActiveDescendant(c, location.pathname)) : false;
 
   // Auto-expand if active, has active child, or is part of production workflow in production view
-  const isProductionWorkflow = item.path?.startsWith('/production');
-  const [open, setOpen] = useState(() => isDirectActive || hasActiveChild || (isProductionWorkflow && location.pathname.startsWith('/production')));
+  const isProductionWorkflow = item.path?.startsWith('/production') || (item.label === 'Production' && location.pathname.startsWith('/production'));
+  const [open, setOpen] = useState(() => isDirectActive || hasActiveChild || isProductionWorkflow);
 
   // Automatically expand parent menus when navigating directly to a nested stage URL
   useEffect(() => {
@@ -217,9 +217,9 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
       { label: '02. PO (Purchase Order)', path: '/production/po', stageId: 2 },
       { label: '03. Inward', path: '/production/inward', stageId: 3 },
       { label: '04. Dyeing', path: '/production/dyeing', stageId: 4 },
-      { label: '05. Cutting — Product-wise', path: '/production/cutting', stageId: 5 },
-      { label: '06. Embroidery — Out/In', path: '/production/embroidery', stageId: 6 },
-      { label: '07. Stitching — Color-wise', path: '/production/stitching', stageId: 7 },
+      { label: '05. Cutting', path: '/production/cutting', stageId: 5 },
+      { label: '06. Embroidery', path: '/production/embroidery', stageId: 6 },
+      { label: '07. Stitching', path: '/production/stitching', stageId: 7 },
       { label: '08. Checking', path: '/production/checking', stageId: 8 },
       { label: '09. Packing', path: '/production/packing', stageId: 9 },
       { label: '10. Completed', path: '/production/completed', stageId: 10 },
@@ -227,12 +227,25 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
 
     const filteredStages = allStages.filter(s => allowedStages.includes(s.stageId!));
 
+    // Production Menu (Contains Production Orders & permitted Production Stages; Production Board removed)
+    const productionMenu: NavItem = {
+      label: 'Production',
+      icon: Factory,
+      children: [
+        { label: 'Production Orders', path: '/production/orders' },
+        {
+          label: 'Production Stages',
+          children: filteredStages,
+        },
+      ],
+    };
+
     const items: NavItem[] = [];
 
     if (isAdmin) {
-      // Admin Sidebar (Exact required order: Dashboard, Production Orders, Purchase, Inventory, Production, Masters, Templates, Reports, Settings)
+      // Admin Sidebar (Exact required order: 1. Dashboard, 2. Production, 3. Purchase, 4. Inventory, 5. Masters, 6. Templates, 7. Reports, 8. Settings)
       items.push({ label: 'Dashboard', icon: LayoutDashboard, path: '/' });
-      items.push({ label: 'Production Orders', icon: ClipboardList, path: '/production/orders' });
+      items.push(productionMenu);
 
       // Purchase
       items.push({
@@ -255,18 +268,6 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           { label: 'Material Consumption', path: '/inventory/consumption' },
           { label: 'Stock Adjustment', path: '/inventory/adjustment' },
           { label: 'Low Stock', path: '/inventory/low-stock' },
-        ],
-      });
-
-      // Production menu (Production Orders is moved directly below Dashboard, not duplicated here)
-      items.push({
-        label: 'Production', icon: Factory,
-        children: [
-          { label: 'Production Board', path: '/production/board' },
-          {
-            label: 'Production Stages',
-            children: filteredStages,
-          },
         ],
       });
 
@@ -325,9 +326,9 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
         ],
       });
     } else {
-      // Role 1 and Role 2 Sidebar (Exact required order: My Tasks, Production Orders, Purchase, Inventory, Production, Production Stages)
+      // Role 1 and Role 2 Sidebar (Exact required order: 1. My Tasks, 2. Production, 3. Purchase, 4. Inventory)
       items.push({ label: 'My Tasks', icon: ClipboardCheck, path: '/tasks' });
-      items.push({ label: 'Production Orders', icon: ClipboardList, path: '/production/orders' });
+      items.push(productionMenu);
 
       // Purchase - allow for Role 1
       if (isRole1) {
@@ -354,18 +355,6 @@ export default function Sidebar({ collapsed, mobileOpen, onMobileClose }: Sideba
           ],
         });
       }
-
-      // Production menu (contains permitted stages for Role 1 or Role 2)
-      items.push({
-        label: 'Production', icon: Factory,
-        children: [
-          { label: 'Production Board', path: '/production/board' },
-          {
-            label: 'Production Stages',
-            children: filteredStages,
-          },
-        ],
-      });
     }
 
     return items;

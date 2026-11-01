@@ -766,13 +766,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 <span>Create Dyeing Order</span>
               </Button>
             )}
-            <button
-              onClick={() => navigate('/production/board')}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-xs"
-            >
-              <Boxes className="w-3.5 h-3.5 text-brand-600" />
-              <span className="hidden sm:inline">Kanban Board</span>
-            </button>
+
             <button
               onClick={loadData}
               title="Refresh Stage Data"

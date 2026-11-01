@@ -939,7 +939,7 @@ export default function CuttingOrderDetail() {
       {/* Page Header */}
       <PageHeader
         title={`Cutting Stage: ${order.order_number}`}
-        subtitle={`Stage 05 — Product-wise Cutting Batches, Yield Tracking & Stage Transfers`}
+        subtitle={`Stage 05 — Cutting Batches, Yield Tracking & Stage Transfers`}
         breadcrumb={[
           { label: 'Production', href: '/production/orders' },
           { label: '05. Cutting', href: '/production/cutting' },
@@ -2134,8 +2134,8 @@ export default function CuttingOrderDetail() {
               onChange={(e) => setTransferForm({ ...transferForm, destination_stage_id: e.target.value })}
               className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs"
             >
-              <option value="6">06. Embroidery — Outward / Inward</option>
-              <option value="7">07. Stitching — Color-wise Tracking</option>
+              <option value="6">06. Embroidery</option>
+              <option value="7">07. Stitching</option>
             </select>
           </FormField>
 

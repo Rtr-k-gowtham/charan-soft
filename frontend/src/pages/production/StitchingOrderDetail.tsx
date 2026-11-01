@@ -1,5 +1,5 @@
 // src/pages/production/StitchingOrderDetail.tsx
-// Stage 07: Stitching — Color-wise Tracking, Batch Management, Yield Reconciliation & Output Transfer
+// Stage 07: Stitching, Batch Management, Yield Reconciliation & Output Transfer
 // Redesigned to strict Cheran Soft Goods ERP design system:
 // - Clean table layout matching CuttingOrderDetail & EmbroideryOrderDetail
 // - Ordered products arrive from both Cutting and Embroidery stages
@@ -988,7 +988,7 @@ export default function StitchingOrderDetail() {
                 </span>
                 <span className="px-2 sm:px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-brand-50 text-brand-700 border border-brand-200 flex items-center gap-1 sm:gap-1.5 shadow-2xs">
                   <Activity className="w-3 sm:w-3.5 h-3 sm:h-3.5 text-brand-600" />
-                  Stage 07: Stitching — Color-wise Tracking
+                  Stage 07: Stitching
                 </span>
                 <span className="px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                   {order?.priority || 'NORMAL'}
