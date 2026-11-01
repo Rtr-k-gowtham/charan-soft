@@ -527,7 +527,7 @@ export default function InwardOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleBack}
               className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
@@ -1078,7 +1078,7 @@ export default function InwardOrderDetail() {
         size="full"
         className="max-w-[94vw] xl:max-w-7xl max-h-[92vh] flex flex-col"
         footer={
-          <div className="flex items-center justify-between w-full">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 w-full">
             <div className="text-xs text-slate-500">
               {Object.keys(itemErrors).length > 0 ? (
                 <span className="text-red-600 font-medium flex items-center gap-1.5">
@@ -1091,8 +1091,8 @@ export default function InwardOrderDetail() {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={() => setReceiveModalOpen(false)} disabled={savingReceive}>
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
+              <Button variant="secondary" onClick={() => setReceiveModalOpen(false)} disabled={savingReceive} className="w-full sm:w-auto min-h-[36px]">
                 Cancel
               </Button>
               <Button
@@ -1100,6 +1100,7 @@ export default function InwardOrderDetail() {
                 onClick={handleSubmitInward}
                 disabled={Object.keys(itemErrors).length > 0}
                 icon={<PackageOpen className="w-3.5 h-3.5" />}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Confirm Inward & Save
               </Button>

@@ -18,11 +18,10 @@ export default function PageHeader({ title, subtitle, actions, breadcrumb }: Pro
         {subtitle && <p className="text-[11px] text-slate-400 hidden sm:block mt-0.5 truncate">{subtitle}</p>}
       </div>
       {actions && (
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-start sm:justify-end">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-start sm:justify-end w-full sm:w-auto">
           {actions}
         </div>
       )}
     </div>
   );
 }
-

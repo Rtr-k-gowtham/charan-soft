@@ -623,11 +623,12 @@ export default function UnorderedBOMItemsSection({
                         <Button
                           variant="primary"
                           size="sm"
-                          className="flex-1 text-xs py-1.5 bg-brand-600 hover:bg-brand-700 text-white font-bold justify-center"
+                          className="flex-1 text-xs py-1.5 min-h-[36px] bg-brand-600 hover:bg-brand-700 text-white font-bold justify-center"
                           onClick={() => onOrderMaterial(item)}
                           icon={<ShoppingCart className="w-3.5 h-3.5" />}
                         >
-                          Create PO / Order Item
+                          <span className="hidden sm:inline">Create PO / Order Item</span>
+                          <span className="sm:hidden">Create PO</span>
                         </Button>
                       )}
                       <button
@@ -636,7 +637,7 @@ export default function UnorderedBOMItemsSection({
                           setExcludeItem(item);
                           setExcludeReason('Customer supplied / already available in stock');
                         }}
-                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 transition shrink-0"
+                        className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 transition shrink-0"
                         title="Mark as not required or excluded with reason"
                       >
                         <Ban className="w-4 h-4" />
@@ -684,8 +685,8 @@ export default function UnorderedBOMItemsSection({
             />
           </FormField>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-            <Button variant="secondary" onClick={() => setExcludeItem(null)} disabled={savingExclusion}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setExcludeItem(null)} disabled={savingExclusion} className="w-full sm:w-auto min-h-[36px]">
               Cancel
             </Button>
             <Button
@@ -693,6 +694,7 @@ export default function UnorderedBOMItemsSection({
               onClick={handleConfirmExclusion}
               loading={savingExclusion}
               icon={<Check className="w-3.5 h-3.5" />}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Confirm Exclusion
             </Button>

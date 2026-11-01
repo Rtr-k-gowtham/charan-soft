@@ -55,7 +55,7 @@ export default function Modal({ open, isOpen, onClose, title, subtitle, size = '
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 min-h-[36px] min-w-[36px] flex items-center justify-center shrink-0"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 min-h-[36px] min-w-[36px] flex items-center justify-center shrink-0 touch-manipulation"
             aria-label="Close dialog"
           >
             <X className="w-4 h-4" />
@@ -67,7 +67,7 @@ export default function Modal({ open, isOpen, onClose, title, subtitle, size = '
         </div>
 
         {footer && (
-          <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50 flex flex-wrap sm:flex-nowrap items-center justify-end gap-2 shrink-0 safe-area-pb">
+          <div className="px-4 sm:px-5 py-3 border-t border-slate-200 bg-slate-50 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 shrink-0 safe-area-pb [&>button]:w-full [&>button]:sm:w-auto">
             {footer}
           </div>
         )}

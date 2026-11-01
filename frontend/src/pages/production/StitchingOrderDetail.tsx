@@ -997,7 +997,7 @@ export default function StitchingOrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-3 flex-wrap justify-end">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full md:w-auto justify-start sm:justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -2199,12 +2199,13 @@ export default function StitchingOrderDetail() {
             buttonText="Take Real-Time Stitching Photo"
           />
 
-          <div className="flex items-center justify-end gap-3 pt-3.5 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3.5 border-t border-slate-200">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setBatchModalOpen(false)}
               disabled={savingBatch}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2214,7 +2215,7 @@ export default function StitchingOrderDetail() {
               size="sm"
               type="submit"
               disabled={savingBatch}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 w-full sm:w-auto min-h-[36px]"
             >
               {savingBatch ? 'Saving...' : 'Save Stitching Batch'}
             </Button>
@@ -2307,7 +2308,7 @@ export default function StitchingOrderDetail() {
             />
           </FormField>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-200">
             <Button
               variant="outline"
               size="sm"
@@ -2317,6 +2318,7 @@ export default function StitchingOrderDetail() {
                 setSelectedReworkForTransfer(null);
               }}
               disabled={transferring}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2326,9 +2328,10 @@ export default function StitchingOrderDetail() {
               size="sm"
               type="submit"
               disabled={transferring || (selectedBatch ? getBatchAvailableForTransfer(selectedBatch) : overallAvailableForTransfer) <= 0}
-              className="bg-purple-700 hover:bg-purple-800 text-white font-bold"
+              className="bg-purple-700 hover:bg-purple-800 text-white font-bold w-full sm:w-auto min-h-[36px]"
             >
-              {transferring ? 'Transferring...' : 'Confirm Transfer to Checking'}
+              <span className="hidden sm:inline">{transferring ? 'Transferring...' : 'Confirm Transfer to Checking'}</span>
+              <span className="sm:hidden">{transferring ? 'Transferring...' : 'Transfer to Checking'}</span>
             </Button>
           </div>
         </form>
@@ -2446,13 +2449,14 @@ export default function StitchingOrderDetail() {
               />
             </FormField>
 
-            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"
                 type="button"
                 onClick={() => setReworkModalOpen(false)}
                 disabled={submittingRework}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
@@ -2460,7 +2464,7 @@ export default function StitchingOrderDetail() {
                 size="sm"
                 type="submit"
                 disabled={submittingRework}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1" />
                 <span>{submittingRework ? 'Sending...' : 'Confirm & Send for Alteration'}</span>

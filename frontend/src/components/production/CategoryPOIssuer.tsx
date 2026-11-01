@@ -1103,7 +1103,7 @@ export default function CategoryPOIssuer({
                       )}
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
                         {isSaving ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
@@ -1128,11 +1128,11 @@ export default function CategoryPOIssuer({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
                         <button
                           type="button"
                           onClick={() => handleEditPO(group)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 min-h-[32px] text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md shadow-2xs transition"
                           title="Edit PO"
                         >
                           <Pencil className="w-3.5 h-3.5 text-slate-600" />
@@ -1142,7 +1142,7 @@ export default function CategoryPOIssuer({
                           type="button"
                           onClick={() => handleIssuePO(group)}
                           disabled={group.hasOrderedPO || isSaving}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition disabled:opacity-40"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 min-h-[32px] text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md shadow-2xs transition disabled:opacity-40"
                           title="Issue PO"
                         >
                           <Send className="w-3.5 h-3.5 text-emerald-600" />
@@ -1151,7 +1151,7 @@ export default function CategoryPOIssuer({
                         <button
                           type="button"
                           onClick={() => handleViewPO(group)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 min-h-[32px] text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-md shadow-2xs transition"
                           title="View PO"
                         >
                           <Eye className="w-3.5 h-3.5 text-brand-600" />
@@ -1326,11 +1326,12 @@ export default function CategoryPOIssuer({
         subtitle={cancelPO ? `PO: ${cancelPO.po_number}` : ''}
         size="md"
         footer={
-          <div className="flex items-center justify-end gap-2 w-full">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 w-full">
             <Button
               variant="secondary"
               disabled={cancelling}
               onClick={() => setCancelModalOpen(false)}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Go Back
             </Button>
@@ -1339,7 +1340,7 @@ export default function CategoryPOIssuer({
               loading={cancelling}
               icon={<Ban className="w-4 h-4" />}
               onClick={handleConfirmCancel}
-              className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
             >
               Cancel Purchase Order
             </Button>

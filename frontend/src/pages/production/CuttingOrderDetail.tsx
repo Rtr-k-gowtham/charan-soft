@@ -946,7 +946,7 @@ export default function CuttingOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <Button variant="secondary" size="sm" icon={<ArrowLeft className="w-3.5 h-3.5" />} onClick={handleBack} className="text-xs px-2.5 sm:px-3 py-1 sm:py-1.5">
               Back
             </Button>
@@ -2074,15 +2074,15 @@ export default function CuttingOrderDetail() {
             buttonText="Take Real-Time Cutting Photo"
           />
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
-            <Button variant="secondary" onClick={() => setBatchModalOpen(false)}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <Button variant="secondary" onClick={() => setBatchModalOpen(false)} className="w-full sm:w-auto min-h-[36px]">
               Cancel
             </Button>
             <Button
               variant="primary"
               disabled={savingBatch}
               onClick={handleSaveBatch}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs w-full sm:w-auto min-h-[36px]"
             >
               {savingBatch ? 'Saving...' : 'Confirm Cutting Batch'}
             </Button>
@@ -2180,13 +2180,14 @@ export default function CuttingOrderDetail() {
             />
           </FormField>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-slate-200">
             <Button
               variant="secondary"
               onClick={() => {
                 setTransferModalOpen(false);
                 setSelectedReworkForTransfer(null);
               }}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2194,7 +2195,7 @@ export default function CuttingOrderDetail() {
               variant="primary"
               disabled={savingTransfer}
               onClick={handleSaveTransfer}
-              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs"
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs w-full sm:w-auto min-h-[36px]"
             >
               {savingTransfer ? 'Transferring...' : 'Confirm Stage Transfer'}
             </Button>
@@ -2923,12 +2924,13 @@ export default function CuttingOrderDetail() {
               )
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setBulkBatchModalOpen(false)}
                 disabled={savingBulkBatch}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
@@ -2937,7 +2939,7 @@ export default function CuttingOrderDetail() {
                 size="sm"
                 disabled={savingBulkBatch}
                 onClick={handleSaveBulkBatch}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
               >
                 {savingBulkBatch ? 'Saving Batches...' : 'Save All Batches'}
               </Button>

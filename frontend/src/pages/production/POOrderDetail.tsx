@@ -228,7 +228,7 @@ export default function POOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleBack}
               className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
@@ -444,18 +444,18 @@ export default function POOrderDetail() {
             />
           </FormField>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={() => setMoveOpen(false)}
-              className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              className="px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition min-h-[36px] w-full sm:w-auto"
             >
               Cancel
             </button>
             <Button
               onClick={handleAdvanceToNextStage}
               loading={savingMove}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs min-h-[36px] w-full sm:w-auto"
             >
               Confirm & Advance
             </Button>

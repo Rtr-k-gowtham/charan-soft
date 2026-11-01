@@ -615,16 +615,16 @@ export default function PackingOrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0 self-start lg:self-center">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap w-full md:w-auto justify-start sm:justify-end">
             <Button
               variant="outline"
               size="sm"
               onClick={fetchOrderData}
               disabled={loading}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 h-9"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 min-h-[36px]"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
 
             <Button
@@ -634,10 +634,11 @@ export default function PackingOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 h-9"
+              className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-200 bg-white hover:bg-slate-50 min-h-[36px]"
             >
               <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-              <span>Request Modification</span>
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
 
             <Button
@@ -645,9 +646,10 @@ export default function PackingOrderDetail() {
               size="sm"
               onClick={() => setTransferModalOpen(true)}
               disabled={overallTotals.packedQty === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap h-9 px-3.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap min-h-[36px] px-3.5"
             >
-              <span>Pass to Completed / Dispatch (Stage 10)</span>
+              <span className="hidden sm:inline">Pass to Completed / Dispatch (Stage 10)</span>
+              <span className="sm:hidden">To Stage 10</span>
               <ArrowRight className="w-4 h-4" />
             </Button>
           </div>
@@ -1356,13 +1358,13 @@ export default function PackingOrderDetail() {
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto justify-end">
               <Button
                 variant="secondary"
                 size="md"
                 type="button"
                 onClick={() => setBatchModalOpen(false)}
-                className="min-w-[80px]"
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
@@ -1372,7 +1374,7 @@ export default function PackingOrderDetail() {
                 type="submit"
                 form="create-packing-batch-form"
                 disabled={savingBatch || batchForm.packed_quantity <= 0}
-                className="bg-amber-600 hover:bg-amber-700 text-white gap-2 font-semibold shadow-xs min-w-[220px]"
+                className="bg-amber-600 hover:bg-amber-700 text-white gap-2 font-semibold shadow-xs w-full sm:w-auto min-h-[36px]"
               >
                 {savingBatch ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Box className="w-4 h-4" />}
                 <span>Save & Generate Boxes</span>
@@ -1708,8 +1710,8 @@ export default function PackingOrderDetail() {
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <Button variant="secondary" size="sm" onClick={() => setTransferModalOpen(false)}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button variant="secondary" size="sm" onClick={() => setTransferModalOpen(false)} className="w-full sm:w-auto min-h-[36px]">
               Cancel
             </Button>
             <Button
@@ -1717,10 +1719,11 @@ export default function PackingOrderDetail() {
               size="sm"
               onClick={handleTransferToDispatch}
               disabled={transferring}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 w-full sm:w-auto min-h-[36px]"
             >
               {transferring ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-              <span>Confirm Release to Dispatch</span>
+              <span className="hidden sm:inline">Confirm Release to Dispatch</span>
+              <span className="sm:hidden">Release to Dispatch</span>
             </Button>
           </div>
         </div>

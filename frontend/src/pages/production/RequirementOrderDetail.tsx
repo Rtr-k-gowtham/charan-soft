@@ -539,10 +539,10 @@ export default function RequirementOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleBack}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
@@ -552,9 +552,10 @@ export default function RequirementOrderDetail() {
               onClick={handleRecalculate}
               loading={calculating}
               icon={<Sparkles className="w-3.5 h-3.5" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-3 py-1.5"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs px-2.5 sm:px-3 py-1.5"
             >
-              Generate BOM
+              <span className="hidden sm:inline">Generate BOM</span>
+              <span className="sm:hidden">BOM</span>
             </Button>
 
             <Button
@@ -562,17 +563,19 @@ export default function RequirementOrderDetail() {
               size="sm"
               icon={<Pencil className="w-3.5 h-3.5 text-brand-600" />}
               onClick={() => setModModalOpen(true)}
-              className="text-xs font-semibold"
+              className="text-xs font-semibold px-2.5 sm:px-3 py-1.5"
             >
-              Request Modification
+              <span className="hidden sm:inline">Request Modification</span>
+              <span className="sm:hidden">Edit</span>
             </Button>
 
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs print:hidden"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs print:hidden"
             >
               <Printer className="w-3.5 h-3.5 text-slate-600" />
-              <span>Print Sheet</span>
+              <span className="hidden sm:inline">Print Sheet</span>
+              <span className="sm:hidden">Print</span>
             </button>
           </div>
         }
@@ -748,17 +751,17 @@ export default function RequirementOrderDetail() {
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-between w-full">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 w-full">
                   <span className="text-xs font-bold text-indigo-800">
                     Editing Raw Material Requirements & Quantities
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
                     <Button
                       size="sm"
                       variant="secondary"
                       icon={<Plus className="w-3.5 h-3.5 text-emerald-600" />}
                       onClick={handleAddMaterialRow}
-                      className="text-xs font-semibold"
+                      className="text-xs font-semibold flex-1 sm:flex-none"
                     >
                       Add Material
                     </Button>
@@ -766,16 +769,17 @@ export default function RequirementOrderDetail() {
                       size="sm"
                       icon={<Save className="w-3.5 h-3.5" />}
                       onClick={handleSaveBOM}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex-1 sm:flex-none"
                     >
-                      Save BOM Changes
+                      <span className="hidden sm:inline">Save BOM Changes</span>
+                      <span className="sm:hidden">Save</span>
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
                       icon={<X className="w-3.5 h-3.5" />}
                       onClick={handleCancelEditBOM}
-                      className="text-xs"
+                      className="text-xs flex-1 sm:flex-none"
                     >
                       Cancel
                     </Button>
@@ -1531,11 +1535,12 @@ export default function RequirementOrderDetail() {
         title="Move to Purchase Order (PO) Stage"
         subtitle={`Confirm stage transition for Production Order ${order.order_number}`}
         footer={
-          <div className="flex items-center justify-end gap-2 w-full">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 w-full">
             <Button
               variant="secondary"
               onClick={() => setMoveOpen(false)}
               disabled={savingMove}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -1544,7 +1549,7 @@ export default function RequirementOrderDetail() {
               disabled={!isBOMValid || savingMove || missingSuppliersList.length > 0}
               onClick={handleConfirmMoveToPO}
               icon={<ChevronRight className="w-4 h-4" />}
-              className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+              className="bg-brand-600 hover:bg-brand-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
             >
               Move to PO
             </Button>

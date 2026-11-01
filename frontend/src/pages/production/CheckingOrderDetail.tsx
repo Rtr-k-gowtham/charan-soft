@@ -778,7 +778,7 @@ export default function CheckingOrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-3 justify-end flex-wrap w-full md:w-auto">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full md:w-auto justify-start sm:justify-end">
             <Button
               variant="outline"
               size="sm"
@@ -2263,12 +2263,13 @@ export default function CheckingOrderDetail() {
           />
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-3 pt-3.5 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3.5 border-t border-slate-200">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setModalOpen(false)}
               disabled={savingInspection}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2278,7 +2279,7 @@ export default function CheckingOrderDetail() {
               size="sm"
               type="submit"
               disabled={savingInspection}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 w-full sm:w-auto min-h-[36px]"
             >
               {savingInspection ? 'Saving...' : 'Save Inspection Record'}
             </Button>
@@ -2593,12 +2594,13 @@ export default function CheckingOrderDetail() {
             />
           </FormField>
 
-          <div className="flex items-center justify-end gap-3 pt-3.5 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3.5 border-t border-slate-200">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setSendReworkModalOpen(false)}
               disabled={sendingRework}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2608,7 +2610,7 @@ export default function CheckingOrderDetail() {
               size="sm"
               type="submit"
               disabled={sendingRework}
-              className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 flex items-center gap-1.5 shadow-xs"
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 flex items-center gap-1.5 shadow-xs w-full sm:w-auto min-h-[36px]"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{sendingRework ? 'Dispatching...' : 'Confirm Rework Dispatch'}</span>
@@ -2665,12 +2667,13 @@ export default function CheckingOrderDetail() {
             />
           </FormField>
 
-          <div className="flex items-center justify-end gap-3 pt-3.5 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3.5 border-t border-slate-200">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setTransferModalOpen(false)}
               disabled={transferring}
+              className="w-full sm:w-auto min-h-[36px]"
             >
               Cancel
             </Button>
@@ -2680,9 +2683,10 @@ export default function CheckingOrderDetail() {
               size="sm"
               type="submit"
               disabled={transferring}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 w-full sm:w-auto min-h-[36px]"
             >
-              {transferring ? 'Transferring...' : 'Confirm Transfer to Packing'}
+              <span className="hidden sm:inline">{transferring ? 'Transferring...' : 'Confirm Transfer to Packing'}</span>
+              <span className="sm:hidden">{transferring ? 'Transferring...' : 'Transfer to Packing'}</span>
             </Button>
           </div>
         </form>

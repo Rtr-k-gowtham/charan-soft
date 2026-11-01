@@ -2168,7 +2168,7 @@ export default function DyeingOrderDetail() {
           { label: order.order_number },
         ]}
         actions={
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleBack}
               className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs shrink-0"
@@ -2192,7 +2192,7 @@ export default function DyeingOrderDetail() {
             >
               <ArrowRight className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Move to Next Stage: Cutting</span>
-              <span className="sm:hidden">Move to Cutting</span>
+              <span className="sm:hidden">To Cutting</span>
               {availableInHandForCutting > 0 && (
                 <span className="ml-0.5 bg-white/20 text-white text-[10px] font-mono font-bold px-1.5 py-0.2 rounded">
                   {fmt(availableInHandForCutting, 1)} MTR
@@ -3652,13 +3652,14 @@ export default function DyeingOrderDetail() {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-slate-100 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"
                 type="button"
                 onClick={() => setReworkModalOpen(false)}
                 disabled={submittingRework}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
@@ -3666,7 +3667,7 @@ export default function DyeingOrderDetail() {
                 size="sm"
                 type="submit"
                 loading={submittingRework}
-                className="bg-amber-600 hover:bg-amber-700 text-white font-bold"
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1" />
                 <span>Send for Rework / Re-dyeing</span>
@@ -3853,19 +3854,20 @@ export default function DyeingOrderDetail() {
               />
             </FormField>
 
-            <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-200">
               <Button
                 type="button"
                 variant="secondary"
                 onClick={() => setReceiveReworkModalOpen(false)}
                 disabled={submittingReceiveRework}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={submittingReceiveRework}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
               >
                 {submittingReceiveRework ? (
                   <>
@@ -3875,7 +3877,8 @@ export default function DyeingOrderDetail() {
                 ) : (
                   <>
                     <CheckCheck className="w-4 h-4 mr-1.5" />
-                    <span>Confirm & Inward Reworked Fabric ({fmt(reworkReceivedQty, 1)} {selectedReworkForReceive.uom || 'MTR'})</span>
+                    <span className="hidden sm:inline">Confirm & Inward Reworked Fabric ({fmt(reworkReceivedQty, 1)} {selectedReworkForReceive.uom || 'MTR'})</span>
+                    <span className="sm:hidden">Confirm Inward ({fmt(reworkReceivedQty, 1)} {selectedReworkForReceive.uom || 'MTR'})</span>
                   </>
                 )}
               </Button>
@@ -4077,12 +4080,13 @@ export default function DyeingOrderDetail() {
               />
             </FormField>
 
-            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setTransferModalOpen(false)}
                 disabled={savingTransfer}
+                className="w-full sm:w-auto min-h-[36px]"
               >
                 Cancel
               </Button>
@@ -4090,7 +4094,7 @@ export default function DyeingOrderDetail() {
                 size="sm"
                 onClick={handleConfirmTransfer}
                 disabled={savingTransfer || transferQty <= 0 || transferQty > (availableInHandForCutting + 0.05)}
-                className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold w-full sm:w-auto min-h-[36px]"
               >
                 {savingTransfer ? (
                   <>
@@ -4100,7 +4104,8 @@ export default function DyeingOrderDetail() {
                 ) : (
                   <>
                     <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
-                    Confirm Handover & Open Stage 05 Cutting
+                    <span className="hidden sm:inline">Confirm Handover & Open Stage 05 Cutting</span>
+                    <span className="sm:hidden">Confirm & Open Cutting</span>
                   </>
                 )}
               </Button>

@@ -804,10 +804,10 @@ export default function DispatchOrderDetail() {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap w-full md:w-auto justify-start sm:justify-end">
           <Button variant="secondary" size="sm" onClick={fetchOrderData} className="gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
 
           <Button
@@ -820,7 +820,8 @@ export default function DispatchOrderDetail() {
             className="gap-1.5 text-xs text-slate-700 hover:text-slate-900 border-slate-300"
           >
             <Edit3 className="w-3.5 h-3.5 text-slate-600" />
-            <span>Request Modification</span>
+            <span className="hidden sm:inline">Request Modification</span>
+            <span className="sm:hidden">Edit</span>
           </Button>
 
           {availableCartons.length === 0 && cartons.length > 0 ? (
@@ -837,7 +838,8 @@ export default function DispatchOrderDetail() {
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Truck className="w-3.5 h-3.5" />
-              <span>Record Vehicle Dispatch</span>
+              <span className="hidden sm:inline">Record Vehicle Dispatch</span>
+              <span className="sm:hidden">Dispatch</span>
             </Button>
           )}
         </div>
@@ -1323,8 +1325,8 @@ export default function DispatchOrderDetail() {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-            <Button variant="secondary" size="sm" type="button" onClick={() => setDispatchModalOpen(false)}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button variant="secondary" size="sm" type="button" onClick={() => setDispatchModalOpen(false)} className="w-full sm:w-auto min-h-[36px]">
               Cancel
             </Button>
             <Button
@@ -1332,10 +1334,11 @@ export default function DispatchOrderDetail() {
               size="sm"
               type="submit"
               disabled={savingDispatch}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 w-full sm:w-auto min-h-[36px]"
             >
               {savingDispatch ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Truck className="w-3.5 h-3.5" />}
-              <span>Save & Confirm Dispatch</span>
+              <span className="hidden sm:inline">Save & Confirm Dispatch</span>
+              <span className="sm:hidden">Confirm Dispatch</span>
             </Button>
           </div>
         </form>

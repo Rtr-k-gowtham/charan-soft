@@ -19,9 +19,9 @@ const variants = {
 };
 
 const sizes = {
-  xs: 'px-2 py-1 text-[11px] gap-1',
-  sm: 'px-3 py-1.5 text-xs gap-1.5',
-  md: 'px-4 py-2 text-xs gap-2',
+  xs: 'px-2.5 py-1 text-[11px] gap-1 min-h-[32px]',
+  sm: 'px-3 py-1.5 text-xs gap-1.5 min-h-[36px]',
+  md: 'px-4 py-2 text-xs gap-2 min-h-[40px]',
 };
 
 export default function Button({
@@ -41,6 +41,7 @@ export default function Button({
       className={`inline-flex items-center justify-center font-medium border rounded-md
         transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed
         focus:outline-none focus:ring-2 focus:ring-brand-300 focus:ring-offset-1
+        touch-manipulation select-none active:scale-[0.98]
         ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : icon}

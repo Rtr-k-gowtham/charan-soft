@@ -730,7 +730,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         }
         breadcrumb={[{ label: 'Production' }, ...breadcrumb.map(b => ({ label: b }))]}
         actions={
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-1.5 sm:gap-2 items-center flex-wrap w-full sm:w-auto justify-start sm:justify-end">
             {activeCode === 'REQ' && (
               <Button
                 icon={<Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
@@ -763,7 +763,7 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
                 }}
                 className="bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-xs"
               >
-                <span>Create Dyeing Order</span>
+                <span className="hidden sm:inline">Create Dyeing Order</span><span className="sm:hidden">+ Dyeing Order</span>
               </Button>
             )}
 
