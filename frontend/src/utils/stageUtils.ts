@@ -17,3 +17,4 @@ export function formatStageDisplayName(name?: string | null): string {
     .replace(/Stitching\s*—\s*(?:Color-wise Tracking|Color-wise)/gi, 'Stitching')
     .replace(/Stitching\s*-\s*(?:Color-wise Tracking|Color-wise)/gi, 'Stitching');
 }
+

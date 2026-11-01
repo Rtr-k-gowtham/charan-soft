@@ -342,7 +342,9 @@ export default function UnorderedBOMItemsSection({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Desktop Responsive Table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
                 <tr>
@@ -351,13 +353,14 @@ export default function UnorderedBOMItemsSection({
                     <th className="py-2.5 px-3 w-36">Order #</th>
                   )}
                   <th className="py-2.5 px-3 min-w-[180px]">Material & Specifications</th>
-                  <th className="py-2.5 px-3 w-28">Category</th>
-                  <th className="py-2.5 px-3 w-36">Preferred Vendor</th>
-                  <th className="py-2.5 px-3 text-right w-24">Required</th>
-                  <th className="py-2.5 px-3 text-right w-24">Ordered</th>
-                  <th className="py-2.5 px-3 text-right w-28 font-bold text-slate-800">Remaining</th>
+                  <th className="py-2.5 px-3 w-28">Material Category</th>
+                  <th className="py-2.5 px-3 w-36">Preferred Supplier</th>
+                  <th className="py-2.5 px-3 text-right w-24">Required Quantity</th>
+                  <th className="py-2.5 px-3 text-right w-24">Already Ordered</th>
+                  <th className="py-2.5 px-3 text-right w-28 font-bold text-slate-800">Remaining Unordered</th>
+                  <th className="py-2.5 px-3 text-center w-16">UOM</th>
                   <th className="py-2.5 px-3 text-center w-28">Status</th>
-                  <th className="py-2.5 px-3 text-right w-36">Action</th>
+                  <th className="py-2.5 px-3 text-right w-44">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -434,7 +437,7 @@ export default function UnorderedBOMItemsSection({
                       </td>
 
                       <td className="py-2.5 px-3 text-right font-mono text-slate-600 align-middle">
-                        {item.required_quantity} <span className="text-[10px] text-slate-400 font-sans">{item.uom}</span>
+                        {item.required_quantity}
                       </td>
 
                       <td className="py-2.5 px-3 text-right font-mono text-slate-600 align-middle">
@@ -450,8 +453,12 @@ export default function UnorderedBOMItemsSection({
 
                       <td className="py-2.5 px-3 text-right font-mono font-bold align-middle">
                         <span className={isPending ? 'text-rose-600 text-xs' : 'text-emerald-700 text-xs'}>
-                          {item.remaining_unordered_quantity} <span className="text-[10px] font-sans font-normal text-slate-500">{item.uom}</span>
+                          {item.remaining_unordered_quantity}
                         </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-center font-mono text-slate-600 text-xs align-middle">
+                        {item.uom}
                       </td>
 
                       <td className="py-2.5 px-3 text-center align-middle whitespace-nowrap">
@@ -465,7 +472,7 @@ export default function UnorderedBOMItemsSection({
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
-                            <AlertCircle className="w-3 h-3 text-rose-600" /> Not Ordered
+                            <AlertCircle className="w-3 h-3 text-rose-600" /> Unordered
                           </span>
                         )}
                       </td>
@@ -476,11 +483,11 @@ export default function UnorderedBOMItemsSection({
                             <Button
                               variant="primary"
                               size="sm"
-                              className="text-[11px] py-1 px-2.5"
+                              className="text-[11px] py-1 px-2.5 bg-brand-600 hover:bg-brand-700 text-white font-semibold"
                               onClick={() => onOrderMaterial(item)}
                               icon={<ShoppingCart className="w-3 h-3" />}
                             >
-                              Issue PO
+                              Create PO / Order Item
                             </Button>
                           )}
 
@@ -505,6 +512,142 @@ export default function UnorderedBOMItemsSection({
               </tbody>
             </table>
           </div>
+
+          {/* Mobile Responsive Cards Layout */}
+          <div className="md:hidden divide-y divide-slate-100">
+            {filteredItems.map((item, idx) => {
+              const isPending = item.remaining_unordered_quantity > 0.001;
+              const hasPOs = item.po_numbers && item.po_numbers.length > 0;
+
+              return (
+                <div key={item.id || idx} className="p-3.5 space-y-2.5 bg-white">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {!productionOrderId && (
+                          <span className="font-mono font-bold text-[11px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded">
+                            {item.production_order_number}
+                          </span>
+                        )}
+                        <span className="font-bold text-slate-800 text-xs">
+                          {item.material_name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                          <Tag className="w-2.5 h-2.5 text-slate-400" />
+                          {item.category_name || 'General'}
+                        </span>
+                        {item.material_code && (
+                          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1 py-0.2 rounded">
+                            {item.material_code}
+                          </span>
+                        )}
+                        {item.size && (
+                          <span className="text-[10px] text-slate-600 bg-slate-100 px-1 py-0.2 rounded">
+                            Size: {item.size}
+                          </span>
+                        )}
+                        {item.model && (
+                          <span className="text-[10px] text-slate-600 bg-slate-100 px-1 py-0.2 rounded">
+                            Model: {item.model}
+                          </span>
+                        )}
+                        {item.thickness && (
+                          <span className="text-[10px] text-slate-600 bg-slate-100 px-1 py-0.2 rounded">
+                            Thk: {item.thickness}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      {item.remaining_unordered_quantity <= 0.001 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Ordered
+                        </span>
+                      ) : item.previously_ordered_quantity > 0.001 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" /> Partial
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                          <AlertCircle className="w-3 h-3 text-rose-600" /> Unordered
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-600">
+                    <div className="flex items-center gap-1 truncate">
+                      <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="text-slate-500">Supplier:</span>
+                      <span className="font-medium text-slate-700 truncate">{item.supplier_name || 'Unassigned'}</span>
+                    </div>
+                    {hasPOs && (
+                      <span className="text-[10px] text-brand-600 font-mono">
+                        PO: {item.po_numbers?.join(', ')}
+                      </span>
+                    )}
+                  </div>
+
+                  {item.excluded_reason && (
+                    <div className="text-[10px] text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-lg">
+                      <strong>Excluded Note:</strong> {item.excluded_reason}
+                      {item.excluded_from_po_number ? ` (PO ${item.excluded_from_po_number})` : ''}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-4 gap-1.5 p-2 bg-slate-50 rounded-lg text-center border border-slate-200/70">
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Required</span>
+                      <span className="font-mono font-bold text-xs text-slate-700">{item.required_quantity}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Ordered</span>
+                      <span className="font-mono font-bold text-xs text-slate-700">{item.previously_ordered_quantity}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-rose-600 block">Remaining</span>
+                      <span className="font-mono font-bold text-xs text-rose-600">{item.remaining_unordered_quantity}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] uppercase font-bold text-slate-400 block">UOM</span>
+                      <span className="font-mono font-semibold text-xs text-slate-600">{item.uom}</span>
+                    </div>
+                  </div>
+
+                  {isPending && (
+                    <div className="flex items-center gap-2 pt-1">
+                      {onOrderMaterial && (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          className="flex-1 text-xs py-1.5 bg-brand-600 hover:bg-brand-700 text-white font-bold justify-center"
+                          onClick={() => onOrderMaterial(item)}
+                          icon={<ShoppingCart className="w-3.5 h-3.5" />}
+                        >
+                          Create PO / Order Item
+                        </Button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExcludeItem(item);
+                          setExcludeReason('Customer supplied / already available in stock');
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200 transition shrink-0"
+                        title="Mark as not required or excluded with reason"
+                      >
+                        <Ban className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
       </div>
 

@@ -253,6 +253,7 @@ export interface PurchaseOrder {
   production_order_id?: number | null;
   production_order_number?: string;
   production_order_title?: string;
+  parent_po_id?: number | null;
   items?: PurchaseOrderItem[];
   payments?: PurchasePayment[];
   receipts?: any[];

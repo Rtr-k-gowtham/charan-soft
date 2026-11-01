@@ -1198,6 +1198,10 @@ export default function CategoryPOIssuer({
                 production_order_id: orderId,
                 production_order_number: orderNumber,
                 supplier_id: item.supplier_id,
+                category_id: item.category_id,
+                category_name: item.category_name,
+                allow_duplicate: true,
+                is_additional_po: true,
                 target_delivery_date: targetDeliveryDate,
                 from: location.pathname,
                 materials: [{

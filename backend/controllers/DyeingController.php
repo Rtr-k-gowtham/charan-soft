@@ -1297,6 +1297,11 @@ class DyeingController {
                 ")->execute([$pId]);
             } catch (Exception $uex) {}
 
+            // Advance production_orders status to IN PRODUCTION if not already
+            try {
+                $pdo->prepare("UPDATE production_orders SET status = 'IN PRODUCTION' WHERE id = ? AND status IN ('CONFIRMED', 'DRAFT')")->execute([$pId]);
+            } catch (Exception $poStatusEx) {}
+
             // 3. Record stage transaction moves for each advanced item
             foreach ($orderItems as $item) {
                 if ((int)$item['current_stage_id'] <= 4) {

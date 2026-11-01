@@ -43,6 +43,7 @@ import {
   ChevronDown,
   Ban,
   RotateCcw,
+  Sparkles,
   XCircle
 } from 'lucide-react';
 
@@ -334,6 +335,18 @@ export default function PurchaseOrders() {
   const [pendingUnorderedCount, setPendingUnorderedCount] = useState<number>(0);
   const [excludedMaterials, setExcludedMaterials] = useState<any[]>([]);
   const [editExcludedMaterials, setEditExcludedMaterials] = useState<any[]>([]);
+
+  // Additional PO / Add Items State
+  const [additionalPOModalOpen, setAdditionalPOModalOpen] = useState(false);
+  const [additionalPOSupplierId, setAdditionalPOSupplierId] = useState<string>('');
+  const [additionalPOCategoryId, setAdditionalPOCategoryId] = useState<string>('');
+  const [additionalPODeliveryDate, setAdditionalPODeliveryDate] = useState<string>('');
+  const [additionalPORemarks, setAdditionalPORemarks] = useState<string>('');
+  const [additionalPOItems, setAdditionalPOItems] = useState<any[]>([]);
+  const [loadingAdditionalMaterials, setLoadingAdditionalMaterials] = useState<boolean>(false);
+  const [savingAdditionalPO, setSavingAdditionalPO] = useState<boolean>(false);
+  const [additionalPOError, setAdditionalPOError] = useState<string>('');
+  const [additionalPOTargetPO, setAdditionalPOTargetPO] = useState<PurchaseOrder | null>(null);
 
   // Approval state
   const [approveModalOpen, setApproveModalOpen] = useState(false);
@@ -792,6 +805,193 @@ export default function PurchaseOrders() {
   }, [viewPO]);
 
   // Handle PO Issuance (Draft -> Ordered)
+  const additionalPOTotals = useMemo(() => {
+    let subtotal = 0;
+    let tax = 0;
+    additionalPOItems.forEach(it => {
+      if (it.is_selected) {
+        const q = Number(it.quantity) || 0;
+        const r = Number(it.rate) || 0;
+        const tPct = Number(it.tax_percent) || 5;
+        const taxable = Math.round(q * r * 100) / 100;
+        const taxAmt = Math.round(taxable * (tPct / 100) * 100) / 100;
+        subtotal += taxable;
+        tax += taxAmt;
+      }
+    });
+    return {
+      subtotal: Math.round(subtotal * 100) / 100,
+      tax: Math.round(tax * 100) / 100,
+      net: Math.round((subtotal + tax) * 100) / 100,
+      count: additionalPOItems.filter(it => it.is_selected).length,
+    };
+  }, [additionalPOItems]);
+
+  const handleOpenAdditionalPO = async (po: PurchaseOrder) => {
+    setAdditionalPOTargetPO(po);
+    setAdditionalPOSupplierId(po.supplier_id ? String(po.supplier_id) : (suppliers[0]?.id ? String(suppliers[0].id) : ''));
+    setAdditionalPOCategoryId(po.category_id ? String(po.category_id) : (categories[0]?.id ? String(categories[0].id) : ''));
+    setAdditionalPODeliveryDate(po.delivery_due_date || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0]);
+    setAdditionalPORemarks(`Additional PO for Production Order ${po.production_order_number || po.production_order_id} (Related to PO ${po.po_number})`);
+    setAdditionalPOError('');
+    setAdditionalPOModalOpen(true);
+    setLoadingAdditionalMaterials(true);
+
+    try {
+      const pOrdId = po.production_order_id;
+      if (pOrdId) {
+        const res: any = await api.getUnorderedItems(pOrdId);
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const mapped = list.map((it: any) => ({
+          material_id: it.material_id,
+          material_code: it.material_code,
+          item_description: it.material_name,
+          category_id: it.category_id,
+          category_name: it.category_name,
+          supplier_id: it.supplier_id,
+          supplier_name: it.supplier_name,
+          uom: it.uom || 'PCS',
+          size: it.size,
+          model: it.model,
+          thickness: it.thickness,
+          length: it.length,
+          required_quantity: Number(it.required_quantity) || 0,
+          previously_ordered_quantity: Number(it.previously_ordered_quantity) || 0,
+          remaining_unordered_quantity: Number(it.remaining_unordered_quantity) || 0,
+          quantity: Number(it.remaining_unordered_quantity) > 0 ? Number(it.remaining_unordered_quantity) : Number(it.required_quantity),
+          rate: Number(it.unit_cost) || 0,
+          tax_percent: 5,
+          is_selected: Number(it.remaining_unordered_quantity) > 0.001,
+        }));
+        setAdditionalPOItems(mapped);
+      } else {
+        setAdditionalPOItems([]);
+      }
+    } catch (err: any) {
+      setAdditionalPOError(err?.message || 'Failed to load materials for this production order');
+    } finally {
+      setLoadingAdditionalMaterials(false);
+    }
+  };
+
+  const handleAddCustomAdditionalItem = () => {
+    setAdditionalPOItems(prev => [
+      ...prev,
+      {
+        material_id: null,
+        material_code: '',
+        item_description: '',
+        uom: 'PCS',
+        size: '',
+        model: '',
+        thickness: '',
+        length: '',
+        quantity: 1,
+        rate: 0,
+        tax_percent: 5,
+        required_quantity: 0,
+        previously_ordered_quantity: 0,
+        remaining_unordered_quantity: 0,
+        is_selected: true,
+        is_custom: true,
+      }
+    ]);
+  };
+
+  const handleSaveAdditionalPO = async (status: 'Draft' | 'Ordered') => {
+    if (!additionalPOTargetPO) return;
+    const selected = additionalPOItems.filter(it => it.is_selected);
+    if (selected.length === 0) {
+      setAdditionalPOError('Please select at least one material to purchase.');
+      return;
+    }
+
+    for (const it of selected) {
+      const q = Number(it.quantity) || 0;
+      if (q <= 0) {
+        setAdditionalPOError(`Quantity for "${it.item_description || 'Material'}" must be greater than zero.`);
+        return;
+      }
+    }
+
+    if (!additionalPOSupplierId) {
+      setAdditionalPOError('Please select a Supplier for the additional Purchase Order.');
+      return;
+    }
+    if (!additionalPOCategoryId) {
+      setAdditionalPOError('Please select a Purchase Category.');
+      return;
+    }
+
+    setSavingAdditionalPO(true);
+    setAdditionalPOError('');
+
+    try {
+      const itemsPayload = selected.map((it, idx) => {
+        const qty = Number(it.quantity) || 0;
+        const rate = Number(it.rate) || 0;
+        const taxPct = Number(it.tax_percent) || 5;
+        const taxable = Math.round(qty * rate * 100) / 100;
+        const taxAmt = Math.round(taxable * (taxPct / 100) * 100) / 100;
+        const net = Math.round((taxable + taxAmt) * 100) / 100;
+
+        return {
+          line_number: idx + 1,
+          material_id: it.material_id || undefined,
+          material_code: it.material_code || undefined,
+          item_description: it.item_description,
+          description: it.item_description,
+          accessory_name: it.item_description,
+          uom: it.uom || 'KG',
+          size: it.size || undefined,
+          model: it.model || undefined,
+          thickness: it.thickness || undefined,
+          length: it.length || undefined,
+          quantity: qty,
+          rate: rate,
+          tax_percent: taxPct,
+          taxable_amount: taxable,
+          tax_amount: taxAmt,
+          net_amount: net,
+          order_no: additionalPOTargetPO.production_order_number || `ORD-${additionalPOTargetPO.production_order_id}`,
+        };
+      });
+
+      const payload = {
+        production_order_id: additionalPOTargetPO.production_order_id,
+        production_order_number: additionalPOTargetPO.production_order_number,
+        parent_po_id: additionalPOTargetPO.id,
+        is_additional_po: true,
+        allow_duplicate: true,
+        supplier_id: Number(additionalPOSupplierId),
+        category_id: Number(additionalPOCategoryId),
+        delivery_due_date: additionalPODeliveryDate,
+        remarks: additionalPORemarks,
+        status: status,
+        items: itemsPayload,
+      };
+
+      const res: any = await api.createPurchaseOrder(payload);
+      const newPOId = res?.id || res?.data?.id;
+      const newPONumber = res?.po_number || res?.data?.po_number || '';
+
+      setAdditionalPOModalOpen(false);
+      setApprovalSuccess(`Additional Purchase Order ${newPONumber} created successfully as ${status}! (Related to original PO: ${additionalPOTargetPO.po_number})`);
+      
+      await load();
+      if (newPOId) {
+        const fullNewPO: any = await api.getPurchaseOrder(newPOId);
+        const loadedData = fullNewPO?.data || fullNewPO;
+        setViewPO(loadedData);
+        navigate(`/purchase/orders/${newPOId}`, { replace: true });
+      }
+    } catch (err: any) {
+      setAdditionalPOError(err?.message || 'Failed to create additional Purchase Order');
+    } finally {
+      setSavingAdditionalPO(false);
+    }
+  };
+
   const handleIssuePO = async () => {
     if (!viewPO) return;
     setApproving(true);
@@ -3294,6 +3494,18 @@ export default function PurchaseOrders() {
                 </Button>
               )}
 
+              {Boolean((viewPO as any).production_order_id) && (
+                <Button
+                  size="xs"
+                  icon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenAdditionalPO(viewPO)}
+                  className="bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-xs"
+                  title="Create a new additional Purchase Order for this production order"
+                >
+                  + Add Items / Create Additional PO
+                </Button>
+              )}
+
               <Button
                 variant="secondary"
                 size="xs"
@@ -3972,6 +4184,16 @@ export default function PurchaseOrders() {
                   Create PRO
                 </Button>
               )}
+              {Boolean((viewPO as any).production_order_id) && (
+                <Button
+                  icon={<Plus className="w-4 h-4" />}
+                  onClick={() => handleOpenAdditionalPO(viewPO)}
+                  className="bg-brand-600 hover:bg-brand-700 text-white font-bold shadow-xs"
+                  title="Create a new additional Purchase Order for this production order"
+                >
+                  + Add Items / Create Additional PO
+                </Button>
+              )}
               <Button
                 variant="secondary"
                 icon={<Printer className="w-3.5 h-3.5" />}
@@ -4081,6 +4303,289 @@ export default function PurchaseOrders() {
                 <span className="font-bold text-brand-700">{fmtCur(viewTotals.net)}</span>
               </div>
             </div>
+          </div>
+        </Modal>
+
+        {/* Additional PO / Add Items Modal */}
+        <Modal
+          open={additionalPOModalOpen}
+          onClose={() => { if (!savingAdditionalPO) setAdditionalPOModalOpen(false); }}
+          title="+ Add Items / Create Additional Purchase Order"
+          subtitle={`Create a new Purchase Order for Production Order: ${additionalPOTargetPO?.production_order_number || additionalPOTargetPO?.production_order_id || ''} (Parent PO: ${additionalPOTargetPO?.po_number || ''})`}
+          size="4xl"
+          footer={
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 w-full">
+              <div className="text-xs text-slate-600 flex items-center gap-3">
+                <span>Selected: <strong className="font-mono text-slate-900">{additionalPOTotals.count}</strong> item(s)</span>
+                <span>• Subtotal: <strong className="font-mono text-slate-900">{fmtCur(additionalPOTotals.subtotal)}</strong></span>
+                <span>• Net Total: <strong className="font-mono text-brand-700 text-sm">{fmtCur(additionalPOTotals.net)}</strong></span>
+              </div>
+              <div className="flex items-center justify-end gap-2 shrink-0">
+                <Button
+                  variant="secondary"
+                  disabled={savingAdditionalPO}
+                  onClick={() => setAdditionalPOModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="secondary"
+                  loading={savingAdditionalPO}
+                  icon={<Save className="w-4 h-4" />}
+                  onClick={() => handleSaveAdditionalPO('Draft')}
+                  className="border-slate-300 font-semibold text-slate-700"
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  loading={savingAdditionalPO}
+                  icon={<Send className="w-4 h-4" />}
+                  onClick={() => handleSaveAdditionalPO('Ordered')}
+                  className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
+                >
+                  Issue New PO
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4 py-1 text-xs">
+            {/* Informational Guidance Note */}
+            <div className="p-3 bg-brand-50 border border-brand-200 rounded-xl text-brand-950 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
+              <div className="text-xs">
+                <strong className="text-brand-900">Separate New Purchase Order Record:</strong>
+                <p className="mt-0.5 text-brand-800">
+                  This form will generate a <strong>new, independent PO record</strong> linked to the same production order without altering original issued PO #{additionalPOTargetPO?.po_number}.
+                </p>
+              </div>
+            </div>
+
+            {additionalPOError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-medium flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{additionalPOError}</span>
+              </div>
+            )}
+
+            {/* PO Header Fields: Supplier, Category, Delivery Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+              <FormField label="Supplier / Vendor *" required>
+                <select
+                  value={additionalPOSupplierId}
+                  onChange={e => setAdditionalPOSupplierId(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">-- Select Supplier --</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={String(s.id)}>{s.name} ({s.code || 'SUP'})</option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Purchase Category *" required>
+                <select
+                  value={additionalPOCategoryId}
+                  onChange={e => setAdditionalPOCategoryId(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-brand-500"
+                >
+                  <option value="">-- Select Category --</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={String(c.id)}>{c.name}</option>
+                  ))}
+                </select>
+              </FormField>
+
+              <FormField label="Target Delivery Due Date">
+                <input
+                  type="date"
+                  value={additionalPODeliveryDate}
+                  onChange={e => setAdditionalPODeliveryDate(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-mono focus:ring-1 focus:ring-brand-500"
+                />
+              </FormField>
+            </div>
+
+            {/* Materials Selection Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs bg-white">
+              <div className="p-3 bg-slate-100/90 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-brand-600" />
+                  <span className="font-bold text-slate-800 text-xs">Eligible Production Materials & Requirements</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="xs"
+                  icon={<Plus className="w-3 h-3" />}
+                  onClick={handleAddCustomAdditionalItem}
+                  className="text-xs"
+                >
+                  + Add Custom Item
+                </Button>
+              </div>
+
+              {loadingAdditionalMaterials ? (
+                <div className="p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-brand-600 animate-spin" />
+                  <span>Loading eligible production materials...</span>
+                </div>
+              ) : additionalPOItems.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs space-y-2">
+                  <Package className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="font-medium text-slate-600">No specific pending BOM requirements found for this order.</p>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="xs"
+                    icon={<Plus className="w-3 h-3" />}
+                    onClick={handleAddCustomAdditionalItem}
+                  >
+                    Add Material Line Manually
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-[10px] uppercase tracking-wider">
+                      <tr>
+                        <th className="py-2 px-3 w-10 text-center">Select</th>
+                        <th className="py-2 px-3 min-w-[180px]">Material & Specs</th>
+                        <th className="py-2 px-3 text-right w-24">Required</th>
+                        <th className="py-2 px-3 text-right w-24">Ordered</th>
+                        <th className="py-2 px-3 text-right w-28 text-brand-700">Add Qty *</th>
+                        <th className="py-2 px-3 w-20 text-center">UOM</th>
+                        <th className="py-2 px-3 text-right w-28">Rate (₹)</th>
+                        <th className="py-2 px-3 text-right w-20">Tax %</th>
+                        <th className="py-2 px-3 text-right w-28">Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {additionalPOItems.map((it, idx) => {
+                        const q = Number(it.quantity) || 0;
+                        const r = Number(it.rate) || 0;
+                        const t = Number(it.tax_percent) || 5;
+                        const lineNet = Math.round(q * r * (1 + t / 100) * 100) / 100;
+
+                        return (
+                          <tr key={idx} className={it.is_selected ? 'bg-brand-50/30' : 'opacity-70 hover:opacity-100'}>
+                            <td className="py-2 px-3 text-center align-middle">
+                              <input
+                                type="checkbox"
+                                checked={!!it.is_selected}
+                                onChange={e => {
+                                  const checked = e.target.checked;
+                                  setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, is_selected: checked } : item));
+                                }}
+                                className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2 px-3 align-middle">
+                              {it.is_custom ? (
+                                <input
+                                  type="text"
+                                  value={it.item_description}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, item_description: val } : item));
+                                  }}
+                                  placeholder="Enter material name..."
+                                  className="w-full text-xs p-1 border border-slate-300 rounded font-medium focus:ring-1 focus:ring-brand-500"
+                                />
+                              ) : (
+                                <div>
+                                  <span className="font-bold text-slate-800 text-xs block">{it.item_description}</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5 text-[10px] text-slate-500">
+                                    {it.material_code && <span className="font-mono bg-slate-100 px-1 rounded">{it.material_code}</span>}
+                                    {it.size && <span>Size: {it.size}</span>}
+                                    {it.model && <span>Model: {it.model}</span>}
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-500 align-middle">
+                              {it.required_quantity || '-'}
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono text-slate-500 align-middle">
+                              {it.previously_ordered_quantity || '-'}
+                            </td>
+                            <td className="py-2 px-3 text-right align-middle">
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="any"
+                                value={it.quantity ?? ''}
+                                disabled={!it.is_selected}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? '' : Number(e.target.value);
+                                  setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+                                }}
+                                className="w-24 text-right p-1 text-xs font-mono font-bold border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-center align-middle">
+                              <input
+                                type="text"
+                                value={it.uom || 'PCS'}
+                                disabled={!it.is_selected}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, uom: val } : item));
+                                }}
+                                className="w-16 text-center p-1 text-xs font-mono border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right align-middle">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={it.rate ?? ''}
+                                disabled={!it.is_selected}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? '' : Number(e.target.value);
+                                  setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, rate: val } : item));
+                                }}
+                                className="w-24 text-right p-1 text-xs font-mono border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right align-middle">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.5"
+                                value={it.tax_percent ?? 5}
+                                disabled={!it.is_selected}
+                                onChange={e => {
+                                  const val = e.target.value === '' ? 5 : Number(e.target.value);
+                                  setAdditionalPOItems(prev => prev.map((item, i) => i === idx ? { ...item, tax_percent: val } : item));
+                                }}
+                                className="w-16 text-right p-1 text-xs font-mono border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+                            </td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-800 align-middle whitespace-nowrap">
+                              {it.is_selected ? fmtCur(lineNet) : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Remarks Field */}
+            <FormField label="PO Remarks / Internal Notes">
+              <input
+                type="text"
+                value={additionalPORemarks}
+                onChange={e => setAdditionalPORemarks(e.target.value)}
+                placeholder="e.g. Additional trim supply for final batch..."
+                className="w-full text-xs p-2 border border-slate-300 rounded-lg focus:ring-1 focus:ring-brand-500"
+              />
+            </FormField>
           </div>
         </Modal>
 

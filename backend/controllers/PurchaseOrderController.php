@@ -176,7 +176,7 @@ class PurchaseOrderController {
 
             // Prevent duplicate PO creation for the same production order, category, and supplier group
             $prodOrderId = !empty($data['production_order_id']) ? (int)$data['production_order_id'] : null;
-            if ($prodOrderId && $categoryId && $supplierId && empty($data['allow_duplicate'])) {
+            if ($prodOrderId && $categoryId && $supplierId && empty($data['allow_duplicate']) && empty($data['is_additional_po']) && empty($data['parent_po_id'])) {
                 $hasDel = in_array('deleted_at', $poCols);
                 $dupSql = "SELECT id, po_number, status FROM purchase_orders WHERE production_order_id = ? AND category_id = ? AND supplier_id = ?" . ($hasDel ? " AND deleted_at IS NULL" : "");
                 $dupStmt = $pdo->prepare($dupSql);
@@ -265,6 +265,7 @@ class PurchaseOrderController {
                 $poCandidates = [
                     'po_number' => $poNumber,
                     'production_order_id' => !empty($data['production_order_id']) ? (int)$data['production_order_id'] : null,
+                    'parent_po_id' => !empty($data['parent_po_id']) ? (int)$data['parent_po_id'] : null,
                     'category_id' => $categoryId,
                     'supplier_id' => $supplierId,
                     'po_date' => $poDate,
@@ -1745,6 +1746,13 @@ class PurchaseOrderController {
                     'excluded_reason' => $excludedInfo['reason'] ?? null,
                     'excluded_at' => $excludedInfo['created_at'] ?? null,
                 ];
+            }
+
+            $onlyPending = !empty($_GET['only_pending']) || !empty($_GET['pending_only']);
+            if ($onlyPending) {
+                $unorderedList = array_values(array_filter($unorderedList, function($item) {
+                    return (float)($item['remaining_unordered_quantity'] ?? 0) > 0.001;
+                }));
             }
 
             Response::success($unorderedList);
