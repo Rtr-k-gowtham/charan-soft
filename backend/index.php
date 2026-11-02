@@ -90,6 +90,7 @@ try {
         $r0 === 'purchase-orders' && $id && $action === 'reissue' && $method === 'POST' => (new PurchaseOrderController)->reissue($id),
         $r0 === 'purchase-orders' && $id && $action === 'payments' && $method === 'POST' => (new PurchaseOrderController)->addPayment($id),
         $r0 === 'purchase-orders' && $id && $action === 'receive' && $method === 'POST' => (new PurchaseOrderController)->receive($id),
+        $r0 === 'purchase-orders' && $id && $action === 'items' && isset($segments[3]) && $method === 'DELETE' => (new PurchaseOrderController)->removeItem($id, (int)$segments[3]),
         $r0 === 'purchase' && $r1 === 'receipts' && $method === 'GET' => (new PurchaseOrderController)->receiptsList(),
         $r0 === 'purchase' && $r1 === 'payments' && $method === 'GET' => (new PurchaseOrderController)->paymentsList(),
         $r0 === 'purchase' && $r1 === 'returns' && $method === 'GET' => (new PurchaseOrderController)->returnsList(),

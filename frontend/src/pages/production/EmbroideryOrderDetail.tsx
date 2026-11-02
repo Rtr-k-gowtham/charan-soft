@@ -1288,7 +1288,7 @@ export default function EmbroideryOrderDetail() {
       const jItems = Array.isArray(itemOrJob.items_json) ? itemOrJob.items_json : [];
       if (jItems.length > 0) {
         jobLines = jItems.map((ji: any) => {
-          const matchedItem = items.find(i => (ji.production_order_item_id && (i.id === ji.production_order_item_id || i.active_embroidery_item_id === ji.production_order_item_id)) || (i.product_id === ji.product_id && (i.color || '').trim().toLowerCase() === (ji.color || '').trim().toLowerCase()));
+          const matchedItem = items.find(i => (ji.production_order_item_id && (i.id === ji.production_order_item_id || i.active_embroidery_item_id === ji.production_order_item_id)) || (i.product_id === ji.product_id && (i.color || '').trim().toLowerCase() === (ji.color || '').trim().toLowerCase() && String(i.size || '') === String(ji.size || '')));
           
           const lineRec = Number(ji.received_quantity || 0) || (jItems.length === 1 ? jobRec : 0);
           const lineTrf = Number(ji.transferred_quantity || 0) || (jItems.length === 1 ? jobTrf : 0);
@@ -1317,7 +1317,7 @@ export default function EmbroideryOrderDetail() {
       const rItems = Array.isArray(itemOrJob.items_data) ? itemOrJob.items_data : [];
       if (rItems.length > 0) {
         jobLines = rItems.map((ri: any) => {
-          const matchedItem = items.find(i => (ri.production_order_item_id && (i.id === ri.production_order_item_id || i.active_embroidery_item_id === ri.production_order_item_id)) || (i.product_id === ri.product_id && (i.color || '').trim().toLowerCase() === (ri.color || '').trim().toLowerCase()));
+          const matchedItem = items.find(i => (ri.production_order_item_id && (i.id === ri.production_order_item_id || i.active_embroidery_item_id === ri.production_order_item_id)) || (i.product_id === ri.product_id && (i.color || '').trim().toLowerCase() === (ri.color || '').trim().toLowerCase() && String(i.size || '') === String(ri.size || '')));
           const lineRec = Number(ri.received_quantity || 0);
           const q = rItems.length === 1 ? maxAvailForThis : Math.min(lineRec, maxAvailForThis);
           return {
@@ -1359,7 +1359,8 @@ export default function EmbroideryOrderDetail() {
     const isReceived =
       rec.status === 'Rework Received' ||
       rec.status === 'Accepted After Rework' ||
-      (rec.status as string) === 'Completed';
+      (rec.status as string) === 'Completed' ||
+      ((rec.status as string) === 'Pending Rework' && Number(rec.accepted_quantity || 0) > Number((rec as any).transferred_quantity || 0));
 
     if (!isReceived) {
       handleOpenReceiveReworkModal(rec);
@@ -1374,15 +1375,21 @@ export default function EmbroideryOrderDetail() {
       return;
     }
 
-    if (availableInHandToTransfer <= 0) {
-      showToast('No accepted embroidery pieces are currently available in hand to transfer to Stitching.');
+    const received = Number((rec as any).received_quantity ?? rec.accepted_quantity ?? rec.rework_quantity ?? 0);
+    const transferred = Number((rec as any).transferred_to_stitching_quantity ?? (rec as any).transferred_quantity ?? 0);
+    const reworkAvailable = Number((rec as any).available_to_transfer ?? Math.max(0, received - transferred));
+    if (reworkAvailable <= 0) {
+      showToast(`No received quantity remains available for rework #${rec.rework_order_no}.`);
       return;
     }
 
     setSelectedReworkForTransfer(rec);
     setTransferJobLines([]);
-    setTransferItem(items[0] || null);
-    setTransferQuantity(availableInHandToTransfer);
+    const variantItem = items.find(i => String(i.active_embroidery_item_id || i.id) === String((rec as any).production_order_item_id))
+      || items.find(i => i.product_id === (rec as any).product_id && String(i.color || '').trim() === String(rec.color || '').trim() && String(i.size || '') === String(rec.size || ''))
+      || null;
+    setTransferItem(variantItem);
+    setTransferQuantity(reworkAvailable);
     setTransferRemarks(`Reworked embroidery #${rec.rework_order_no} accepted and transferred to Stage 07: Stitching.`);
     setTransferError('');
     setTransferModalOpen(true);
@@ -1433,7 +1440,9 @@ export default function EmbroideryOrderDetail() {
       return;
     }
 
-    const maxLimit = transferItem?.ready_to_transfer || availableInHandToTransfer;
+    const maxLimit = selectedReworkForTransfer
+      ? Number((selectedReworkForTransfer as any).available_to_transfer ?? Math.max(0, Number((selectedReworkForTransfer as any).received_quantity ?? selectedReworkForTransfer.accepted_quantity ?? selectedReworkForTransfer.rework_quantity ?? 0) - Number((selectedReworkForTransfer as any).transferred_quantity ?? 0)))
+      : (transferItem?.ready_to_transfer || availableInHandToTransfer);
     if (transferQuantity > maxLimit + 0.001) {
       setTransferError(`Transfer quantity (${transferQuantity} pcs) exceeds available limit (${maxLimit} pcs).`);
       return;
@@ -3858,7 +3867,9 @@ export default function EmbroideryOrderDetail() {
               variant="primary"
               size="sm"
               type="submit"
-              disabled={transferring || availableInHandToTransfer <= 0}
+              disabled={transferring || (selectedReworkForTransfer
+                ? Number((selectedReworkForTransfer as any).available_to_transfer ?? Math.max(0, Number((selectedReworkForTransfer as any).received_quantity ?? selectedReworkForTransfer.accepted_quantity ?? selectedReworkForTransfer.rework_quantity ?? 0) - Number((selectedReworkForTransfer as any).transferred_quantity ?? 0))) <= 0
+                : availableInHandToTransfer <= 0)}
               className="bg-purple-700 hover:bg-purple-800 text-white font-bold w-full sm:w-auto min-h-[36px]"
             >
               {transferring ? 'Transferring...' : 'Confirm Transfer to Stitching'}

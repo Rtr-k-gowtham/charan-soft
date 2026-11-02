@@ -8,6 +8,12 @@ require_once __DIR__ . '/../core/AuditLogger.php';
 require_once __DIR__ . '/ProductionController.php';
 
 class PurchaseOrderController {
+    private function ensurePOItemLifecycle(PDO $pdo): void {
+        // A removed PO line must remain auditable while no longer contributing to
+        // active PO quantities or material groups.
+        try { $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN deleted_at DATETIME NULL"); } catch (Exception $e) {}
+        try { $pdo->exec("ALTER TABLE purchase_order_items ADD COLUMN removal_reason VARCHAR(255) NULL"); } catch (Exception $e) {}
+    }
     private function enrichPaymentStatus(array &$po): void {
         $payable = round((float)($po['net_amount'] ?? 0), 2);
         $paid = round((float)($po['paid_amount'] ?? 0), 2);
@@ -30,6 +36,7 @@ class PurchaseOrderController {
     public function index(): void {
         try {
             $pdo = Database::getConnection();
+            $this->ensurePOItemLifecycle($pdo);
             try {
                 $pdo->exec("ALTER TABLE purchase_orders ADD COLUMN production_order_id INT NULL");
             } catch (Exception $alterEx) {}
@@ -65,7 +72,7 @@ class PurchaseOrderController {
                     $po['status'] = 'Ordered';
                 }
                 try {
-                    $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? ORDER BY id ASC");
+                    $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? AND deleted_at IS NULL ORDER BY id ASC");
                     $iStmt->execute([$po['id']]);
                     $items = $iStmt->fetchAll();
                     foreach ($items as &$poi) {
@@ -139,6 +146,7 @@ class PurchaseOrderController {
 
         try {
             $pdo = Database::getConnection();
+            $this->ensurePOItemLifecycle($pdo);
 
             // Auto-fallback category if missing or zero
             if (!$categoryId) {
@@ -188,6 +196,7 @@ class PurchaseOrderController {
                 }
             }
 
+            $this->ensureExcludedMaterialsTable($pdo);
             $pdo->beginTransaction();
 
             // Ensure business timezone is set to Asia/Kolkata
@@ -385,7 +394,7 @@ class PurchaseOrderController {
 
             // Record any excluded/removed materials before issuing PO
             if (!empty($data['excluded_materials']) && is_array($data['excluded_materials']) && !empty($data['production_order_id'])) {
-                $this->recordExcludedMaterials($pdo, (int)$data['production_order_id'], $poId, $poNumber, $data['excluded_materials']);
+                $this->recordExcludedMaterials($pdo, (int)$data['production_order_id'], $poId, $poNumber, $data['excluded_materials'], false);
             }
 
             if ($pdo->inTransaction()) {
@@ -412,10 +421,12 @@ class PurchaseOrderController {
 
         try {
             $pdo = Database::getConnection();
+            $this->ensurePOItemLifecycle($pdo);
             $this->ensurePOTermsTable($pdo);
             $poCols = $pdo->query("DESCRIBE purchase_orders")->fetchAll(PDO::FETCH_COLUMN);
             $poiCols = $pdo->query("DESCRIBE purchase_order_items")->fetchAll(PDO::FETCH_COLUMN);
 
+            $this->ensureExcludedMaterialsTable($pdo);
             $pdo->beginTransaction();
 
             $stmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
@@ -494,8 +505,9 @@ class PurchaseOrderController {
                 $upStmt->execute($updateParams);
             }
 
-            // Remove previous items and insert updated items
-            $delStmt = $pdo->prepare("DELETE FROM purchase_order_items WHERE purchase_order_id = ?");
+            // Preserve the draft PO's historical lines.  Removed lines are soft
+            // deleted and therefore immediately return to unordered tracking.
+            $delStmt = $pdo->prepare("UPDATE purchase_order_items SET deleted_at = NOW(), removal_reason = 'Removed from draft PO before issuance' WHERE purchase_order_id = ? AND deleted_at IS NULL");
             $delStmt->execute([$poId]);
 
             foreach ($items as $idx => $it) {
@@ -554,7 +566,7 @@ class PurchaseOrderController {
             if (!empty($data['excluded_materials']) && is_array($data['excluded_materials'])) {
                 $pOrdId = !empty($data['production_order_id']) ? (int)$data['production_order_id'] : (int)($po['production_order_id'] ?? 0);
                 if ($pOrdId > 0) {
-                    $this->recordExcludedMaterials($pdo, $pOrdId, $poId, $po['po_number'], $data['excluded_materials']);
+                    $this->recordExcludedMaterials($pdo, $pOrdId, $poId, $po['po_number'], $data['excluded_materials'], false);
                 }
             }
 
@@ -734,7 +746,7 @@ class PurchaseOrderController {
                 if ($qtyReceived <= 0) continue;
 
                 // Update PO item received quantity with row lock
-                $poiStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE id = ? AND purchase_order_id = ? FOR UPDATE");
+                $poiStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE id = ? AND purchase_order_id = ? AND deleted_at IS NULL FOR UPDATE");
                 $poiStmt->execute([$poItemId, $poId]);
                 $poi = $poiStmt->fetch();
 
@@ -1008,7 +1020,7 @@ class PurchaseOrderController {
             }
 
             try {
-                $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? ORDER BY id ASC");
+                $iStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE purchase_order_id = ? AND deleted_at IS NULL ORDER BY id ASC");
                 $iStmt->execute([$po['id']]);
                 $items = $iStmt->fetchAll();
                 foreach ($items as &$poi) {
@@ -1196,7 +1208,7 @@ class PurchaseOrderController {
             }
 
             // Verify items exist
-            $iStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ?");
+            $iStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ? AND deleted_at IS NULL");
             $iStmt->execute([$poId]);
             $itemCount = (int)$iStmt->fetchColumn();
             if ($itemCount === 0) {
@@ -1527,9 +1539,11 @@ class PurchaseOrderController {
         }
     }
 
-    private function recordExcludedMaterials(PDO $pdo, int $productionOrderId, int $poId, string $poNumber, array $excludedMaterials): void {
+    private function recordExcludedMaterials(PDO $pdo, int $productionOrderId, int $poId, string $poNumber, array $excludedMaterials, bool $ensureTable = true): void {
         try {
-            $this->ensureExcludedMaterialsTable($pdo);
+            // DDL can implicitly commit on MySQL.  Call it before a caller's
+            // transaction when the audit table has not already been prepared.
+            if ($ensureTable) $this->ensureExcludedMaterialsTable($pdo);
             $stmt = $pdo->prepare("
                 INSERT INTO po_excluded_materials 
                 (production_order_id, purchase_order_id, purchase_order_number, material_id, material_code, material_name, category_name, uom, required_quantity, excluded_quantity, supplier_id, supplier_name, reason)
@@ -1594,10 +1608,50 @@ class PurchaseOrderController {
         }
     }
 
+    /** Remove a single draft PO line without deleting its purchase/audit history. */
+    public function removeItem(int $poId, int $itemId): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensurePOItemLifecycle($pdo);
+            $this->ensureExcludedMaterialsTable($pdo);
+            $pdo->beginTransaction();
+            $poStmt = $pdo->prepare("SELECT * FROM purchase_orders WHERE id = ? FOR UPDATE");
+            $poStmt->execute([$poId]);
+            $po = $poStmt->fetch();
+            if (!$po) throw new Exception('Purchase Order not found.');
+            if (strtolower((string)$po['status']) !== 'draft') throw new Exception('Only Draft PO items can be removed.');
+            $itemStmt = $pdo->prepare("SELECT * FROM purchase_order_items WHERE id = ? AND purchase_order_id = ? AND deleted_at IS NULL FOR UPDATE");
+            $itemStmt->execute([$itemId, $poId]);
+            $item = $itemStmt->fetch();
+            if (!$item) throw new Exception('Active PO item not found.');
+            $countStmt = $pdo->prepare("SELECT COUNT(*) FROM purchase_order_items WHERE purchase_order_id = ? AND deleted_at IS NULL");
+            $countStmt->execute([$poId]);
+            $activeCount = (int)$countStmt->fetchColumn();
+            if ($activeCount <= 1) throw new Exception('A Purchase Order must retain at least one item.');
+
+            $desc = ($item['item_description'] ?? '') ?: (($item['accessory_name'] ?? '') ?: ($item['description'] ?? 'Material'));
+            if (!empty($po['production_order_id'])) {
+                $this->recordExcludedMaterials($pdo, (int)$po['production_order_id'], $poId, $po['po_number'], [[
+                    'material_id' => $item['material_id'] ?? null, 'material_name' => $desc,
+                    'uom' => $item['uom'] ?? 'PCS', 'quantity' => (float)$item['quantity'],
+                    'reason' => 'Removed from draft PO before issuance'
+                ]], false);
+            }
+            $pdo->prepare("UPDATE purchase_order_items SET deleted_at = NOW(), removal_reason = 'Removed from draft PO before issuance' WHERE id = ?")->execute([$itemId]);
+            $totals = $pdo->prepare("SELECT COALESCE(SUM(taxable_amount),0), COALESCE(SUM(tax_amount),0), COALESCE(SUM(net_amount),0) FROM purchase_order_items WHERE purchase_order_id = ? AND deleted_at IS NULL");
+            $totals->execute([$poId]); $sum = $totals->fetch(PDO::FETCH_NUM);
+            $pdo->prepare("UPDATE purchase_orders SET subtotal = ?, tax_amount = ?, net_amount = ?, balance_amount = ? WHERE id = ?")
+                ->execute([(float)$sum[0], (float)$sum[1], (float)$sum[2], (float)$sum[2] - (float)($po['paid_amount'] ?? 0), $poId]);
+            $pdo->commit();
+            Response::success(['purchase_order_id' => $poId, 'removed_item_id' => $itemId, 'item_count' => $activeCount - 1], 'PO item removed and returned to unordered materials.');
+        } catch (Exception $e) { if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack(); Response::error($e->getMessage(), 422); }
+    }
+
     public function unorderedItems(int $productionOrderId): void {
         try {
             $pdo = Database::getConnection();
             $this->ensureExcludedMaterialsTable($pdo);
+            $this->ensurePOItemLifecycle($pdo);
 
             $poStmt = $pdo->prepare("SELECT id, order_number, title FROM production_orders WHERE id = ? AND deleted_at IS NULL");
             $poStmt->execute([$productionOrderId]);
@@ -1618,7 +1672,7 @@ class PurchaseOrderController {
                 SELECT id, po_number, status, supplier_id, category_id, remarks
                 FROM purchase_orders
                 WHERE deleted_at IS NULL 
-                  AND LOWER(status) != 'cancelled'
+                  AND LOWER(status) = 'ordered'
                   AND (production_order_id = ? OR remarks LIKE ? OR remarks LIKE ?)
             ");
             $activePoStmt->execute([$productionOrderId, "%{$orderNo}%", "%ORD-{$productionOrderId}%"]);
@@ -1630,7 +1684,7 @@ class PurchaseOrderController {
                 $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
                 $poiStmt = $pdo->prepare("
                     SELECT * FROM purchase_order_items
-                    WHERE purchase_order_id IN ($inPlaceholders)
+                    WHERE purchase_order_id IN ($inPlaceholders) AND deleted_at IS NULL
                 ");
                 $poiStmt->execute($poIds);
                 $poItems = $poiStmt->fetchAll();
@@ -1765,6 +1819,7 @@ class PurchaseOrderController {
         try {
             $pdo = Database::getConnection();
             $this->ensureExcludedMaterialsTable($pdo);
+            $this->ensurePOItemLifecycle($pdo);
 
             $pOrdId = !empty($_GET['production_order_id']) ? (int)$_GET['production_order_id'] : 0;
             if ($pOrdId > 0) {
@@ -1797,7 +1852,7 @@ class PurchaseOrderController {
                     $activePoStmt = $pdo->prepare("
                         SELECT id, po_number, status, supplier_id, category_id, remarks
                         FROM purchase_orders
-                        WHERE deleted_at IS NULL AND LOWER(status) != 'cancelled'
+                        WHERE deleted_at IS NULL AND LOWER(status) = 'ordered'
                           AND (production_order_id = ? OR remarks LIKE ?)
                     ");
                     $activePoStmt->execute([(int)$ordId, "%{$orderNo}%"]);
@@ -1809,7 +1864,7 @@ class PurchaseOrderController {
                         $inPlaceholders = implode(',', array_fill(0, count($poIds), '?'));
                         $poiStmt = $pdo->prepare("
                             SELECT * FROM purchase_order_items
-                            WHERE purchase_order_id IN ($inPlaceholders)
+                            WHERE purchase_order_id IN ($inPlaceholders) AND deleted_at IS NULL
                         ");
                         $poiStmt->execute($poIds);
                         $poItems = $poiStmt->fetchAll();

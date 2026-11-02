@@ -129,6 +129,8 @@ export const api = {
     request<unknown>(`/purchase-orders/${poId}/payments`, 'POST', data),
   receiveGoods: (poId: number, data: unknown) =>
     request<unknown>(`/purchase-orders/${poId}/receive`, 'POST', data),
+  removePurchaseOrderItem: (poId: number, itemId: number) =>
+    request<unknown>(`/purchase-orders/${poId}/items/${itemId}`, 'DELETE'),
   getReceipts: () => request<unknown[]>('/purchase/receipts'),
   getPayments: () => request<unknown[]>('/purchase/payments'),
   getPurchaseReturns: () => request<unknown[]>('/purchase/returns'),

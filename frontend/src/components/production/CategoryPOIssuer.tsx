@@ -334,29 +334,45 @@ export default function CategoryPOIssuer({
       );
       const categoryId = catObj ? catObj.id : (grp.supplierId ? (suppliers.find(s => s.id === grp.supplierId)?.category_id || 1) : 1);
 
-      const orderedPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'ordered') || null;
-      const draftPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'draft') || null;
-      const cancelledPO = matchingPOs.find(p => (p.status || '').toLowerCase() === 'cancelled') || null;
-      const primaryPO = orderedPO || draftPO || cancelledPO || matchingPOs[0] || null;
-
-      result.push({
-        groupKey,
-        categoryName: grp.categoryName,
-        categoryId,
-        supplierId: grp.supplierId,
-        supplierName: grp.supplierName,
-        supplierCode: grp.supplierCode,
-        materials: grp.materials,
-        itemCount: grp.materials.length,
-        totalCost: grp.totalCost,
-        matchingPOs,
-        matchingPO: primaryPO,
-        hasOrderedPO: Boolean(orderedPO),
-        hasDraftPO: Boolean(draftPO),
-        draftPO,
-        hasCancelledPO: Boolean(cancelledPO),
-        cancelledPO,
-      });
+      // Active PO records, not the original supplier/category suggestion, are the
+      // source of truth for this table. This keeps independently created POs
+      // separate even when they have the same supplier and category.
+      const activePOs = matchingPOs.filter(p => (p.status || '').toLowerCase() !== 'cancelled' && Array.isArray(p.items) && p.items.length > 0);
+      if (activePOs.length > 0) {
+        activePOs.forEach(po => {
+          const poMaterials = (po.items || []).map((it: any) => ({
+            material_id: it.material_id,
+            material_code: it.material_code,
+            name: it.item_description || it.accessory_name || it.description || 'Material',
+            category: grp.categoryName,
+            uom: it.uom || 'PCS',
+            total_required_qty: Number(it.quantity || 0),
+            unit_cost: Number(it.rate || 0),
+          })) as OrderMaterialRequirementItem[];
+          const isOrdered = (po.status || '').toLowerCase() === 'ordered';
+          result.push({
+            groupKey: `${groupKey}__po_${po.id}`,
+            categoryName: grp.categoryName,
+            categoryId,
+            supplierId: Number(po.supplier_id || grp.supplierId) || null,
+            supplierName: po.supplier_name || grp.supplierName,
+            supplierCode: (po as any).supplier_code || grp.supplierCode,
+            materials: poMaterials,
+            itemCount: poMaterials.length,
+            totalCost: poMaterials.reduce((sum: number, item: any) => sum + Number(item.total_required_qty || 0) * Number(item.unit_cost || 0), 0),
+            matchingPOs: [po], matchingPO: po,
+            hasOrderedPO: isOrdered, hasDraftPO: !isOrdered, draftPO: !isOrdered ? po : null,
+            hasCancelledPO: false, cancelledPO: null,
+          });
+        });
+      } else {
+        result.push({
+          groupKey, categoryName: grp.categoryName, categoryId, supplierId: grp.supplierId,
+          supplierName: grp.supplierName, supplierCode: grp.supplierCode, materials: grp.materials,
+          itemCount: grp.materials.length, totalCost: grp.totalCost, matchingPOs: [], matchingPO: null,
+          hasOrderedPO: false, hasDraftPO: false, draftPO: null, hasCancelledPO: false, cancelledPO: null,
+        });
+      }
     });
 
     return result;
@@ -584,18 +600,12 @@ export default function CategoryPOIssuer({
       });
       setExistingPOs(rel);
 
-      // Check if ALL required groups for this production order are now issued
-      const allGroupsIssued = categorySupplierGroups.every(g => {
-        const cLower = g.categoryName.toLowerCase();
-        const sId = g.supplierId;
-        return rel.some(p => {
-          const isIssued = (p.status || '').toLowerCase() !== 'draft';
-          if (!isIssued) return false;
-          const catMatches = (p.category_name || '').toLowerCase() === cLower || (p.remarks && p.remarks.toLowerCase().includes(cLower));
-          const supMatches = sId ? Number(p.supplier_id) === Number(sId) : true;
-          return catMatches && supMatches;
-        });
-      });
+      // A supplier/category group can contain more than one material and a
+      // material can be deliberately removed into the unordered queue.  Only
+      // advance after the server confirms every required quantity is ordered.
+      const unorderedResponse: any = await api.getUnorderedItems(Number(orderId));
+      const unordered = Array.isArray(unorderedResponse) ? unorderedResponse : (unorderedResponse?.data || []);
+      const allGroupsIssued = unordered.every((item: any) => Number(item.remaining_unordered_quantity || 0) <= 0.001);
 
       if (allGroupsIssued) {
         // Advance production order items to Stage 03: Inward
@@ -648,18 +658,11 @@ export default function CategoryPOIssuer({
       });
       setExistingPOs(rel);
 
-      // Check if ALL required groups are now issued
-      const allGroupsIssued = categorySupplierGroups.every(g => {
-        const cLower = g.categoryName.toLowerCase();
-        const sId = g.supplierId;
-        return rel.some(p => {
-          const isIssued = (p.status || '').toLowerCase() !== 'draft';
-          if (!isIssued) return false;
-          const catMatches = (p.category_name || '').toLowerCase() === cLower || (p.remarks && p.remarks.toLowerCase().includes(cLower));
-          const supMatches = sId ? Number(p.supplier_id) === Number(sId) : true;
-          return catMatches && supMatches;
-        });
-      });
+      // Do not move the order on just because one PO in a category was
+      // issued; the material ledger is the source of truth for completeness.
+      const unorderedResponse: any = await api.getUnorderedItems(Number(orderId));
+      const unordered = Array.isArray(unorderedResponse) ? unorderedResponse : (unorderedResponse?.data || []);
+      const allGroupsIssued = unordered.every((item: any) => Number(item.remaining_unordered_quantity || 0) <= 0.001);
 
       if (allGroupsIssued) {
         if (orderId) {

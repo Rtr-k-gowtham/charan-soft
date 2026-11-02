@@ -1458,6 +1458,10 @@ export default function PurchaseOrders() {
         category_id: finalCategoryId,
         production_order_id: form.production_order_id || null,
         status: poStatus,
+        // An item deliberately returned by Unordered Materials Tracking must
+        // create its own PO, even when supplier and category match an older PO.
+        allow_duplicate: Boolean(location.state?.allow_duplicate || location.state?.is_additional_po),
+        is_additional_po: Boolean(location.state?.is_additional_po),
         items: preparedItems,
         terms: poTerms,
         excluded_materials: excludedMaterials.length > 0 ? excludedMaterials : undefined,
@@ -1833,6 +1837,30 @@ export default function PurchaseOrders() {
     } finally {
       setEditSaving(false);
     }
+  };
+
+  // Persist a removed draft line immediately.  This keeps the PO detail,
+  // category grouping and unordered-material ledger in agreement even if the
+  // user leaves the edit screen without pressing the general Save button.
+  const handleRemoveEditItem = async (idx: number) => {
+    const removed = editItems[idx];
+    if (!removed) return;
+
+    if (editPO && removed.id) {
+      setEditError('');
+      try {
+        await api.removePurchaseOrderItem(editPO.id, Number(removed.id));
+        setEditItems(prev => prev.filter((_, itemIdx) => itemIdx !== idx));
+        setEditExcludedMaterials(prev => prev.filter(item => item.id !== removed.id));
+        await load();
+      } catch (e: unknown) {
+        setEditError((e as Error).message || 'Failed to remove this PO item.');
+      }
+      return;
+    }
+
+    // New, unsaved lines do not have a persisted audit record yet.
+    setEditItems(prev => prev.filter((_, itemIdx) => itemIdx !== idx));
   };
 
   // Auto-open Edit or View based on URL route (/purchase/orders/:id/edit or :id) or query params (?edit=... / ?view=...)
@@ -3301,13 +3329,7 @@ export default function PurchaseOrders() {
                         {editItems.length > 1 && (
                           <button
                             type="button"
-                            onClick={() => {
-                              const removed = editItems[idx];
-                              if (removed && editForm.production_order_id) {
-                                setEditExcludedMaterials(prev => [...prev, removed]);
-                              }
-                              setEditItems(prev => prev.filter((_, i) => i !== idx));
-                            }}
+                            onClick={() => void handleRemoveEditItem(idx)}
                             className="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors"
                             title="Remove line item"
                           >

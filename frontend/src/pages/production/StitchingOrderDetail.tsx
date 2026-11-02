@@ -852,7 +852,10 @@ export default function StitchingOrderDetail() {
 
     if (batchOrItem && batchOrItem.batch_number) {
       b = batchOrItem;
-      it = items.find(i => String(i.color).trim() === String(b?.color).trim()) || items[0];
+      it = items.find(i =>
+        String(i.active_stitching_item_id || i.id) === String(b?.production_order_item_id) ||
+        (String(i.color).trim() === String(b?.color).trim() && String(i.size || '') === String(b?.size || ''))
+      ) || items[0];
     } else if (batchOrItem) {
       it = batchOrItem;
     } else {
