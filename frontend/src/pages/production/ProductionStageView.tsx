@@ -66,6 +66,8 @@ type StageItem = ProductionOrderItem & {
   priority?: string;
   target_delivery_date?: string;
   total_order_quantity?: number;
+  order_status?: string;
+  order_completed_quantity?: number;
 };
 
 interface OrderGroup {
@@ -85,6 +87,8 @@ interface OrderGroup {
   total_stage_quantity: number;
   total_order_quantity: number;
   unique_products_count: number;
+  order_status?: string;
+  order_completed_quantity?: number;
 }
 
 function OrderPOIssuerWrapper({
@@ -212,6 +216,8 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
               target_delivery_date: ord.target_delivery_date,
               stage_code: (it as { stage_code?: string }).stage_code || '',
               total_order_quantity: ord.total_quantity || 0,
+              order_status: ord.status,
+              order_completed_quantity: Number(ord.completed_quantity || 0),
             });
           });
         });
@@ -324,8 +330,21 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
       if (sCode === 'EMB' && (iName.includes('embroid') || iCode === 'EMB' || currentStageId === 6)) return true;
       if (sCode === 'STI' && (iName.includes('stitch') || iCode === 'STI' || currentStageId === 7)) return true;
       if (sCode === 'CHK' && (iName.includes('check') || iName === 'qc' || iCode === 'QC' || currentStageId === 8)) return true;
-      if (sCode === 'PCK' && (iName.includes('pack') || iCode === 'PCK' || currentStageId === 9)) return true;
-      if (sCode === 'COMP' && (iName.includes('complete') || iCode === 'COMP' || currentStageId === 10)) return true;
+      if (sCode === 'PCK') {
+        if (currentStageId > 9 || (i as any).order_status === 'COMPLETED') {
+          return false;
+        }
+        if (currentStageId === 9 || iCode === 'PCK' || iName.includes('pack')) {
+          return true;
+        }
+        return false;
+      }
+      if (sCode === 'COMP') {
+        if (currentStageId === 10 || iCode === 'COMP' || iName.includes('complete') || (i as any).order_status === 'COMPLETED') {
+          return true;
+        }
+        return false;
+      }
 
       return false;
     });
@@ -364,6 +383,8 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         : Number(it.total_quantity || 0);
       group.total_stage_quantity += stageQty;
       group.total_order_quantity = Number((it as any).total_order_quantity || Math.max(group.total_order_quantity, it.total_quantity || 0));
+      group.order_status = (it as any).order_status || group.order_status;
+      group.order_completed_quantity = Number((it as any).order_completed_quantity ?? group.order_completed_quantity ?? 0);
     });
 
     // Compute unique product names
@@ -793,21 +814,70 @@ export default function ProductionStageView({ stageName, stageCode, breadcrumb }
         <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
           <div className="min-w-0 flex-1 pr-1">
             <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider leading-tight">Garments in Stage</p>
-            <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
-              {fmt(orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0))} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs</span>
-            </p>
-            {(() => {
-              const totalOrd = orderGroups.reduce((acc, g) => acc + g.total_order_quantity, 0);
-              const stageGarments = orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0);
-              if (totalOrd > stageGarments && activeCode !== 'REQ') {
+            {activeCode === 'COMP' ? (
+              (() => {
+                const totalOrd = orderGroups.reduce((acc, g) => acc + g.total_order_quantity, 0);
+                const totalDispatched = orderGroups.reduce((acc, g) => acc + Number(g.order_completed_quantity || 0), 0);
+                const pendingDispatch = Math.max(0, totalOrd - totalDispatched);
                 return (
-                  <p className="text-[9px] text-amber-600 font-medium truncate">
-                    of {fmt(totalOrd)} ordered ({fmt(totalOrd - stageGarments)} awaiting)
-                  </p>
+                  <>
+                    <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
+                      {fmt(pendingDispatch)} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs in bay</span>
+                    </p>
+                    {pendingDispatch === 0 ? (
+                      <p className="text-[9px] text-emerald-600 font-semibold truncate flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        All {fmt(totalOrd)} pcs dispatched (0 awaiting)
+                      </p>
+                    ) : (
+                      <p className="text-[9px] text-indigo-600 font-medium truncate">
+                        {fmt(totalDispatched)} dispatched ({fmt(pendingDispatch)} awaiting dispatch)
+                      </p>
+                    )}
+                  </>
                 );
-              }
-              return null;
-            })()}
+              })()
+            ) : activeCode === 'PCK' ? (
+              (() => {
+                const totalOrd = orderGroups.reduce((acc, g) => acc + g.total_order_quantity, 0);
+                const stageGarments = orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0);
+                const awaiting = Math.max(0, totalOrd - stageGarments);
+                return (
+                  <>
+                    <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
+                      {fmt(stageGarments)} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs</span>
+                    </p>
+                    {awaiting === 0 ? (
+                      <p className="text-[9px] text-emerald-600 font-semibold truncate flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        All {fmt(totalOrd)} pcs packed (0 awaiting)
+                      </p>
+                    ) : (
+                      <p className="text-[9px] text-amber-600 font-medium truncate">
+                        of {fmt(totalOrd)} ordered ({fmt(awaiting)} awaiting)
+                      </p>
+                    )}
+                  </>
+                );
+              })()
+            ) : (
+              (() => {
+                const totalOrd = orderGroups.reduce((acc, g) => acc + g.total_order_quantity, 0);
+                const stageGarments = orderGroups.reduce((acc, g) => acc + g.total_stage_quantity, 0);
+                return (
+                  <>
+                    <p className="text-base sm:text-lg font-bold text-brand-600 mt-0.5 truncate">
+                      {fmt(stageGarments)} <span className="text-[10px] sm:text-xs font-normal text-slate-400">pcs</span>
+                    </p>
+                    {totalOrd > stageGarments && activeCode !== 'REQ' && (
+                      <p className="text-[9px] text-amber-600 font-medium truncate">
+                        of {fmt(totalOrd)} ordered ({fmt(totalOrd - stageGarments)} awaiting)
+                      </p>
+                    )}
+                  </>
+                );
+              })()
+            )}
           </div>
           <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 shrink-0">
             <Layers className="w-4 h-4" />

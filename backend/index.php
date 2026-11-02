@@ -170,6 +170,7 @@ $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new P
 
         // ---------------- STAGE 09: PACKING & CARTON MANAGEMENT ----------------
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->packingOrders(),
+    $r0 === 'production' && $r1 === 'packing' && $r2 === 'bulk-batch' && $method === 'POST' => (new ProductionController)->bulkCreatePackingBatches(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createPackingBatch(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferPackingOutput(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'cartons' && $method === 'GET' => (new ProductionController)->packingCartons(),

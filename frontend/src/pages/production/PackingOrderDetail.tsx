@@ -128,6 +128,28 @@ export default function PackingOrderDetail() {
   const [savingBatch, setSavingBatch] = useState(false);
   const [batchError, setBatchError] = useState('');
 
+  // Bulk Packing Modal State
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkLines, setBulkLines] = useState<{
+    item: any;
+    selected: boolean;
+    availableToPack: number;
+    packedQuantity: number;
+    unitsPerBox: number;
+    boxesPerMasterCarton: number;
+    numberOfBoxes: number;
+    numberOfMasterCartons: number;
+  }[]>([]);
+  const [bulkForm, setBulkForm] = useState({
+    packing_date: new Date().toISOString().split('T')[0],
+    packing_operator: '',
+    packing_supervisor: '',
+    remarks: ''
+  });
+  const [bulkPhotoUrls, setBulkPhotoUrls] = useState<string[]>([]);
+  const [savingBulk, setSavingBulk] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+
   // Carton Details Modal
   const [selectedCarton, setSelectedCarton] = useState<PackingCarton | null>(null);
 
@@ -477,6 +499,179 @@ export default function PackingOrderDetail() {
     }
   };
 
+  // Bulk Packing Handlers
+  const handleOpenBulkPackingModal = () => {
+    const eligible = items.filter(it => (summaryByItem[it.id]?.availableToPack || 0) > 0);
+    const lines = eligible.map(it => {
+      const avail = summaryByItem[it.id]?.availableToPack || 0;
+      let unitsPerBox = 20;
+      let boxesPerCarton = 5;
+
+      const pSpec = productConfigs[it.product_id] || null;
+      if (pSpec && pSpec.boxes && pSpec.boxes.length > 0) {
+        const primaryBox = pSpec.boxes[0];
+        if (primaryBox.items_per_box) unitsPerBox = Math.max(1, Number(primaryBox.items_per_box));
+        if (primaryBox.boxes_per_master_carton) boxesPerCarton = Math.max(1, Number(primaryBox.boxes_per_master_carton));
+      }
+
+      const calc = recalculatePackaging(avail, unitsPerBox, boxesPerCarton);
+
+      return {
+        item: it,
+        selected: true,
+        availableToPack: avail,
+        packedQuantity: avail,
+        unitsPerBox,
+        boxesPerMasterCarton: boxesPerCarton,
+        numberOfBoxes: calc.number_of_boxes,
+        numberOfMasterCartons: calc.number_of_master_cartons
+      };
+    });
+
+    setBulkLines(lines);
+    setBulkForm({
+      packing_date: new Date().toISOString().split('T')[0],
+      packing_operator: '',
+      packing_supervisor: '',
+      remarks: ''
+    });
+    setBulkPhotoUrls([]);
+    setBulkError('');
+    setBulkModalOpen(true);
+  };
+
+  const handleBulkLinePackedQtyChange = (index: number, val: number) => {
+    setBulkLines(prev => {
+      const updated = [...prev];
+      const l = updated[index];
+      const maxQty = l.availableToPack;
+      const safeVal = Math.max(0, Math.min(val, maxQty));
+      const calc = recalculatePackaging(safeVal, l.unitsPerBox, l.boxesPerMasterCarton);
+      updated[index] = {
+        ...l,
+        packedQuantity: safeVal,
+        numberOfBoxes: calc.number_of_boxes,
+        numberOfMasterCartons: calc.number_of_master_cartons
+      };
+      return updated;
+    });
+  };
+
+  const handleBulkLineUnitsChange = (index: number, val: number) => {
+    setBulkLines(prev => {
+      const updated = [...prev];
+      const l = updated[index];
+      const u = Math.max(1, val);
+      const calc = recalculatePackaging(l.packedQuantity, u, l.boxesPerMasterCarton);
+      updated[index] = {
+        ...l,
+        unitsPerBox: u,
+        numberOfBoxes: calc.number_of_boxes,
+        numberOfMasterCartons: calc.number_of_master_cartons
+      };
+      return updated;
+    });
+  };
+
+  const handleBulkLineBoxesChange = (index: number, val: number) => {
+    setBulkLines(prev => {
+      const updated = [...prev];
+      const l = updated[index];
+      const b = Math.max(1, val);
+      const calc = recalculatePackaging(l.packedQuantity, l.unitsPerBox, b);
+      updated[index] = {
+        ...l,
+        boxesPerMasterCarton: b,
+        numberOfBoxes: calc.number_of_boxes,
+        numberOfMasterCartons: calc.number_of_master_cartons
+      };
+      return updated;
+    });
+  };
+
+  const handleBulkLineToggle = (index: number) => {
+    setBulkLines(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], selected: !updated[index].selected };
+      return updated;
+    });
+  };
+
+  const handleBulkToggleAll = () => {
+    setBulkLines(prev => {
+      const allSelected = prev.every(l => l.selected);
+      return prev.map(l => ({ ...l, selected: !allSelected }));
+    });
+  };
+
+  const handleBulkPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    try {
+      const newUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const base64 = await processImageFile(files[i]);
+        newUrls.push(base64);
+      }
+      setBulkPhotoUrls(prev => [...prev, ...newUrls]);
+    } catch (err) {
+      console.error('Error processing bulk packing photo:', err);
+      setBulkError('Failed to process image file.');
+    }
+  };
+
+  const handleSaveBulkPacking = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!order) return;
+
+    const selectedLines = bulkLines.filter(l => l.selected && l.packedQuantity > 0);
+    if (selectedLines.length === 0) {
+      setBulkError('Please select at least one product line with packing quantity greater than zero.');
+      return;
+    }
+
+    for (const l of selectedLines) {
+      if (l.packedQuantity > l.availableToPack) {
+        setBulkError(`Packed quantity (${l.packedQuantity}) exceeds available quantity (${l.availableToPack}) for ${l.item.product_name || 'Product'} (${l.item.color || 'Standard'}).`);
+        return;
+      }
+    }
+
+    if (!bulkPhotoUrls || bulkPhotoUrls.length === 0) {
+      setBulkError('Real-time camera photo proof of packed master cartons is mandatory.');
+      return;
+    }
+
+    try {
+      setSavingBulk(true);
+      setBulkError('');
+
+      await api.bulkCreatePackingBatches({
+        production_order_id: order.id,
+        packing_date: bulkForm.packing_date,
+        packing_operator: bulkForm.packing_operator,
+        packing_supervisor: bulkForm.packing_supervisor,
+        remarks: bulkForm.remarks,
+        photo_urls: bulkPhotoUrls,
+        items: selectedLines.map(l => ({
+          production_order_item_id: l.item.active_packing_item_id || l.item.id,
+          packed_quantity: l.packedQuantity,
+          units_per_box: l.unitsPerBox,
+          boxes_per_master_carton: l.boxesPerMasterCarton
+        }))
+      });
+
+      showToast('Bulk packing batches and master cartons generated successfully.');
+      setBulkModalOpen(false);
+      await fetchOrderData();
+    } catch (err: any) {
+      console.error('Failed to create bulk packing batches:', err);
+      setBulkError(err?.message || 'Failed to save bulk packing batches.');
+    } finally {
+      setSavingBulk(false);
+    }
+  };
+
   // Transfer to Completed / Dispatch
   const handleTransferToDispatch = async () => {
     if (!order) return;
@@ -484,7 +679,6 @@ export default function PackingOrderDetail() {
       setTransferring(true);
       await api.transferPackingOutput({
         production_order_id: order.id,
-        item_id: items[0]?.active_packing_item_id || items[0]?.id,
         transfer_quantity: overallTotals.packedQty,
         remarks: `Transferred from Stage 09 Packing to Stage 10 Completed / Dispatch with ${fmt(overallTotals.packedQty)} packed pieces across ${overallTotals.totalCartons} master cartons.`
       });
@@ -641,17 +835,59 @@ export default function PackingOrderDetail() {
               <span className="sm:hidden">Edit</span>
             </Button>
 
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setTransferModalOpen(true)}
-              disabled={overallTotals.packedQty === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap min-h-[36px] px-3.5"
-            >
-              <span className="hidden sm:inline">Pass to Completed / Dispatch (Stage 10)</span>
-              <span className="sm:hidden">To Stage 10</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
+            {(() => {
+              const isFullyPacked = overallTotals.orderQty > 0 && overallTotals.packedQty >= overallTotals.orderQty && overallTotals.availableToPackQty === 0;
+              const isAlreadyMovedToStage10 = (order?.status === 'COMPLETED' || order?.status === 'Partially Dispatched') ||
+                (items.length > 0 && items.every(it => Number(it.current_stage_id || 0) >= 10));
+              const isFullyDispatched = (order?.status === 'COMPLETED' || (items.length > 0 && items.every(it => Number(it.current_stage_id || 0) >= 10 && Number(it.current_stage_quantity || 0) === 0))) &&
+                (cartons.length > 0 ? cartons.every(c => c.status === 'Dispatched') : (order?.status === 'COMPLETED'));
+
+              if (isFullyDispatched) {
+                return (
+                  <div
+                    title="Order is fully dispatched in Stage 10"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 font-bold text-xs shadow-2xs whitespace-nowrap min-h-[36px]"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Fully Dispatched (Stage 10)</span>
+                  </div>
+                );
+              }
+
+              if (isAlreadyMovedToStage10) {
+                return (
+                  <div
+                    title="Order has already moved to Stage 10: Completed / Dispatch"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 font-bold text-xs shadow-2xs whitespace-nowrap min-h-[36px]"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Moved to Completed (Stage 10)</span>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="flex flex-col items-end">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setTransferModalOpen(true)}
+                    disabled={!isFullyPacked}
+                    title={!isFullyPacked ? "All required quantities must be packed first." : "Pass to Completed / Dispatch"}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap min-h-[36px] px-3.5"
+                  >
+                    <span className="hidden sm:inline">Pass to Completed / Dispatch (Stage 10)</span>
+                    <span className="sm:hidden">To Stage 10</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                  {!isFullyPacked && (
+                    <span className="text-[10px] text-amber-600 font-medium mt-0.5">
+                      All required quantities must be packed first ({fmt(overallTotals.packedQty)}/{fmt(overallTotals.orderQty)} pcs)
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -802,6 +1038,15 @@ export default function PackingOrderDetail() {
               }`}
             >
               In Packing ({items.filter(it => Number(it.arrived_from_checking || it.stage_9_qty || 0) > 0).length})
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenBulkPackingModal}
+              title="Pack multiple products simultaneously in one operation"
+              className="px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
+            >
+              <Boxes className="w-3.5 h-3.5" />
+              <span>Bulk Packing</span>
             </button>
           </div>
         </div>
@@ -1687,6 +1932,338 @@ export default function PackingOrderDetail() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Bulk Packing Modal */}
+      <Modal
+        isOpen={bulkModalOpen}
+        onClose={() => setBulkModalOpen(false)}
+        title="Bulk Packing & Master Carton Generation"
+        size="xl"
+      >
+        <form onSubmit={handleSaveBulkPacking} className="space-y-4">
+          {bulkError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <span>{bulkError}</span>
+            </div>
+          )}
+
+          {bulkLines.length === 0 ? (
+            <div className="py-8 text-center text-slate-500 space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+              <p className="font-bold text-sm text-slate-800">All Products Are 100% Packed</p>
+              <p className="text-xs text-slate-500">There are no remaining pieces from Stage 08 Checking awaiting packing.</p>
+              <div className="pt-3">
+                <Button variant="secondary" size="sm" onClick={() => setBulkModalOpen(false)}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Product Lines Selection */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-slate-50 px-3.5 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleBulkToggleAll}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition"
+                    >
+                      {bulkLines.every(l => l.selected) ? 'Deselect All' : 'Select All'}
+                    </button>
+                    <span className="text-xs text-slate-400">|</span>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {bulkLines.filter(l => l.selected).length} of {bulkLines.length} Lines Selected
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 hidden sm:inline">
+                    Automatic Carton Calculation (Sections C & D Specs)
+                  </span>
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto max-h-[300px] overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-wider sticky top-0 z-10">
+                      <tr>
+                        <th className="py-2.5 px-3 w-10 text-center">Sel</th>
+                        <th className="py-2.5 px-3">Product Name & Color</th>
+                        <th className="py-2.5 px-3 text-right">Available</th>
+                        <th className="py-2.5 px-3 w-28 text-right">Pack Qty</th>
+                        <th className="py-2.5 px-3 w-24 text-right">Units/Box</th>
+                        <th className="py-2.5 px-3 w-24 text-right">Boxes/Ctn</th>
+                        <th className="py-2.5 px-3 text-right">Cartons</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {bulkLines.map((line, idx) => (
+                        <tr key={idx} className={line.selected ? 'bg-indigo-50/20' : 'opacity-60 bg-slate-50/40'}>
+                          <td className="py-2.5 px-3 text-center">
+                            <input
+                              type="checkbox"
+                              checked={line.selected}
+                              onChange={() => handleBulkLineToggle(idx)}
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <div className="font-semibold text-slate-900">{line.item.product_name || 'Garment Product'}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {line.item.color || 'Standard'}{line.item.size ? ` • Size: ${line.item.size}` : ''}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-bold text-blue-700">
+                            {fmt(line.availableToPack)} pcs
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <input
+                              type="number"
+                              min={1}
+                              max={line.availableToPack}
+                              value={line.packedQuantity || ''}
+                              disabled={!line.selected}
+                              onChange={e => handleBulkLinePackedQtyChange(idx, Number(e.target.value))}
+                              className="w-24 px-2 py-1 text-right text-xs font-mono font-bold border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-100"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.unitsPerBox || ''}
+                              disabled={!line.selected}
+                              onChange={e => handleBulkLineUnitsChange(idx, Number(e.target.value))}
+                              className="w-20 px-2 py-1 text-right text-xs font-mono border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-100"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.boxesPerMasterCarton || ''}
+                              disabled={!line.selected}
+                              onChange={e => handleBulkLineBoxesChange(idx, Number(e.target.value))}
+                              className="w-20 px-2 py-1 text-right text-xs font-mono border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 disabled:bg-slate-100"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-black text-indigo-700">
+                            {line.selected ? `${line.numberOfMasterCartons} ctn (${line.numberOfBoxes} bx)` : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View */}
+                <div className="md:hidden divide-y divide-slate-100 max-h-[350px] overflow-y-auto p-2 space-y-2">
+                  {bulkLines.map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-lg border transition ${
+                        line.selected ? 'bg-indigo-50/30 border-indigo-200' : 'bg-slate-50 border-slate-200 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={line.selected}
+                            onChange={() => handleBulkLineToggle(idx)}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                          />
+                          <div>
+                            <div className="font-bold text-xs text-slate-900">{line.item.product_name || 'Garment Product'}</div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {line.item.color || 'Standard'}{line.item.size ? ` • Size: ${line.item.size}` : ''}
+                            </div>
+                          </div>
+                        </label>
+                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                          Avail: {fmt(line.availableToPack)} pcs
+                        </span>
+                      </div>
+
+                      {line.selected && (
+                        <div className="mt-2.5 grid grid-cols-3 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                          <div>
+                            <label className="text-[10px] text-slate-500 block">Pack Qty</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={line.availableToPack}
+                              value={line.packedQuantity || ''}
+                              onChange={e => handleBulkLinePackedQtyChange(idx, Number(e.target.value))}
+                              className="w-full px-2 py-1 text-xs font-mono font-bold border border-slate-300 rounded"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 block">Units/Box</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.unitsPerBox || ''}
+                              onChange={e => handleBulkLineUnitsChange(idx, Number(e.target.value))}
+                              className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 block">Boxes/Ctn</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={line.boxesPerMasterCarton || ''}
+                              onChange={e => handleBulkLineBoxesChange(idx, Number(e.target.value))}
+                              className="w-full px-2 py-1 text-xs font-mono border border-slate-300 rounded"
+                            />
+                          </div>
+                          <div className="col-span-3 text-right text-[11px] font-bold text-indigo-700">
+                            → {line.numberOfMasterCartons} Cartons ({line.numberOfBoxes} Boxes)
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shared Batch Details */}
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
+                <div className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  Shared Batch Details
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Packing Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={bulkForm.packing_date}
+                      onChange={e => setBulkForm(prev => ({ ...prev, packing_date: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Packing Operator</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Selvaraj"
+                      value={bulkForm.packing_operator}
+                      onChange={e => setBulkForm(prev => ({ ...prev, packing_operator: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block mb-1">Packing Supervisor</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. K. Balan"
+                      value={bulkForm.packing_supervisor}
+                      onChange={e => setBulkForm(prev => ({ ...prev, packing_supervisor: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">General Remarks</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. All cartons labeled & barcode-verified"
+                    value={bulkForm.remarks}
+                    onChange={e => setBulkForm(prev => ({ ...prev, remarks: e.target.value }))}
+                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Photo Upload Section */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  Mandatory Photo Proof (Packed Boxes & Master Cartons) *
+                </label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg cursor-pointer hover:bg-indigo-100 transition">
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Take Photo / Upload</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleBulkPhotoUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    {bulkPhotoUrls.length} {bulkPhotoUrls.length === 1 ? 'photo' : 'photos'} uploaded
+                  </span>
+                </div>
+                {bulkPhotoUrls.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap pt-1">
+                    {bulkPhotoUrls.map((url, pIdx) => (
+                      <div key={pIdx} className="relative group w-14 h-14 rounded-lg overflow-hidden border border-slate-200">
+                        <img src={url} alt="Proof" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setBulkPhotoUrls(prev => prev.filter((_, i) => i !== pIdx))}
+                          className="absolute inset-0 bg-red-600/80 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Summary Bar & Submission */}
+              {(() => {
+                const sel = bulkLines.filter(l => l.selected);
+                const totalPieces = sel.reduce((s, l) => s + Number(l.packedQuantity || 0), 0);
+                const totalBoxes = sel.reduce((s, l) => s + Number(l.numberOfBoxes || 0), 0);
+                const totalCartons = sel.reduce((s, l) => s + Number(l.numberOfMasterCartons || 0), 0);
+
+                return (
+                  <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3">
+                    <div className="text-xs space-y-0.5">
+                      <div className="font-bold text-indigo-950">
+                        Selected Summary: {fmt(totalPieces)} pcs • {fmt(totalBoxes)} Inner Boxes • {fmt(totalCartons)} Master Cartons
+                      </div>
+                      <div className="text-[10px] text-indigo-700">
+                        Across {sel.length} product/color lines
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button variant="secondary" size="sm" type="button" onClick={() => setBulkModalOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        type="submit"
+                        disabled={savingBulk || sel.length === 0 || totalPieces === 0}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                      >
+                        {savingBulk ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1" />
+                            <span>Processing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                            <span>Pack & Generate {totalCartons} Cartons</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </form>
       </Modal>
 
       {/* Stage Transfer Modal */}
