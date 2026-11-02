@@ -2438,6 +2438,66 @@ class ProductionController {
                 $pdo->exec("UPDATE production_orders SET total_quantity = 700, completed_quantity = 700, status = 'COMPLETED' WHERE id = 59");
             } catch (Exception $e) {}
 
+            // Self-healing data repair for Order 65 and split-transferred orders (fix inflated total_quantity)
+            try {
+                $checkItem158 = $pdo->query("SELECT id, total_quantity, current_stage_quantity FROM production_order_items WHERE id = 158 AND production_order_id = 65")->fetch();
+                if ($checkItem158 && (float)$checkItem158['total_quantity'] > 0.01) {
+                    $pdo->exec("UPDATE production_order_items SET total_quantity = 0.00 WHERE id = 158 AND production_order_id = 65");
+                    $pdo->exec("UPDATE production_order_items SET total_quantity = 100.00 WHERE id = 159 AND production_order_id = 65");
+                }
+
+                $inflatedOrders = $pdo->query("
+                    SELECT po.id, po.total_quantity as ord_total, SUM(poi.total_quantity) as items_total
+                    FROM production_orders po
+                    JOIN production_order_items poi ON po.id = poi.production_order_id
+                    WHERE po.deleted_at IS NULL AND po.total_quantity > 0
+                    GROUP BY po.id, po.total_quantity
+                    HAVING items_total > ord_total + 0.01
+                ")->fetchAll(PDO::FETCH_ASSOC);
+
+                foreach ($inflatedOrders as $io) {
+                    $pOrdId = (int)$io['id'];
+                    $ordStmt = $pdo->prepare("SELECT generated_bom, total_quantity FROM production_orders WHERE id = ?");
+                    $ordStmt->execute([$pOrdId]);
+                    $oRow = $ordStmt->fetch();
+                    if ($oRow && !empty($oRow['generated_bom'])) {
+                        $bData = json_decode($oRow['generated_bom'], true);
+                        if (!empty($bData['products']) && is_array($bData['products'])) {
+                            foreach ($bData['products'] as $bp) {
+                                $bpProdId = (int)($bp['product_id'] ?? 0);
+                                $bpColor = trim((string)($bp['color'] ?? ''));
+                                $bpTargetQty = (float)($bp['total_quantity'] ?? 0);
+                                if ($bpTargetQty > 0) {
+                                    $iRowsStmt = $pdo->prepare("
+                                        SELECT id, total_quantity, current_stage_quantity 
+                                        FROM production_order_items 
+                                        WHERE production_order_id = ? AND product_id = ? AND color = ?
+                                        ORDER BY id ASC
+                                    ");
+                                    $iRowsStmt->execute([$pOrdId, $bpProdId, $bpColor]);
+                                    $iRows = $iRowsStmt->fetchAll(PDO::FETCH_ASSOC);
+                                    $sumPoi = array_reduce($iRows, fn($s, $r) => $s + (float)$r['total_quantity'], 0.0);
+                                    if ($sumPoi > $bpTargetQty + 0.01) {
+                                        $remainingTarget = $bpTargetQty;
+                                        usort($iRows, fn($a, $b) => (float)$b['current_stage_quantity'] <=> (float)$a['current_stage_quantity']);
+                                        foreach ($iRows as $ir) {
+                                            $alloc = min($remainingTarget, (float)$ir['current_stage_quantity']);
+                                            $pdo->prepare("UPDATE production_order_items SET total_quantity = ? WHERE id = ?")
+                                                ->execute([$alloc, $ir['id']]);
+                                            $remainingTarget = max(0.0, $remainingTarget - $alloc);
+                                        }
+                                        if ($remainingTarget > 0 && !empty($iRows)) {
+                                            $pdo->prepare("UPDATE production_order_items SET total_quantity = total_quantity + ? WHERE id = ?")
+                                                ->execute([$remainingTarget, $iRows[0]['id']]);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception $e) {}
+
             // Self-healing data repair & reconciliation for Embroidery to Stitching (including Order 62)
             try {
                 $pdo->exec("
@@ -2755,6 +2815,18 @@ class ProductionController {
             $iStmt->execute([$orderId]);
             $rawItems = $iStmt->fetchAll();
 
+            // Look up original product allocations from generated_bom if available
+            $origAlloc = [];
+            if (!empty($ord['generated_bom'])) {
+                $bData = json_decode($ord['generated_bom'], true);
+                if (!empty($bData['products']) && is_array($bData['products'])) {
+                    foreach ($bData['products'] as $bp) {
+                        $pKey = ($bp['product_id'] ?? '') . '_' . trim((string)($bp['color'] ?? ''));
+                        $origAlloc[$pKey] = (float)($bp['total_quantity'] ?? 0);
+                    }
+                }
+            }
+
             // Aggregate items by product_id and color so order-level product line is coherent
             $groupedItems = [];
             foreach ($rawItems as $rawIt) {
@@ -2766,6 +2838,15 @@ class ProductionController {
                     $groupedItems[$grpKey]['total_quantity'] += (float)$rawIt['total_quantity'];
                 }
             }
+
+            // Ensure source-of-truth total_quantity matches customer BOM allocation
+            foreach ($groupedItems as $grpKey => &$gItem) {
+                if (!empty($origAlloc[$grpKey]) && $origAlloc[$grpKey] > 0) {
+                    $gItem['total_quantity'] = $origAlloc[$grpKey];
+                }
+            }
+            unset($gItem);
+
             $items = array_values($groupedItems);
 
             foreach ($items as &$it) {
@@ -3213,21 +3294,26 @@ class ProductionController {
                 $matchStmt->execute([$pId, $item['product_id'], $item['color'], $destStageId]);
                 $existingDestItemId = $matchStmt->fetchColumn();
 
+                $curStageQty = (float)$item['current_stage_quantity'];
+                $curTotalQty = (float)$item['total_quantity'];
+
                 if ($existingDestItemId) {
-                    // Add quantity to existing item in destination stage - NEVER mutate total_quantity!
+                    // Add quantity to existing item in destination stage
                     $addStmt = $pdo->prepare("
                         UPDATE production_order_items 
                         SET current_stage_quantity = current_stage_quantity + ?,
+                            total_quantity = total_quantity + ?,
                             status = 'In Progress'
                         WHERE id = ?
                     ");
-                    $addStmt->execute([$qty, $existingDestItemId]);
+                    $addStmt->execute([$qty, $qty, $existingDestItemId]);
 
-                    // Deduct from current item - NEVER DELETE
-                    $remQty = max(0.0, (float)$item['current_stage_quantity'] - $qty);
-                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")->execute([$remQty, $itemId]);
+                    // Deduct from current item: reduce both current_stage_quantity and total_quantity
+                    $remStageQty = max(0.0, $curStageQty - $qty);
+                    $remTotalQty = max($remStageQty, $curTotalQty - $qty);
+                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                        ->execute([$remStageQty, $remTotalQty, $itemId]);
                 } else {
-                    $curStageQty = (float)$item['current_stage_quantity'];
                     if ($curStageQty <= $qty + 0.001) {
                         // Whole item advances to destination stage!
                         $updItem = $pdo->prepare("
@@ -3241,12 +3327,14 @@ class ProductionController {
                     } else {
                         // Split item: reduce current item in cutting, create new item in destination stage
                         $remStageQty = max(0.0, $curStageQty - $qty);
+                        $remTotalQty = max($remStageQty, $curTotalQty - $qty);
 
                         $pdo->prepare("
                             UPDATE production_order_items 
-                            SET current_stage_quantity = ?
+                            SET current_stage_quantity = ?,
+                                total_quantity = ?
                             WHERE id = ?
-                        ")->execute([$remStageQty, $itemId]);
+                        ")->execute([$remStageQty, $remTotalQty, $itemId]);
 
                         $insNewItem = $pdo->prepare("
                             INSERT INTO production_order_items 
@@ -3400,6 +3488,18 @@ class ProductionController {
             $rwkStmt->execute([$orderId]);
             $acceptedReworks = $rwkStmt->fetchAll();
 
+            // Look up original product allocations from generated_bom if available
+            $origAlloc = [];
+            if (!empty($ord['generated_bom'])) {
+                $bData = json_decode($ord['generated_bom'], true);
+                if (!empty($bData['products']) && is_array($bData['products'])) {
+                    foreach ($bData['products'] as $bp) {
+                        $pKey = ($bp['product_id'] ?? '') . '_' . trim((string)($bp['color'] ?? ''));
+                        $origAlloc[$pKey] = (float)($bp['total_quantity'] ?? 0);
+                    }
+                }
+            }
+
             // Aggregate items by product_id and color
             $groupedItems = [];
             foreach ($rawItems as $rawIt) {
@@ -3421,6 +3521,14 @@ class ProductionController {
                     }
                 }
             }
+
+            // Ensure source-of-truth order_quantity matches customer BOM allocation
+            foreach ($groupedItems as $grpKey => &$gItAlloc) {
+                if (!empty($origAlloc[$grpKey]) && $origAlloc[$grpKey] > 0) {
+                    $gItAlloc['order_quantity'] = $origAlloc[$grpKey];
+                }
+            }
+            unset($gItAlloc);
 
             // Tally outward dispatched, inward received, accepted, rejected from job orders and receipts
             foreach ($groupedItems as &$gIt) {
@@ -4111,8 +4219,9 @@ class ProductionController {
                     } else {
                         // Split item: reduce current item in embroidery, create new item in stitching
                         $remStageQty = max(0.0, $curStageQty - $eQty);
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
-                            ->execute([$remStageQty, $item['id']]);
+                        $remTotalQty = max($remStageQty, (float)$item['total_quantity'] - $eQty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remStageQty, $remTotalQty, $item['id']]);
 
                         $insNewItem = $pdo->prepare("
                             INSERT INTO production_order_items 
@@ -4123,7 +4232,7 @@ class ProductionController {
                             $pId,
                             $item['product_id'],
                             $item['color'],
-                            $item['total_quantity'],
+                            $eQty,
                             $destStageId,
                             $eQty
                         ]);
@@ -4403,6 +4512,18 @@ class ProductionController {
             }
             unset($er);
 
+            // Look up original product allocations from generated_bom if available
+            $origAlloc = [];
+            if (!empty($ord['generated_bom'])) {
+                $bData = json_decode($ord['generated_bom'], true);
+                if (!empty($bData['products']) && is_array($bData['products'])) {
+                    foreach ($bData['products'] as $bp) {
+                        $pKey = ($bp['product_id'] ?? '') . '_' . trim((string)($bp['color'] ?? ''));
+                        $origAlloc[$pKey] = (float)($bp['total_quantity'] ?? 0);
+                    }
+                }
+            }
+
             // Group items by product_id and color
             $groupedItems = [];
             foreach ($rawItems as $rawIt) {
@@ -4420,6 +4541,14 @@ class ProductionController {
                     }
                 }
             }
+
+            // Ensure source-of-truth order_quantity matches customer BOM allocation
+            foreach ($groupedItems as $grpKey => &$gItAlloc) {
+                if (!empty($origAlloc[$grpKey]) && $origAlloc[$grpKey] > 0) {
+                    $gItAlloc['order_quantity'] = $origAlloc[$grpKey];
+                }
+            }
+            unset($gItAlloc);
 
             // Calculate arriving quantities from Cutting & Embroidery, and stitched quantities
             foreach ($groupedItems as &$gIt) {
@@ -4891,8 +5020,9 @@ class ProductionController {
                     } else {
                         // Partial move: deduct from source and insert new row for destination
                         $remQty = max(0.0, $curQty - $qty);
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
-                            ->execute([$remQty, $item['id']]);
+                        $remTotalQty = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotalQty, $item['id']]);
 
                         $ins = $pdo->prepare("INSERT INTO production_order_items 
                             (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
@@ -5796,8 +5926,9 @@ class ProductionController {
                             ->execute([$qty, $item['id']]);
                     } else {
                         $remQty = max(0.0, $curQty - $qty);
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
-                            ->execute([$remQty, $item['id']]);
+                        $remTotalQty = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotalQty, $item['id']]);
 
                         $ins = $pdo->prepare("INSERT INTO production_order_items 
                             (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
@@ -6131,8 +6262,9 @@ class ProductionController {
                             ->execute([$qty, $qty, $item['id']]);
                     } else {
                         $remQty = max(0.0, $curQty - $qty);
-                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
-                            ->execute([$remQty, $item['id']]);
+                        $remTotalQty = max($remQty, (float)$item['total_quantity'] - $qty);
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, total_quantity = ? WHERE id = ?")
+                            ->execute([$remQty, $remTotalQty, $item['id']]);
 
                         $ins = $pdo->prepare("INSERT INTO production_order_items 
                             (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 

@@ -263,8 +263,80 @@ export default function CategoryPOIssuer({
     };
   };
 
-  // Group materials by (Category, Preferred Supplier)
+  // Group materials by (Category, Preferred Supplier) and synchronize with ALL existing POs
   const categorySupplierGroups = useMemo<CategorySupplierGroup[]>(() => {
+    const result: CategorySupplierGroup[] = [];
+    const processedPoIds = new Set<number>();
+
+    const getCategoryId = (catName: string, supId: number | null): number => {
+      const catObj = categories.find(
+        c => c.name.trim().toLowerCase() === catName.trim().toLowerCase()
+      );
+      if (catObj) return catObj.id;
+      if (supId) {
+        const sup = suppliers.find(s => s.id === supId);
+        if (sup?.category_id) return sup.category_id;
+      }
+      return 1;
+    };
+
+    const createGroupFromPO = (
+      po: PurchaseOrder,
+      fallbackCategory?: string,
+      fallbackSupplierId?: number | null
+    ): CategorySupplierGroup => {
+      const catName = po.category_name || fallbackCategory || 'General';
+      const catId = po.category_id || getCategoryId(catName, po.supplier_id ? Number(po.supplier_id) : null);
+      const supId = po.supplier_id ? Number(po.supplier_id) : (fallbackSupplierId || null);
+      const supName = po.supplier_name || suppliers.find(s => s.id === supId)?.name || (supId ? `Supplier #${supId}` : 'Supplier');
+      const supCode = (po as any).supplier_code || suppliers.find(s => s.id === supId)?.code || null;
+
+      const poItems = Array.isArray(po.items) ? po.items : [];
+      const poMaterials = poItems.map((it: any) => ({
+        material_id: it.material_id,
+        material_code: it.material_code,
+        name: it.item_description || it.accessory_name || it.description || 'Material',
+        category: catName,
+        uom: it.uom || 'PCS',
+        total_required_qty: Number(it.quantity || 0),
+        unit_cost: Number(it.rate || 0),
+        size: it.size,
+        model: it.model,
+        length: it.length,
+        thickness: it.thickness,
+      })) as OrderMaterialRequirementItem[];
+
+      const stLower = (po.status || '').toLowerCase();
+      const isOrdered = ['ordered', 'partially received', 'received'].includes(stLower);
+      const isDraft = stLower === 'draft';
+      const isCancelled = stLower === 'cancelled';
+
+      const totalCost = poMaterials.reduce(
+        (sum, item) => sum + Number(item.total_required_qty || 0) * Number(item.unit_cost || 0),
+        0
+      );
+
+      return {
+        groupKey: `po_${po.id}`,
+        categoryName: catName,
+        categoryId: catId,
+        supplierId: supId,
+        supplierName: supName,
+        supplierCode: supCode,
+        materials: poMaterials,
+        itemCount: poMaterials.length,
+        totalCost,
+        matchingPOs: [po],
+        matchingPO: po,
+        hasOrderedPO: isOrdered,
+        hasDraftPO: isDraft,
+        draftPO: isDraft ? po : null,
+        hasCancelledPO: isCancelled,
+        cancelledPO: isCancelled ? po : null,
+      };
+    };
+
+    // 1. Group materials from BOM requirements
     const map = new Map<string, {
       categoryName: string;
       supplierId: number | null;
@@ -308,17 +380,17 @@ export default function CategoryPOIssuer({
       grp.totalCost += Number(m.total_required_qty || 0) * Number(m.unit_cost || 0);
     });
 
-    const result: CategorySupplierGroup[] = [];
+    // 2. Iterate BOM groups and match active POs
     map.forEach((grp, groupKey) => {
       const catLower = grp.categoryName.toLowerCase();
       const matchingPOs = existingPOs.filter(p => {
+        if (processedPoIds.has(p.id)) return false;
         const poCatLower = (p.category_name || '').toLowerCase();
         const catMatches = poCatLower === catLower || (p.remarks && p.remarks.toLowerCase().includes(catLower));
         let supMatches = false;
         if (grp.supplierId) {
           supMatches = Number(p.supplier_id) === Number(grp.supplierId);
         } else {
-          // If group is unassigned, check temporary selected vendor if any
           const selSup = selectedVendors[groupKey];
           if (selSup) {
             supMatches = Number(p.supplier_id) === Number(selSup);
@@ -329,50 +401,74 @@ export default function CategoryPOIssuer({
         return catMatches && supMatches;
       });
 
-      const catObj = categories.find(
-        c => c.name.trim().toLowerCase() === grp.categoryName.trim().toLowerCase()
+      const activePOs = matchingPOs.filter(
+        p => (p.status || '').toLowerCase() !== 'cancelled' && Array.isArray(p.items) && p.items.length > 0
       );
-      const categoryId = catObj ? catObj.id : (grp.supplierId ? (suppliers.find(s => s.id === grp.supplierId)?.category_id || 1) : 1);
 
-      // Active PO records, not the original supplier/category suggestion, are the
-      // source of truth for this table. This keeps independently created POs
-      // separate even when they have the same supplier and category.
-      const activePOs = matchingPOs.filter(p => (p.status || '').toLowerCase() !== 'cancelled' && Array.isArray(p.items) && p.items.length > 0);
       if (activePOs.length > 0) {
         activePOs.forEach(po => {
-          const poMaterials = (po.items || []).map((it: any) => ({
-            material_id: it.material_id,
-            material_code: it.material_code,
-            name: it.item_description || it.accessory_name || it.description || 'Material',
-            category: grp.categoryName,
-            uom: it.uom || 'PCS',
-            total_required_qty: Number(it.quantity || 0),
-            unit_cost: Number(it.rate || 0),
-          })) as OrderMaterialRequirementItem[];
-          const isOrdered = (po.status || '').toLowerCase() === 'ordered';
-          result.push({
-            groupKey: `${groupKey}__po_${po.id}`,
-            categoryName: grp.categoryName,
-            categoryId,
-            supplierId: Number(po.supplier_id || grp.supplierId) || null,
-            supplierName: po.supplier_name || grp.supplierName,
-            supplierCode: (po as any).supplier_code || grp.supplierCode,
-            materials: poMaterials,
-            itemCount: poMaterials.length,
-            totalCost: poMaterials.reduce((sum: number, item: any) => sum + Number(item.total_required_qty || 0) * Number(item.unit_cost || 0), 0),
-            matchingPOs: [po], matchingPO: po,
-            hasOrderedPO: isOrdered, hasDraftPO: !isOrdered, draftPO: !isOrdered ? po : null,
-            hasCancelledPO: false, cancelledPO: null,
-          });
+          processedPoIds.add(po.id);
+          result.push(createGroupFromPO(po, grp.categoryName, grp.supplierId));
         });
       } else {
-        result.push({
-          groupKey, categoryName: grp.categoryName, categoryId, supplierId: grp.supplierId,
-          supplierName: grp.supplierName, supplierCode: grp.supplierCode, materials: grp.materials,
-          itemCount: grp.materials.length, totalCost: grp.totalCost, matchingPOs: [], matchingPO: null,
-          hasOrderedPO: false, hasDraftPO: false, draftPO: null, hasCancelledPO: false, cancelledPO: null,
+        // Check if all materials in this BOM group have already been ordered across other POs
+        const hasUnorderedMaterials = grp.materials.some(m => {
+          const mNameNorm = (m.name || '').trim().toLowerCase();
+          const mId = m.material_id ? Number(m.material_id) : null;
+          let totalOrderedForMaterial = 0;
+          existingPOs.forEach(p => {
+            if ((p.status || '').toLowerCase() === 'cancelled') return;
+            (p.items || []).forEach((it: any) => {
+              const itId = it.material_id ? Number(it.material_id) : null;
+              const itName = (it.item_description || it.accessory_name || it.description || '').trim().toLowerCase();
+              if ((mId && itId && mId === itId) || (mNameNorm && itName && mNameNorm === itName)) {
+                totalOrderedForMaterial += Number(it.quantity || 0);
+              }
+            });
+          });
+          return (Number(m.total_required_qty || 0) - totalOrderedForMaterial) > 0.001;
         });
+
+        if (hasUnorderedMaterials) {
+          const categoryId = getCategoryId(grp.categoryName, grp.supplierId);
+          result.push({
+            groupKey,
+            categoryName: grp.categoryName,
+            categoryId,
+            supplierId: grp.supplierId,
+            supplierName: grp.supplierName,
+            supplierCode: grp.supplierCode,
+            materials: grp.materials,
+            itemCount: grp.materials.length,
+            totalCost: grp.totalCost,
+            matchingPOs: [],
+            matchingPO: null,
+            hasOrderedPO: false,
+            hasDraftPO: false,
+            draftPO: null,
+            hasCancelledPO: false,
+            cancelledPO: null,
+          });
+        }
       }
+    });
+
+    // 3. Include any remaining existing POs associated with this order (e.g. POs from unordered tracking or additional POs)
+    existingPOs.forEach(po => {
+      if (!processedPoIds.has(po.id)) {
+        processedPoIds.add(po.id);
+        result.push(createGroupFromPO(po));
+      }
+    });
+
+    // 4. Sort: Created POs first by PO ID ascending, then uncreated groups
+    result.sort((a, b) => {
+      const aPoId = a.matchingPO?.id || 0;
+      const bPoId = b.matchingPO?.id || 0;
+      if (aPoId > 0 && bPoId > 0) return aPoId - bPoId;
+      if (aPoId > 0) return -1;
+      if (bPoId > 0) return 1;
+      return a.categoryName.localeCompare(b.categoryName);
     });
 
     return result;

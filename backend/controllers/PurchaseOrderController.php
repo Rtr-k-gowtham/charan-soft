@@ -397,6 +397,21 @@ class PurchaseOrderController {
                 $this->recordExcludedMaterials($pdo, (int)$data['production_order_id'], $poId, $poNumber, $data['excluded_materials'], false);
             }
 
+            // If materials were previously excluded and are now ordered in this PO, remove them from excluded tracking
+            if (!empty($data['production_order_id'])) {
+                $pOrdId = (int)$data['production_order_id'];
+                foreach ($items as $it) {
+                    $matId = !empty($it['material_id']) ? (int)$it['material_id'] : null;
+                    $matDesc = trim((string)($it['item_description'] ?? ($it['accessory_name'] ?? ($it['description'] ?? ''))));
+                    if ($matId) {
+                        $pdo->prepare("DELETE FROM po_excluded_materials WHERE production_order_id = ? AND material_id = ?")->execute([$pOrdId, $matId]);
+                    }
+                    if (!empty($matDesc)) {
+                        $pdo->prepare("DELETE FROM po_excluded_materials WHERE production_order_id = ? AND LOWER(TRIM(material_name)) = LOWER(?)")->execute([$pOrdId, $matDesc]);
+                    }
+                }
+            }
+
             if ($pdo->inTransaction()) {
                 $pdo->commit();
             }
@@ -1672,7 +1687,7 @@ class PurchaseOrderController {
                 SELECT id, po_number, status, supplier_id, category_id, remarks
                 FROM purchase_orders
                 WHERE deleted_at IS NULL 
-                  AND LOWER(status) = 'ordered'
+                  AND LOWER(status) IN ('ordered', 'partially received', 'received')
                   AND (production_order_id = ? OR remarks LIKE ? OR remarks LIKE ?)
             ");
             $activePoStmt->execute([$productionOrderId, "%{$orderNo}%", "%ORD-{$productionOrderId}%"]);
@@ -1852,10 +1867,10 @@ class PurchaseOrderController {
                     $activePoStmt = $pdo->prepare("
                         SELECT id, po_number, status, supplier_id, category_id, remarks
                         FROM purchase_orders
-                        WHERE deleted_at IS NULL AND LOWER(status) = 'ordered'
-                          AND (production_order_id = ? OR remarks LIKE ?)
+                        WHERE deleted_at IS NULL AND LOWER(status) IN ('ordered', 'partially received', 'received')
+                          AND (production_order_id = ? OR remarks LIKE ? OR remarks LIKE ?)
                     ");
-                    $activePoStmt->execute([(int)$ordId, "%{$orderNo}%"]);
+                    $activePoStmt->execute([(int)$ordId, "%{$orderNo}%", "%ORD-{$ordId}%"]);
                     $activePOs = $activePoStmt->fetchAll();
 
                     $poIds = array_column($activePOs, 'id');
