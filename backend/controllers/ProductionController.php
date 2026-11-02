@@ -2432,6 +2432,46 @@ class ProductionController {
                 $pdo->exec("UPDATE production_order_items SET total_quantity = 100, current_stage_id = 10, current_stage_quantity = 100, completed_quantity = 100, status = 'Completed' WHERE id = 132 AND production_order_id = 59");
                 $pdo->exec("UPDATE production_orders SET total_quantity = 700, completed_quantity = 700, status = 'COMPLETED' WHERE id = 59");
             } catch (Exception $e) {}
+
+            // Self-healing data repair & reconciliation for Embroidery to Stitching (including Order 62)
+            try {
+                $pdo->exec("
+                    UPDATE embroidery_receipts 
+                    SET total_accepted_qty = total_received_qty, 
+                        inspection_status = 'Accepted' 
+                    WHERE total_accepted_qty <= 0.001 
+                      AND total_received_qty > 0 
+                      AND total_rejected_qty <= 0.001 
+                      AND total_rework_qty <= 0.001
+                ");
+                $pdo->exec("
+                    UPDATE embroidery_job_orders 
+                    SET total_quantity_accepted = total_quantity_received 
+                    WHERE total_quantity_accepted <= 0.001 
+                      AND total_quantity_received > 0 
+                      AND total_quantity_rejected <= 0.001 
+                      AND total_quantity_rework <= 0.001
+                ");
+                $o62 = $pdo->query("SELECT id FROM production_orders WHERE id = 62")->fetch();
+                if ($o62) {
+                    $pdo->exec("DELETE FROM production_quantity_ledger WHERE id IN (560, 561) AND production_order_id = 62");
+                    $has148In = $pdo->query("SELECT id FROM production_quantity_ledger WHERE production_order_id = 62 AND stage_id = 7 AND transaction_type = 'TRANSFER_IN' AND (remarks LIKE '%19-4052%' OR (reference_type = 'Embroidery Transfer' AND quantity = 90.00))")->fetchColumn();
+                    if (!$has148In) {
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (62, 143, 6, 'EMB', 'TRANSFER_OUT', 90.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Transferred to Stitching — Color-wise Tracking (19-4052 TCX)')");
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (62, 143, 7, 'STI', 'TRANSFER_IN', 90.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Received from Embroidery (19-4052 TCX)')");
+                    }
+                    $cnt145In = (int)$pdo->query("SELECT COUNT(*) FROM production_quantity_ledger WHERE production_order_id = 62 AND production_order_item_id = 145 AND stage_id = 7 AND transaction_type = 'TRANSFER_IN' AND reference_type = 'Embroidery Transfer'")->fetchColumn();
+                    if ($cnt145In < 2) {
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (62, 145, 6, 'EMB', 'TRANSFER_OUT', 50.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Transferred to Stitching — Color-wise Tracking (Classic Navy 8019)')");
+                        $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (62, 145, 7, 'STI', 'TRANSFER_IN', 50.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Received from Embroidery (Classic Navy 8019)')");
+                    }
+                    $pdo->exec("UPDATE production_order_items SET current_stage_quantity = 0.00, status = 'Completed' WHERE id = 148 AND production_order_id = 62");
+                    $pdo->exec("UPDATE production_order_items SET current_stage_quantity = 100.00, current_stage_id = 7, status = 'In Progress' WHERE id = 143 AND production_order_id = 62");
+                    $pdo->exec("UPDATE production_order_items SET current_stage_quantity = 100.00, current_stage_id = 7, status = 'In Progress' WHERE id = 145 AND production_order_id = 62");
+                    $pdo->exec("UPDATE production_order_items SET current_stage_quantity = 100.00, current_stage_id = 7, status = 'In Progress' WHERE id = 146 AND production_order_id = 62");
+                    $pdo->exec("UPDATE production_order_items SET current_stage_quantity = 100.00, current_stage_id = 7, status = 'In Progress' WHERE id = 144 AND production_order_id = 62");
+                }
+            } catch (Exception $e) {}
         } catch (Exception $e) {}
     }
 
@@ -3741,10 +3781,17 @@ class ProductionController {
                 return;
             }
 
-            // Insert receipt with initial accepted/rework/rejected at 0 pending inspection
+            // Received quantity is immediately accepted and available for transfer without forcing a separate QC inspection
+            $itemsWithAccepted = array_map(function($it) {
+                if (!isset($it['accepted_quantity']) || (float)$it['accepted_quantity'] <= 0) {
+                    $it['accepted_quantity'] = (float)($it['received_quantity'] ?? 0);
+                }
+                return $it;
+            }, $items);
+
             $stmt = $pdo->prepare("INSERT INTO embroidery_receipts 
                 (receipt_number, job_order_id, production_order_id, vendor_name, receipt_date, vendor_challan_no, received_by, total_received_qty, total_accepted_qty, total_rejected_qty, total_rework_qty, remarks, photo_urls, items_data, inspection_status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, 0.00, 0.00, ?, ?, ?, 'Pending Inspection')");
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, 0.00, ?, ?, ?, 'Accepted')");
             $stmt->execute([
                 $recNo, 
                 $jId, 
@@ -3754,9 +3801,10 @@ class ProductionController {
                 $data['vendor_challan_no'] ?? '', 
                 $data['received_by'] ?? '', 
                 $recTotal, 
+                $recTotal, 
                 $data['remarks'] ?? '', 
                 json_encode($data['photo_urls'] ?? []), 
-                json_encode($items)
+                json_encode($itemsWithAccepted)
             ]);
             $receiptId = (int)$pdo->lastInsertId();
 
@@ -3784,13 +3832,15 @@ class ProductionController {
                 }
             }
 
+            $newAcc = (float)$job['total_quantity_accepted'] + $recTotal;
             $upd = $pdo->prepare("UPDATE embroidery_job_orders SET 
                 total_quantity_received = ?, 
+                total_quantity_accepted = ?, 
                 total_quantity_outstanding = ?,
                 status = ?,
                 items_json = ?
                 WHERE id = ?");
-            $upd->execute([$newRec, $newOut, $newStatus, json_encode($jItems), $jId]);
+            $upd->execute([$newRec, $newAcc, $newOut, $newStatus, json_encode($jItems), $jId]);
 
             // Log physical inward receipt in quantity ledger
             foreach ($items as $it) {
@@ -3942,10 +3992,20 @@ class ProductionController {
                     $iStmt->execute([$eItemId]);
                     $item = $iStmt->fetch();
                 }
+                // If item not found or not at Stage 6, search specifically for an item of same product & color at stage 6
                 if (!$item || (int)$item['current_stage_id'] !== 6) {
-                    $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND current_stage_id = 6 ORDER BY id ASC LIMIT 1 FOR UPDATE");
-                    $fStmt->execute([$pId]);
-                    $item = $fStmt->fetch();
+                    if ($item && !empty($item['product_id'])) {
+                        $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = 6 ORDER BY id ASC LIMIT 1 FOR UPDATE");
+                        $fStmt->execute([$pId, $item['product_id'], $item['color']]);
+                        $foundStage6 = $fStmt->fetch();
+                        if ($foundStage6) {
+                            $item = $foundStage6;
+                        }
+                    } else {
+                        $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND current_stage_id = 6 ORDER BY id ASC LIMIT 1 FOR UPDATE");
+                        $fStmt->execute([$pId]);
+                        $item = $fStmt->fetch();
+                    }
                 }
                 if (!$item) {
                     $fStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? ORDER BY id ASC LIMIT 1 FOR UPDATE");
@@ -3964,7 +4024,7 @@ class ProductionController {
                 $matchStmt->execute([$pId, $item['product_id'], $item['color'], $destStageId]);
                 $existingDestItemId = $matchStmt->fetchColumn();
 
-                if ($existingDestItemId && (int)$existingDestItemId !== (int)$item['id']) {
+                if ($existingDestItemId) {
                     $effectiveDestItemId = (int)$existingDestItemId;
                     // Add quantity to existing item at Stitching stage - NEVER inflate total_quantity!
                     $pdo->prepare("
@@ -3974,9 +4034,12 @@ class ProductionController {
                         WHERE id = ?
                     ")->execute([$eQty, $existingDestItemId]);
 
-                    // Deduct from current item at Embroidery stage - NEVER DELETE
-                    $remQty = max(0.0, (float)$item['current_stage_quantity'] - $eQty);
-                    $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")->execute([$remQty, $item['id']]);
+                    // Deduct from current item at Embroidery stage if it is a distinct record
+                    if ((int)$existingDestItemId !== (int)$item['id']) {
+                        $remQty = max(0.0, (float)$item['current_stage_quantity'] - $eQty);
+                        $newStatus = ($remQty <= 0.001) ? 'Completed' : 'In Progress';
+                        $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ?, status = ? WHERE id = ?")->execute([$remQty, $newStatus, $item['id']]);
+                    }
                 } else {
                     $curStageQty = (float)($item['current_stage_quantity'] ?? 0);
                     if (($eQty >= $curStageQty - 0.001 && $curStageQty > 0) || (int)$item['current_stage_id'] === 6) {
@@ -4339,45 +4402,34 @@ class ProductionController {
                     }
                 }
 
-                // Total accepted from embroidery receipts for this product/color
-                $accEmbThisItem = 0.0;
-                foreach ($embReceipts as $rcpt) {
-                    $rItems = $rcpt['items_data'] ?? [];
-                    foreach ($rItems as $ri) {
+                // Cross-check: ensure arrived from embroidery accurately reflects valid transfers from embroidery job orders and receipts
+                $jobTrfThisItem = 0.0;
+                foreach ($embJobs as $job) {
+                    $jItems = $job['items_json'] ?? [];
+                    $jMatched = false;
+                    foreach ($jItems as $ji) {
                         $m = false;
-                        if (!empty($ri['product_id']) && (int)$ri['product_id'] === $pId && trim((string)($ri['color'] ?? '')) === $color) $m = true;
+                        if (!empty($ji['product_id']) && (int)$ji['product_id'] === $pId && trim((string)($ji['color'] ?? '')) === $color) $m = true;
                         if (!$m && count($groupedItems) === 1) $m = true;
                         if ($m) {
-                            $accEmbThisItem += (float)($ri['accepted_quantity'] ?? 0);
-                        }
-                    }
-                }
-                if ($accEmbThisItem <= 0.001) {
-                    foreach ($embJobs as $job) {
-                        $jItems = $job['items_json'] ?? [];
-                        foreach ($jItems as $ji) {
-                            $m = false;
-                            if (!empty($ji['product_id']) && (int)$ji['product_id'] === $pId && trim((string)($ji['color'] ?? '')) === $color) $m = true;
-                            if (!$m && count($groupedItems) === 1) $m = true;
-                            if ($m) {
-                                $accEmbThisItem += (float)($ji['total_quantity_accepted'] ?? $ji['received_quantity'] ?? 0);
+                            $jMatched = true;
+                            $jSent = (float)($ji['quantity_sent'] ?? 0);
+                            $jRec = (float)($ji['received_quantity'] ?? $jSent);
+                            $jTotTrf = (float)($job['transferred_to_stitching_quantity'] ?? 0);
+                            $jTotRec = (float)($job['total_quantity_received'] ?? $jSent);
+                            if ($jTotRec > 0 && $jTotTrf > 0) {
+                                $ratio = min(1.0, $jTotTrf / $jTotRec);
+                                $jobTrfThisItem += ($jRec * $ratio);
                             }
                         }
                     }
-                }
-                if ($accEmbThisItem <= 0.001 && count($groupedItems) === 1) {
-                    foreach ($embReceipts as $rcpt) {
-                        $accEmbThisItem += (float)($rcpt['total_accepted_qty'] ?? 0);
+                    if (!$jMatched && count($groupedItems) === 1) {
+                        $jobTrfThisItem += (float)($job['transferred_to_stitching_quantity'] ?? 0);
                     }
                 }
-                if ($accEmbThisItem <= 0.001) {
-                    foreach ($embJobs as $job) {
-                        $accEmbThisItem += (float)($job['total_quantity_accepted'] ?? 0);
-                    }
-                }
-                if ($accEmbThisItem > 0) {
-                    // Prevent duplicate ledger transfers from exceeding total accepted embroidery
-                    $arrivedFromEmbroidery = min($arrivedFromEmbroidery, $accEmbThisItem);
+
+                if ($jobTrfThisItem > $arrivedFromEmbroidery) {
+                    $arrivedFromEmbroidery = $jobTrfThisItem;
                 }
 
                 // Total Arrived at Stitching

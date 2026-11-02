@@ -1,5 +1,6 @@
 // src/components/layout/Header.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -14,7 +15,8 @@ import {
   Clock,
   ExternalLink,
   Shield,
-  Menu
+  Menu,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
@@ -41,6 +43,29 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; right: number }>({ top: 56, right: 16 });
+
+  const updateDropdownPos = () => {
+    if (notifRef.current) {
+      const rect = notifRef.current.getBoundingClientRect();
+      setDropdownPos({
+        top: Math.round(rect.bottom + 6),
+        right: Math.max(16, Math.round(window.innerWidth - rect.right))
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (notifOpen) {
+      updateDropdownPos();
+      window.addEventListener('resize', updateDropdownPos);
+      window.addEventListener('scroll', updateDropdownPos, true);
+      return () => {
+        window.removeEventListener('resize', updateDropdownPos);
+        window.removeEventListener('scroll', updateDropdownPos, true);
+      };
+    }
+  }, [notifOpen]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -83,6 +108,7 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
   // When opening dropdown, refresh full list
   const toggleNotifications = () => {
     if (!notifOpen) {
+      updateDropdownPos();
       setLoadingNotifs(true);
       loadNotifications().finally(() => setLoadingNotifs(false));
     }
@@ -192,36 +218,60 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
             )}
           </button>
 
-          {notifOpen && (
+          {notifOpen && typeof document !== 'undefined' && createPortal(
             <>
+              {/* Backdrop: dim on mobile, transparent click-catcher on desktop */}
               <div
-                className="fixed inset-0 z-40"
+                className="fixed inset-0 z-[60] bg-slate-900/30 sm:bg-transparent backdrop-blur-2xs sm:backdrop-blur-none transition-opacity"
                 onClick={() => setNotifOpen(false)}
+                aria-hidden="true"
               />
-              <div className="absolute right-0 top-full mt-1.5 z-50 w-80 sm:w-96 bg-white rounded-xl border border-slate-200 shadow-xl overflow-hidden flex flex-col max-h-[480px] animate-in fade-in slide-in-from-top-1 duration-150">
+
+              {/* Notification Panel: 
+                  - Mobile (< 640px): fixed inset-x-2.5 top-[56px] max-h-[calc(100dvh-130px)]
+                  - Desktop (sm: >= 640px): fixed w-96 anchored below bell button
+              */}
+              <div
+                className="fixed z-[70] bg-white rounded-2xl sm:rounded-xl border border-slate-200/90 shadow-2xl overflow-hidden flex flex-col transition-all inset-x-2.5 top-[56px] max-h-[calc(100dvh-130px)] sm:inset-x-auto sm:w-96 sm:max-h-[500px] animate-in fade-in slide-in-from-top-1 duration-150"
+                style={{
+                  ...(typeof window !== 'undefined' && window.innerWidth >= 640 ? {
+                    top: `${dropdownPos.top}px`,
+                    right: `${dropdownPos.right}px`
+                  } : {})
+                }}
+              >
                 {/* Notification Dropdown Header */}
-                <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div className="px-3.5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 shrink-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800">Notifications</span>
+                    <span className="text-xs font-bold text-slate-800 tracking-tight">Notifications</span>
                     {unreadCount > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 text-[10px] font-semibold border border-brand-100">
+                      <span className="px-1.5 py-0.5 rounded-full bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-100">
                         {unreadCount} new
                       </span>
                     )}
                   </div>
-                  {unreadCount > 0 && (
+                  <div className="flex items-center gap-2">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-[11px] text-brand-600 hover:text-brand-800 font-semibold flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-brand-50"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Mark all read</span>
+                      </button>
+                    )}
                     <button
-                      onClick={handleMarkAllRead}
-                      className="text-[11px] text-brand-600 hover:text-brand-800 font-medium flex items-center gap-1 transition-colors"
+                      onClick={() => setNotifOpen(false)}
+                      className="sm:hidden p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                      aria-label="Close notifications"
                     >
-                      <CheckCheck className="w-3.5 h-3.5" />
-                      Mark all read
+                      <X className="w-4 h-4" />
                     </button>
-                  )}
+                  </div>
                 </div>
 
                 {/* Notifications List */}
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-100 overscroll-contain">
                   {loadingNotifs && notifications.length === 0 ? (
                     <div className="p-8 text-center text-xs text-slate-400">
                       Loading notifications...
@@ -267,7 +317,7 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
                           {/* Message Content */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1 mb-0.5">
-                              <span className="text-xs font-bold text-slate-800 truncate">
+                              <span className="text-xs font-bold text-slate-800 break-words line-clamp-1">
                                 {n.title}
                               </span>
                               <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
@@ -275,15 +325,15 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
                                 {formatTimeAgo(n.created_at)}
                               </span>
                             </div>
-                            <p className="text-[11px] text-slate-600 line-clamp-2 leading-tight">
+                            <p className="text-[11px] text-slate-600 break-words line-clamp-3 leading-snug">
                               {n.message}
                             </p>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <span className="font-mono text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.2 rounded">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                              <span className="font-mono text-[10px] font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
                                 {n.order_number}
                               </span>
                               {n.destination_stage_name && (
-                                <span className="text-[10px] text-slate-500 truncate">
+                                <span className="text-[10px] font-medium text-purple-700 bg-purple-50 border border-purple-100/70 px-1.5 py-0.5 rounded break-words max-w-full">
                                   → {n.destination_stage_name}
                                 </span>
                               )}
@@ -301,7 +351,7 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
                 </div>
 
                 {/* Dropdown Footer */}
-                <div className="p-2 border-t border-slate-100 bg-slate-50/70 text-center">
+                <div className="p-2 border-t border-slate-100 bg-slate-50/80 text-center shrink-0">
                   <button
                     onClick={() => {
                       setNotifOpen(false);
@@ -313,7 +363,8 @@ export default function Header({ onSidebarToggle, onMobileMenuToggle }: Props) {
                   </button>
                 </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
 
