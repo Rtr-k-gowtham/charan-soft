@@ -71,7 +71,7 @@ function NavNode({
           end
           onClick={onItemClick}
           className={({ isActive }) =>
-            `flex items-center gap-2.5 px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0
+            `flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 shrink-0 min-h-[36px]
             ${isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'}`
           }
           title={collapsed ? item.label : undefined}
@@ -88,7 +88,7 @@ function NavNode({
         end
         onClick={onItemClick}
         className={({ isActive }) =>
-          `flex items-center gap-2 px-2.5 py-1.5 sm:py-1 rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0
+          `flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all duration-150 shrink-0 min-h-[32px]
           ${isActive ? 'text-brand-700 font-bold bg-brand-50' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'}`
         }
       >
@@ -101,11 +101,11 @@ function NavNode({
   // Top-level item with children
   if (depth === 0) {
     return (
-      <div>
+      <div className="shrink-0">
         <button
           type="button"
           onClick={() => setOpen(o => !o)}
-          className={`w-full flex items-center justify-between px-3 py-2 sm:py-1.5 rounded-lg sm:rounded-md text-xs font-medium transition-all duration-150 min-h-[36px] sm:min-h-0 ${hasActiveChild ? 'text-brand-700 bg-brand-50' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
+          className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 shrink-0 min-h-[36px] ${hasActiveChild ? 'text-brand-700 bg-brand-50' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
             }`}
           title={collapsed ? item.label : undefined}
         >
@@ -121,7 +121,7 @@ function NavNode({
         </button>
 
         {!collapsed && open && (
-          <div className="ml-3 pl-2.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5">
+          <div className="ml-3 pl-2.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5 shrink-0">
             {item.children.map(child => (
               <NavNode
                 key={child.label + (child.path || '')}
@@ -139,9 +139,9 @@ function NavNode({
 
   // Nested item with children (depth > 0)
   return (
-    <div>
+    <div className="shrink-0">
       <div
-        className={`flex items-center justify-between rounded-md text-[11px] font-medium transition-all duration-150 min-h-[32px] sm:min-h-0 ${isDirectActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
+        className={`flex items-center justify-between rounded-md text-[11px] font-medium transition-all duration-150 shrink-0 min-h-[32px] ${isDirectActive ? 'bg-brand-50 text-brand-700' : 'hover:bg-slate-50 text-slate-600'
           }`}
       >
         {item.path ? (
@@ -177,7 +177,7 @@ function NavNode({
       </div>
 
       {open && (
-        <div className="ml-1.5 pl-1.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5">
+        <div className="ml-1.5 pl-1.5 border-l border-slate-200 flex flex-col gap-0.5 mt-0.5 shrink-0">
           {item.children.map(child => (
             <NavNode
               key={child.label + (child.path || '')}

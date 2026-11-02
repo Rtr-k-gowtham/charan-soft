@@ -213,7 +213,7 @@ export default function Dashboard() {
         </div>
 
         {/* Main Grid: Production & Low Stock */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-1 gap-3.5 sm:gap-4">
 
           {/* 1. Recent Production Orders */}
           <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs flex flex-col">
@@ -274,9 +274,8 @@ export default function Dashboard() {
 
                       <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all duration-300 ${
-                            pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
-                          }`}
+                          className={`h-full rounded-full transition-all duration-300 ${pct === 100 ? 'bg-emerald-500' : 'bg-brand-600'
+                            }`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
@@ -292,17 +291,19 @@ export default function Dashboard() {
                 <thead>
                   <tr>
                     <th>Order No</th>
+                    <th>Title</th>
                     <th>Buyer</th>
                     <th className="text-right">Total</th>
                     <th className="text-right">Completed</th>
+                    <th>Target Delivery</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {d.recent_production.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-6 text-slate-400 text-xs">
-                        No production orders
+                      <td colSpan={7} className="text-center py-6 text-slate-400 text-xs">
+                        No production orders in progress
                       </td>
                     </tr>
                   ) : (
@@ -313,12 +314,18 @@ export default function Dashboard() {
                             {ord.order_number}
                           </Link>
                         </td>
-                        <td className="text-slate-600 truncate max-w-[140px]">
+                        <td className="font-medium text-slate-800 truncate max-w-[220px]">
+                          {ord.title || 'Textile Batch'}
+                        </td>
+                        <td className="text-slate-600 truncate max-w-[160px]">
                           {ord.customer_name || 'Direct Order'}
                         </td>
                         <td className="text-right font-mono font-medium">{fmt(ord.total_quantity)}</td>
                         <td className="text-right font-mono font-bold text-emerald-600">
                           {fmt(ord.completed_quantity)}
+                        </td>
+                        <td className="text-slate-500 font-mono text-[11px]">
+                          {ord.target_delivery_date || '—'}
                         </td>
                         <td><StatusBadge status={ord.status} /></td>
                       </tr>
@@ -329,114 +336,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 2. Low Stock Alerts */}
-          <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs flex flex-col">
-            <div className="flex items-center justify-between px-3.5 sm:px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-500" />
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Low Stock Inventory
-                </h3>
-              </div>
-              <Link
-                to="/inventory/low-stock"
-                className="text-[11px] text-red-600 hover:text-red-700 font-semibold flex items-center gap-0.5"
-              >
-                <span>{d.low_stock.length} alert{d.low_stock.length !== 1 ? 's' : ''}</span>
-                <ChevronRight className="w-3 h-3" />
-              </Link>
-            </div>
-
-            {/* Mobile View: Alert Cards (< sm) */}
-            <div className="sm:hidden divide-y divide-slate-100 p-2 space-y-2">
-              {d.low_stock.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">
-                  All inventory levels are adequate
-                </div>
-              ) : (
-                d.low_stock.slice(0, 5).map((item, idx) => {
-                  const deficit = Math.max(0, item.min_stock_level - item.current_stock);
-
-                  return (
-                    <Link
-                      key={item.id ?? item.name ?? `low-${idx}`}
-                      to="/inventory/stock"
-                      className="block p-2.5 bg-red-50/40 hover:bg-red-50/80 rounded-lg border border-red-200/60 transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-xs font-bold text-slate-800 truncate">
-                          {item.name}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200 font-medium">
-                          {item.category_name}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] mt-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-500">
-                            Current: <strong className="text-red-600 font-mono">{fmt(item.current_stock)} {item.uom}</strong>
-                          </span>
-                          <span className="text-slate-400">•</span>
-                          <span className="text-slate-500">
-                            Min: <strong className="text-slate-700 font-mono">{fmt(item.min_stock_level)} {item.uom}</strong>
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-red-700 bg-red-100/90 px-2 py-0.5 rounded-full shrink-0">
-                          -{fmt(deficit)} {item.uom}
-                        </span>
-                      </div>
-                    </Link>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Desktop View: Data Table (sm+) */}
-            <div className="hidden sm:block overflow-x-auto touch-scroll">
-              <table className="w-full table-dense">
-                <thead>
-                  <tr>
-                    <th>Material</th>
-                    <th>Category</th>
-                    <th className="text-right">Current</th>
-                    <th className="text-right">Min Required</th>
-                    <th className="text-right">Deficit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.low_stock.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-6 text-slate-400 text-xs">
-                        All stocks are adequate
-                      </td>
-                    </tr>
-                  ) : (
-                    d.low_stock.slice(0, 8).map((item, idx) => (
-                      <tr key={item.id ?? item.name ?? `low-row-${idx}`} className="hover:bg-red-50/40">
-                        <td>
-                          <span className="font-semibold text-slate-800">{item.name}</span>
-                        </td>
-                        <td className="text-slate-500">{item.category_name}</td>
-                        <td className="text-right font-mono text-red-600 font-bold">
-                          {fmt(item.current_stock)} {item.uom}
-                        </td>
-                        <td className="text-right font-mono text-slate-500">
-                          {fmt(item.min_stock_level)} {item.uom}
-                        </td>
-                        <td className="text-right font-mono text-red-700 font-bold">
-                          -{fmt(item.min_stock_level - item.current_stock)} {item.uom}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           {/* 3. Recent Purchase Orders (Full Width) */}
-          <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs xl:col-span-2 flex flex-col">
+          <div className="bg-white border border-slate-200/90 rounded-xl overflow-hidden shadow-2xs flex flex-col">
             <div className="flex items-center justify-between px-3.5 sm:px-4 py-3 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-blue-600" />
