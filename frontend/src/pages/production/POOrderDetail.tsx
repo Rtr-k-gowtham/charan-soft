@@ -231,7 +231,7 @@ export default function POOrderDetail() {
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full sm:w-auto">
             <button
               onClick={handleBack}
-              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs min-h-[36px]"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
               <span className="hidden sm:inline">Back to PO Stage</span>
@@ -241,7 +241,7 @@ export default function POOrderDetail() {
             <button
               onClick={loadData}
               title="Refresh POs"
-              className="p-1.5 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs"
+              className="p-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition shadow-2xs min-h-[36px] min-w-[36px] flex items-center justify-center"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -253,7 +253,7 @@ export default function POOrderDetail() {
                 setSelectedRecordForMod(null);
                 setModModalOpen(true);
               }}
-              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
+              className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 min-h-[36px] px-3"
             >
               <span className="hidden sm:inline">Request Modification</span>
               <span className="inline sm:hidden">Edit</span>
@@ -262,7 +262,7 @@ export default function POOrderDetail() {
             <Button
               icon={<ChevronRight className="w-4 h-4 stroke-[2.5]" />}
               onClick={() => setMoveOpen(true)}
-              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs whitespace-nowrap"
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-xs whitespace-nowrap min-h-[36px] px-3.5"
             >
               <span className="hidden sm:inline">Advance to Stage 03: Inward</span>
               <span className="inline sm:hidden">To Inward</span>
@@ -271,13 +271,13 @@ export default function POOrderDetail() {
         }
       />
 
-      <div className="p-4 sm:p-5 max-w-7xl mx-auto w-full space-y-4">
+      <div className="p-3 sm:p-5 max-w-7xl mx-auto w-full space-y-3 sm:space-y-4">
         {/* Pending Approval Banner */}
         <PendingApprovalBanner orderId={Number(order.id)} stageId={2} />
 
         {/* Project Master Info Banner */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+        <div className="bg-white rounded-xl border border-slate-200 p-3.5 sm:p-4 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-start sm:items-center gap-3 min-w-0 w-full md:w-auto">
             <BuyerAvatar
               buyer={{
                 id: order.customer_id,
@@ -291,12 +291,12 @@ export default function POOrderDetail() {
               shape="circle"
               className="shrink-0"
             />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono font-bold text-sm text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="font-mono font-bold text-xs sm:text-sm text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
                   {order.order_number}
                 </span>
-                <span className="text-xs font-bold text-slate-800">
+                <span className="text-xs font-bold text-slate-800 truncate max-w-[150px] sm:max-w-none">
                   {order.customer_name || 'Direct Buyer'}
                 </span>
                 {order.customer_code && (
@@ -306,7 +306,7 @@ export default function POOrderDetail() {
                 )}
                 <StatusBadge status={order.priority || 'Medium'} />
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  Current Stage: 02. Purchase Order (PO)
+                  Current Stage: 02. PO
                 </span>
               </div>
               <p className="text-xs font-medium text-slate-600 truncate mt-1">
@@ -315,17 +315,17 @@ export default function POOrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-xs shrink-0 self-end md:self-center border-t md:border-t-0 pt-2 md:pt-0 w-full md:w-auto justify-between md:justify-end">
+          <div className="flex items-center gap-4 text-xs shrink-0 self-stretch md:self-center border-t md:border-t-0 pt-2.5 md:pt-0 w-full md:w-auto justify-between md:justify-end">
             <div>
-              <span className="text-[10px] text-slate-400 block font-medium uppercase">Target Delivery</span>
+              <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Target Delivery</span>
               <span className="text-xs font-semibold text-slate-700 flex items-center gap-1 mt-0.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
                 {order.target_delivery_date || '—'}
               </span>
             </div>
             <div>
-              <span className="text-[10px] text-slate-400 block font-medium uppercase">Order Quantity</span>
-              <span className="font-mono font-bold text-sm text-brand-700">
+              <span className="text-[10px] text-slate-400 block font-medium uppercase tracking-wider text-right md:text-left">Order Quantity</span>
+              <span className="font-mono font-bold text-sm text-brand-700 block text-right md:text-left">
                 {fmt(totalGarments)} <span className="text-xs font-normal text-slate-500">pcs</span>
               </span>
             </div>
@@ -333,56 +333,56 @@ export default function POOrderDetail() {
         </div>
 
         {/* 4 PO Workspace KPI Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total POs</p>
-              <p className="text-lg font-bold text-slate-800 mt-0.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+            <div className="min-w-0 flex-1 pr-1.5">
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider truncate">Total POs</p>
+              <p className="text-base sm:text-lg font-bold text-slate-800 mt-0.5 truncate">
                 {existingPOs.length}{' '}
-                <span className="text-xs font-normal text-slate-400">
-                  ({issuedPOs.length} Issued • {draftPOs.length} Draft)
+                <span className="text-[10px] sm:text-xs font-normal text-slate-400">
+                  ({issuedPOs.length} Issued)
                 </span>
               </p>
             </div>
-            <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-              <ShoppingCart className="w-4 h-4" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+              <ShoppingCart className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Total PO Committed</p>
-              <p className="text-lg font-bold text-emerald-600 mt-0.5">
+          <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+            <div className="min-w-0 flex-1 pr-1.5">
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider truncate">PO Committed</p>
+              <p className="text-base sm:text-lg font-bold text-emerald-600 mt-0.5 truncate">
                 {fmtCurrency(totalPOAmount)}
               </p>
             </div>
-            <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-              <DollarSign className="w-4 h-4" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+              <DollarSign className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Raw Material Items</p>
-              <p className="text-lg font-bold text-slate-800 mt-0.5">
+          <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+            <div className="min-w-0 flex-1 pr-1.5">
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider truncate">Raw Materials</p>
+              <p className="text-base sm:text-lg font-bold text-slate-800 mt-0.5 truncate">
                 {bomReport?.total_materials?.length || 0}{' '}
-                <span className="text-xs font-normal text-slate-400">components</span>
+                <span className="text-[10px] sm:text-xs font-normal text-slate-400">items</span>
               </p>
             </div>
-            <div className="w-9 h-9 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600">
-              <Layers className="w-4 h-4" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-600 shrink-0">
+              <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Next Stage</p>
-              <p className="text-xs font-bold text-brand-700 mt-1 truncate">
-                03. Inward Stage
+          <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between min-w-0">
+            <div className="min-w-0 flex-1 pr-1.5">
+              <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 uppercase tracking-wider truncate">Next Stage</p>
+              <p className="text-xs sm:text-sm font-bold text-brand-700 mt-1 truncate">
+                03. Inward
               </p>
             </div>
-            <div className="w-9 h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600">
-              <Boxes className="w-4 h-4" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-brand-50 border border-brand-100 flex items-center justify-center text-brand-600 shrink-0">
+              <Boxes className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
         </div>

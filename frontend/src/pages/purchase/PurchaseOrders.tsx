@@ -3442,50 +3442,81 @@ export default function PurchaseOrders() {
         <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sticky top-0 z-30 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             {/* Left: Back button & Title */}
-            <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
-              <button
-                onClick={() => {
-                  if (location.state?.from) {
-                    navigate(location.state.from);
-                  } else if ((viewPO as any).production_order_id) {
-                    navigate(`/production/po/${(viewPO as any).production_order_id}`);
-                  } else {
-                    setViewPO(null);
-                    setApprovalSuccess('');
-                    setApprovalError('');
-                    navigate('/purchase/orders', { replace: true });
-                  }
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">
-                  {location.state?.from || (viewPO as any).production_order_id ? 'Back to PO Stage' : 'Back to Orders'}
+            <div className="flex flex-col gap-2 min-w-0 w-full sm:w-auto">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={() => {
+                    if (location.state?.from) {
+                      navigate(location.state.from);
+                    } else if ((viewPO as any).production_order_id) {
+                      navigate(`/production/po/${(viewPO as any).production_order_id}`);
+                    } else {
+                      setViewPO(null);
+                      setApprovalSuccess('');
+                      setApprovalError('');
+                      navigate('/purchase/orders', { replace: true });
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shrink-0 min-h-[36px]"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {location.state?.from || (viewPO as any).production_order_id ? 'Back to PO Stage' : 'Back to Orders'}
+                  </span>
+                </button>
+
+                {/* Status Badge in mobile top row */}
+                <span className={`sm:hidden inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                  (viewPO.status || '').toLowerCase() === 'draft'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : (viewPO.status || '').toLowerCase() === 'cancelled'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                }`}>
+                  {(viewPO.status || '').toLowerCase() === 'draft' ? 'Draft' : (viewPO.status || '').toLowerCase() === 'cancelled' ? 'Cancelled' : 'Ordered'}
                 </span>
-                <span className="sm:hidden">Back</span>
-              </button>
-              <div className="h-5 w-px bg-slate-200 shrink-0" />
-              <div className="min-w-0 flex-1">
+              </div>
+
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-sm sm:text-base font-bold text-slate-800 leading-tight truncate">
+                  <h1 className="text-sm sm:text-base font-bold text-slate-800 leading-tight">
                     PO: {viewPO.po_number}
                   </h1>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold ${
+                  <span className={`hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
                     (viewPO.status || '').toLowerCase() === 'draft'
                       ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : (viewPO.status || '').toLowerCase() === 'cancelled'
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
                       : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                   }`}>
-                    {(viewPO.status || '').toLowerCase() === 'draft' ? 'Draft' : 'Ordered'}
+                    {(viewPO.status || '').toLowerCase() === 'draft' ? 'Draft' : (viewPO.status || '').toLowerCase() === 'cancelled' ? 'Cancelled' : 'Ordered'}
                   </span>
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 truncate">
-                  Supplier: {viewPO.supplier_name || '—'} • Category: {viewPO.category_name || '—'}
-                </p>
+
+                {/* Readable stacked layout on mobile for Supplier & Category */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 text-[11px] text-slate-600 mt-1">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="text-slate-400 font-medium">Supplier:</span>
+                    <span className="font-semibold text-slate-800 truncate" title={viewPO.supplier_name || '—'}>
+                      {viewPO.supplier_name || '—'}
+                    </span>
+                    {(viewPO as any).supplier_code && (
+                      <span className="text-[10px] font-mono text-slate-400">({(viewPO as any).supplier_code})</span>
+                    )}
+                  </div>
+                  <span className="hidden sm:inline text-slate-300">•</span>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="text-slate-400 font-medium">Category:</span>
+                    <span className="font-semibold text-slate-800 truncate" title={viewPO.category_name || '—'}>
+                      {viewPO.category_name || '—'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
               {/* Create / View PRO button */}
               {(viewPO as any).production_order_id ? (
                 <Button
@@ -3524,7 +3555,8 @@ export default function PurchaseOrders() {
                   className="bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow-xs"
                   title="Create a new additional Purchase Order for this production order"
                 >
-                  + Add Items / Create Additional PO
+                  <span className="hidden sm:inline">+ Add Items / Create Additional PO</span>
+                  <span className="sm:hidden">+ Additional PO</span>
                 </Button>
               )}
 
