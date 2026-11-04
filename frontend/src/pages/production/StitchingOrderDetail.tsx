@@ -764,7 +764,6 @@ export default function StitchingOrderDetail() {
     const accQty = Number(rec.accepted_quantity || 0);
     const isAlreadyReceived =
       rec.status === 'Accepted After Rework' ||
-      rec.status === 'Rework Received' ||
       (rec.status as string) === 'Completed' ||
       (rec.status as string) === 'Transferred' ||
       (accQty >= rQty && rQty > 0);
@@ -794,7 +793,6 @@ export default function StitchingOrderDetail() {
     const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
     const isAlreadyReceived =
       selectedReworkForReceive.status === 'Accepted After Rework' ||
-      selectedReworkForReceive.status === 'Rework Received' ||
       (selectedReworkForReceive.status as string) === 'Completed' ||
       (selectedReworkForReceive.status as string) === 'Transferred' ||
       (accQty >= rQty && rQty > 0);
@@ -881,7 +879,6 @@ export default function StitchingOrderDetail() {
   // Open Stage Transfer Modal from Rework Table
   const handleOpenTransferReworkModal = (rec: ReworkRecord) => {
     const isReceived =
-      rec.status === 'Rework Received' ||
       rec.status === 'Accepted After Rework' ||
       (rec.status as string) === 'Completed';
 
@@ -2492,7 +2489,6 @@ export default function StitchingOrderDetail() {
               const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
               const isAlreadyReceived =
                 selectedReworkForReceive.status === 'Accepted After Rework' ||
-                selectedReworkForReceive.status === 'Rework Received' ||
                 (selectedReworkForReceive.status as string) === 'Completed' ||
                 (selectedReworkForReceive.status as string) === 'Transferred' ||
                 (accQty >= rQty && rQty > 0);
@@ -2648,7 +2644,6 @@ export default function StitchingOrderDetail() {
               const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
               const isAlreadyReceived =
                 selectedReworkForReceive.status === 'Accepted After Rework' ||
-                selectedReworkForReceive.status === 'Rework Received' ||
                 (selectedReworkForReceive.status as string) === 'Completed' ||
                 (selectedReworkForReceive.status as string) === 'Transferred' ||
                 (accQty >= rQty && rQty > 0);

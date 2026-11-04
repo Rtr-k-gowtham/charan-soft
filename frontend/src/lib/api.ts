@@ -4,7 +4,11 @@ import { TaskItem, ProductionNotification, POTemplateColumn, POTemplateProcessFi
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 function getToken(): string | null {
-  return localStorage.getItem('cheran_token');
+  const token = localStorage.getItem('cheran_token');
+  if (!token || token === 'undefined' || token === 'null' || token.trim() === '') {
+    return null;
+  }
+  return token.trim();
 }
 
 async function request<T>(
@@ -13,12 +17,17 @@ async function request<T>(
   body?: unknown
 ): Promise<T> {
   const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Authorization'] = `Bearer ${token}`;
+  }
+
   const opts: RequestInit = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers,
   };
   if (body) opts.body = JSON.stringify(body);
 
@@ -30,6 +39,14 @@ async function request<T>(
       const errData = await res.json();
       errMsg = errData.message || errMsg;
     } catch {}
+
+    // If session is expired or invalid, trigger logout
+    if (res.status === 401 && !endpoint.includes('/auth/login')) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('cheran_unauthorized'));
+      }
+    }
+
     throw new Error(errMsg);
   }
 

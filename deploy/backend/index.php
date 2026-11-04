@@ -30,6 +30,10 @@ require_once __DIR__ . '/controllers/ReportsController.php';
 require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/POTemplateController.php';
 require_once __DIR__ . '/controllers/DyeingController.php';
+require_once __DIR__ . '/core/Auth.php';
+require_once __DIR__ . '/core/NotificationService.php';
+require_once __DIR__ . '/controllers/NotificationController.php';
+require_once __DIR__ . '/controllers/ApprovalController.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -86,6 +90,7 @@ try {
         $r0 === 'purchase-orders' && $id && $action === 'reissue' && $method === 'POST' => (new PurchaseOrderController)->reissue($id),
         $r0 === 'purchase-orders' && $id && $action === 'payments' && $method === 'POST' => (new PurchaseOrderController)->addPayment($id),
         $r0 === 'purchase-orders' && $id && $action === 'receive' && $method === 'POST' => (new PurchaseOrderController)->receive($id),
+        $r0 === 'purchase-orders' && $id && $action === 'items' && isset($segments[3]) && $method === 'DELETE' => (new PurchaseOrderController)->removeItem($id, (int)$segments[3]),
         $r0 === 'purchase' && $r1 === 'receipts' && $method === 'GET' => (new PurchaseOrderController)->receiptsList(),
         $r0 === 'purchase' && $r1 === 'payments' && $method === 'GET' => (new PurchaseOrderController)->paymentsList(),
         $r0 === 'purchase' && $r1 === 'returns' && $method === 'GET' => (new PurchaseOrderController)->returnsList(),
@@ -109,7 +114,20 @@ try {
         $r0 === 'production-orders' && $method === 'GET' && $id => (new ProductionController)->show($id),
         $r0 === 'production-orders' && $method === 'POST' && empty($r1) => (new ProductionController)->store(),
         $r0 === 'production-orders' && ($action === 'stage' || $r1 === 'stage' || $r2 === 'stage') && $method === 'POST' => (new ProductionController)->moveStage(),
-        $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
+        // Tasks & Notifications
+        $r0 === 'notifications' && empty($r1) && $method === 'GET' => (new NotificationController)->index(),
+        $r0 === 'notifications' && $r1 === 'unread-count' && $method === 'GET' => (new NotificationController)->unreadCount(),
+        $r0 === 'notifications' && $r1 === 'read' && $method === 'POST' => (new NotificationController)->markRead(),
+        ($r0 === 'tasks' || ($r0 === 'production' && $r1 === 'tasks')) && $method === 'GET' => (new ProductionController)->tasks(),
+        
+        // ---------------- STAGE MODIFICATION APPROVALS ----------------
+        ($r0 === 'approvals' && empty($r1) && $method === 'GET') || ($r0 === 'settings' && $r1 === 'approvals' && empty($r2) && $method === 'GET') => (new ApprovalController)->getApprovals(),
+        $r0 === 'approvals' && $r1 === 'pending' && $method === 'GET' => (new ApprovalController)->getPendingForStage(),
+        $r0 === 'approvals' && $r1 === 'request' && $method === 'POST' => (new ApprovalController)->createRequest(),
+        $r0 === 'approvals' && $id && empty($r2) && $method === 'GET' => (new ApprovalController)->getApproval($id),
+        $r0 === 'approvals' && $id && $r2 === 'approve' && $method === 'POST' => (new ApprovalController)->approve($id),
+        $r0 === 'approvals' && $id && $r2 === 'reject' && $method === 'POST' => (new ApprovalController)->reject($id),
+$r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new ProductionController)->dashboardStats(),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'product-quantities' && $method === 'GET' => (new ProductionController)->orderProductQuantities((int)$r2),
         $r0 === 'production' && $r1 === 'orders' && is_numeric($r2) && ($segments[3] ?? '') === 'quantity-ledger' && $method === 'GET' => (new ProductionController)->orderQuantityLedger((int)$r2),
         $r0 === 'production' && $r1 === 'stage' && !empty($r2) => (new ProductionController)->stageOrders($r2),
@@ -152,6 +170,7 @@ try {
 
         // ---------------- STAGE 09: PACKING & CARTON MANAGEMENT ----------------
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'orders' && $method === 'GET' => (new ProductionController)->packingOrders(),
+    $r0 === 'production' && $r1 === 'packing' && $r2 === 'bulk-batch' && $method === 'POST' => (new ProductionController)->bulkCreatePackingBatches(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'batch' && $method === 'POST' => (new ProductionController)->createPackingBatch(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'transfer' && $method === 'POST' => (new ProductionController)->transferPackingOutput(),
         $r0 === 'production' && $r1 === 'packing' && $r2 === 'cartons' && $method === 'GET' => (new ProductionController)->packingCartons(),
@@ -257,7 +276,8 @@ try {
         // ---------------- SETTINGS ----------------
         $r0 === 'settings' && $r1 === 'users' && $method === 'GET' => (new SettingsController)->getUsers(),
         $r0 === 'settings' && $r1 === 'users' && $method === 'POST' => (new SettingsController)->createUser(),
-        $r0 === 'settings' && $r1 === 'users' && $id && $method === 'PUT' => (new SettingsController)->updateUser($id),
+        (($r0 === 'settings' && $r1 === 'users' && is_numeric($r2)) || ($r0 === 'users' && is_numeric($r1))) && $method === 'PUT' => (new SettingsController)->updateUser(is_numeric($r2) ? (int)$r2 : (int)$r1),
+        (($r0 === 'settings' && $r1 === 'users' && is_numeric($r2)) || ($r0 === 'users' && is_numeric($r1))) && $method === 'DELETE' => (new SettingsController)->deleteUser(is_numeric($r2) ? (int)$r2 : (int)$r1),
         $r0 === 'settings' && $r1 === 'roles' => (new SettingsController)->getRoles(),
         $r0 === 'settings' && $r1 === 'permissions' => (new SettingsController)->getPermissions(),
         $r0 === 'settings' && $r1 === 'stages' && $method === 'GET' => (new SettingsController)->getStages(),
@@ -287,7 +307,7 @@ function handleDashboard(): void {
     $kpis['completed_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM production_orders WHERE status = 'COMPLETED' AND deleted_at IS NULL")->fetchColumn();
 
     $lowStock = $pdo->query("
-        SELECT m.name, m.uom, m.min_stock_level, COALESCE(sb.current_quantity,0) as current_stock, c.name as category_name
+        SELECT m.id, m.name, m.code, m.uom, m.min_stock_level, COALESCE(sb.current_quantity,0) as current_stock, c.name as category_name
         FROM materials m
         JOIN categories c ON m.category_id = c.id
         LEFT JOIN stock_balances sb ON m.id = sb.material_id
@@ -297,14 +317,14 @@ function handleDashboard(): void {
     ")->fetchAll();
 
     $recentPOs = $pdo->query("
-        SELECT po.po_number, po.status, po.payment_status, po.net_amount, po.balance_amount, po.po_date, s.name as supplier_name
+        SELECT po.id, po.po_number, po.status, po.payment_status, po.net_amount, po.balance_amount, po.po_date, s.name as supplier_name
         FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.id
         WHERE po.deleted_at IS NULL
         ORDER BY po.id DESC LIMIT 6
     ")->fetchAll();
 
     $recentProduction = $pdo->query("
-        SELECT po.order_number, po.status, po.total_quantity, po.completed_quantity, po.target_delivery_date, cu.name as customer_name
+        SELECT po.id, po.order_number, po.title, po.status, po.total_quantity, po.completed_quantity, po.target_delivery_date, cu.name as customer_name
         FROM production_orders po
         LEFT JOIN customers cu ON po.customer_id = cu.id
         WHERE po.deleted_at IS NULL

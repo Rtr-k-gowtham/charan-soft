@@ -1138,22 +1138,24 @@ class ProductionController {
             ");
             $upd->execute([$recvDate, $dcChallan, $dcChallan, $lotNumber, $lotNumber, $inspector, $inspector, $remarks, $remarks, $rwkId]);
 
-            // Ledger log
-            $lStmt = $pdo->prepare("
-                INSERT INTO production_quantity_ledger 
-                (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
-                VALUES (?, ?, ?, ?, 'REWORK_RECEIVED', ?, ?, '', '', 'Rework Inward', ?, ?)
-            ");
-            $lStmt->execute([
-                $rwk['production_order_id'],
-                $rwk['production_order_item_id'] ?? 0,
-                $rwk['stage_id'],
-                $rwk['stage_code'],
-                $rwk['rework_quantity'],
-                $rwk['rework_order_no'],
-                $rwk['rework_order_no'],
-                "Received back from correction: {$remarks}"
-            ]);
+            // Ledger log (only if not already marked received)
+            if ($rwk['status'] !== 'Rework Received') {
+                $lStmt = $pdo->prepare("
+                    INSERT INTO production_quantity_ledger 
+                    (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
+                    VALUES (?, ?, ?, ?, 'REWORK_RECEIVED', ?, ?, '', '', 'Rework Inward', ?, ?)
+                ");
+                $lStmt->execute([
+                    $rwk['production_order_id'],
+                    $rwk['production_order_item_id'] ?? 0,
+                    $rwk['stage_id'],
+                    $rwk['stage_code'],
+                    $rwk['rework_quantity'],
+                    $rwk['rework_order_no'],
+                    $rwk['rework_order_no'],
+                    "Received back from correction: {$remarks}"
+                ]);
+            }
 
             if ($pdo->inTransaction()) $pdo->commit();
 
@@ -1193,9 +1195,9 @@ class ProductionController {
             $alreadyRej = (float)$rwk['rejected_quantity'];
             $outstanding = max(0.0, $origQty - $alreadyAcc - $alreadyRej);
 
-            if ($outstanding <= 0.001 || in_array($rwk['status'], ['Accepted After Rework', 'Rework Received', 'Completed', 'Transferred'])) {
+            if ($outstanding <= 0.001 || in_array($rwk['status'], ['Accepted After Rework', 'Completed', 'Transferred'])) {
                 $dispAcc = $alreadyAcc > 0 ? $alreadyAcc : $origQty;
-                Response::error("The rework quantity ({$dispAcc} pcs) for {$rwk['rework_order_no']} has already been received.", 422);
+                Response::error("The rework quantity ({$dispAcc} pcs) for {$rwk['rework_order_no']} has already been accepted/transferred.", 422);
                 return;
             }
 
@@ -2065,6 +2067,7 @@ class ProductionController {
                   `id` INT AUTO_INCREMENT PRIMARY KEY,
                   `production_order_id` INT NOT NULL,
                   `production_order_item_id` INT NOT NULL,
+                  `color` VARCHAR(100) NULL,
                   `batch_number` VARCHAR(100) NOT NULL,
                   `assigned_quantity` DECIMAL(12, 2) NOT NULL,
                   `received_quantity` DECIMAL(12, 2) NOT NULL,
@@ -2332,6 +2335,15 @@ class ProductionController {
                 $pdo->exec("ALTER TABLE `stitching_batches` ADD COLUMN `rework_status` VARCHAR(50) DEFAULT 'Normal' AFTER `status`");
             } catch (Exception $e) {}
             try {
+                $pdo->exec("ALTER TABLE `stitching_batches` ADD COLUMN `color` VARCHAR(100) NULL AFTER `production_order_item_id`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("ALTER TABLE `stitching_batches` ADD COLUMN `transferred_quantity` DECIMAL(12, 2) NOT NULL DEFAULT 0.00 AFTER `completed_quantity`");
+            } catch (Exception $e) {}
+            try {
+                $pdo->exec("UPDATE stitching_batches sb JOIN production_order_items poi ON sb.production_order_item_id = poi.id SET sb.color = poi.color WHERE sb.color IS NULL OR sb.color = ''");
+            } catch (Exception $e) {}
+            try {
                 $pdo->exec("ALTER TABLE `quality_inspections` ADD COLUMN `rework_stage_id` INT NULL AFTER `color`");
             } catch (Exception $e) {}
             try {
@@ -2421,6 +2433,28 @@ class ProductionController {
                         $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 125, 6, 'EMB', 'TRANSFER_OUT', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Transferred to Stitching — Color-wise Tracking')");
                         $pdo->exec("INSERT INTO production_quantity_ledger (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) VALUES (57, 125, 7, 'STI', 'TRANSFER_IN', 100.00, '', 'M. Ramesh', 'K. Balan', 'Embroidery Transfer', '7', 'Received from Embroidery')");
                     }
+                }
+            } catch (Exception $e) {}
+
+            // Self-healing for RWK-CUT-7068 if stuck in 'Rework Received' with 0 accepted
+            try {
+                $pdo->exec("UPDATE rework_records SET status = 'Sent for Rework', received_date = NULL WHERE rework_order_no = 'RWK-CUT-7068' AND accepted_quantity = 0.00 AND status = 'Rework Received'");
+            } catch (Exception $e) {}
+
+            // One-time self-healing data repair for Order 67 (Classic Navy and Black items)
+            try {
+                // Check if Item 165 (Classic Navy 8019) has any TRANSFER_OUT from stage 6 in ledger
+                $has165Trf = $pdo->query("SELECT id FROM production_quantity_ledger WHERE production_order_id = 67 AND production_order_item_id = 165 AND stage_id = 6 AND transaction_type = 'TRANSFER_OUT'")->fetchColumn();
+                if (!$has165Trf) {
+                    // Item 165 was not transferred yet: reset Job 31 to 0 transferred, status Received
+                    $pdo->exec("UPDATE embroidery_job_orders SET transferred_to_stitching_quantity = 0.00, status = 'Received' WHERE id = 31 AND production_order_id = 67");
+                    $pdo->exec("UPDATE embroidery_receipts SET transferred_to_stitching_quantity = 0.00 WHERE id = 29 AND production_order_id = 67");
+                }
+                // Job 32 (Black) was transferred (ledger row 707 & 708): ensure Job 32 shows 100 transferred
+                $has167Trf = $pdo->query("SELECT id FROM production_quantity_ledger WHERE production_order_id = 67 AND production_order_item_id = 167 AND stage_id = 6 AND transaction_type = 'TRANSFER_OUT'")->fetchColumn();
+                if ($has167Trf) {
+                    $pdo->exec("UPDATE embroidery_job_orders SET transferred_to_stitching_quantity = 100.00, status = 'Transferred to Stitching' WHERE id = 32 AND production_order_id = 67");
+                    $pdo->exec("UPDATE embroidery_receipts SET transferred_to_stitching_quantity = 100.00 WHERE id = 30 AND production_order_id = 67");
                 }
             } catch (Exception $e) {}
 
@@ -3698,7 +3732,8 @@ class ProductionController {
                 $transferredToStitching = 0.0;
                 foreach ($transferredOutRows as $tRow) {
                     $m = false;
-                    if (!empty($tRow['product_id']) && (int)$tRow['product_id'] === $pId && trim((string)($tRow['color'] ?? '')) === $color) $m = true;
+                    if (!empty($tRow['production_order_item_id']) && (int)$tRow['production_order_item_id'] === (int)($gIt['active_embroidery_item_id'] ?? $gIt['id'])) $m = true;
+                    if (!$m && !empty($tRow['product_id']) && (int)$tRow['product_id'] === $pId && trim((string)($tRow['color'] ?? '')) === $color) $m = true;
                     if (!$m && count($groupedItems) === 1) $m = true;
                     if ($m) $transferredToStitching += (float)$tRow['quantity'];
                 }
@@ -3718,16 +3753,53 @@ class ProductionController {
 
             // Update each job order with transferred, received, and ready_to_transfer quantities
             foreach ($jobs as &$job) {
+                $jId = (int)$job['id'];
                 $jRec = (float)($job['total_quantity_received'] ?? 0);
+                $jItems = is_array($job['items_json'] ?? null) ? $job['items_json'] : [];
                 $jTrf = (float)($job['transferred_to_stitching_quantity'] ?? 0);
-                if ($jTrf <= 0 && $totalOrderTransferredToStitching > 0) {
-                    $jTrf = min($jRec, $totalOrderTransferredToStitching);
+
+                // Calculate transfers that strictly belong to this job order or its items
+                $jMatchedLedgerTrf = 0.0;
+                foreach ($transferredOutRows as $tRow) {
+                    $matched = false;
+                    if (!empty($tRow['reference_id']) && (int)$tRow['reference_id'] === $jId) $matched = true;
+                    if (!empty($tRow['batch_number']) && $tRow['batch_number'] === $job['job_order_number']) $matched = true;
+                    if (!$matched && !empty($tRow['production_order_item_id'])) {
+                        foreach ($jItems as $ji) {
+                            if ((int)($ji['production_order_item_id'] ?? 0) === (int)$tRow['production_order_item_id']) {
+                                $matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!$matched && !empty($tRow['product_id'])) {
+                        foreach ($jItems as $ji) {
+                            if ((int)($ji['product_id'] ?? 0) === (int)$tRow['product_id'] && trim((string)($ji['color'] ?? '')) === trim((string)($tRow['color'] ?? ''))) {
+                                $matched = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!$matched && count($jobs) === 1) {
+                        $matched = true;
+                    }
+                    if ($matched) {
+                        $jMatchedLedgerTrf += (float)$tRow['quantity'];
+                    }
                 }
-                $job['transferred_to_stitching_quantity'] = $jTrf;
-                $job['ready_to_transfer'] = max(0.0, $jRec - $jTrf);
-                $job['total_quantity_available_to_transfer'] = max(0.0, $jRec - $jTrf);
+
+                $finalJobTrf = max($jTrf, $jMatchedLedgerTrf);
+                $finalJobTrf = min($jRec, $finalJobTrf);
+
+                $job['transferred_to_stitching_quantity'] = $finalJobTrf;
+                $job['ready_to_transfer'] = max(0.0, $jRec - $finalJobTrf);
+                $job['total_quantity_available_to_transfer'] = max(0.0, $jRec - $finalJobTrf);
                 if ($job['ready_to_transfer'] <= 0.001 && $jRec > 0) {
                     $job['status'] = ((float)($job['total_quantity_outstanding'] ?? 0) > 0.001) ? 'Partially Transferred' : 'Transferred to Stitching';
+                } else if ($finalJobTrf > 0) {
+                    $job['status'] = 'Partially Transferred';
+                } else if ($jRec > 0) {
+                    $job['status'] = ((float)($job['total_quantity_outstanding'] ?? 0) <= 0.001) ? 'Received' : 'Partially Received';
                 }
 
                 // Sync received_quantity and quantity_outstanding onto items_json
@@ -4282,24 +4354,54 @@ class ProductionController {
                 $pdo->prepare("
                     UPDATE embroidery_job_orders 
                     SET transferred_to_stitching_quantity = transferred_to_stitching_quantity + ?,
-                        status = IF(total_quantity_received > 0 AND (transferred_to_stitching_quantity + ?) >= (total_quantity_received - 0.001), 'Transferred to Stitching', status)
+                        status = IF(total_quantity_received > 0 AND (transferred_to_stitching_quantity + ?) >= (total_quantity_received - 0.001), 'Transferred to Stitching', 'Partially Transferred')
                     WHERE id = ?
                 ")->execute([$qty, $qty, $jobId]);
             } else if (!$reworkSource) {
-                $jList = $pdo->prepare("SELECT id, total_quantity_received, total_quantity_accepted, transferred_to_stitching_quantity FROM embroidery_job_orders WHERE production_order_id = ? AND total_quantity_received > 0 ORDER BY id ASC");
+                // Find job order(s) specifically containing the transferred item(s)
+                $jList = $pdo->prepare("SELECT id, items_json, total_quantity_received, total_quantity_accepted, transferred_to_stitching_quantity FROM embroidery_job_orders WHERE production_order_id = ? AND total_quantity_received > 0 ORDER BY id ASC");
                 $jList->execute([$pId]);
-                $remToAlloc = $qty;
-                foreach ($jList->fetchAll() as $jRow) {
-                    if ($remToAlloc <= 0) break;
-                    $jRec = (float)($jRow['total_quantity_received'] ?: $jRow['total_quantity_accepted']);
-                    $jAvail = max(0.0, $jRec - (float)$jRow['transferred_to_stitching_quantity']);
-                    if ($jAvail > 0) {
-                        $alloc = min($remToAlloc, $jAvail);
-                        $newTrf = (float)$jRow['transferred_to_stitching_quantity'] + $alloc;
-                        $newSt = ($newTrf >= $jRec - 0.001) ? 'Transferred to Stitching' : 'Received';
-                        $pdo->prepare("UPDATE embroidery_job_orders SET transferred_to_stitching_quantity = ?, status = ? WHERE id = ?")->execute([$newTrf, $newSt, $jRow['id']]);
-                        $remToAlloc -= $alloc;
+                $allJobs = $jList->fetchAll();
+
+                foreach ($transferEntries as $tEntry) {
+                    $tItId = (int)($tEntry['item_id'] ?? 0);
+                    $tQty = (float)($tEntry['quantity'] ?? 0);
+                    if ($tQty <= 0) continue;
+
+                    $itStmt = $pdo->prepare("SELECT product_id, color FROM production_order_items WHERE id = ?");
+                    $itStmt->execute([$tItId]);
+                    $itRow = $itStmt->fetch();
+                    $tPId = $itRow ? (int)$itRow['product_id'] : 0;
+                    $tColor = $itRow ? trim((string)$itRow['color']) : '';
+
+                    $remToAlloc = $tQty;
+                    foreach ($allJobs as &$jRow) {
+                        if ($remToAlloc <= 0) break;
+                        $jItems = json_decode($jRow['items_json'] ?? '[]', true) ?: [];
+                        $matchesJob = false;
+                        foreach ($jItems as $ji) {
+                            if (!empty($ji['production_order_item_id']) && (int)$ji['production_order_item_id'] === $tItId) $matchesJob = true;
+                            if (!empty($ji['product_id']) && (int)$ji['product_id'] === $tPId && trim((string)($ji['color'] ?? '')) === $tColor) $matchesJob = true;
+                            if ($matchesJob) break;
+                        }
+                        if (!$matchesJob && count($allJobs) === 1) {
+                            $matchesJob = true;
+                        }
+
+                        if ($matchesJob) {
+                            $jRec = (float)($jRow['total_quantity_received'] ?: $jRow['total_quantity_accepted']);
+                            $jAvail = max(0.0, $jRec - (float)$jRow['transferred_to_stitching_quantity']);
+                            if ($jAvail > 0) {
+                                $alloc = min($remToAlloc, $jAvail);
+                                $newTrf = (float)$jRow['transferred_to_stitching_quantity'] + $alloc;
+                                $newSt = ($newTrf >= $jRec - 0.001) ? 'Transferred to Stitching' : 'Partially Transferred';
+                                $pdo->prepare("UPDATE embroidery_job_orders SET transferred_to_stitching_quantity = ?, status = ? WHERE id = ?")->execute([$newTrf, $newSt, $jRow['id']]);
+                                $jRow['transferred_to_stitching_quantity'] = $newTrf;
+                                $remToAlloc -= $alloc;
+                            }
+                        }
                     }
+                    unset($jRow);
                 }
             }
 
@@ -4599,6 +4701,7 @@ class ProductionController {
                 foreach ($embroideryLedgerIn as $lein) {
                     $m = false;
                     if (!empty($lein['product_id']) && (int)$lein['product_id'] === $pId && trim((string)($lein['color'] ?? '')) === $color) $m = true;
+                    if (!empty($lein['production_order_item_id']) && (int)$lein['production_order_item_id'] === (int)($gIt['active_stitching_item_id'] ?? $gIt['id'])) $m = true;
                     if (!$m && count($groupedItems) === 1) $m = true;
                     if ($m) {
                         $arrivedFromEmbroidery += (float)$lein['quantity'];
@@ -5009,6 +5112,8 @@ class ProductionController {
                 $item = $iStmt->fetch();
             }
 
+            $effectiveDestItemId = $item ? (int)$item['id'] : $itemId;
+
             if ($item) {
                 $chkStmt = $pdo->prepare("SELECT * FROM production_order_items WHERE production_order_id = ? AND product_id = ? AND color = ? AND current_stage_id = 8");
                 $chkStmt->execute([$pId, $item['product_id'], $item['color']]);
@@ -5025,11 +5130,13 @@ class ProductionController {
                     $remQty = max(0.0, $curQty - $qty);
                     $pdo->prepare("UPDATE production_order_items SET current_stage_quantity = ? WHERE id = ?")
                         ->execute([$remQty, $item['id']]);
+                    $effectiveDestItemId = (int)$checkingItem['id'];
                 } else {
                     if ($isFullMove) {
                         // Advance the existing item to Stage 8
                         $pdo->prepare("UPDATE production_order_items SET current_stage_id = 8, current_stage_quantity = ?, status = 'In Progress' WHERE id = ?")
                             ->execute([$qty, $item['id']]);
+                        $effectiveDestItemId = (int)$item['id'];
                     } else {
                         // Partial move: deduct from source and insert new row for destination
                         $remQty = max(0.0, $curQty - $qty);
@@ -5038,30 +5145,81 @@ class ProductionController {
                             ->execute([$remQty, $remTotalQty, $item['id']]);
 
                         $ins = $pdo->prepare("INSERT INTO production_order_items 
-                            (production_order_id, product_id, color, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
-                            VALUES (?, ?, ?, ?, 8, ?, 0, 0, 0, 'In Progress')");
-                        $ins->execute([$pId, $item['product_id'], $item['color'], $qty, $qty]);
+                            (production_order_id, product_id, color, size, total_quantity, current_stage_id, current_stage_quantity, completed_quantity, rejected_quantity, rework_quantity, status) 
+                            VALUES (?, ?, ?, ?, ?, 8, ?, 0, 0, 0, 'In Progress')");
+                        $ins->execute([$pId, $item['product_id'], $item['color'], $item['size'] ?? null, $qty, $qty]);
+                        $effectiveDestItemId = (int)$pdo->lastInsertId();
                     }
                 }
             }
 
             // Update batch status to Transferred
             if ($bId > 0) {
-                $pdo->prepare("UPDATE stitching_batches SET status = 'Transferred to Checking', transferred_quantity = transferred_quantity + ? WHERE id = ?")
-                    ->execute([$qty, $bId]);
+                $bCurStmt = $pdo->prepare("SELECT * FROM stitching_batches WHERE id = ?");
+                $bCurStmt->execute([$bId]);
+                $bCur = $bCurStmt->fetch();
+                $bComp = $bCur ? (float)$bCur['completed_quantity'] : 0.0;
+                $newTrf = $bCur ? ((float)($bCur['transferred_quantity'] ?? 0) + $qty) : $qty;
+                $newStatus = ($bComp > 0 && $newTrf >= $bComp - 0.001) ? 'Transferred to Checking' : 'Partially Transferred';
+
+                $pdo->prepare("UPDATE stitching_batches SET status = ?, transferred_quantity = ? WHERE id = ?")
+                    ->execute([$newStatus, $newTrf, $bId]);
             } else if ($item) {
-                $pdo->prepare("UPDATE stitching_batches SET status = 'Transferred to Checking', transferred_quantity = completed_quantity WHERE production_order_id = ? AND (production_order_item_id = ? OR color = ?)")
-                    ->execute([$pId, $item['id'], $item['color']]);
+                $subStmt = $pdo->prepare("SELECT id FROM production_order_items WHERE production_order_id = ? AND (id = ? OR (product_id = ? AND color = ?))");
+                $subStmt->execute([$pId, $item['id'], $item['product_id'], $item['color']]);
+                $relIds = $subStmt->fetchAll(PDO::FETCH_COLUMN) ?: [(int)$item['id']];
+                $inPlaceholders = implode(',', array_fill(0, count($relIds), '?'));
+
+                $candStmt = $pdo->prepare("SELECT * FROM stitching_batches WHERE production_order_id = ? AND production_order_item_id IN ({$inPlaceholders}) ORDER BY id ASC");
+                $candStmt->execute(array_merge([$pId], $relIds));
+                $candBatches = $candStmt->fetchAll();
+
+                if (!empty($candBatches)) {
+                    $remAlloc = $qty;
+                    foreach ($candBatches as $cb) {
+                        if ($remAlloc <= 0.001) break;
+                        $cbComp = (float)($cb['completed_quantity'] ?? 0);
+                        $cbTrf = (float)($cb['transferred_quantity'] ?? 0);
+                        $cbAvail = max(0.0, $cbComp - $cbTrf);
+                        if ($cbAvail > 0) {
+                            $alloc = min($remAlloc, $cbAvail);
+                            $newTrf = $cbTrf + $alloc;
+                            $newStatus = ($newTrf >= $cbComp - 0.001) ? 'Transferred to Checking' : 'Partially Transferred';
+                            $pdo->prepare("UPDATE stitching_batches SET status = ?, transferred_quantity = ? WHERE id = ?")
+                                ->execute([$newStatus, $newTrf, $cb['id']]);
+                            $remAlloc -= $alloc;
+                        }
+                    }
+                } else {
+                    try {
+                        $updBatches = $pdo->prepare("UPDATE stitching_batches SET status = 'Transferred to Checking', transferred_quantity = completed_quantity WHERE production_order_id = ? AND (production_order_item_id IN ({$inPlaceholders}) OR color = ?)");
+                        $updBatches->execute(array_merge([$pId], $relIds, [$item['color']]));
+                    } catch (Exception $e) {
+                        $updBatches = $pdo->prepare("UPDATE stitching_batches SET status = 'Transferred to Checking', transferred_quantity = completed_quantity WHERE production_order_id = ? AND production_order_item_id IN ({$inPlaceholders})");
+                        $updBatches->execute(array_merge([$pId], $relIds));
+                    }
+                }
             }
 
             if ($reworkId > 0) {
-                $pdo->prepare("UPDATE rework_records SET status = 'Transferred' WHERE id = ?")->execute([$reworkId]);
+                $rwkLock = $pdo->prepare("SELECT * FROM rework_records WHERE id = ? AND production_order_id = ? AND stage_id = 7");
+                $rwkLock->execute([$reworkId, $pId]);
+                $rwkRow = $rwkLock->fetch();
+                if ($rwkRow) {
+                    $rwkTarget = (float)($rwkRow['accepted_quantity'] ?: $rwkRow['rework_quantity']);
+                    $newRwkTrf = (float)($rwkRow['transferred_quantity'] ?? 0) + $qty;
+                    $newRwkStatus = ($newRwkTrf >= $rwkTarget - 0.001) ? 'Transferred' : 'Partially Transferred';
+                    $pdo->prepare("UPDATE rework_records SET transferred_quantity = ?, status = ? WHERE id = ?")
+                        ->execute([$newRwkTrf, $newRwkStatus, $reworkId]);
+                } else {
+                    $pdo->prepare("UPDATE rework_records SET status = 'Transferred' WHERE id = ?")->execute([$reworkId]);
+                }
             }
 
             $realItemId = $item ? (int)$item['id'] : $itemId;
 
             $tStmt = $pdo->prepare("INSERT INTO production_stage_transactions (production_order_item_id, from_stage_id, to_stage_id, quantity_moved, remarks) VALUES (?, 7, 8, ?, ?)");
-            $tStmt->execute([$realItemId, $qty, $remarks]);
+            $tStmt->execute([$effectiveDestItemId ?: $realItemId, $qty, $remarks]);
 
             $lStmtOut = $pdo->prepare("INSERT INTO production_quantity_ledger 
                 (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
@@ -5071,7 +5229,7 @@ class ProductionController {
             $lStmtIn = $pdo->prepare("INSERT INTO production_quantity_ledger 
                 (production_order_id, production_order_item_id, stage_id, stage_code, transaction_type, quantity, batch_number, operator_name, supervisor_name, reference_type, reference_id, remarks) 
                 VALUES (?, ?, 8, 'CHK', 'TRANSFER_IN', ?, '', '', '', 'Stitching Transfer', '8', ?)");
-            $lStmtIn->execute([$pId, $realItemId, $qty, "Received from Stitching; Ready for Quality Inspection"]);
+            $lStmtIn->execute([$pId, $effectiveDestItemId ?: $realItemId, $qty, "Received from Stitching; Ready for Quality Inspection"]);
 
             $pdo->commit();
             try {
@@ -5203,12 +5361,23 @@ class ProductionController {
                 foreach ($stitchingBatches as $sb) {
                     $cMatch = trim((string)($sb['color'] ?? ''));
                     if ($cMatch === $color || (int)$sb['production_order_item_id'] === $itemId) {
-                        $fromStitching += (float)($sb['accepted_quantity'] ?? 0);
+                        $sbTrf = (float)($sb['transferred_quantity'] ?? 0);
+                        $sbComp = (float)($sb['completed_quantity'] ?? 0);
+                        $sbAcc = (float)($sb['accepted_quantity'] ?? 0);
+                        if ($sbTrf > 0) {
+                            $fromStitching += $sbTrf;
+                        } else if ($sb['status'] === 'Transferred to Checking') {
+                            $fromStitching += ($sbAcc > 0 ? $sbAcc : $sbComp);
+                        } else if ($sbAcc > 0) {
+                            $fromStitching += $sbAcc;
+                        }
                     }
                 }
 
-                if (isset($ledgerIn[$itemId])) {
-                    $fromStitching = max($fromStitching, (float)$ledgerIn[$itemId]);
+                foreach ($rawItems as $rIt) {
+                    if (trim((string)($rIt['color'] ?? '')) === $color && isset($ledgerIn[(int)$rIt['id']])) {
+                        $fromStitching = max($fromStitching, (float)$ledgerIn[(int)$rIt['id']]);
+                    }
                 }
                 if ($gIt['current_stage_quantity'] > 0) {
                     $fromStitching = max($fromStitching, (float)$gIt['current_stage_quantity']);

@@ -1161,9 +1161,9 @@ class MastersController {
             $isAll = isset($_GET['all']) || ((int)($_GET['limit'] ?? 0) >= 3000);
             if ($isAll) {
                 $stmt = $pdo->query("
-                    SELECT id, pantone_name, pantone_code, unique_code, hex_code, red, green, blue, color_system, created_at
+                    SELECT id, pantone_name, pantone_code, hex_code, color_system
                     FROM pantone_colors
-                    ORDER BY pantone_code ASC
+                    ORDER BY CASE WHEN pantone_code IS NULL OR pantone_code = '' THEN 1 ELSE 0 END, pantone_code ASC, pantone_name ASC
                 ");
                 $items = $stmt->fetchAll();
                 Response::success([

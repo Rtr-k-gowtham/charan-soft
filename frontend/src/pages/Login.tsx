@@ -138,12 +138,46 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white text-xs font-semibold rounded-md hover:bg-brand-700 transition-colors disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white text-xs font-semibold rounded-md hover:bg-brand-700 transition-colors disabled:opacity-60 cursor-pointer"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+
+          {/* Quick Credential Helpers */}
+          <div className="mt-6 pt-5 border-t border-slate-200">
+            <p className="text-[11px] font-semibold text-slate-500 mb-2">Quick Sign-in:</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('nishok@cheransoftgoods.in');
+                  setPassword('Nishok@2026');
+                }}
+                className="text-left p-2 rounded-lg border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-colors cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 group-hover:text-brand-700">Nishok (Admin)</span>
+                </div>
+                <p className="text-[10px] text-slate-400 truncate">nishok@cheransoftgoods.in</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('admin');
+                  setPassword('Nishok@2026');
+                }}
+                className="text-left p-2 rounded-lg border border-slate-200 hover:border-brand-500 hover:bg-brand-50/50 transition-colors cursor-pointer group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 group-hover:text-brand-700">Admin</span>
+                </div>
+                <p className="text-[10px] text-slate-400 truncate">admin / Nishok@2026</p>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

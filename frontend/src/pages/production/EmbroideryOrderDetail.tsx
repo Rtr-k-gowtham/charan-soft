@@ -854,9 +854,11 @@ export default function EmbroideryOrderDetail() {
     receipts.forEach((r) => {
       rec += Number(r.total_received_qty || 0);
     });
-    jobOrders.forEach((j) => {
-      rec = Math.max(rec, Number(j.total_quantity_received || 0));
-    });
+    if (rec === 0) {
+      jobOrders.forEach((j) => {
+        rec += Number(j.total_quantity_received || 0);
+      });
+    }
     if (rec === 0) {
       items.forEach((it) => {
         rec += Number(it.received_inward || it.accepted_inward || 0);
@@ -867,20 +869,24 @@ export default function EmbroideryOrderDetail() {
 
   const totalTransferredToStitching = useMemo(() => {
     let trf = 0;
-    jobOrders.forEach((j) => {
-      trf += Number(j.transferred_to_stitching_quantity || 0);
+    items.forEach((it) => {
+      trf += Number(it.transferred_to_stitching || 0);
     });
     if (trf === 0) {
-      items.forEach((it) => {
-        trf += Number(it.transferred_to_stitching || 0);
+      jobOrders.forEach((j) => {
+        trf += Number(j.transferred_to_stitching_quantity || 0);
       });
     }
     return trf;
-  }, [jobOrders, items]);
+  }, [items, jobOrders]);
 
   const availableInHandToTransfer = useMemo(() => {
-    return Math.max(0, totalReceivedEmbroidery - activeReworkQty - totalTransferredToStitching);
-  }, [totalReceivedEmbroidery, activeReworkQty, totalTransferredToStitching]);
+    let avail = 0;
+    items.forEach((it) => {
+      avail += Number(it.ready_to_transfer || 0);
+    });
+    return Math.max(0, avail);
+  }, [items]);
 
   // Filtered Job Orders for Table 1
   const filteredJobOrders = useMemo(() => {
@@ -1184,7 +1190,6 @@ export default function EmbroideryOrderDetail() {
     const accQty = Number(rec.accepted_quantity || 0);
     const isAlreadyReceived =
       rec.status === 'Accepted After Rework' ||
-      rec.status === 'Rework Received' ||
       (rec.status as string) === 'Completed' ||
       (rec.status as string) === 'Transferred' ||
       (accQty >= rQty && rQty > 0);
@@ -1214,7 +1219,6 @@ export default function EmbroideryOrderDetail() {
     const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
     const isAlreadyReceived =
       selectedReworkForReceive.status === 'Accepted After Rework' ||
-      selectedReworkForReceive.status === 'Rework Received' ||
       (selectedReworkForReceive.status as string) === 'Completed' ||
       (selectedReworkForReceive.status as string) === 'Transferred' ||
       (accQty >= rQty && rQty > 0);
@@ -1267,11 +1271,6 @@ export default function EmbroideryOrderDetail() {
 
   // Open Stage Transfer Modal (Synchronized available quantity in hand)
   const handleOpenTransferModal = (itemOrJob?: any) => {
-    if (availableInHandToTransfer <= 0) {
-      showToast('No embroidery pieces are currently available in hand to transfer to Stitching.');
-      return;
-    }
-
     let it = itemOrJob;
     let jId: number | undefined = undefined;
     let maxAvailForThis = availableInHandToTransfer;
@@ -1283,7 +1282,11 @@ export default function EmbroideryOrderDetail() {
       const jobRec = Number(itemOrJob.total_quantity_received || 0);
       const jobTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
       const jobAvail = Math.max(0, jobRec - jobTrf);
-      maxAvailForThis = Math.min(availableInHandToTransfer, jobAvail);
+      if (jobAvail <= 0) {
+        showToast('This job order has already been fully transferred to Stitching.');
+        return;
+      }
+      maxAvailForThis = jobAvail;
 
       const jItems = Array.isArray(itemOrJob.items_json) ? itemOrJob.items_json : [];
       if (jItems.length > 0) {
@@ -1312,7 +1315,11 @@ export default function EmbroideryOrderDetail() {
       const rRec = Number(itemOrJob.total_received_qty || 0);
       const rTrf = Number(itemOrJob.transferred_to_stitching_quantity || 0);
       const rAvail = itemOrJob.available_to_transfer !== undefined ? Number(itemOrJob.available_to_transfer) : Math.max(0, rRec - rTrf);
-      maxAvailForThis = Math.min(availableInHandToTransfer, rAvail);
+      if (rAvail <= 0) {
+        showToast('This receipt has already been fully transferred to Stitching.');
+        return;
+      }
+      maxAvailForThis = rAvail;
 
       const rItems = Array.isArray(itemOrJob.items_data) ? itemOrJob.items_data : [];
       if (rItems.length > 0) {
@@ -1339,10 +1346,34 @@ export default function EmbroideryOrderDetail() {
         showToast(`No embroidery pieces of ${itemOrJob.product_name || 'this product'} are currently ready to transfer.`);
         return;
       }
-      maxAvailForThis = Math.min(availableInHandToTransfer, itReady);
+      maxAvailForThis = itReady;
+      jobLines = [{
+        item_id: Number(it.active_embroidery_item_id || it.id || 0),
+        product_name: it.product_name || 'Product',
+        product_code: it.product_code,
+        color: it.color || 'Standard',
+        size: it.size || 'M',
+        quantity: maxAvailForThis,
+        max: maxAvailForThis
+      }];
     } else if (!itemOrJob) {
-      it = items[0] || null;
-      maxAvailForThis = availableInHandToTransfer;
+      if (availableInHandToTransfer <= 0) {
+        showToast('No embroidery pieces are currently available in hand to transfer to Stitching.');
+        return;
+      }
+      it = items.find(i => Number(i.ready_to_transfer || 0) > 0) || items[0] || null;
+      maxAvailForThis = Number(it?.ready_to_transfer || availableInHandToTransfer);
+      if (it) {
+        jobLines = [{
+          item_id: Number(it.active_embroidery_item_id || it.id || 0),
+          product_name: it.product_name || 'Product',
+          product_code: it.product_code,
+          color: it.color || 'Standard',
+          size: it.size || 'M',
+          quantity: maxAvailForThis,
+          max: maxAvailForThis
+        }];
+      }
     }
 
     setSelectedReworkForTransfer(null);
@@ -1357,7 +1388,6 @@ export default function EmbroideryOrderDetail() {
   // Open Stage Transfer Modal from Rework Table
   const handleOpenTransferReworkModal = (rec: ReworkRecord) => {
     const isReceived =
-      rec.status === 'Rework Received' ||
       rec.status === 'Accepted After Rework' ||
       (rec.status as string) === 'Completed' ||
       ((rec.status as string) === 'Pending Rework' && Number(rec.accepted_quantity || 0) > Number((rec as any).transferred_quantity || 0));
@@ -3867,9 +3897,11 @@ export default function EmbroideryOrderDetail() {
               variant="primary"
               size="sm"
               type="submit"
-              disabled={transferring || (selectedReworkForTransfer
-                ? Number((selectedReworkForTransfer as any).available_to_transfer ?? Math.max(0, Number((selectedReworkForTransfer as any).received_quantity ?? selectedReworkForTransfer.accepted_quantity ?? selectedReworkForTransfer.rework_quantity ?? 0) - Number((selectedReworkForTransfer as any).transferred_quantity ?? 0))) <= 0
-                : availableInHandToTransfer <= 0)}
+              disabled={transferring || (transferJobLines.length > 0
+                ? transferJobLines.reduce((s, l) => s + (Number(l.quantity) || 0), 0) <= 0
+                : (selectedReworkForTransfer
+                  ? Number((selectedReworkForTransfer as any).available_to_transfer ?? Math.max(0, Number((selectedReworkForTransfer as any).received_quantity ?? selectedReworkForTransfer.accepted_quantity ?? selectedReworkForTransfer.rework_quantity ?? 0) - Number((selectedReworkForTransfer as any).transferred_quantity ?? 0))) <= 0
+                  : Number(transferQuantity) <= 0))}
               className="bg-purple-700 hover:bg-purple-800 text-white font-bold w-full sm:w-auto min-h-[36px]"
             >
               {transferring ? 'Transferring...' : 'Confirm Transfer to Stitching'}
@@ -4030,7 +4062,6 @@ export default function EmbroideryOrderDetail() {
               const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
               const isAlreadyReceived =
                 selectedReworkForReceive.status === 'Accepted After Rework' ||
-                selectedReworkForReceive.status === 'Rework Received' ||
                 (selectedReworkForReceive.status as string) === 'Completed' ||
                 (selectedReworkForReceive.status as string) === 'Transferred' ||
                 (accQty >= rQty && rQty > 0);
@@ -4186,7 +4217,6 @@ export default function EmbroideryOrderDetail() {
               const accQty = Number(selectedReworkForReceive.accepted_quantity || 0);
               const isAlreadyReceived =
                 selectedReworkForReceive.status === 'Accepted After Rework' ||
-                selectedReworkForReceive.status === 'Rework Received' ||
                 (selectedReworkForReceive.status as string) === 'Completed' ||
                 (selectedReworkForReceive.status as string) === 'Transferred' ||
                 (accQty >= rQty && rQty > 0);

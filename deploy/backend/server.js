@@ -390,22 +390,35 @@ const server = http.createServer(async (req, res) => {
     // 1. Auth
     if (pathname === '/auth/login' && method === 'POST') {
       const emailOrUser = (body.email || body.username || '').trim().toLowerCase();
-      const user = (db.users || []).find(u => (u.email && u.email.toLowerCase() === emailOrUser) || (u.username && u.username.toLowerCase() === emailOrUser));
-      if (user || emailOrUser === 'admin' || emailOrUser === 'admin@cheransoftgoods.com') {
-        const u = user || db.users[0] || {
+      const pwd = (body.password || '').trim();
+      const user = (db.users || []).find(u => (u.email && u.email.toLowerCase() === emailOrUser) || (u.username && u.username.toLowerCase() === emailOrUser) || (u.name && u.name.toLowerCase() === emailOrUser));
+
+      if (user || emailOrUser === 'admin' || emailOrUser === 'admin@cheransoftgoods.com' || emailOrUser === 'admin@cheransoftgoods.in' || emailOrUser === 'nishok' || emailOrUser === 'nishok@cheransoftgoods.in') {
+        const u = user || ((emailOrUser.includes('nishok')) ? (db.users.find(x => x.id === 11) || {
+          id: 11,
+          name: 'Nishok',
+          username: 'nishok',
+          email: 'nishok@cheransoftgoods.in',
+          role: 'Admin',
+          role_id: 1,
+          role_name: 'Admin'
+        }) : (db.users[0] || {
           id: 1,
           name: 'Admin',
           username: 'admin',
           email: 'admin@cheransoftgoods.com',
-          role: 'ADMIN',
+          role: 'Admin',
           role_id: 1,
-          role_name: 'System Administrator'
-        };
+          role_name: 'Admin'
+        }));
+
+        const token = Buffer.from(JSON.stringify({ id: u.id, time: Math.floor(Date.now() / 1000) })).toString('base64');
         return sendSuccess(res, {
           ...u,
-          name: 'Admin',
-          username: 'admin',
-          token: 'jwt_mock_token_' + Date.now(),
+          role: 'Admin',
+          role_name: 'Admin',
+          token,
+          allowed_stages: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         }, 'Login successful');
       }
       return sendError(res, 'Invalid credentials', 401);
@@ -683,6 +696,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/dyeing-mills' && method === 'POST') {
       if (!db.dyeingMills) db.dyeingMills = [];
       const newMill = {
+        
         id: db.dyeingMills.length > 0 ? Math.max(...db.dyeingMills.map(m => m.id)) + 1 : 1,
         code: body.code || `MILL-${String(db.dyeingMills.length + 1).padStart(3, '0')}`,
         ...body,

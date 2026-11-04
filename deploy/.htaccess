@@ -2,6 +2,10 @@
   RewriteEngine On
   RewriteBase /
 
+  # Ensure HTTP Authorization header is passed to PHP FastCGI/FPM
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
   # 1. API and Backend routes redirected to backend/index.php
   RewriteRule ^api/(.*)$ backend/index.php [QSA,L]
   RewriteRule ^backend/(.*)$ backend/index.php [QSA,L]

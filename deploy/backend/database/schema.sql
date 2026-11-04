@@ -356,6 +356,8 @@ CREATE TABLE purchase_order_items (
     quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     weight_kg DECIMAL(12, 2) NULL,
     received_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    deleted_at DATETIME NULL,
+    removal_reason VARCHAR(255) NULL,
     rate DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     taxable_amount DECIMAL(14, 2) NOT NULL DEFAULT 0.00,
     tax_percent DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
@@ -364,7 +366,8 @@ CREATE TABLE purchase_order_items (
     dynamic_data JSON NULL,
     FOREIGN KEY (purchase_order_id) REFERENCES purchase_orders(id) ON DELETE CASCADE,
     FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE SET NULL,
-    INDEX idx_poi_order (purchase_order_id)
+    INDEX idx_poi_order (purchase_order_id),
+    INDEX idx_poi_active (purchase_order_id, deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE purchase_payments (
