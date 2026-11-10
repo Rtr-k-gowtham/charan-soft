@@ -1,5 +1,5 @@
 // Service Worker for CHERAN SOFT GOODS PWA
-const CACHE_NAME = 'cheran-soft-v3';
+const CACHE_NAME = 'cheran-soft-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
