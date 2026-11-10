@@ -11,7 +11,8 @@ import FormField from '../../components/ui/FormField';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import AvatarSelectorModal from '../../components/buyers/AvatarSelectorModal';
 import BuyerProductsManager from '../../components/buyer-products/BuyerProductsManager';
-import { Plus, RefreshCw, Package, ArrowRight, Edit2, Sparkles, Dices, Upload, Image as ImageIcon, Trash2, Camera } from 'lucide-react';
+import { Plus, RefreshCw, Package, ArrowRight, Edit2, Sparkles, Dices, Upload, Image as ImageIcon, Trash2, Camera, Palette } from 'lucide-react';
+import BuyerColorsModal, { parseBuyerColors, getBuyerColorsWithLocal } from '../../components/buyers/BuyerColorsModal';
 import { AvatarStyle, AvatarConfig, parseAvatarConfig } from '../../lib/avatarService';
 import { compressImage } from '../../components/buyer-products/ProductImageUploader';
 
@@ -51,11 +52,19 @@ export default function Buyers() {
   const [avatarConfig, setAvatarConfig] = useState<AvatarConfig>({ backgroundColor: 'b6e3f4' });
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
 
+  // Buyer Colors Modal state
+  const [colorsModalBuyer, setColorsModalBuyer] = useState<Buyer | null>(null);
+  const [colorsModalOpen, setColorsModalOpen] = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
       const res = ((await api.getBuyers()) || []) as Buyer[];
-      setData(res);
+      const enriched = res.map(b => ({
+        ...b,
+        preferred_colors: getBuyerColorsWithLocal(b),
+      }));
+      setData(enriched);
       if (buyerId) {
         const found = res.find((b) => String(b.id) === String(buyerId));
         if (found) setSelectedBuyer(found);
@@ -249,6 +258,59 @@ export default function Buyers() {
       ),
     },
     {
+      key: 'brand_colors',
+      label: 'Brand Colors',
+      render: (r: Buyer) => {
+        const colors = getBuyerColorsWithLocal(r);
+        if (colors.length === 0) {
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                setColorsModalBuyer(r);
+                setColorsModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-slate-500 hover:text-brand-600 hover:bg-brand-50 border border-dashed border-slate-200 transition cursor-pointer"
+            >
+              <Palette className="w-3 h-3 text-slate-400" />
+              <span>+ Add Colors</span>
+            </button>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              setColorsModalBuyer(r);
+              setColorsModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 p-1 -m-1 rounded-lg hover:bg-slate-100 transition cursor-pointer group text-left"
+            title="Click to view & edit buyer brand colors"
+          >
+            <div className="flex -space-x-1.5 items-center shrink-0">
+              {colors.slice(0, 4).map((c, idx) => (
+                <span
+                  key={c.id || idx}
+                  className="w-4 h-4 rounded-full border-2 border-white shadow-2xs shrink-0 ring-1 ring-slate-200"
+                  style={{ backgroundColor: c.hex_code || '#2563EB' }}
+                  title={`${c.name} (${c.pantone_code || c.hex_code})`}
+                />
+              ))}
+            </div>
+            {colors.length > 4 ? (
+              <span className="text-[10px] font-bold text-slate-500 font-mono">
+                +{colors.length - 4}
+              </span>
+            ) : (
+              <span className="text-[10px] font-semibold text-slate-600 group-hover:text-brand-700">
+                {colors.length} {colors.length === 1 ? 'color' : 'colors'}
+              </span>
+            )}
+          </button>
+        );
+      },
+    },
+    {
       key: 'gstin',
       label: 'GSTIN',
       render: (r: Buyer) => (
@@ -273,6 +335,18 @@ export default function Buyers() {
           >
             <Edit2 className="w-3 h-3 text-slate-500" />
             <span>Edit</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setColorsModalBuyer(r);
+              setColorsModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs transition cursor-pointer"
+            title="Manage brand colors for this buyer"
+          >
+            <Palette className="w-3 h-3 text-indigo-600" />
+            <span>Colors</span>
           </button>
           <button
             type="button"
@@ -583,6 +657,32 @@ export default function Buyers() {
                 rows={2}
               />
             </div>
+
+            {editingBuyer && (
+              <div className="sm:col-span-2 p-3 bg-indigo-50/60 border border-indigo-200/80 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 shadow-2xs">
+                    <Palette className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800">Buyer Brand Colors (Palette)</h5>
+                    <p className="text-[11px] text-slate-500">
+                      {getBuyerColorsWithLocal(editingBuyer).length} colors configured. These prioritize at the top during order creation.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setColorsModalBuyer(editingBuyer);
+                    setColorsModalOpen(true);
+                  }}
+                  className="px-2.5 py-1 text-xs font-bold text-indigo-700 bg-white hover:bg-indigo-50 border border-indigo-300 rounded-lg shadow-2xs transition"
+                >
+                  Manage Colors
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </Drawer>
@@ -600,6 +700,28 @@ export default function Buyers() {
           setAvatarStyle(selection.avatar_style);
           setAvatarSeed(selection.avatar_seed);
           setAvatarConfig(selection.avatar_config);
+        }}
+      />
+
+      {/* Buyer Brand Colors Modal */}
+      <BuyerColorsModal
+        open={colorsModalOpen}
+        buyer={colorsModalBuyer}
+        onClose={() => {
+          setColorsModalOpen(false);
+          setColorsModalBuyer(null);
+        }}
+        onSaved={(updatedColors) => {
+          if (colorsModalBuyer) {
+            setData((prev) =>
+              prev.map((b) =>
+                b.id === colorsModalBuyer.id ? { ...b, preferred_colors: updatedColors } : b
+              )
+            );
+            if (editingBuyer && editingBuyer.id === colorsModalBuyer.id) {
+              setEditingBuyer({ ...editingBuyer, preferred_colors: updatedColors });
+            }
+          }
         }}
       />
     </div>

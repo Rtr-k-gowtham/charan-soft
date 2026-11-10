@@ -2,7 +2,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { Customer, Category } from '../../types';
+import { Customer, Category, BuyerColor } from '../../types';
+import { parseBuyerColors, getBuyerColorsWithLocal } from '../../components/buyers/BuyerColorsModal';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
@@ -32,6 +33,7 @@ import {
   Sliders,
   Sparkles,
   Dices,
+  Star,
 } from 'lucide-react';
 import BuyerAvatar from '../../components/ui/BuyerAvatar';
 import AvatarSelectorModal from '../../components/buyers/AvatarSelectorModal';
@@ -319,7 +321,11 @@ export default function CreateProductionOrder() {
         api.getColors().catch(() => []),
       ]);
 
-      setCustomers((custs as Customer[]) || []);
+      const enrichedCusts = ((custs as Customer[]) || []).map(c => ({
+        ...c,
+        preferred_colors: getBuyerColorsWithLocal(c),
+      }));
+      setCustomers(enrichedCusts);
       setCategories((cats as Category[]) || []);
 
       const pantoneRaw = (pantoneRes as any)?.items || [];
@@ -502,9 +508,51 @@ export default function CreateProductionOrder() {
     });
   }, [buyerProducts]);
 
-  // Format Pantone colors for SearchableSelect with precomputed search keys for fast filtering
+  // Selected buyer object and their preferred brand colors
+  const selectedCustomer = useMemo(() => {
+    if (!form.customer_id) return null;
+    return customers.find((c) => String(c.id) === String(form.customer_id)) || null;
+  }, [customers, form.customer_id]);
+
+  const buyerPreferredColors: BuyerColor[] = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return getBuyerColorsWithLocal(selectedCustomer);
+  }, [selectedCustomer]);
+
+  // Format colors for SearchableSelect:
+  // When a buyer is selected, that buyer's brand colors appear at the VERY TOP with a distinct group!
+  // All authoritative Pantone & catalog colors appear below, fully searchable by name, code, or hex.
   const colorOptions: SelectOption[] = useMemo(() => {
-    return colors.map((c) => {
+    const buyerOpts: SelectOption[] = buyerPreferredColors.map((bc, idx) => {
+      const pCode = (bc.pantone_code || '').trim();
+      const cName = (bc.name || '').trim();
+      const hex = bc.hex_code || '#0F2042';
+
+      let displayLabel = '';
+      if (pCode && cName && pCode.toLowerCase() !== cName.toLowerCase()) {
+        displayLabel = `${cName} (${pCode})`;
+      } else {
+        displayLabel = cName || pCode || `Buyer Color #${idx + 1}`;
+      }
+
+      const val = pCode && cName && pCode.toLowerCase() !== cName.toLowerCase() ? `${cName} (${pCode})` : (cName || pCode);
+      const sublabel = `Buyer Brand Color • ${hex} ${pCode ? `• Pantone: ${pCode}` : ''}`.trim();
+      const searchKey = `${displayLabel} ${cName} ${pCode} ${val} ${hex} buyer brand color`
+        .toLowerCase()
+        .replace(/[\s\-_]+/g, '');
+
+      return {
+        value: val,
+        label: displayLabel,
+        sublabel,
+        colorSwatch: hex,
+        group: `${selectedCustomer?.name || 'Buyer'} Brand Colors (${buyerPreferredColors.length})`,
+        isBrand: true,
+        searchKey,
+      };
+    });
+
+    const catalogOpts: SelectOption[] = colors.map((c) => {
       const pCode = c.pantone_code ? c.pantone_code.trim() : '';
       const cName = c.name ? c.name.trim() : '';
 
@@ -534,10 +582,13 @@ export default function CreateProductionOrder() {
         label: displayLabel,
         sublabel,
         colorSwatch: c.hex_code,
+        group: buyerOpts.length > 0 ? 'All Pantone & Catalog Colors' : undefined,
         searchKey,
       };
     });
-  }, [colors]);
+
+    return [...buyerOpts, ...catalogOpts];
+  }, [colors, buyerPreferredColors, selectedCustomer]);
 
   // Format buyers (customers) for SearchableSelect with avatars
   const customerOptions: SelectOption[] = useMemo(() => {
@@ -564,11 +615,34 @@ export default function CreateProductionOrder() {
     []
   );
 
-  // Helper to resolve color swatch and information across 20,000+ Pantone master colors
+  // Helper to resolve color swatch and information across buyer brand colors + 20,000+ Pantone master colors
   const getColorDetails = (colorValue: string) => {
     if (!colorValue) return null;
     const trimmed = colorValue.trim().toLowerCase();
     const cleanCompact = trimmed.replace(/[\s\-_]+/g, '');
+
+    // 1. Check buyer's preferred brand colors first!
+    if (buyerPreferredColors.length > 0) {
+      const bFound = buyerPreferredColors.find((bc) => {
+        const bName = (bc.name || '').toLowerCase();
+        const bCode = (bc.pantone_code || '').toLowerCase();
+        return (
+          bName === trimmed ||
+          bCode === trimmed ||
+          (bCode && `${bc.name} (${bc.pantone_code})`.toLowerCase() === trimmed) ||
+          bName.replace(/[\s\-_]+/g, '') === cleanCompact ||
+          (bCode && bCode.replace(/[\s\-_]+/g, '') === cleanCompact)
+        );
+      });
+      if (bFound) {
+        return {
+          name: bFound.name,
+          code: bFound.pantone_code || '',
+          hex: bFound.hex_code || '#0F2042',
+          isBuyerColor: true,
+        };
+      }
+    }
 
     const found = colors.find((c) => {
       const pCode = (c.pantone_code || '').toLowerCase();
@@ -1021,6 +1095,8 @@ export default function CreateProductionOrder() {
                     onClick: handleOpenNewBuyer,
                   }}
                 />
+
+                /* Buyer brand colors prioritized directly in color selector */
               </div>
 
               <div>
@@ -1314,7 +1390,13 @@ export default function CreateProductionOrder() {
                                   {/* Swatch & Pantone Info Tag (Desktop) */}
                                   <div className="md:col-span-2 hidden md:block">
                                     {swatch ? (
-                                      <div className="flex items-center gap-1 text-[11px] text-slate-600 truncate">
+                                      <div className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate">
+                                        {(swatch as any)?.isBuyerColor && (
+                                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                                            <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500 shrink-0" />
+                                            <span>Brand</span>
+                                          </span>
+                                        )}
                                         {swatch.code ? (
                                           <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 text-slate-700 truncate">
                                             {swatch.code}

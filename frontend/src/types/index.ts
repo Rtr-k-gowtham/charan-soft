@@ -90,6 +90,14 @@ export interface Supplier {
   status: string;
 }
 
+export interface BuyerColor {
+  id?: string | number;
+  name: string;
+  pantone_code?: string;
+  hex_code?: string;
+  notes?: string;
+}
+
 export interface Buyer {
   id: number;
   code: string;
@@ -105,6 +113,7 @@ export interface Buyer {
   avatar_style?: 'lorelei' | string;
   avatar_seed?: string;
   avatar_config?: string | Record<string, any>;
+  preferred_colors?: BuyerColor[] | string;
 }
 
 export type Customer = Buyer;

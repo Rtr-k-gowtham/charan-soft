@@ -1,7 +1,7 @@
 // src/components/ui/SearchableSelect.tsx
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, ChevronDown, X, Check, Plus } from 'lucide-react';
+import { Search, ChevronDown, X, Check, Plus, Star } from 'lucide-react';
 
 export interface SelectOption {
   value: string | number;
@@ -11,6 +11,7 @@ export interface SelectOption {
   colorSwatch?: string;
   avatarUri?: string;
   searchKey?: string;
+  isBrand?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -374,7 +375,10 @@ export default function SearchableSelect({
                                 />
                               )}
                               <div className="flex flex-col min-w-0">
-                                <span className="truncate text-xs font-semibold">{opt.label}</span>
+                                <div className="flex items-center gap-1 min-w-0">
+    {opt.isBrand && <Star className="w-3 h-3 fill-amber-400 text-amber-500 shrink-0" />}
+    <span className="truncate text-xs font-semibold">{opt.label}</span>
+  </div>
                                 {opt.sublabel && (
                                   <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
                                 )}
@@ -393,7 +397,7 @@ export default function SearchableSelect({
                   ) : (
                     Object.entries(grouped).map(([grp, items]) => (
                       <div key={grp} className="pt-2 first:pt-0">
-                        <div className="px-2.5 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border-y border-slate-100/80">
+                        <div className="px-2.5 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-50 border-y border-slate-100/80 flex items-center gap-1.5">
                           {grp}
                         </div>
                         {items.slice(0, 50).map((opt) => {
@@ -525,7 +529,7 @@ export default function SearchableSelect({
                               />
                             )}
                             <div className="flex flex-col min-w-0">
-                              <span className="truncate">{opt.label}</span>
+                              <div className="flex items-center gap-1 min-w-0">{opt.isBrand && <Star className="w-3 h-3 fill-amber-400 text-amber-500 shrink-0" />}<div className="flex items-center gap-1 min-w-0">{opt.isBrand && <Star className="w-3 h-3 fill-amber-400 text-amber-500 shrink-0" />}<span className="truncate">{opt.label}</span></div></div>
                               {opt.sublabel && (
                                 <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
                               )}
@@ -574,7 +578,7 @@ export default function SearchableSelect({
                                 />
                               )}
                               <div className="flex flex-col min-w-0">
-                                <span className="truncate">{opt.label}</span>
+                                <div className="flex items-center gap-1 min-w-0">{opt.isBrand && <Star className="w-3 h-3 fill-amber-400 text-amber-500 shrink-0" />}<span className="truncate">{opt.label}</span></div>
                                 {opt.sublabel && (
                                   <span className="text-[10px] text-slate-400 truncate mt-0.5">{opt.sublabel}</span>
                                 )}

@@ -316,8 +316,21 @@ class MastersController {
     public function getCustomers(): void {
         try {
             $pdo = Database::getConnection();
+            $this->ensureCustomerAvatarColumns($pdo);
             $stmt = $pdo->query("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name ASC");
-            Response::success($stmt->fetchAll());
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($rows as &$r) {
+                if (!empty($r['preferred_colors']) && is_string($r['preferred_colors'])) {
+                    $decoded = json_decode($r['preferred_colors'], true);
+                    if (is_array($decoded)) {
+                        $r['preferred_colors'] = $decoded;
+                    }
+                } else if (empty($r['preferred_colors'])) {
+                    $r['preferred_colors'] = [];
+                }
+            }
+            unset($r);
+            Response::success($rows);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }
@@ -340,6 +353,9 @@ class MastersController {
             }
             if (!in_array('avatar_config', $cols)) {
                 $pdo->exec("ALTER TABLE customers ADD COLUMN avatar_config LONGTEXT DEFAULT NULL");
+            }
+            if (!in_array('preferred_colors', $cols)) {
+                $pdo->exec("ALTER TABLE customers ADD COLUMN preferred_colors LONGTEXT NULL");
             }
         } catch (Exception $e) {}
     }
@@ -364,16 +380,17 @@ class MastersController {
         $avatarConfig = isset($data['avatar_config']) ? (is_string($data['avatar_config']) ? $data['avatar_config'] : json_encode($data['avatar_config'])) : null;
         $imageUrl = isset($data['image_url']) ? trim($data['image_url']) : (isset($data['avatar_url']) ? trim($data['avatar_url']) : null);
         $avatarUrl = $imageUrl;
+        $preferredColors = isset($data['preferred_colors']) ? (is_string($data['preferred_colors']) ? $data['preferred_colors'] : json_encode($data['preferred_colors'], JSON_UNESCAPED_UNICODE)) : null;
 
         try {
             $pdo = Database::getConnection();
             $this->ensureCustomerAvatarColumns($pdo);
             try {
                 $stmt = $pdo->prepare("
-                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address, avatar_style, avatar_seed, avatar_config, image_url, avatar_url)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO customers (name, code, contact_person, phone, email, gstin, billing_address, avatar_style, avatar_seed, avatar_config, image_url, avatar_url, preferred_colors)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig, $imageUrl, $avatarUrl]);
+                $stmt->execute([$name, $code, $contactPerson, $phone, $email, $gstin, $billingAddress, $avatarStyle, $avatarSeed, $avatarConfig, $imageUrl, $avatarUrl, $preferredColors]);
             } catch (Exception $colEx) {
                 // Fallback if avatar columns don't exist yet in active table
                 $stmt = $pdo->prepare("
@@ -392,7 +409,8 @@ class MastersController {
                 'avatar_url' => $avatarUrl,
                 'avatar_style' => $avatarStyle,
                 'avatar_seed' => $avatarSeed,
-                'avatar_config' => $avatarConfig
+                'avatar_config' => $avatarConfig,
+                'preferred_colors' => isset($data['preferred_colors']) ? $data['preferred_colors'] : []
             ], "Customer created successfully", 201);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
@@ -439,6 +457,7 @@ class MastersController {
             $finalAvatarConfig = ($avatarConfig !== null && $avatarConfig !== '') ? $avatarConfig : ($existing['avatar_config'] ?? null);
             $finalImageUrl = ($imageUrl !== null) ? $imageUrl : ($existing['image_url'] ?? ($existing['avatar_url'] ?? null));
             $finalAvatarUrl = $finalImageUrl;
+            $finalPreferredColors = array_key_exists('preferred_colors', $data) ? (is_string($data['preferred_colors']) ? $data['preferred_colors'] : json_encode($data['preferred_colors'], JSON_UNESCAPED_UNICODE)) : ($existing['preferred_colors'] ?? null);
 
             try {
                 $stmt = $pdo->prepare("
@@ -454,7 +473,8 @@ class MastersController {
                         avatar_seed = ?,
                         avatar_config = ?,
                         image_url = ?,
-                        avatar_url = ?
+                        avatar_url = ?,
+                        preferred_colors = ?
                     WHERE id = ? AND deleted_at IS NULL
                 ");
                 $stmt->execute([
@@ -470,6 +490,7 @@ class MastersController {
                     $finalAvatarConfig,
                     $finalImageUrl,
                     $finalAvatarUrl,
+                    $finalPreferredColors,
                     $id
                 ]);
             } catch (Exception $colEx) {
@@ -506,7 +527,8 @@ class MastersController {
                 'avatar_url' => $finalAvatarUrl,
                 'avatar_style' => $finalAvatarStyle,
                 'avatar_seed' => $finalAvatarSeed,
-                'avatar_config' => $finalAvatarConfig
+                'avatar_config' => $finalAvatarConfig,
+                'preferred_colors' => array_key_exists('preferred_colors', $data) ? $data['preferred_colors'] : (isset($existing['preferred_colors']) ? json_decode($existing['preferred_colors'], true) : [])
             ], "Customer updated successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
