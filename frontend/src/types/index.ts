@@ -44,6 +44,8 @@ export interface Material {
   category_name?: string;
   supplier_id?: number;
   supplier_name?: string;
+  buyer_id?: number | null;
+  buyer_name?: string;
   code: string;
   name: string;
   uom: string;

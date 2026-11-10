@@ -1,7 +1,8 @@
 // src/pages/masters/Materials.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../../lib/api';
-import { Material, Category, Supplier } from '../../types';
+import { Material, Category, Supplier, Buyer } from '../../types';
+import { getBuyerColorsWithLocal } from '../../components/buyers/BuyerColorsModal';
 import PageHeader from '../../components/ui/PageHeader';
 import DataTable from '../../components/ui/DataTable';
 import StatusBadge from '../../components/ui/StatusBadge';
@@ -9,7 +10,7 @@ import Drawer from '../../components/ui/Drawer';
 import Modal from '../../components/ui/Modal';
 import Button from '../../components/ui/Button';
 import FormField from '../../components/ui/FormField';
-import { Plus, RefreshCw, Edit2, Trash2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Plus, RefreshCw, Edit2, Trash2, AlertCircle, CheckCircle2, Star, Palette } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 
@@ -17,6 +18,7 @@ export default function Materials() {
   const [materials, setMaterials] = useState<Material[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCat, setFilterCat] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -34,6 +36,7 @@ export default function Materials() {
   const [form, setForm] = useState({
     category_id: '',
     supplier_id: '',
+    buyer_id: '',
     code: '',
     name: '',
     uom: 'KG',
@@ -48,18 +51,21 @@ export default function Materials() {
   const load = async (catId?: number) => {
     setLoading(true);
     try {
-      const [matData, catData, supData] = await Promise.all([
+      const [matData, catData, supData, buyerData] = await Promise.all([
         api.getMaterials(catId),
         api.getCategories(),
         api.getSuppliers(),
+        api.getBuyers(),
       ]);
       setMaterials((matData || []) as Material[]);
       setCategories((catData || []) as Category[]);
       setSuppliers((supData || []) as Supplier[]);
+      setBuyers((buyerData || []) as Buyer[]);
     } catch {
       setMaterials([]);
       setCategories([]);
       setSuppliers([]);
+      setBuyers([]);
     } finally {
       setLoading(false);
     }
@@ -69,12 +75,23 @@ export default function Materials() {
     load(filterCat ?? undefined);
   }, [filterCat]);
 
+  const selectedBuyer = useMemo(() => {
+    if (!form.buyer_id) return null;
+    return buyers.find((b) => String(b.id) === String(form.buyer_id)) || null;
+  }, [form.buyer_id, buyers]);
+
+  const selectedBuyerBrandColors = useMemo(() => {
+    if (!selectedBuyer) return [];
+    return getBuyerColorsWithLocal(selectedBuyer);
+  }, [selectedBuyer]);
+
   // Open Drawer in Create mode
   const openCreate = () => {
     setEditingMaterial(null);
     setForm({
       category_id: categories.length > 0 ? String(categories[0].id) : '',
       supplier_id: '',
+      buyer_id: '',
       code: '',
       name: '',
       uom: 'KG',
@@ -99,6 +116,7 @@ export default function Materials() {
     setForm({
       category_id: String(mat.category_id || ''),
       supplier_id: mat.supplier_id ? String(mat.supplier_id) : '',
+      buyer_id: (mat as any).buyer_id ? String((mat as any).buyer_id) : '',
       code: mat.code,
       name: mat.name,
       uom: mat.uom || 'KG',
@@ -123,32 +141,32 @@ export default function Materials() {
     setError('');
 
     try {
+      const payload: any = {
+        category_id: parseInt(form.category_id),
+        supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
+        buyer_id: form.buyer_id ? parseInt(form.buyer_id) : null,
+        name: form.name,
+        uom: form.uom,
+        purchase_rate: parseFloat(form.purchase_rate) || 0,
+        tax_percent: parseFloat(form.tax_percent) || 5,
+        min_stock_level: parseFloat(form.min_stock_level) || 0,
+        dynamic_values: {
+          spec: form.spec.trim(),
+          color: form.color.trim(),
+          design: form.design.trim(),
+        },
+      };
+
       if (editingMaterial) {
         // Edit existing material - strictly preserve existing code
-        await api.updateMaterial(editingMaterial.id, {
-          category_id: parseInt(form.category_id),
-          supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
-          name: form.name,
-          uom: form.uom,
-          purchase_rate: parseFloat(form.purchase_rate) || 0,
-          tax_percent: parseFloat(form.tax_percent) || 5,
-          min_stock_level: parseFloat(form.min_stock_level) || 0,
-          dynamic_values: { spec: form.spec, color: form.color, design: form.design },
-        });
+        await api.updateMaterial(editingMaterial.id, payload);
         setSuccessMsg(`Material '${form.name}' updated successfully.`);
       } else {
         // Create new material
         const autoCode = `MAT-${(materials.length + 1).toString().padStart(4, '0')}`;
         await api.createMaterial({
-          category_id: parseInt(form.category_id),
-          supplier_id: form.supplier_id ? parseInt(form.supplier_id) : null,
+          ...payload,
           code: autoCode,
-          name: form.name,
-          uom: form.uom,
-          purchase_rate: parseFloat(form.purchase_rate) || 0,
-          tax_percent: parseFloat(form.tax_percent) || 5,
-          min_stock_level: parseFloat(form.min_stock_level) || 0,
-          dynamic_values: { spec: form.spec, color: form.color, design: form.design },
         });
         setSuccessMsg(`Material '${form.name}' created successfully.`);
       }
@@ -199,7 +217,34 @@ export default function Materials() {
       key: 'name',
       label: 'Material Name',
       sortable: true,
-      render: (r: Material) => <span className="font-medium text-slate-800">{r.name}</span>,
+      render: (r: Material) => {
+        const dynFields = (r as any).dynamic_fields || [];
+        const colorVal = dynFields.find((f: any) => f.field_name === 'color')?.field_value;
+        return (
+          <div className="flex flex-col">
+            <span className="font-semibold text-slate-800">{r.name}</span>
+            {colorVal && (
+              <span className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5 font-medium">
+                <Palette className="w-3 h-3 text-brand-500 shrink-0" />
+                <span>Color: {colorVal}</span>
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'buyer_name',
+      label: 'Buyer',
+      sortable: true,
+      render: (r: any) =>
+        r.buyer_name ? (
+          <span className="inline-flex items-center gap-1 font-semibold text-xs text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+            {r.buyer_name}
+          </span>
+        ) : (
+          <span className="text-slate-400 text-xs">—</span>
+        ),
     },
     {
       key: 'category_name',
@@ -411,18 +456,83 @@ export default function Materials() {
               />
             </div>
 
+            {buyers.length > 0 && (
+              <div className="sm:col-span-2">
+                <FormField
+                  as="select"
+                  label="Buyer (Optional)"
+                  value={form.buyer_id}
+                  onChange={(e) => setForm((f) => ({ ...f, buyer_id: e.target.value }))}
+                  hint="Link material to a buyer to select from their brand colors"
+                >
+                  <option value="">— None / General Stock —</option>
+                  {buyers.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.code})
+                    </option>
+                  ))}
+                </FormField>
+              </div>
+            )}
+
             <FormField
               label="Spec / Construction"
               value={form.spec}
               onChange={(e) => setForm((f) => ({ ...f, spec: e.target.value }))}
               placeholder="e.g. 40s x 60s / 68x68"
             />
-            <FormField
-              label="Color / Finish"
-              value={form.color}
-              onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
-              placeholder="e.g. Grey Unbleached"
-            />
+
+            <div className="sm:col-span-2 space-y-1.5">
+              <FormField
+                label="Color / Finish"
+                value={form.color}
+                onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                placeholder="e.g. Navy Blue, Grey Unbleached"
+              />
+
+              {/* If buyer is selected and has brand colors, show them as instant click pills */}
+              {selectedBuyerBrandColors.length > 0 && (
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-lg space-y-1">
+                  <div className="flex items-center justify-between gap-1 text-[10px] font-bold text-amber-800">
+                    <span className="flex items-center gap-1">
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                      {selectedBuyer?.name} Brand Colors (Click to apply):
+                    </span>
+                    <span className="text-[10px] text-amber-600 font-normal">
+                      {selectedBuyerBrandColors.length} configured
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    {selectedBuyerBrandColors.map((bc, idx) => (
+                      <button
+                        key={bc.id || idx}
+                        type="button"
+                        onClick={() => {
+                          const colName =
+                            (bc.pantone_code && bc.name !== bc.pantone_code
+                              ? `${bc.name} (${bc.pantone_code})`
+                              : bc.name || bc.pantone_code || bc.hex_code) || '';
+                          setForm((f) => ({ ...f, color: colName }));
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-semibold bg-white hover:bg-amber-100/70 border border-amber-200 text-slate-800 transition cursor-pointer shadow-2xs hover:scale-102"
+                        title={`Apply ${bc.name} (${bc.pantone_code || bc.hex_code})`}
+                      >
+                        <span
+                          className="w-2.5 h-2.5 rounded-full border border-slate-300 shrink-0"
+                          style={{ backgroundColor: bc.hex_code || '#2563EB' }}
+                        />
+                        <span>{bc.name}</span>
+                        {bc.pantone_code && (
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {bc.pantone_code}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <FormField
               label="Purchase Rate (₹)"
