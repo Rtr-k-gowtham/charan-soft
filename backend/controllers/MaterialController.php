@@ -14,6 +14,30 @@ class MaterialController {
                 $pdo->exec("ALTER TABLE materials ADD COLUMN buyer_id INT NULL DEFAULT NULL");
             }
         } catch (Exception $e) {}
+
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS stock_balances (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    material_id INT NOT NULL,
+                    current_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                    available_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_stock_mat (material_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            ");
+            $sbCols = $pdo->query("SHOW COLUMNS FROM stock_balances")->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('current_quantity', $sbCols)) {
+                $pdo->exec("ALTER TABLE stock_balances ADD COLUMN current_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00");
+                if (in_array('quantity', $sbCols)) {
+                    $pdo->exec("UPDATE stock_balances SET current_quantity = quantity");
+                }
+            }
+            if (!in_array('available_quantity', $sbCols)) {
+                $pdo->exec("ALTER TABLE stock_balances ADD COLUMN available_quantity DECIMAL(12, 2) NOT NULL DEFAULT 0.00");
+            }
+        } catch (Exception $e) {}
     }
 
     private function saveDynamicFieldValues(PDO $pdo, int $materialId, int $categoryId, array $dynamicValues): void {
@@ -119,8 +143,8 @@ class MaterialController {
             $hasBuyerId = in_array('buyer_id', $mCols);
             $hasStockBalances = false;
             try {
-                $pdo->query("SELECT 1 FROM stock_balances LIMIT 1");
-                $hasStockBalances = true;
+                $sbCols = $pdo->query("DESCRIBE stock_balances")->fetchAll(PDO::FETCH_COLUMN);
+                $hasStockBalances = in_array('current_quantity', $sbCols);
             } catch (Exception $e) {
                 $hasStockBalances = false;
             }
@@ -128,6 +152,7 @@ class MaterialController {
             $stockSelect = $hasStockBalances 
                 ? "COALESCE(sb.current_quantity, m.current_stock) as live_stock, COALESCE(sb.available_quantity, m.current_stock) as available_stock"
                 : "m.current_stock as live_stock, m.current_stock as available_stock";
+            $stockJoin = $hasStockBalances ? " LEFT JOIN stock_balances sb ON m.id = sb.material_id" : "";
 
             $buyerSelect = $hasBuyerId
                 ? ", COALESCE(cust.name, '') as buyer_name, COALESCE(cust.code, '') as buyer_code"
@@ -146,6 +171,7 @@ class MaterialController {
                 LEFT JOIN categories c ON m.category_id = c.id
                 LEFT JOIN suppliers s ON m.supplier_id = s.id
                 {$buyerJoin}
+                {$stockJoin}
             ";
 
             $sql .= " WHERE 1=1";
@@ -282,18 +308,29 @@ class MaterialController {
             $buyerSelect = $hasBuyerId ? ", COALESCE(cust.name, '') as buyer_name, COALESCE(cust.code, '') as buyer_code" : "";
             $buyerJoin = $hasBuyerId ? " LEFT JOIN customers cust ON m.buyer_id = cust.id" : "";
 
+            $hasStockBalances = false;
+            try {
+                $sbCols = $pdo->query("DESCRIBE stock_balances")->fetchAll(PDO::FETCH_COLUMN);
+                $hasStockBalances = in_array('current_quantity', $sbCols);
+            } catch (Exception $e) {
+                $hasStockBalances = false;
+            }
+            $stockSelect = $hasStockBalances 
+                ? "COALESCE(sb.current_quantity, m.current_stock, 0) as live_stock, COALESCE(sb.available_quantity, m.current_stock, 0) as available_stock"
+                : "COALESCE(m.current_stock, 0) as live_stock, COALESCE(m.current_stock, 0) as available_stock";
+            $stockJoin = $hasStockBalances ? " LEFT JOIN stock_balances sb ON m.id = sb.material_id" : "";
+
             $stmt = $pdo->prepare("
                 SELECT m.*, 
                        COALESCE(c.name, 'General Material') as category_name, 
-                       s.name as supplier_name,
-                       COALESCE(sb.current_quantity, m.current_stock, 0) as live_stock, 
-                       COALESCE(sb.available_quantity, m.current_stock, 0) as available_stock
-                       {$buyerSelect}
+                       s.name as supplier_name
+                       {$buyerSelect},
+                       {$stockSelect}
                 FROM materials m
                 LEFT JOIN categories c ON m.category_id = c.id
                 LEFT JOIN suppliers s ON m.supplier_id = s.id
-                LEFT JOIN stock_balances sb ON m.id = sb.material_id
                 {$buyerJoin}
+                {$stockJoin}
                 WHERE m.id = ? AND m.deleted_at IS NULL
             ");
             $stmt->execute([$id]);
@@ -472,9 +509,12 @@ class MaterialController {
             // 4. Check current stock balance
             $currentStock = 0.0;
             try {
-                $sbStmt = $pdo->prepare("SELECT current_quantity FROM stock_balances WHERE material_id = ?");
-                $sbStmt->execute([$id]);
-                $currentStock = (float)($sbStmt->fetchColumn() ?: 0.0);
+                $sbCols = $pdo->query("DESCRIBE stock_balances")->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('current_quantity', $sbCols)) {
+                    $sbStmt = $pdo->prepare("SELECT current_quantity FROM stock_balances WHERE material_id = ?");
+                    $sbStmt->execute([$id]);
+                    $currentStock = (float)($sbStmt->fetchColumn() ?: 0.0);
+                }
             } catch (Exception $e) {}
             if ($currentStock <= 0.0 && !empty($material['current_stock'])) {
                 $currentStock = (float)$material['current_stock'];
@@ -508,7 +548,7 @@ class MaterialController {
 
             // Clean up 0-stock balance row and dynamic values
             try {
-                $pdo->prepare("DELETE FROM stock_balances WHERE material_id = ? AND current_quantity = 0")->execute([$id]);
+                $pdo->prepare("DELETE FROM stock_balances WHERE material_id = ?")->execute([$id]);
                 $pdo->prepare("DELETE FROM material_field_values WHERE material_id = ?")->execute([$id]);
             } catch (Exception $e) {}
 

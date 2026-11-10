@@ -14,9 +14,20 @@ import { Plus, RefreshCw, Edit2, Trash2, AlertCircle, CheckCircle2, Star, Palett
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n);
 
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: 1, name: 'WEAVING ORDER', code: 'CAT_WEAVING_ORDER', type: 'order', status: 'active', sort_order: 1 },
+  { id: 2, name: 'FABRIC WEAVING PROCESS ORDER', code: 'CAT_FAB_WEAV', type: 'order', status: 'active', sort_order: 2 },
+  { id: 3, name: 'FABRIC DYEING PROCESS ORDER', code: 'CAT_DYEING', type: 'order', status: 'active', sort_order: 3 },
+  { id: 4, name: 'FABRIC 2 SIDE KITTY REMOVE AND JIGGAR PROCESS ORDER', code: 'CAT_KITTY', type: 'order', status: 'active', sort_order: 4 },
+  { id: 5, name: 'FILLING ORDER', code: 'CAT_FILLING', type: 'order', status: 'active', sort_order: 5 },
+  { id: 6, name: 'FABRIC PURCHASE ORDER', code: 'CAT_FAB_PUR', type: 'order', status: 'active', sort_order: 6 },
+  { id: 7, name: 'STICHING ORDER', code: 'CAT_STITCH', type: 'order', status: 'active', sort_order: 7 },
+  { id: 8, name: 'ACCESSORY PURCHASE ORDER', code: 'CAT_ACCESSORY', type: 'order', status: 'active', sort_order: 8 },
+];
+
 export default function Materials() {
   const [materials, setMaterials] = useState<Material[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [buyers, setBuyers] = useState<Buyer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +45,7 @@ export default function Materials() {
   const [deleteError, setDeleteError] = useState('');
 
   const [form, setForm] = useState({
-    category_id: '',
+    category_id: '1',
     supplier_id: '',
     buyer_id: '',
     code: '',
@@ -51,21 +62,43 @@ export default function Materials() {
   const load = async (catId?: number) => {
     setLoading(true);
     try {
-      const [matData, catData, supData, buyerData] = await Promise.all([
-        api.getMaterials(catId),
-        api.getCategories(),
-        api.getSuppliers(),
-        api.getBuyers(),
-      ]);
-      setMaterials((matData || []) as Material[]);
-      setCategories((catData || []) as Category[]);
-      setSuppliers((supData || []) as Supplier[]);
-      setBuyers((buyerData || []) as Buyer[]);
-    } catch {
-      setMaterials([]);
-      setCategories([]);
-      setSuppliers([]);
-      setBuyers([]);
+      // 1. Categories (Independent & Resilient)
+      try {
+        const catData = await api.getCategories();
+        if (Array.isArray(catData) && catData.length > 0) {
+          setCategories(catData as Category[]);
+        } else {
+          setCategories(DEFAULT_CATEGORIES);
+        }
+      } catch (catErr) {
+        console.warn('Failed to load categories from API, using defaults:', catErr);
+        setCategories(DEFAULT_CATEGORIES);
+      }
+
+      // 2. Materials
+      try {
+        const matData = await api.getMaterials(catId);
+        setMaterials((Array.isArray(matData) ? matData : []) as Material[]);
+      } catch (matErr) {
+        console.warn('Failed to load materials:', matErr);
+        setMaterials([]);
+      }
+
+      // 3. Suppliers
+      try {
+        const supData = await api.getSuppliers();
+        setSuppliers((Array.isArray(supData) ? supData : []) as Supplier[]);
+      } catch (supErr) {
+        setSuppliers([]);
+      }
+
+      // 4. Buyers
+      try {
+        const buyerData = await api.getBuyers();
+        setBuyers((Array.isArray(buyerData) ? buyerData : []) as Buyer[]);
+      } catch (buyerErr) {
+        setBuyers([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -88,8 +121,10 @@ export default function Materials() {
   // Open Drawer in Create mode
   const openCreate = () => {
     setEditingMaterial(null);
+    const activeCats = categories.length > 0 ? categories : DEFAULT_CATEGORIES;
+    const defaultCatId = activeCats.length > 0 ? String(activeCats[0].id) : '1';
     setForm({
-      category_id: categories.length > 0 ? String(categories[0].id) : '',
+      category_id: defaultCatId,
       supplier_id: '',
       buyer_id: '',
       code: '',
@@ -422,7 +457,7 @@ export default function Materials() {
               onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
             >
               <option value="">— Select Category —</option>
-              {categories.map((c) => (
+              {(categories.length > 0 ? categories : DEFAULT_CATEGORIES).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
