@@ -177,6 +177,7 @@ export default function Buyers() {
           avatar_style: avatarStyle,
           avatar_seed: avatarSeed || `buyer-${editingBuyer.code}`,
           avatar_config: avatarConfig,
+          preferred_colors: editingBuyer.preferred_colors || [],
         });
       } else {
         // Create new buyer
@@ -722,6 +723,8 @@ export default function Buyers() {
               setEditingBuyer({ ...editingBuyer, preferred_colors: updatedColors });
             }
           }
+          // Refresh list from server to ensure database sync
+          load();
         }}
       />
     </div>

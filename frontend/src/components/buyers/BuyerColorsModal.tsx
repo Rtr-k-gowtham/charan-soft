@@ -21,7 +21,12 @@ export function parseBuyerColors(raw?: BuyerColor[] | string | null): BuyerColor
   if (typeof raw === 'string' && raw.trim()) {
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      if (Array.isArray(parsed)) return parsed;
+      if (typeof parsed === 'string') {
+        const doubleParsed = JSON.parse(parsed);
+        return Array.isArray(doubleParsed) ? doubleParsed : [];
+      }
+      return [];
     } catch {
       return [];
     }
@@ -161,6 +166,13 @@ export default function BuyerColorsModal({ open, buyer, onClose, onSaved }: Prop
     resetAddForm();
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddColor();
+    }
+  };
+
   const handleRemoveColor = (index: number) => {
     setColors((prev) => prev.filter((_, i) => i !== index));
   };
@@ -172,34 +184,77 @@ export default function BuyerColorsModal({ open, buyer, onClose, onSaved }: Prop
     setSuccessMsg('');
 
     try {
-      // 1. Save to local storage for instant offline/caching resiliency
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`cheran_buyer_colors_${buyer.id}`, JSON.stringify(colors));
-        if (buyer.code) {
-          localStorage.setItem(`cheran_buyer_colors_${buyer.code}`, JSON.stringify(colors));
+      // 1. If user typed in the add form without clicking "Add Color to Palette", auto-include it!
+      let colorsToSave = [...colors];
+      const trimmedName = name.trim();
+      const trimmedPantone = pantoneCode.trim();
+
+      if (trimmedName || trimmedPantone) {
+        const colorName = trimmedName || trimmedPantone;
+        const cleanHex = hexCode.startsWith('#') ? hexCode : `#${hexCode}`;
+        const alreadyExists = colorsToSave.some(
+          (c) =>
+            c.name.toLowerCase() === colorName.toLowerCase() ||
+            (trimmedPantone && c.pantone_code && c.pantone_code.toLowerCase() === trimmedPantone.toLowerCase())
+        );
+
+        if (!alreadyExists) {
+          const autoAddedColor: BuyerColor = {
+            id: `bc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            name: colorName,
+            pantone_code: trimmedPantone || undefined,
+            hex_code: cleanHex,
+            notes: notes.trim() || undefined,
+          };
+          colorsToSave.push(autoAddedColor);
+          setColors(colorsToSave);
+          resetAddForm();
         }
       }
 
-      // 2. Persist to server API
+      // 2. Persist to server API via dedicated endpoint first, with fallback to updateBuyer
+      let serverSaved = false;
+      let lastError = '';
+
       try {
-        await api.updateBuyer(buyer.id, {
-          ...buyer,
-          preferred_colors: colors,
-        });
-      } catch (apiErr) {
-        console.warn('Server preferred_colors update warning (saved locally):', apiErr);
+        await api.updateBuyerColors(buyer.id, colorsToSave);
+        serverSaved = true;
+      } catch (err1: any) {
+        console.warn('Dedicated updateBuyerColors failed, trying updateBuyer fallback:', err1);
+        lastError = err1?.message || 'Error updating colors';
+        try {
+          await api.updateBuyer(buyer.id, {
+            ...buyer,
+            preferred_colors: colorsToSave,
+          });
+          serverSaved = true;
+        } catch (err2: any) {
+          lastError = err2?.message || lastError;
+        }
       }
 
-      setSuccessMsg('Brand colors saved successfully!');
+      if (!serverSaved) {
+        throw new Error(`Failed to save colors to database: ${lastError}`);
+      }
+
+      // 3. Update localStorage cache only after successful server save
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`cheran_buyer_colors_${buyer.id}`, JSON.stringify(colorsToSave));
+        if (buyer.code) {
+          localStorage.setItem(`cheran_buyer_colors_${buyer.code}`, JSON.stringify(colorsToSave));
+        }
+      }
+
+      setSuccessMsg('Brand colors saved to database successfully!');
       if (onSaved) {
-        onSaved(colors);
+        onSaved(colorsToSave);
       }
 
       setTimeout(() => {
         onClose();
-      }, 600);
+      }, 700);
     } catch (err: unknown) {
-      setError((err as Error).message || 'Failed to save buyer brand colors');
+      setError((err as Error).message || 'Failed to save buyer brand colors to database');
     } finally {
       setSaving(false);
     }
@@ -307,6 +362,7 @@ export default function BuyerColorsModal({ open, buyer, onClose, onSaved }: Prop
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="e.g. Navy Blue, Heather Grey"
                 className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 font-medium"
               />
@@ -321,6 +377,7 @@ export default function BuyerColorsModal({ open, buyer, onClose, onSaved }: Prop
                 type="text"
                 value={pantoneCode}
                 onChange={(e) => setPantoneCode(e.target.value)}
+                onKeyDown={handleKeyDown}
                 placeholder="e.g. 19-4052 TCX"
                 className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono font-medium"
               />
@@ -337,6 +394,7 @@ export default function BuyerColorsModal({ open, buyer, onClose, onSaved }: Prop
                   type="text"
                   value={hexCode.replace(/^#/, '')}
                   onChange={(e) => setHexCode(`#${e.target.value.replace(/[^0-9A-Fa-f]/g, '').slice(0, 6).toUpperCase()}`)}
+                  onKeyDown={handleKeyDown}
                   placeholder="0F2042"
                   className="w-full pl-6 pr-2 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono font-bold uppercase"
                 />

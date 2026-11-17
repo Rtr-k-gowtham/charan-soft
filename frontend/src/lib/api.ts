@@ -103,6 +103,9 @@ export const api = {
   getBuyers: () => request<unknown[]>('/customers'),
   createBuyer: (data: unknown) => request<unknown>('/customers', 'POST', data),
   updateBuyer: (id: number | string, data: unknown) => request<unknown>(`/customers/${id}`, 'PUT', data),
+  getBuyerColors: (buyerId: number | string) => request<{ id: number; preferred_colors: any[] }>(`/customers/${buyerId}/colors`),
+  updateBuyerColors: (buyerId: number | string, colors: any[]) =>
+    request<{ id: number; preferred_colors: any[] }>(`/customers/${buyerId}/colors`, 'PUT', { preferred_colors: colors }),
   getBuyerProducts: (buyerId: number | string) => request<unknown[]>(`/buyers/${buyerId}/products`),
   getBuyerProduct: (buyerId: number | string, productId: number | string) => request<unknown>(`/buyers/${buyerId}/products/${productId}`),
   createBuyerProduct: (buyerId: number | string, data: unknown) => request<unknown>(`/buyers/${buyerId}/products`, 'POST', data),
