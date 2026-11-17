@@ -255,7 +255,30 @@
       "city": "Mumbai",
       "state": "Maharashtra",
       "avatar_style": "lorelei",
-      "avatar_seed": "Zudio-Lorelei-1"
+      "avatar_seed": "Zudio-Lorelei-1",
+      "preferred_colors": [
+        {
+          "id": "bc_1",
+          "name": "Zudio Midnight Navy",
+          "pantone_code": "19-4052 TCX",
+          "hex_code": "#0F2042",
+          "notes": "Primary Brand Shade"
+        },
+        {
+          "id": "bc_2",
+          "name": "Zudio Crimson Red",
+          "pantone_code": "19-1664 TCX",
+          "hex_code": "#990024",
+          "notes": "Accent Tone"
+        },
+        {
+          "id": "bc_3",
+          "name": "Zudio Olive Green",
+          "pantone_code": "18-0625 TCX",
+          "hex_code": "#5F5D3A",
+          "notes": "Seasonal Palette"
+        }
+      ]
     },
     {
       "id": 2,
@@ -268,7 +291,23 @@
       "city": "Bengaluru",
       "state": "Karnataka",
       "avatar_style": "lorelei",
-      "avatar_seed": "MaxLifestyle-Lorelei-2"
+      "avatar_seed": "MaxLifestyle-Lorelei-2",
+      "preferred_colors": [
+        {
+          "id": "bc_4",
+          "name": "Max Coral Orange",
+          "pantone_code": "16-1546 TCX",
+          "hex_code": "#FF6F61",
+          "notes": "Summer Collection"
+        },
+        {
+          "id": "bc_5",
+          "name": "Max Royal Azure",
+          "pantone_code": "19-4045 TCX",
+          "hex_code": "#1B365D",
+          "notes": "Core Standard"
+        }
+      ]
     },
     {
       "id": 3,

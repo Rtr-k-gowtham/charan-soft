@@ -320,12 +320,20 @@ class MastersController {
             $stmt = $pdo->query("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name ASC");
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
             foreach ($rows as &$r) {
-                if (!empty($r['preferred_colors']) && is_string($r['preferred_colors'])) {
-                    $decoded = json_decode($r['preferred_colors'], true);
-                    if (is_array($decoded)) {
-                        $r['preferred_colors'] = $decoded;
+                $rawColors = $r['preferred_colors'] ?? null;
+                if (!empty($rawColors)) {
+                    if (is_string($rawColors)) {
+                        $decoded = json_decode($rawColors, true);
+                        if (is_string($decoded)) {
+                            $decoded = json_decode($decoded, true);
+                        }
+                        $r['preferred_colors'] = is_array($decoded) ? $decoded : [];
+                    } else if (is_array($rawColors)) {
+                        $r['preferred_colors'] = $rawColors;
+                    } else {
+                        $r['preferred_colors'] = [];
                     }
-                } else if (empty($r['preferred_colors'])) {
+                } else {
                     $r['preferred_colors'] = [];
                 }
             }
@@ -503,7 +511,8 @@ class MastersController {
                         phone = ?,
                         email = ?,
                         gstin = ?,
-                        billing_address = ?
+                        billing_address = ?,
+                        preferred_colors = ?
                     WHERE id = ? AND deleted_at IS NULL
                 ");
                 $stmt->execute([
@@ -514,6 +523,7 @@ class MastersController {
                     $finalEmail,
                     $finalGstin,
                     $finalAddress,
+                    $finalPreferredColors,
                     $id
                 ]);
             }
@@ -528,8 +538,109 @@ class MastersController {
                 'avatar_style' => $finalAvatarStyle,
                 'avatar_seed' => $finalAvatarSeed,
                 'avatar_config' => $finalAvatarConfig,
-                'preferred_colors' => array_key_exists('preferred_colors', $data) ? $data['preferred_colors'] : (isset($existing['preferred_colors']) ? json_decode($existing['preferred_colors'], true) : [])
+                'preferred_colors' => array_key_exists('preferred_colors', $data) ? (is_array($data['preferred_colors']) ? $data['preferred_colors'] : json_decode($finalPreferredColors, true)) : (isset($existing['preferred_colors']) ? json_decode($existing['preferred_colors'], true) : [])
             ], "Customer updated successfully");
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function getBuyerColors(int $id): void {
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureCustomerAvatarColumns($pdo);
+            $stmt = $pdo->prepare("SELECT id, name, code, preferred_colors FROM customers WHERE id = ? AND deleted_at IS NULL");
+            $stmt->execute([$id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                Response::error("Buyer not found", 404);
+                return;
+            }
+            $colors = [];
+            if (!empty($row['preferred_colors'])) {
+                $decoded = is_string($row['preferred_colors']) ? json_decode($row['preferred_colors'], true) : $row['preferred_colors'];
+                if (is_string($decoded)) {
+                    $decoded = json_decode($decoded, true);
+                }
+                $colors = is_array($decoded) ? $decoded : [];
+            }
+            Response::success([
+                'id' => (int)$id,
+                'name' => $row['name'],
+                'code' => $row['code'],
+                'preferred_colors' => $colors
+            ]);
+        } catch (Exception $e) {
+            Response::error($e->getMessage(), 500);
+        }
+    }
+
+    public function updateBuyerColors(int $id): void {
+        $raw = file_get_contents('php://input');
+        $data = json_decode($raw, true) ?? [];
+
+        // Accept either { preferred_colors: [...] }, { colors: [...] }, or raw array [...]
+        $colors = [];
+        if (isset($data['preferred_colors'])) {
+            $colors = $data['preferred_colors'];
+        } else if (isset($data['colors'])) {
+            $colors = $data['colors'];
+        } else if (is_array($data) && (empty($data) || isset($data[0]))) {
+            $colors = $data;
+        }
+
+        if (is_string($colors)) {
+            $decoded = json_decode($colors, true);
+            if (is_array($decoded)) {
+                $colors = $decoded;
+            }
+        }
+
+        if (!is_array($colors)) {
+            $colors = [];
+        }
+
+        // Clean & normalize each color object
+        $cleaned = [];
+        foreach ($colors as $c) {
+            if (!is_array($c)) continue;
+            $name = trim($c['name'] ?? ($c['pantone_code'] ?? ''));
+            if ($name === '') continue;
+            $hex = trim($c['hex_code'] ?? ($c['hex'] ?? '#0F2042'));
+            if (!str_starts_with($hex, '#')) {
+                $hex = '#' . $hex;
+            }
+            $pantone = trim($c['pantone_code'] ?? ($c['pantone'] ?? ''));
+            $cleaned[] = [
+                'id' => $c['id'] ?? ('bc_' . round(microtime(true) * 1000) . '_' . substr(bin2hex(random_bytes(4)), 0, 4)),
+                'name' => $name,
+                'pantone_code' => $pantone !== '' ? $pantone : null,
+                'hex_code' => $hex,
+                'notes' => !empty($c['notes']) ? trim($c['notes']) : null
+            ];
+        }
+
+        $encodedJson = json_encode($cleaned, JSON_UNESCAPED_UNICODE);
+
+        try {
+            $pdo = Database::getConnection();
+            $this->ensureCustomerAvatarColumns($pdo);
+
+            $stmtCheck = $pdo->prepare("SELECT id FROM customers WHERE id = ? AND deleted_at IS NULL");
+            $stmtCheck->execute([$id]);
+            if (!$stmtCheck->fetch()) {
+                Response::error("Buyer not found", 404);
+                return;
+            }
+
+            $stmt = $pdo->prepare("UPDATE customers SET preferred_colors = ? WHERE id = ? AND deleted_at IS NULL");
+            $stmt->execute([$encodedJson, $id]);
+
+            AuditLogger::log('Customers', 'UPDATE_COLORS', $id, null, ['colors_count' => count($cleaned)]);
+            Response::success([
+                'id' => $id,
+                'preferred_colors' => $cleaned
+            ], "Buyer brand colors saved successfully");
         } catch (Exception $e) {
             Response::error($e->getMessage(), 500);
         }

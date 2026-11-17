@@ -223,6 +223,8 @@ $r0 === 'production' && $r1 === 'dashboard-stats' && $method === 'GET' => (new P
         $r0 === 'embroidery-works' && $id && in_array($method, ['PUT', 'PATCH', 'POST']) => (new MastersController)->updateEmbroideryWork((int)$id),
         $r0 === 'embroidery-works' && $id && $method === 'DELETE' => (new MastersController)->deleteEmbroideryWork((int)$id),
 
+        ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'colors' && in_array($method, ['PUT', 'POST', 'PATCH']) => (new MastersController)->updateBuyerColors((int)$id),
+        ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'colors' && $method === 'GET' => (new MastersController)->getBuyerColors((int)$id),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && isset($segments[3]) && $method === 'GET' => (new MastersController)->getBuyerProduct($id, (int)$segments[3]),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'GET' => (new MastersController)->getBuyerProducts($id),
         ($r0 === 'customers' || $r0 === 'buyers') && $id && $r2 === 'products' && $method === 'POST' => (new MastersController)->createBuyerProduct($id),

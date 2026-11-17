@@ -8,6 +8,7 @@
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend",
+    "make:deploy": "node scripts/make_deploy.js",
     "deploy": "node deploy.js",
     "deploy:test": "node deploy.js --test"
   },
