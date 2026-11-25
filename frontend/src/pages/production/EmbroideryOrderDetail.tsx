@@ -53,7 +53,8 @@ import {
   MoreVertical,
   Search,
   CheckCheck,
-  Edit3
+  Edit3,
+  Download
 } from 'lucide-react';
 
 const fmt = (n: number, decimals = 0) =>
@@ -2214,6 +2215,20 @@ export default function EmbroideryOrderDetail() {
             >
               <span className="hidden sm:inline">Refresh</span>
             </Button>
+            {jobOrders.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={<Download className="w-3.5 h-3.5 text-brand-600" />}
+                onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', jobOrders[0])}
+                className="text-xs font-bold border-brand-300 text-brand-700 bg-brand-50/60 hover:bg-brand-100 px-2.5 sm:px-3.5 py-1 sm:py-1.5 shadow-2xs"
+                title="Download / Print Latest Embroidery Job Order & Delivery Challan (PDF)"
+              >
+                <Download className="w-3.5 h-3.5 text-brand-600 sm:hidden" />
+                <span className="hidden sm:inline">Download Order (PDF)</span>
+                <span className="sm:hidden">Download</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -2637,7 +2652,7 @@ export default function EmbroideryOrderDetail() {
                     <th className="py-2.5 px-2 text-right w-[85px]">Sent Qty</th>
                     <th className="py-2.5 px-2 text-right w-[110px]">Recv / Acc</th>
                     <th className="py-2.5 px-2 text-center w-[130px]">Status</th>
-                    <th className="py-2.5 px-2 text-center w-[55px]">Action</th>
+                    <th className="py-2.5 px-2 text-center w-[90px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2729,17 +2744,27 @@ export default function EmbroideryOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2 text-center whitespace-nowrap align-middle">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleJobMenu(e, job)}
-                              className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeJobMenu?.job.id === job.id
-                                ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
-                                : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-                                }`}
-                              title="Job Order Options"
-                            >
-                              <MoreVertical className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
+                                className="p-1.5 rounded-lg border border-slate-200 bg-white text-brand-700 hover:text-brand-900 hover:bg-brand-50 transition shadow-2xs cursor-pointer"
+                                title="Download Order & Delivery Challan (PDF)"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleJobMenu(e, job)}
+                                className={`p-1.5 rounded-lg border transition shadow-2xs cursor-pointer ${activeJobMenu?.job.id === job.id
+                                  ? 'bg-slate-100 text-slate-900 border-slate-300 ring-2 ring-brand-500/20'
+                                  : 'bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+                                  }`}
+                                title="More Job Order Options"
+                              >
+                                <MoreVertical className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2809,9 +2834,10 @@ export default function EmbroideryOrderDetail() {
                           type="button"
                           onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
                           className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs"
+                          title="Download Order & Delivery Challan (PDF)"
                         >
-                          <FileText className="w-3.5 h-3.5 text-brand-600" />
-                          <span>Delivery Challan</span>
+                          <Download className="w-3.5 h-3.5 text-brand-600" />
+                          <span>Download Order</span>
                         </button>
                       </div>
                     </div>
@@ -3326,7 +3352,7 @@ export default function EmbroideryOrderDetail() {
                   <span>Rework</span>
                 </button>
 
-                {/* 4. Delivery Challan (DC) */}
+                {/* 4. Download / Print Order & Delivery Challan */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3334,10 +3360,10 @@ export default function EmbroideryOrderDetail() {
                     setActiveJobMenu(null);
                     handleOpenPrintModal('EMBROIDERY_OUTWARD', j);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-semibold transition text-left cursor-pointer"
                 >
-                  <FileText className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                  <span>Delivery Challan (DC)</span>
+                  <Download className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                  <span>Download Order / DC (PDF)</span>
                 </button>
 
                 {/* 5. Edit / Modify */}
@@ -4562,6 +4588,42 @@ export default function EmbroideryOrderDetail() {
 
                       {/* Right: Quantities & Rates */}
                       <div className="sm:w-1/2 flex items-center gap-2 justify-end">
+                        <div className="w-20">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Size
+                          </label>
+                          <input
+                            type="text"
+                            list="embroidery-sizes-datalist"
+                            value={l.size !== undefined ? l.size : (l.item.size || 'M')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, size: val } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-bold text-slate-800 bg-white uppercase"
+                          />
+                        </div>
+
+                        <div className="w-20">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Size
+                          </label>
+                          <input
+                            type="text"
+                            list="embroidery-sizes-datalist"
+                            value={l.size !== undefined ? l.size : (l.item.size || 'M')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, size: val } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-bold text-slate-800 bg-white uppercase"
+                          />
+                        </div>
+
                         <div className="w-20">
                           <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
                             Size
