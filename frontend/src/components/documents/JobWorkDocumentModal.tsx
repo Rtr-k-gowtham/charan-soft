@@ -1,9 +1,9 @@
 // src/components/documents/JobWorkDocumentModal.tsx
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { 
-  Printer, 
-  Download, 
-  CheckCircle2, 
+import {
+  Printer,
+  Download,
+  CheckCircle2,
   AlertTriangle,
   Loader2
 } from 'lucide-react';
@@ -15,10 +15,10 @@ import { formatAmountInWords } from '../../lib/numberToWords';
 import { api } from '../../lib/api';
 import { POTemplateData } from '../../types';
 
-export type JobWorkDocType = 
-  | 'DYEING_OUTWARD' 
-  | 'DYEING_INWARD' 
-  | 'EMBROIDERY_OUTWARD' 
+export type JobWorkDocType =
+  | 'DYEING_OUTWARD'
+  | 'DYEING_INWARD'
+  | 'EMBROIDERY_OUTWARD'
   | 'EMBROIDERY_INWARD';
 
 export interface JobWorkDocumentModalProps {
@@ -68,7 +68,7 @@ export default function JobWorkDocumentModal({
 
   // Safe helper to read setting from PO template configuration
   const settings = templateData?.settings || {};
-  const getSetting = (key: string, def = '') => 
+  const getSetting = (key: string, def = '') =>
     settings[key] !== undefined && settings[key] !== '' ? settings[key] : def;
 
   // Primary colors & styles identical to DynamicPOTemplate
@@ -126,11 +126,11 @@ export default function JobWorkDocumentModal({
         };
       case 'EMBROIDERY_OUTWARD':
         return {
-          modalTitle: `Embroidery Job Order: ${itemData?.job_order_number || 'EMB-ORDER'}`,
-          docTitle: 'EMBROIDERY JOB WORK ORDER',
-          docSubtitle: 'GARMENT EMBROIDERY OUTWARD CHALLAN',
-          code: itemData?.job_order_number || 'EMB-ORDER',
-          filename: `EMB-ORDER-${itemData?.job_order_number || 'JOB'}`,
+          modalTitle: `Embroidery Delivery Challan: ${itemData?.delivery_challan_no || itemData?.job_order_number || 'EMB-DC'}`,
+          docTitle: 'DELIVERY CHALLAN',
+          docSubtitle: 'JOB WORK OUTWARD DELIVERY CHALLAN (RULE 55 / SECTION 143)',
+          code: itemData?.delivery_challan_no || itemData?.job_order_number || 'EMB-DC-001',
+          filename: `DELIVERY-CHALLAN-${itemData?.delivery_challan_no || itemData?.job_order_number || 'EMB'}`,
           status: itemData?.status || 'ACTIVE',
           isOutward: true,
           isInward: false,
@@ -204,8 +204,8 @@ export default function JobWorkDocumentModal({
   const outwardItems = useMemo(() => {
     if (!itemData) return [];
     if (docType === 'DYEING_OUTWARD') {
-      const raw = Array.isArray(itemData.items) && itemData.items.length > 0 
-        ? itemData.items 
+      const raw = Array.isArray(itemData.items) && itemData.items.length > 0
+        ? itemData.items
         : [{ color_name: 'Navy Blue', planned_quantity: itemData.total_fabric_quantity || 1000, pantone_code: '19-4052 TCX', hex_code: '#1e3a8a' }];
       return raw.map((it: any, idx: number) => {
         const qty = Number(it.planned_quantity || it.quantity || 0);
@@ -233,27 +233,54 @@ export default function JobWorkDocumentModal({
     }
 
     if (docType === 'EMBROIDERY_OUTWARD') {
-      const raw = Array.isArray(itemData.items) && itemData.items.length > 0
+      const raw = (Array.isArray(itemData.items) && itemData.items.length > 0)
         ? itemData.items
-        : [{ garment_piece: 'Chest Panel', color: 'Navy', size: 'L', quantity_dispatched: itemData.total_pieces || 1200 }];
-      return raw.map((it: any, idx: number) => {
-        const qty = Number(it.quantity_dispatched || it.quantity || it.planned_quantity || 0);
-        const rate = Number(it.rate || itemData.rate_per_piece || defaultRate);
-        const taxable = qty * rate;
+        : ((Array.isArray(itemData.items_json) && itemData.items_json.length > 0)
+           ? itemData.items_json
+           : []);
+
+      if (raw.length === 0) {
+        const totalQty = Number(itemData.total_quantity_sent || itemData.total_pieces || itemData.quantity_dispatched || 0);
+        const rate = Number(itemData.rate || itemData.rate_per_piece || defaultRate);
+        const taxable = totalQty * rate;
         const taxAmount = taxable * 0.05;
         const netAmount = taxable + taxAmount;
-        return {
-          s_no: idx + 1,
-          item_code: it.product_code || 'EMB-GAR-01',
-          description: it.item_name || it.garment_piece || 'Cut Garment Front Piece',
-          color: it.color || 'Standard',
-          size: it.size || 'Free Size',
-          design: itemData.artwork_code || itemData.placement || 'Left Chest Logo',
-          qty,
-          uom: 'PCS',
+        return [{
+          s_no: 1,
+          item_code: itemData.product_code || 'EMB-GAR-01',
+          description: itemData.product_name || itemData.garment_piece || 'Cut Garment Front Piece',
+          color: itemData.color || itemData.color_name || '-',
+          size: itemData.size || '-',
+          design: itemData.artwork_code || itemData.placement || itemData.design_reference || '',
+          qty: totalQty,
+          uom: itemData.uom || 'PCS',
           rate,
           taxable,
           taxPercent: 5,
+          taxAmount,
+          netAmount,
+        }];
+      }
+
+      return raw.map((it: any, idx: number) => {
+        const qty = Number(it.quantity_sent || it.quantity_dispatched || it.quantity || it.planned_quantity || 0);
+        const rate = Number(it.rate || it.rate_per_unit || itemData.rate_per_piece || defaultRate);
+        const taxRate = Number(it.tax_percent !== undefined ? it.tax_percent : 5);
+        const taxable = Number(it.taxable_amount || (qty * rate));
+        const taxAmount = Number(it.tax_amount || ((taxable * taxRate) / 100));
+        const netAmount = Number(it.net_amount || (taxable + taxAmount));
+        return {
+          s_no: idx + 1,
+          item_code: it.product_code || 'EMB-GAR-01',
+          description: it.product_name || it.item_name || it.garment_piece || 'Cut Garment Front Piece',
+          color: it.color || it.color_name || '-',
+          size: it.size || '-',
+          design: it.design_reference || itemData.artwork_code || itemData.placement || '',
+          qty,
+          uom: it.uom || 'PCS',
+          rate,
+          taxable,
+          taxPercent: taxRate,
           taxAmount,
           netAmount,
         };
@@ -360,8 +387,8 @@ export default function JobWorkDocumentModal({
             >
               {downloading ? 'Downloading...' : 'PDF'}
             </Button>
-            <Button 
-              icon={<Printer className="w-3.5 h-3.5" />} 
+            <Button
+              icon={<Printer className="w-3.5 h-3.5" />}
               onClick={handlePrint}
             >
               Print / Save A4 PDF
@@ -393,17 +420,17 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 1. COMPANY HEADER                                                 */}
             {/* ================================================================= */}
-            <div 
-              className="po-header-section border-b-2 pb-2.5 mb-2.5" 
+            <div
+              className="po-header-section border-b-2 pb-2.5 mb-2.5"
               style={{ borderColor: primaryColor, breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
               <div className="flex flex-col items-center justify-center text-center w-full">
                 {/* Centered Brand Logo */}
                 <div className="mb-2 flex justify-center items-center w-full">
-                  <img 
-                    src={company.logo} 
-                    alt="Cheran Soft Goods Pvt Ltd" 
-                    className="h-12 sm:h-14 max-h-16 max-w-[420px] object-contain mx-auto" 
+                  <img
+                    src={company.logo}
+                    alt="Cheran Soft Goods Pvt Ltd"
+                    className="h-12 sm:h-14 max-h-16 max-w-[420px] object-contain mx-auto"
                     crossOrigin="anonymous"
                   />
                 </div>
@@ -411,12 +438,12 @@ export default function JobWorkDocumentModal({
                 {/* Registered Address */}
                 <p className="text-[10px] text-slate-600 leading-tight max-w-xl mx-auto">
                   {[
-                    company.addressLine1, 
-                    company.addressLine2, 
-                    company.city, 
-                    company.district, 
-                    company.state, 
-                    company.pincode, 
+                    company.addressLine1,
+                    company.addressLine2,
+                    company.city,
+                    company.district,
+                    company.state,
+                    company.pincode,
                     company.country
                   ].filter(Boolean).join(', ')}
                 </p>
@@ -453,7 +480,7 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 2. PO DOCUMENT & SUPPLIER SECTION                                 */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-meta-section grid grid-cols-2 gap-3 mb-2.5 text-[10.5px]"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
@@ -482,35 +509,45 @@ export default function JobWorkDocumentModal({
               <div className="border border-slate-200 rounded p-2.5 bg-slate-50/40 flex flex-col justify-between">
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center pb-1 border-b border-slate-200">
-                    <span className="font-bold text-slate-600">
-                      {docConfig.isInward ? 'Receipt No:' : 'Order / PO No:'}
+                    <span className="font-bold text-slate-700">
+                      {docType === 'EMBROIDERY_OUTWARD' ? 'Delivery Challan No:' : (docConfig.isInward ? 'Receipt No:' : 'Order / PO No:')}
                     </span>
                     <span className="font-mono font-bold text-xs" style={{ color: primaryColor }}>
-                      {docConfig.code}
+                      {docType === 'EMBROIDERY_OUTWARD'
+                        ? (itemData?.delivery_challan_no || itemData?.challan_no || docConfig.code)
+                        : docConfig.code}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-500">
-                      {docConfig.isInward ? 'Receipt Date:' : 'Order Date:'}
+                      {docType === 'EMBROIDERY_OUTWARD' ? 'Challan Date:' : (docConfig.isInward ? 'Receipt Date:' : 'Order Date:')}
                     </span>
                     <span className="font-semibold text-slate-800 font-mono">
-                      {itemData?.order_date || itemData?.receipt_date || new Date().toISOString().split('T')[0]}
+                      {itemData?.dispatch_date || itemData?.job_order_date || itemData?.order_date || itemData?.receipt_date || new Date().toISOString().split('T')[0]}
                     </span>
                   </div>
+                  {docType === 'EMBROIDERY_OUTWARD' && itemData?.job_order_number && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Job Order No:</span>
+                      <span className="font-mono font-semibold text-slate-800">{itemData.job_order_number}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="text-slate-500">
-                      {docConfig.isInward ? 'Gate Inward Date:' : 'Delivery Due Date:'}
+                      {docConfig.isInward ? 'Gate Inward Date:' : (docType === 'EMBROIDERY_OUTWARD' ? 'Expected Return Date:' : 'Delivery Due Date:')}
                     </span>
                     <span className="font-semibold text-slate-800 font-mono">
-                      {itemData?.expected_delivery_date || itemData?.expected_return_date || itemData?.receipt_date || 'Prompt Delivery'}
+                      {itemData?.expected_return_date || itemData?.expected_delivery_date || itemData?.receipt_date || 'Prompt Delivery'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-slate-500">Delivery Challan No:</span>
-                    <span className="font-mono font-semibold text-slate-800">
-                      {itemData?.challan_no || itemData?.delivery_challan_no || itemData?.vendor_challan_no || itemData?.challan_number || 'CH-CSG-GATE-01'}
-                    </span>
-                  </div>
+                  {docType !== 'EMBROIDERY_OUTWARD' && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Delivery Challan No:</span>
+                      <span className="font-mono font-semibold text-slate-800">
+                        {itemData?.challan_no || itemData?.delivery_challan_no || itemData?.vendor_challan_no || itemData?.challan_number || 'CH-CSG-GATE-01'}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center">
                     <span className="text-slate-500">Production Order:</span>
                     <span className="font-mono text-slate-700 font-medium truncate max-w-[170px]" title={order?.title}>
@@ -536,7 +573,7 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 3. PROCESS SPECIFICATIONS TABLE                                   */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-process-section border border-slate-200 rounded p-2 mb-2.5 bg-slate-50/40 text-[10px]"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
@@ -597,9 +634,9 @@ export default function JobWorkDocumentModal({
             {/* 4. DYNAMIC ITEM TABLE (Exact PO Table Styling)                     */}
             {/* ================================================================= */}
             <div className="mb-2.5">
-              <table 
-                className="w-full border-collapse" 
-                style={{ 
+              <table
+                className="w-full border-collapse"
+                style={{
                   fontSize: '10px',
                   border: '1px solid #cbd5e1',
                   pageBreakInside: 'auto'
@@ -610,10 +647,10 @@ export default function JobWorkDocumentModal({
                     {docConfig.isOutward && docType === 'DYEING_OUTWARD' && (
                       <>
                         <th style={{ width: '35px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>#</th>
-                        <th style={{ width: '130px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Pantone Color Shade</th>
-                        <th style={{ width: '90px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Pantone Code</th>
+                        <th style={{ width: '130px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Color </th>
+                        <th style={{ width: '100px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Pantone Code</th>
                         <th style={{ width: '45px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Swatch</th>
-                        <th style={{ textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Fabric Description</th>
+                        <th style={{ textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Fabric</th>
                         <th style={{ width: '70px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Dispatched</th>
                         <th style={{ width: '45px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>UOM</th>
                         <th style={{ width: '70px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Job Rate</th>
@@ -625,17 +662,16 @@ export default function JobWorkDocumentModal({
 
                     {docConfig.isOutward && docType === 'EMBROIDERY_OUTWARD' && (
                       <>
-                        <th style={{ width: '35px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>#</th>
-                        <th style={{ textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Garment Piece / Description</th>
-                        <th style={{ width: '85px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Color</th>
-                        <th style={{ width: '55px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Size</th>
-                        <th style={{ width: '120px', textAlign: 'left', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Artwork / Design</th>
-                        <th style={{ width: '70px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Dispatched</th>
-                        <th style={{ width: '45px', textAlign: 'center', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>UOM</th>
-                        <th style={{ width: '70px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Unit Rate</th>
-                        <th style={{ width: '80px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Taxable</th>
-                        <th style={{ width: '50px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Tax %</th>
-                        <th style={{ width: '85px', textAlign: 'right', padding: '4px 6px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#334155' }}>Net Amount</th>
+                        <th style={{ width: '45px', textAlign: 'center', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>S.NO</th>
+                        <th style={{ textAlign: 'left', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>DESCRIPTION</th>
+                        <th style={{ width: '130px', textAlign: 'left', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>COLOR</th>
+                        <th style={{ width: '75px', textAlign: 'center', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>SIZE</th>
+                        <th style={{ width: '85px', textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>QTY</th>
+                        <th style={{ width: '55px', textAlign: 'center', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>UOM</th>
+                        <th style={{ width: '75px', textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>RATE</th>
+                        <th style={{ width: '85px', textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>TAXABLE</th>
+                        <th style={{ width: '55px', textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>TAX %</th>
+                        <th style={{ width: '90px', textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontWeight: 700, textTransform: 'uppercase', fontSize: '9px', color: '#1e293b' }}>AMOUNT</th>
                       </>
                     )}
 
@@ -672,33 +708,22 @@ export default function JobWorkDocumentModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {docConfig.isOutward && outwardItems.map((row: any, idx: number) => (
+                  {docConfig.isOutward && docType === 'DYEING_OUTWARD' && outwardItems.map((row: any, idx: number) => (
                     <tr 
                       key={idx} 
                       className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}
                       style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
                     >
                       <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>{row.s_no}</td>
-                      {docType === 'DYEING_OUTWARD' && (
-                        <>
-                          <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{row.color}</td>
-                          <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>{row.pantone}</td>
-                          <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>
-                            <span 
-                              className="inline-block w-3.5 h-3.5 rounded-full border border-slate-300 align-middle shadow-2xs" 
-                              style={{ backgroundColor: row.hex }}
-                            />
-                          </td>
-                        </>
-                      )}
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{row.color}</td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>{row.pantone}</td>
+                      <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>
+                        <span 
+                          className="inline-block w-3.5 h-3.5 rounded-full border border-slate-300 align-middle shadow-2xs" 
+                          style={{ backgroundColor: row.hex }}
+                        />
+                      </td>
                       <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{row.description}</td>
-                      {docType === 'EMBROIDERY_OUTWARD' && (
-                        <>
-                          <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0' }}>{row.color}</td>
-                          <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>{row.size}</td>
-                          <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>{row.design}</td>
-                        </>
-                      )}
                       <td style={{ textAlign: 'right', padding: '4px 6px', border: '1px solid #e2e8f0', fontWeight: 700 }}>{fmt(row.qty, 1)}</td>
                       <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>{row.uom}</td>
                       <td style={{ textAlign: 'right', padding: '4px 6px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>₹{Number(row.rate).toFixed(2)}</td>
@@ -708,9 +733,33 @@ export default function JobWorkDocumentModal({
                     </tr>
                   ))}
 
-                  {docConfig.isInward && inwardItems.map((row: any, idx: number) => (
+                  {docConfig.isOutward && docType === 'EMBROIDERY_OUTWARD' && outwardItems.map((row: any, idx: number) => (
                     <tr 
                       key={idx} 
+                      className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}
+                      style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
+                    >
+                      <td style={{ textAlign: 'center', padding: '5px 8px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontWeight: 600 }}>{row.s_no}</td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #e2e8f0', fontWeight: 600 }}>
+                        <span className="block text-slate-900">{row.description}</span>
+                        {row.design && row.design !== '-' && (
+                          <span className="text-[9px] text-slate-500 font-normal block mt-0.5">Artwork / Design: {row.design}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '5px 8px', border: '1px solid #e2e8f0', fontWeight: 600, color: '#1e293b' }}>{row.color}</td>
+                      <td style={{ textAlign: 'center', padding: '5px 8px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{row.size}</td>
+                      <td style={{ textAlign: 'right', padding: '5px 8px', border: '1px solid #e2e8f0', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>{fmt(row.qty, 0)}</td>
+                      <td style={{ textAlign: 'center', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{row.uom}</td>
+                      <td style={{ textAlign: 'right', padding: '5px 8px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>₹{Number(row.rate).toFixed(2)}</td>
+                      <td style={{ textAlign: 'right', padding: '5px 8px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>₹{fmt(row.taxable, 2)}</td>
+                      <td style={{ textAlign: 'right', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{row.taxPercent}%</td>
+                      <td style={{ textAlign: 'right', padding: '5px 8px', border: '1px solid #e2e8f0', fontFamily: 'monospace', fontWeight: 700 }}>₹{fmt(row.netAmount, 2)}</td>
+                    </tr>
+                  ))}
+
+                  {docConfig.isInward && inwardItems.map((row: any, idx: number) => (
+                    <tr
+                      key={idx}
                       className={idx % 2 === 1 ? 'bg-slate-50/50' : 'bg-white'}
                       style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
                     >
@@ -732,9 +781,8 @@ export default function JobWorkDocumentModal({
                         <td style={{ textAlign: 'right', padding: '4px 6px', border: '1px solid #e2e8f0', fontFamily: 'monospace' }}>{fmt(row.balance_qty, 0)}</td>
                       )}
                       <td style={{ textAlign: 'center', padding: '4px 6px', border: '1px solid #e2e8f0' }}>
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase tracking-wider ${
-                          String(row.qc_status).toLowerCase().includes('reject') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}>
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase tracking-wider ${String(row.qc_status).toLowerCase().includes('reject') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}>
                           {row.qc_status}
                         </span>
                       </td>
@@ -742,13 +790,36 @@ export default function JobWorkDocumentModal({
                     </tr>
                   ))}
                 </tbody>
+                {docConfig.isOutward && docType === 'EMBROIDERY_OUTWARD' && (
+                  <tfoot>
+                    <tr style={{ backgroundColor: tableHeaderBg, fontWeight: 700, borderTop: '2px solid #cbd5e1' }}>
+                      <td colSpan={4} style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontSize: '9.5px', textTransform: 'uppercase', color: primaryColor }}>
+                        TOTAL DISPATCHED:
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '11px', color: primaryColor }}>
+                        {fmt(totalOutwardQty, 0)}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '6px 8px', border: '1px solid #cbd5e1', fontSize: '9px' }}>
+                        PCS
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1' }}>-</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '10.5px' }}>
+                        ₹{fmt(totalTaxable, 2)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1' }}>-</td>
+                      <td style={{ textAlign: 'right', padding: '6px 8px', border: '1px solid #cbd5e1', fontFamily: 'monospace', fontSize: '11px', color: primaryColor }}>
+                        ₹{fmt(grandTotal, 2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
 
             {/* ================================================================= */}
             {/* 5. SUMMARY & AMOUNT IN WORDS SECTION                              */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-totals-section grid grid-cols-12 gap-3 mb-2.5 items-start"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
@@ -846,7 +917,7 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 6. TERMS & CONDITIONS                                             */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-terms-section mb-2 border border-slate-200 rounded p-2 bg-slate-50/20 text-[9px]"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
@@ -878,7 +949,7 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 7. SIGNATURE BLOCKS (Identical to PO Template)                    */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-signatures-section mb-2 mt-2 pt-2 border-t border-slate-200"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >
@@ -945,7 +1016,7 @@ export default function JobWorkDocumentModal({
             {/* ================================================================= */}
             {/* 8. DOCUMENT FOOTER                                                */}
             {/* ================================================================= */}
-            <div 
+            <div
               className="po-footer-section pt-1.5 border-t border-slate-200 text-[8.5px] text-slate-500 flex flex-row items-center justify-between gap-1"
               style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}
             >

@@ -3458,6 +3458,7 @@ class ProductionController {
                 if (isset($job['items_json']) && is_string($job['items_json'])) {
                     $job['items_json'] = json_decode($job['items_json'], true) ?: [];
                 }
+                $job['items'] = $job['items_json'] ?? [];
             }
             unset($job);
 

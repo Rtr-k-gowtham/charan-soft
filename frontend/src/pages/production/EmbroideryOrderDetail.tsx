@@ -331,7 +331,12 @@ export default function EmbroideryOrderDetail() {
       const orderData = embData.order || null;
       setOrder(orderData);
       setItems(embData.items || []);
-      setJobOrders(embData.job_orders || []);
+      const rawJobs = embData.job_orders || [];
+      const mappedJobs = rawJobs.map((j: any) => ({
+        ...j,
+        items: (Array.isArray(j.items) && j.items.length > 0) ? j.items : (Array.isArray(j.items_json) ? j.items_json : []),
+      }));
+      setJobOrders(mappedJobs);
       setReceipts(embData.receipts || []);
       setReworkRecords(embData.rework_records || []);
 
@@ -2643,9 +2648,15 @@ export default function EmbroideryOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2.5 align-middle">
-                            <span className="font-mono text-xs text-slate-700 block truncate" title={job.delivery_challan_no || 'N/A'}>
-                              {job.delivery_challan_no || 'N/A'}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
+                              className="inline-flex items-center gap-1 font-mono text-xs font-semibold text-brand-700 hover:text-brand-900 hover:underline cursor-pointer text-left"
+                              title="Click to View / Print Delivery Challan"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                              <span>{job.delivery_challan_no || job.job_order_number}</span>
+                            </button>
                           </td>
 
                           <td className="py-2.5 px-2 text-right align-middle whitespace-nowrap font-mono font-bold text-xs text-slate-800">
@@ -2758,10 +2769,10 @@ export default function EmbroideryOrderDetail() {
                         <button
                           type="button"
                           onClick={() => handleOpenPrintModal('EMBROIDERY_OUTWARD', job)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg shadow-2xs"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 rounded-lg shadow-2xs"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print</span>
+                          <FileText className="w-3.5 h-3.5 text-brand-600" />
+                          <span>Delivery Challan</span>
                         </button>
                       </div>
                     </div>
@@ -3276,7 +3287,7 @@ export default function EmbroideryOrderDetail() {
                   <span>Rework</span>
                 </button>
 
-                {/* 4. View / Print */}
+                {/* 4. Delivery Challan (DC) */}
                 <button
                   type="button"
                   onClick={() => {
@@ -3284,10 +3295,10 @@ export default function EmbroideryOrderDetail() {
                     setActiveJobMenu(null);
                     handleOpenPrintModal('EMBROIDERY_OUTWARD', j);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-medium transition text-left cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-brand-700 hover:bg-brand-50 hover:text-brand-800 font-medium transition text-left cursor-pointer"
                 >
-                  <Eye className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span>View</span>
+                  <FileText className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                  <span>Delivery Challan (DC)</span>
                 </button>
 
                 {/* 5. Edit / Modify */}
