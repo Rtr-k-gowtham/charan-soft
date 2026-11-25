@@ -366,7 +366,7 @@ export default function DyeingOrderDetail() {
   const handleOpenReworkModal = (dOrder: any) => {
     setSelectedOrderForRework(dOrder);
     const totalRec = Number(dOrder.total_received_quantity || dOrder.total_fabric_quantity || 0);
-    const firstColor = dOrder.items?.[0]?.pantone_code || dOrder.items?.[0]?.color_name || dOrder.color_name || '';
+    const firstColor = dOrder.items?.[0]?.color_name || dOrder.items?.[0]?.pantone_code || dOrder.color_name || '-';
     setReworkForm({
       rework_quantity: totalRec > 0 ? totalRec : 10,
       rework_reason: 'Shade Mismatch / Uneven Dyeing',
@@ -403,7 +403,7 @@ export default function DyeingOrderDetail() {
         stage_id: 4,
         stage_code: 'DYE',
         product_name: selectedOrderForRework.fabric_name,
-        color: reworkForm.selected_color || selectedOrderForRework.items?.[0]?.pantone_code || 'General',
+        color: reworkForm.selected_color || selectedOrderForRework.items?.[0]?.color_name || selectedOrderForRework.items?.[0]?.pantone_code || 'General',
         rework_quantity: qty,
         uom: selectedOrderForRework.uom || 'MTR',
         rework_reason: reworkForm.rework_reason,
@@ -2423,30 +2423,35 @@ export default function DyeingOrderDetail() {
                           </td>
 
                           <td className="py-2.5 px-2.5 align-middle">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              {(dOrder.items || []).slice(0, 3).map((it, cIdx) => (
-                                <span
-                                  key={cIdx}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px]"
-                                  title={`${it.color_name || ''} ${it.pantone_code ? `(${it.pantone_code})` : ''}`}
-                                >
-                                  <span
-                                    className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
-                                    style={{ backgroundColor: it.hex_code || '#3b82f6' }}
-                                  />
-                                  {it.pantone_code && (
-                                    <span className="font-mono text-[10px] text-slate-600 hidden lg:inline truncate max-w-[80px]">
-                                      {it.pantone_code}
+                            {(!dOrder.items || dOrder.items.length === 0) ? (
+                              <span className="font-mono text-slate-400 text-xs">-</span>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {dOrder.items.slice(0, 3).map((it, cIdx) => {
+                                  const colorName = (it.color_name || '').trim() || '-';
+                                  return (
+                                    <span
+                                      key={cIdx}
+                                      className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[11px] font-medium text-slate-800 bg-slate-50 border border-slate-200"
+                                      title={colorName}
+                                    >
+                                      <span
+                                        className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
+                                        style={{ backgroundColor: it.hex_code || '#3b82f6' }}
+                                      />
+                                      <span className="truncate max-w-[95px]">
+                                        {colorName}
+                                      </span>
                                     </span>
-                                  )}
-                                </span>
-                              ))}
-                              {(dOrder.items || []).length > 3 && (
-                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                                  +{(dOrder.items || []).length - 3}
-                                </span>
-                              )}
-                            </div>
+                                  );
+                                })}
+                                {dOrder.items.length > 3 && (
+                                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                    +{dOrder.items.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           <td className="py-2.5 px-2 text-slate-700 font-medium align-middle whitespace-nowrap">
@@ -2499,7 +2504,7 @@ export default function DyeingOrderDetail() {
                                   <table className="w-full text-left text-xs border border-slate-200 rounded-lg">
                                     <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[10px]">
                                       <tr>
-                                        <th className="py-2 px-3">Color & Pantone Standard</th>
+                                        <th className="py-2 px-3">Color</th>
                                         <th className="py-2 px-3 text-right">Planned Outward</th>
                                         <th className="py-2 px-3 text-right">Received Inward</th>
                                         <th className="py-2 px-3 text-right">Shrinkage %</th>
@@ -2516,12 +2521,9 @@ export default function DyeingOrderDetail() {
                                                 className="w-3 h-3 rounded-full border border-slate-300 shrink-0"
                                                 style={{ backgroundColor: it.hex_code || '#3b82f6' }}
                                               />
-                                              <span className="font-semibold text-slate-800">{it.color_name}</span>
-                                              {it.pantone_code && (
-                                                <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
-                                                  {it.pantone_code}
-                                                </span>
-                                              )}
+                                              <span className="font-semibold text-slate-800">
+                                                {(it.color_name || '').trim() || '-'}
+                                              </span>
                                             </div>
                                           </td>
                                           <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
@@ -2643,13 +2645,8 @@ export default function DyeingOrderDetail() {
                                     className="w-2.5 h-2.5 rounded-full border border-slate-300"
                                     style={{ backgroundColor: it.hex_code || '#3b82f6' }}
                                   />
-                                  <span className="font-semibold text-slate-800">{it.color_name}</span>
+                                  <span className="font-semibold text-slate-800">{(it.color_name || '').trim() || '-'}</span>
                                 </div>
-                                {it.pantone_code && (
-                                  <span className="font-mono text-[10px] text-brand-700 bg-brand-50 px-1.5 py-0.5 rounded border border-brand-200">
-                                    {it.pantone_code}
-                                  </span>
-                                )}
                               </div>
                               <div className="flex items-center justify-between text-[11px] font-mono">
                                 <span className="text-slate-600">Plan: <strong>{fmt(it.planned_quantity, 1)} {dOrder.uom}</strong></span>
@@ -3561,8 +3558,8 @@ export default function DyeingOrderDetail() {
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white font-medium"
                   >
                     {(selectedOrderForRework.items || []).map((it: any, cIdx: number) => (
-                      <option key={cIdx} value={it.pantone_code || it.color_name}>
-                        {it.color_name} {it.pantone_code ? `(${it.pantone_code})` : ''} — Planned: {it.planned_quantity} {selectedOrderForRework.uom}
+                      <option key={cIdx} value={it.color_name || it.pantone_code || '-'}>
+                        {(it.color_name || '').trim() || '-'} — Planned: {it.planned_quantity} {selectedOrderForRework.uom}
                       </option>
                     ))}
                   </select>
