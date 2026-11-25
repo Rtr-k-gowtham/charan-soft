@@ -3924,7 +3924,7 @@ class ProductionController {
 
             $stmt = $pdo->prepare("INSERT INTO embroidery_job_orders 
                 (job_order_number, production_order_id, vendor_name, job_order_date, dispatch_date, expected_return_date, delivery_challan_no, transport_courier, sent_by, total_quantity_sent, total_quantity_outstanding, status, notes, attachments, items_json) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Sent to Vendor', ?, ?, ?)");
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $jobNo, 
                 $pId, 
@@ -3937,15 +3937,25 @@ class ProductionController {
                 $data['sent_by'] ?? null, 
                 $totalSent, 
                 $totalSent, 
+                $data['status'] ?? 'Sent to Vendor',
                 $data['notes'] ?? '', 
                 json_encode($data['attachments'] ?? []), 
                 json_encode($items)
             ]);
             $jobId = (int)$pdo->lastInsertId();
 
+            // Fallback default production_order_item_id if not present or 0
+            $defaultItemId = 0;
+            $chkItemStmt = $pdo->prepare("SELECT id FROM production_order_items WHERE production_order_id = ? LIMIT 1");
+            $chkItemStmt->execute([$pId]);
+            $defaultItemId = (int)$chkItemStmt->fetchColumn() ?: 0;
+
             // Log outward dispatch in quantity ledger for each item
             foreach ($items as $it) {
                 $itId = (int)($it['production_order_item_id'] ?? 0);
+                if ($itId <= 0) {
+                    $itId = $defaultItemId;
+                }
                 $itQty = (float)($it['quantity_sent'] ?? 0);
                 if ($itQty > 0) {
                     $lStmt = $pdo->prepare("
@@ -3961,7 +3971,7 @@ class ProductionController {
                         $data['sent_by'] ?? '', 
                         '', 
                         $jobNo, 
-                        "Dispatched to {$data['vendor_name']}"
+                        "Dispatched to " . ($data['vendor_name'] ?? 'Embroidery Unit')
                     ]);
                 }
             }

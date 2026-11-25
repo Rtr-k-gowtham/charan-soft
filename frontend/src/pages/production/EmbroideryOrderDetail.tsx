@@ -518,6 +518,9 @@ export default function EmbroideryOrderDetail() {
       setLineRows(buildInitialLineRows(items));
     }
 
+    if (!selectedSupplier && supplierOptions.length > 0) {
+      setSelectedSupplier(String(supplierOptions[0].value));
+    }
     setShowCreatePage(true);
     const next = new URLSearchParams(searchParams);
     next.set('create', 'true');
@@ -530,7 +533,10 @@ export default function EmbroideryOrderDetail() {
       if (lineRows.length === 0) {
         setLineRows(buildInitialLineRows(items));
       }
-      setShowCreatePage(true);
+      if (!selectedSupplier && supplierOptions.length > 0) {
+      setSelectedSupplier(String(supplierOptions[0].value));
+    }
+    setShowCreatePage(true);
     }
   }, [searchParams, order, items]);
 
@@ -609,15 +615,13 @@ export default function EmbroideryOrderDetail() {
     setCreateError('');
     if (!order) return;
 
-    if (!selectedSupplier || !selectedSupplier.trim()) {
-      setCreateError('Please select or specify an Embroidery Processor / Vendor.');
-      return;
-    }
+    const vendorToUse = (selectedSupplier && selectedSupplier.trim())
+      ? selectedSupplier.trim()
+      : (supplierOptions[0]?.value ? String(supplierOptions[0].value) : 'Embroidery Unit');
 
-    if (!challanNo.trim()) {
-      setCreateError('Outward Delivery Challan No is required.');
-      return;
-    }
+    const dcNoToUse = (challanNo && challanNo.trim())
+      ? challanNo.trim()
+      : `DC-EMB-${Math.floor(1000 + Math.random() * 9000)}`;
 
     if (lineRows.length === 0) {
       setCreateError('Please specify at least one product line to dispatch.');
@@ -646,23 +650,18 @@ export default function EmbroideryOrderDetail() {
       return;
     }
 
-    if (!outwardPhotos || outwardPhotos.length === 0) {
-      setCreateError('Real-time camera photograph with live GPS coordinates of the delivery challan & dispatch bundle is mandatory before issuing job order.');
-      return;
-    }
-
     setCreating(true);
     try {
       const payload = {
         production_order_id: Number(order.id),
-        vendor_name: selectedSupplier,
+        vendor_name: vendorToUse,
         category_name: categoryType,
-        job_order_date: orderDate,
-        dispatch_date: orderDate,
-        expected_return_date: expectedDate,
-        delivery_challan_no: challanNo,
+        job_order_date: orderDate || new Date().toISOString().split('T')[0],
+        dispatch_date: orderDate || new Date().toISOString().split('T')[0],
+        expected_return_date: expectedDate || null,
+        delivery_challan_no: dcNoToUse,
         transport_courier: transportDetails,
-        sent_by: dispatchedBy,
+        sent_by: dispatchedBy || 'Production Incharge',
         notes: remarks,
         attachments: outwardPhotos,
         status: orderStatus,
@@ -1296,18 +1295,24 @@ export default function EmbroideryOrderDetail() {
       }
       maxAvailForThis = jobAvail;
 
-      const jItems = Array.isArray(itemOrJob.items_json) ? itemOrJob.items_json : [];
+      let jItems = Array.isArray(itemOrJob.items_json) ? itemOrJob.items_json : [];
+      if (typeof itemOrJob.items_json === 'string' && itemOrJob.items_json.trim()) {
+        try {
+          const parsed = JSON.parse(itemOrJob.items_json);
+          if (Array.isArray(parsed)) jItems = parsed;
+        } catch {}
+      }
       if (jItems.length > 0) {
         jobLines = jItems.map((ji: any) => {
-          const matchedItem = items.find(i => (ji.production_order_item_id && (i.id === ji.production_order_item_id || i.active_embroidery_item_id === ji.production_order_item_id)) || (i.product_id === ji.product_id && (i.color || '').trim().toLowerCase() === (ji.color || '').trim().toLowerCase() && String(i.size || '') === String(ji.size || '')));
-          
+          const matchedItem = items.find(i => (ji.production_order_item_id && (i.id === ji.production_order_item_id || i.active_embroidery_item_id === ji.production_order_item_id)) || (i.product_id === ji.product_id && (i.color || '').trim().toLowerCase() === (ji.color || '').trim().toLowerCase())) || items[0];
+
           const lineRec = Number(ji.received_quantity || 0) || (jItems.length === 1 ? jobRec : 0);
           const lineTrf = Number(ji.transferred_quantity || 0) || (jItems.length === 1 ? jobTrf : 0);
           const lineAvail = Math.max(0, lineRec - lineTrf);
           const q = jItems.length === 1 ? maxAvailForThis : Math.min(lineAvail, maxAvailForThis);
 
           return {
-            item_id: Number(ji.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || 0),
+            item_id: Number(ji.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || items[0]?.id || 0),
             product_name: ji.product_name || matchedItem?.product_name || 'Product',
             product_code: ji.product_code || matchedItem?.product_code,
             color: ji.color || matchedItem?.color || 'Standard',
@@ -1329,14 +1334,20 @@ export default function EmbroideryOrderDetail() {
       }
       maxAvailForThis = rAvail;
 
-      const rItems = Array.isArray(itemOrJob.items_data) ? itemOrJob.items_data : [];
+      let rItems = Array.isArray(itemOrJob.items_data) ? itemOrJob.items_data : [];
+      if (typeof itemOrJob.items_data === 'string' && itemOrJob.items_data.trim()) {
+        try {
+          const parsed = JSON.parse(itemOrJob.items_data);
+          if (Array.isArray(parsed)) rItems = parsed;
+        } catch {}
+      }
       if (rItems.length > 0) {
         jobLines = rItems.map((ri: any) => {
-          const matchedItem = items.find(i => (ri.production_order_item_id && (i.id === ri.production_order_item_id || i.active_embroidery_item_id === ri.production_order_item_id)) || (i.product_id === ri.product_id && (i.color || '').trim().toLowerCase() === (ri.color || '').trim().toLowerCase() && String(i.size || '') === String(ri.size || '')));
+          const matchedItem = items.find(i => (ri.production_order_item_id && (i.id === ri.production_order_item_id || i.active_embroidery_item_id === ri.production_order_item_id)) || (i.product_id === ri.product_id && (i.color || '').trim().toLowerCase() === (ri.color || '').trim().toLowerCase())) || items[0];
           const lineRec = Number(ri.received_quantity || 0);
           const q = rItems.length === 1 ? maxAvailForThis : Math.min(lineRec, maxAvailForThis);
           return {
-            item_id: Number(ri.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || 0),
+            item_id: Number(ri.production_order_item_id || matchedItem?.active_embroidery_item_id || matchedItem?.id || items[0]?.id || 0),
             product_name: ri.product_name || matchedItem?.product_name || 'Product',
             product_code: ri.product_code || matchedItem?.product_code,
             color: ri.color || matchedItem?.color || 'Standard',

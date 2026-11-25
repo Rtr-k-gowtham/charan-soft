@@ -233,11 +233,19 @@ export default function JobWorkDocumentModal({
     }
 
     if (docType === 'EMBROIDERY_OUTWARD') {
-      const raw = (Array.isArray(itemData.items) && itemData.items.length > 0)
-        ? itemData.items
-        : ((Array.isArray(itemData.items_json) && itemData.items_json.length > 0)
-           ? itemData.items_json
-           : []);
+      let raw: any[] = [];
+      if (Array.isArray(itemData.items) && itemData.items.length > 0) {
+        raw = itemData.items;
+      } else if (Array.isArray(itemData.items_json) && itemData.items_json.length > 0) {
+        raw = itemData.items_json;
+      } else if (typeof itemData.items_json === 'string' && itemData.items_json.trim()) {
+        try {
+          const parsed = JSON.parse(itemData.items_json);
+          if (Array.isArray(parsed)) raw = parsed;
+        } catch {
+          raw = [];
+        }
+      }
 
       if (raw.length === 0) {
         const totalQty = Number(itemData.total_quantity_sent || itemData.total_pieces || itemData.quantity_dispatched || 0);
