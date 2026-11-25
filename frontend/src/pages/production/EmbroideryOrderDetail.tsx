@@ -266,6 +266,7 @@ export default function EmbroideryOrderDetail() {
     quantity_sent: number;
     rate: number;
     tax_percent: number;
+    size?: string;
     error?: string;
   }>>([]);
   const [submittingBulkDispatch, setSubmittingBulkDispatch] = useState(false);
@@ -559,7 +560,7 @@ export default function EmbroideryOrderDetail() {
         color_name: '101 C',
         pantone_code: '101 C',
         hex_code: '#3b82f6',
-        size: 'M',
+        size: firstIt?.size || 'M',
         arrived_quantity: 50,
         planned_quantity: 50,
         uom: 'PCS',
@@ -629,7 +630,7 @@ export default function EmbroideryOrderDetail() {
         product_id: r.product_id,
         product_name: r.product_name,
         color: r.color_name,
-        size: r.size,
+        size: (r.size || '').trim() || 'M',
         quantity_sent: Number(r.planned_quantity) || 0,
         uom: r.uom || 'PCS',
         rate_per_unit: Number(r.rate_per_unit) || 0,
@@ -1025,6 +1026,7 @@ export default function EmbroideryOrderDetail() {
       return {
         item: it,
         quantity_sent: avail,
+        size: it.size || 'M',
         rate: 15.00,
         tax_percent: 5,
         error: ''
@@ -1081,7 +1083,7 @@ export default function EmbroideryOrderDetail() {
         product_id: l.item.product_id,
         product_name: l.item.product_name,
         color: l.item.color,
-        size: l.item.size,
+        size: (l.size || l.item.size || 'M').trim(),
         quantity_sent: Number(l.quantity_sent),
         rate: Number(l.rate || 15),
         tax_percent: Number(l.tax_percent || 5),
@@ -1808,7 +1810,10 @@ export default function EmbroideryOrderDetail() {
                     <th className="py-2.5 px-3 text-left text-[10px] uppercase tracking-wider min-w-[220px]">
                       COLOR / FABRIC ITEM <span className="text-red-500 font-bold">*</span>
                     </th>
-                    <th className="py-2.5 px-3 text-left text-[10px] uppercase tracking-wider min-w-[140px]">PANTONE CODE</th>
+                    <th className="py-2.5 px-3 text-left text-[10px] uppercase tracking-wider min-w-[130px]">PANTONE CODE</th>
+                    <th className="py-2.5 px-2.5 text-left text-[10px] uppercase tracking-wider min-w-[105px]">
+                      SIZE <span className="text-red-500 font-bold">*</span>
+                    </th>
                     <th className="py-2.5 px-3 text-right text-[10px] uppercase tracking-wider min-w-[100px]">
                       QTY <span className="text-red-500 font-bold">*</span>
                     </th>
@@ -1873,7 +1878,20 @@ export default function EmbroideryOrderDetail() {
                           />
                         </td>
 
-                        {/* 4. Qty */}
+                        {/* 4. Size (Editable / Free typing with suggestions) */}
+                        <td className="py-2 px-2.5">
+                          <input
+                            type="text"
+                            list="embroidery-sizes-datalist"
+                            value={row.size}
+                            onChange={e => handleLineRowChange(idx, 'size', e.target.value)}
+                            placeholder="e.g. M, L, XL"
+                            className="w-full text-xs rounded-lg border-slate-300 py-1.5 px-2.5 font-bold text-slate-800 bg-white focus:ring-brand-500 focus:border-brand-500 uppercase"
+                            required
+                          />
+                        </td>
+
+                        {/* 5. Qty */}
                         <td className="py-2 px-3">
                           <input
                             type="number"
@@ -2043,6 +2061,19 @@ export default function EmbroideryOrderDetail() {
                       />
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Size <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={row.size}
+                        onChange={e => handleLineRowChange(idx, 'size', e.target.value)}
+                        list="embroidery-sizes-datalist"
+                        placeholder="e.g. M, L, XL, Free Size"
+                        className="w-full text-xs rounded-lg border border-slate-300 py-1.5 px-2.5 font-bold text-slate-800 bg-white focus:ring-brand-500 uppercase"
+                        required
+                      />
+                    </div>
+
                     <div className="grid grid-cols-3 gap-2">
                       <div>
                         <label className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Qty</label>
@@ -2113,6 +2144,14 @@ export default function EmbroideryOrderDetail() {
         <datalist id="pantone-codes-datalist">
           {VERIFIED_PANTONE_LIBRARY.map((p, idx) => (
             <option key={idx} value={p.code} />
+          ))}
+        </datalist>
+        <datalist id="embroidery-sizes-datalist">
+          {Array.from(new Set([
+            ...items.map(it => it.size).filter(Boolean),
+            'XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', 'Free Size', 'Standard', '30x40', '40x40', '45x45', '50x50'
+          ])).map((s, idx) => (
+            <option key={idx} value={s} />
           ))}
         </datalist>
       </div>
@@ -4523,6 +4562,24 @@ export default function EmbroideryOrderDetail() {
 
                       {/* Right: Quantities & Rates */}
                       <div className="sm:w-1/2 flex items-center gap-2 justify-end">
+                        <div className="w-20">
+                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
+                            Size
+                          </label>
+                          <input
+                            type="text"
+                            list="embroidery-sizes-datalist"
+                            value={l.size !== undefined ? l.size : (l.item.size || 'M')}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBulkDispatchItems((prev) =>
+                                prev.map((p, i) => (i === idx ? { ...p, size: val } : p))
+                              );
+                            }}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-bold text-slate-800 bg-white uppercase"
+                          />
+                        </div>
+
                         <div className="w-28">
                           <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
                             Dispatch Qty *
@@ -4785,416 +4842,6 @@ export default function EmbroideryOrderDetail() {
           );
         })()}
       </Modal>
-
-      {/* BULK OUTWARD DISPATCH / JOB ORDER MODAL */}
-      <Modal
-        isOpen={bulkDispatchModalOpen}
-        onClose={() => setBulkDispatchModalOpen(false)}
-        title={`Bulk Embroidery Outward Dispatch — ${order?.order_number || ''}`}
-        maxWidth="max-w-3xl"
-      >
-        <div className="space-y-4">
-          <div className="bg-brand-50/70 border border-brand-200/80 rounded-xl p-3 flex items-start gap-2.5">
-            <Truck className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
-            <div className="text-xs text-brand-900 leading-relaxed">
-              <p className="font-bold">Stage 06 — Bulk Embroidery Outward Dispatch</p>
-              <p className="text-brand-800/90 text-[11px] mt-0.5">
-                Issue a consolidated Delivery Challan / Job Order to dispatch cut garment panels across eligible product lines to your embroidery vendor. Physical inward receipt, quality inspection, and stitching transfer follow as separate operational steps.
-              </p>
-            </div>
-          </div>
-
-          {bulkDispatchError && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-xs">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{bulkDispatchError}</span>
-            </div>
-          )}
-
-          {/* Common Vendor & Dispatch Information */}
-          <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FormField label="Embroidery Vendor / Mill *" required>
-                <select
-                  value={bulkVendorName}
-                  onChange={(e) => setBulkVendorName(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-                >
-                  {supplierOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label} {opt.sublabel ? `(${opt.sublabel})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-
-              <FormField label="Delivery Challan No *" required>
-                <input
-                  type="text"
-                  value={bulkDeliveryChallanNo}
-                  onChange={(e) => setBulkDeliveryChallanNo(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-mono"
-                />
-              </FormField>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <FormField label="Dispatch Date *" required>
-                <input
-                  type="date"
-                  value={bulkDispatchDate}
-                  onChange={(e) => setBulkDispatchDate(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-                />
-              </FormField>
-
-              <FormField label="Expected Return Date">
-                <input
-                  type="date"
-                  value={bulkExpectedReturnDate}
-                  onChange={(e) => setBulkExpectedReturnDate(e.target.value)}
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-                />
-              </FormField>
-
-              <FormField label="Transport / Courier">
-                <input
-                  type="text"
-                  value={bulkTransportCourier}
-                  onChange={(e) => setBulkTransportCourier(e.target.value)}
-                  placeholder="e.g. In-house Driver, DTDC"
-                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-                />
-              </FormField>
-            </div>
-
-            <FormField label="Job Work Instructions & Notes">
-              <input
-                type="text"
-                value={bulkNotes}
-                onChange={(e) => setBulkNotes(e.target.value)}
-                placeholder="e.g. Chest embroidery with gold Madeira thread, 2000 stitches"
-                className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"
-              />
-            </FormField>
-          </div>
-
-          {/* Product Lines List */}
-          <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
-              Eligible Product Lines ({bulkDispatchItems.length})
-            </div>
-            {bulkDispatchItems.length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">
-                No product lines currently have arrived fabric eligible for embroidery dispatch.
-              </div>
-            ) : (
-              bulkDispatchItems.map((l, idx) => {
-                const avail = Number(l.item.available_to_dispatch || 0);
-                const orderQ = Number(l.item.order_quantity || l.item.total_quantity || 0);
-                const arrivedQ = Number(l.item.arrived_from_cutting || 0);
-                const isIncluded = Number(l.quantity_sent) > 0;
-
-                return (
-                  <div
-                    key={l.item.id || idx}
-                    className={`p-3.5 rounded-xl border transition ${isIncluded
-                      ? 'bg-white border-brand-300 shadow-2xs'
-                      : 'bg-slate-50/60 border-slate-200 opacity-75'
-                      }`}
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      {/* Left: Product Details */}
-                      <div className="space-y-1 sm:w-1/2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-mono text-[10px] flex items-center justify-center font-bold">
-                            {idx + 1}
-                          </span>
-                          <span className="font-bold text-slate-800 text-xs">
-                            {l.item.product_name || 'Product'}
-                          </span>
-                          {l.item.product_code && (
-                            <span className="font-mono text-[10px] text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded">
-                              {l.item.product_code}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-600 flex items-center gap-3 pl-7">
-                          <span>Color: <strong className="text-slate-800">{l.item.color || 'Standard'}</strong></span>
-                          <span>Size: <strong className="text-slate-800">{l.item.size || 'M'}</strong></span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-3 pl-7">
-                          <span>Order: <strong className="font-mono text-slate-700">{fmt(orderQ)} pcs</strong></span>
-                          <span>Cut Arrived: <strong className="font-mono text-indigo-700 font-semibold">{fmt(arrivedQ)}</strong></span>
-                          <span>Available: <strong className="font-mono text-brand-700 font-bold">{fmt(avail)} pcs</strong></span>
-                        </div>
-                      </div>
-
-                      {/* Right: Quantities & Rates */}
-                      <div className="sm:w-1/2 flex items-center gap-2 justify-end">
-                        <div className="w-28">
-                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
-                            Dispatch Qty *
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max={avail}
-                            value={l.quantity_sent}
-                            onChange={(e) => {
-                              const val = Math.max(0, Number(e.target.value));
-                              setBulkDispatchItems((prev) =>
-                                prev.map((p, i) => (i === idx ? { ...p, quantity_sent: val, error: '' } : p))
-                              );
-                            }}
-                            className={`w-full px-2 py-1 text-xs border rounded font-mono text-right font-bold ${isIncluded ? 'border-brand-500 text-brand-900 bg-brand-50/40' : 'border-slate-300 text-slate-400'
-                              }`}
-                          />
-                        </div>
-
-                        <div className="w-20">
-                          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-0.5">
-                            Rate (₹)
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={l.rate}
-                            onChange={(e) => {
-                              const val = Math.max(0, Number(e.target.value));
-                              setBulkDispatchItems((prev) =>
-                                prev.map((p, i) => (i === idx ? { ...p, rate: val } : p))
-                              );
-                            }}
-                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono text-right"
-                          />
-                        </div>
-
-                        <div className="flex flex-col gap-1 pt-4">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBulkDispatchItems((prev) =>
-                                prev.map((p, i) =>
-                                  i === idx ? { ...p, quantity_sent: avail, error: '' } : p
-                                )
-                              );
-                            }}
-                            className="text-[10px] text-brand-700 hover:underline px-1 py-0.5 font-medium cursor-pointer"
-                            title="Set to full available"
-                          >
-                            Full
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setBulkDispatchItems((prev) =>
-                                prev.map((p, i) =>
-                                  i === idx ? { ...p, quantity_sent: 0, error: '' } : p
-                                )
-                              );
-                            }}
-                            className="text-[10px] text-slate-400 hover:text-red-600 px-1 py-0.5 font-medium cursor-pointer"
-                            title="Skip this line"
-                          >
-                            Skip
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {l.error && (
-                      <div className="mt-2 text-[11px] text-red-600 font-medium pl-7">
-                        ⚠ {l.error}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Summary & Actions */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-            <div className="text-xs text-slate-600">
-              <span className="font-bold text-slate-800">
-                {bulkDispatchItems.filter((l) => Number(l.quantity_sent) > 0).length} of {bulkDispatchItems.length}
-              </span>{' '}
-              product lines selected (Total:{' '}
-              <strong className="font-mono text-brand-700">
-                {fmt(bulkDispatchItems.reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0))} pcs
-              </strong>{' '}
-              to <strong className="text-slate-800">{bulkVendorName}</strong>)
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setBulkDispatchModalOpen(false)}
-                disabled={submittingBulkDispatch}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={submittingBulkDispatch}
-                onClick={handleSaveBulkDispatch}
-                className="bg-brand-600 hover:bg-brand-700 text-white font-bold"
-              >
-                {submittingBulkDispatch ? 'Creating Job Order...' : 'Confirm Outward Dispatch'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      {/* VIEW PRODUCT LINE DETAILS MODAL */}
-      <Modal
-        isOpen={viewProductModalOpen}
-        onClose={() => {
-          setViewProductModalOpen(false);
-          setSelectedProductForView(null);
-        }}
-        title={`Embroidery Product Line — ${selectedProductForView?.product_name || 'Product'}`}
-        maxWidth="max-w-2xl"
-      >
-        {selectedProductForView && (() => {
-          const it = selectedProductForView;
-          const orderQ = Number(it.order_quantity || it.total_quantity || 0);
-          const arrivedQ = Number(it.arrived_from_cutting || 0);
-          const sentQ = Number(it.sent_to_vendor || 0);
-          const accQ = Number(it.accepted_inward || 0);
-          const rejQ = Number(it.rejected_quantity || 0);
-          const rwkQ = Number(it.rework_quantity || 0);
-          const outQ = Number(it.outstanding_quantity || 0);
-          const readyQ = Number(it.ready_to_transfer !== undefined ? it.ready_to_transfer : Math.max(0, accQ - Number(it.transferred_to_stitching || 0)));
-          const trfQ = Number(it.transferred_to_stitching || Math.max(0, accQ - readyQ));
-
-          const productJobOrders = jobOrders.filter((j: any) => {
-            const jItems = Array.isArray(j.items_json) ? j.items_json : [];
-            return jItems.some((ji: any) =>
-              (ji.production_order_item_id && ji.production_order_item_id == (it.active_embroidery_item_id || it.id)) ||
-              (ji.product_id && ji.product_id == it.product_id && (ji.color || '').trim().toLowerCase() === (it.color || '').trim().toLowerCase())
-            ) || jobOrders.length === 1;
-          });
-
-          return (
-            <div className="space-y-4">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm">{it.product_name}</h4>
-                  {it.product_code && (
-                    <span className="font-mono text-xs text-brand-600 block">{it.product_code}</span>
-                  )}
-                  <div className="text-xs text-slate-600 mt-1">
-                    Color: <strong className="text-slate-800">{it.color || 'Standard'}</strong> • Size: <strong className="text-slate-800">{it.size || 'M'}</strong>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Order Quantity</span>
-                  <span className="text-lg font-black text-slate-900 font-mono">{fmt(orderQ)} pcs</span>
-                </div>
-              </div>
-
-              {/* Mini Stat Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono text-xs">
-                <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-indigo-700 block">Cut Arrived</span>
-                  <span className="text-sm font-bold text-indigo-900">{fmt(arrivedQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-brand-50 border border-brand-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-brand-700 block">Dispatched</span>
-                  <span className="text-sm font-bold text-brand-900">{fmt(sentQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-amber-700 block">With Vendor</span>
-                  <span className="text-sm font-bold text-amber-900">{fmt(outQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">Accepted Inward</span>
-                  <span className="text-sm font-bold text-emerald-900">{fmt(accQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-red-700 block">Rejection / Defect</span>
-                  <span className="text-sm font-bold text-red-900">{fmt(rejQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-amber-700 block">Rework Required</span>
-                  <span className="text-sm font-bold text-amber-900">{fmt(rwkQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-purple-50 border border-purple-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-purple-700 block">Ready to Stitch</span>
-                  <span className="text-sm font-bold text-purple-900">{fmt(readyQ)} pcs</span>
-                </div>
-                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
-                  <span className="text-[10px] uppercase font-bold text-slate-500 block">Transferred Next</span>
-                  <span className="text-sm font-bold text-slate-800">{fmt(trfQ)} pcs</span>
-                </div>
-              </div>
-
-              {/* Related Job Orders */}
-              <div className="space-y-2">
-                <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Associated Job Orders ({productJobOrders.length})
-                </h5>
-                {productJobOrders.length === 0 ? (
-                  <p className="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg text-center">
-                    No job orders dispatched for this product line yet.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                    <table className="w-full text-xs text-left font-mono">
-                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
-                        <tr>
-                          <th className="py-2 px-3">Job Order #</th>
-                          <th className="py-2 px-3">Vendor</th>
-                          <th className="py-2 px-2 text-right">Sent</th>
-                          <th className="py-2 px-2 text-right">Received</th>
-                          <th className="py-2 px-2 text-right">Outstanding</th>
-                          <th className="py-2 px-3">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {productJobOrders.map((j: any) => (
-                          <tr key={j.id}>
-                            <td className="py-2 px-3 font-bold text-brand-700">{j.job_order_number}</td>
-                            <td className="py-2 px-3 text-slate-600">{j.vendor_name}</td>
-                            <td className="py-2 px-2 text-right font-bold text-slate-800">{fmt(j.total_quantity_sent)}</td>
-                            <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{fmt(j.total_quantity_received)}</td>
-                            <td className="py-2 px-2 text-right text-amber-700 font-bold">{fmt(j.total_quantity_outstanding)}</td>
-                            <td className="py-2 px-3">
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                {j.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-3 border-t border-slate-200 flex justify-end">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setViewProductModalOpen(false);
-                    setSelectedProductForView(null);
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          );
-        })()}
-      </Modal>
-
 
       {/* Job Work Order & Inward Receipt Document Preview/Print Modal */}
       <JobWorkDocumentModal
